@@ -136,6 +136,28 @@ class BulkActionResult(BaseModel):
     action: str
 
 
+class BulkCancelRequest(BaseModel):
+    """Bulk-cancel up to 100 tasks."""
+    task_ids: list[UUID] = Field(min_length=1, max_length=100)
+
+
+class BulkCancelResult(BaseModel):
+    cancelled: int
+    skipped: int
+    task_ids: list[str]  # IDs of tasks that were successfully cancelled
+
+
+class BulkArchiveRequest(BaseModel):
+    """Bulk-archive up to 100 tasks (must be in terminal state)."""
+    task_ids: list[UUID] = Field(min_length=1, max_length=100)
+
+
+class BulkArchiveResult(BaseModel):
+    archived: int
+    skipped: int
+    task_ids: list[str]  # IDs of tasks that were successfully archived
+
+
 class TaskOut(BaseModel):
     id: UUID
     type: str
@@ -159,6 +181,7 @@ class TaskOut(BaseModel):
     org_id: Optional[UUID] = None
     tags: Optional[list[str]] = None
     scheduled_at: Optional[datetime] = None
+    priority_escalated_at: Optional[datetime] = None
     created_at: datetime
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None

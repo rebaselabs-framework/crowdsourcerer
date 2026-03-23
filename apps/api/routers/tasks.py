@@ -22,6 +22,8 @@ from models.schemas import (
     TaskCreateRequest, TaskCreateResponse, TaskOut, PaginatedTasks,
     BatchTaskCreateRequest, BatchTaskCreateResponse,
     BulkActionRequest, BulkActionResult,
+    BulkCancelRequest, BulkCancelResult,
+    BulkArchiveRequest, BulkArchiveResult,
     HUMAN_TASK_TYPES,
     SubmissionOut, SubmissionWorkerOut, SubmissionReviewRequest, SubmissionReviewResponse,
     TaskAnalyticsOut, AssignmentAnalyticsRow,
@@ -741,6 +743,86 @@ async def bulk_task_action(
         user_id=user_id,
     )
     return BulkActionResult(succeeded=succeeded, failed=failed, action=req.action)
+
+
+@router.post("/bulk-cancel", response_model=BulkCancelResult)
+async def bulk_cancel_tasks(
+    req: BulkCancelRequest,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(require_scope(SCOPE_TASKS_WRITE)),
+):
+    """Cancel multiple tasks at once.
+
+    Only tasks in `open`, `pending`, or `running` state are cancelled; others are skipped.
+    """
+    CANCELLABLE = {"open", "pending", "running"}
+    cancelled_ids: list[str] = []
+    skipped = 0
+
+    for task_id in req.task_ids:
+        result = await db.execute(
+            select(TaskDB).where(TaskDB.id == task_id, TaskDB.user_id == user_id)
+        )
+        task = result.scalar_one_or_none()
+        if not task or task.status not in CANCELLABLE:
+            skipped += 1
+            continue
+        task.status = "cancelled"
+        cancelled_ids.append(str(task_id))
+
+    await db.commit()
+
+    logger.info(
+        "bulk_cancel",
+        cancelled=len(cancelled_ids),
+        skipped=skipped,
+        user_id=user_id,
+    )
+    return BulkCancelResult(
+        cancelled=len(cancelled_ids),
+        skipped=skipped,
+        task_ids=cancelled_ids,
+    )
+
+
+@router.post("/bulk-archive", response_model=BulkArchiveResult)
+async def bulk_archive_tasks(
+    req: BulkArchiveRequest,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(require_scope(SCOPE_TASKS_WRITE)),
+):
+    """Archive multiple tasks at once.
+
+    Only tasks in a terminal state (completed, failed, cancelled) are archived; others are skipped.
+    """
+    ARCHIVABLE = {"completed", "failed", "cancelled"}
+    archived_ids: list[str] = []
+    skipped = 0
+
+    for task_id in req.task_ids:
+        result = await db.execute(
+            select(TaskDB).where(TaskDB.id == task_id, TaskDB.user_id == user_id)
+        )
+        task = result.scalar_one_or_none()
+        if not task or task.status not in ARCHIVABLE:
+            skipped += 1
+            continue
+        task.status = "archived"
+        archived_ids.append(str(task_id))
+
+    await db.commit()
+
+    logger.info(
+        "bulk_archive",
+        archived=len(archived_ids),
+        skipped=skipped,
+        user_id=user_id,
+    )
+    return BulkArchiveResult(
+        archived=len(archived_ids),
+        skipped=skipped,
+        task_ids=archived_ids,
+    )
 
 
 @router.get("/{task_id}", response_model=TaskOut)

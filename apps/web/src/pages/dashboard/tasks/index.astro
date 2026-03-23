@@ -36,6 +36,7 @@ const STATUS_COLORS: Record<string, string> = {
   pending:   "bg-gray-800 text-gray-400",
   cancelled: "bg-gray-800 text-gray-500",
   open:      "bg-emerald-950 text-emerald-400",
+  archived:  "bg-gray-900 text-gray-600",
 };
 ---
 
@@ -71,7 +72,7 @@ const STATUS_COLORS: Record<string, string> = {
     <form class="flex flex-wrap gap-3 mb-4">
       <select name="status" class="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-violet-500">
         <option value="" selected={!status}>All statuses</option>
-        {["pending","queued","running","completed","failed","cancelled","open"].map(s => (
+        {["pending","queued","running","completed","failed","cancelled","open","archived"].map(s => (
           <option value={s} selected={status === s}>{s}</option>
         ))}
       </select>
@@ -142,7 +143,13 @@ const STATUS_COLORS: Record<string, string> = {
           id="bulk-cancel-btn"
           class="px-3 py-1.5 bg-red-900 hover:bg-red-800 text-red-300 text-sm rounded-lg transition-colors"
         >
-          ✕ Cancel
+          ✕ Cancel selected
+        </button>
+        <button
+          id="bulk-archive-btn"
+          class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm rounded-lg transition-colors"
+        >
+          🗄 Archive selected
         </button>
         <button
           id="bulk-clear-btn"
@@ -215,6 +222,14 @@ const STATUS_COLORS: Record<string, string> = {
                         <div class="mt-1">
                           <span class="text-xs text-amber-400 bg-amber-900/20 px-1.5 py-0.5 rounded">
                             ⏰ {new Date(t.scheduled_at).toLocaleString()}
+                          </span>
+                        </div>
+                      )}
+                      {/* Escalated badge */}
+                      {t.priority_escalated_at && (
+                        <div class="mt-1">
+                          <span class="text-xs text-orange-400 bg-orange-900/20 px-1.5 py-0.5 rounded">
+                            ⬆️ escalated
                           </span>
                         </div>
                       )}
@@ -335,12 +350,10 @@ const STATUS_COLORS: Record<string, string> = {
     updateToolbar();
   });
 
-  // ── Bulk API call ────────────────────────────────────────────────────────
-  async function bulkAction(action: "cancel" | "retry") {
+  // ── Bulk API call (legacy: retry via bulk-action) ────────────────────────
+  async function bulkRetry() {
     if (selected.size === 0) return;
-    const btn = action === "cancel"
-      ? document.getElementById("bulk-cancel-btn")!
-      : document.getElementById("bulk-retry-btn")!;
+    const btn = document.getElementById("bulk-retry-btn")!;
     const origText = btn.textContent;
     btn.textContent = "Working…";
     (btn as HTMLButtonElement).disabled = true;
@@ -349,14 +362,14 @@ const STATUS_COLORS: Record<string, string> = {
       const res = await fetch("/api/tasks/bulk-action", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ task_ids: [...selected], action }),
+        body: JSON.stringify({ task_ids: [...selected], action: "retry" }),
       });
       const data = await res.json();
       if (res.ok) {
         const s = data.succeeded?.length ?? 0;
         const f = data.failed?.length ?? 0;
         showToast(
-          `✓ ${action === "cancel" ? "Cancelled" : "Retried"} ${s} task${s !== 1 ? "s" : ""}${f > 0 ? ` (${f} skipped)` : ""}`,
+          `✓ Retried ${s} task${s !== 1 ? "s" : ""}${f > 0 ? ` (${f} skipped)` : ""}`,
           true
         );
         setTimeout(() => window.location.reload(), 1200);
@@ -372,8 +385,79 @@ const STATUS_COLORS: Record<string, string> = {
     }
   }
 
-  document.getElementById("bulk-cancel-btn")?.addEventListener("click", () => bulkAction("cancel"));
-  document.getElementById("bulk-retry-btn")?.addEventListener("click", () => bulkAction("retry"));
+  // ── Bulk cancel ──────────────────────────────────────────────────────────
+  async function bulkCancel() {
+    if (selected.size === 0) return;
+    const btn = document.getElementById("bulk-cancel-btn")!;
+    const origText = btn.textContent;
+    btn.textContent = "Cancelling…";
+    (btn as HTMLButtonElement).disabled = true;
+
+    try {
+      const res = await fetch("/api/tasks/bulk-cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ task_ids: [...selected] }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        const n = data.cancelled ?? 0;
+        const sk = data.skipped ?? 0;
+        showToast(
+          `✓ Cancelled ${n} task${n !== 1 ? "s" : ""}${sk > 0 ? ` (${sk} skipped)` : ""}`,
+          true
+        );
+        setTimeout(() => window.location.reload(), 1200);
+      } else {
+        showToast(`Error: ${data.detail ?? "Unknown error"}`, false);
+        btn.textContent = origText;
+        (btn as HTMLButtonElement).disabled = false;
+      }
+    } catch {
+      showToast("Network error. Please try again.", false);
+      btn.textContent = origText;
+      (btn as HTMLButtonElement).disabled = false;
+    }
+  }
+
+  // ── Bulk archive ─────────────────────────────────────────────────────────
+  async function bulkArchive() {
+    if (selected.size === 0) return;
+    const btn = document.getElementById("bulk-archive-btn")!;
+    const origText = btn.textContent;
+    btn.textContent = "Archiving…";
+    (btn as HTMLButtonElement).disabled = true;
+
+    try {
+      const res = await fetch("/api/tasks/bulk-archive", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ task_ids: [...selected] }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        const n = data.archived ?? 0;
+        const sk = data.skipped ?? 0;
+        showToast(
+          `✓ Archived ${n} task${n !== 1 ? "s" : ""}${sk > 0 ? ` (${sk} skipped — must be in terminal state)` : ""}`,
+          true
+        );
+        setTimeout(() => window.location.reload(), 1200);
+      } else {
+        showToast(`Error: ${data.detail ?? "Unknown error"}`, false);
+        btn.textContent = origText;
+        (btn as HTMLButtonElement).disabled = false;
+      }
+    } catch {
+      showToast("Network error. Please try again.", false);
+      btn.textContent = origText;
+      (btn as HTMLButtonElement).disabled = false;
+    }
+  }
+
+  document.getElementById("bulk-cancel-btn")?.addEventListener("click", bulkCancel);
+  document.getElementById("bulk-archive-btn")?.addEventListener("click", bulkArchive);
+  document.getElementById("bulk-retry-btn")?.addEventListener("click", bulkRetry);
 
   // ── Export selected ──────────────────────────────────────────────────────
   document.getElementById("bulk-export-btn")?.addEventListener("click", async () => {

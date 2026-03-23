@@ -156,13 +156,14 @@ class TaskDB(Base):
             "open",                           # Human task: available in marketplace
             "assigned",                       # Human task: claimed by a worker
             "completed", "failed", "cancelled",
+            "archived",                       # Soft-archived terminal task
             name="task_status_enum",
         ),
         default="pending",
         nullable=False,
     )
     priority = Column(
-        SAEnum("low", "normal", "high", "urgent", name="task_priority_enum"),
+        SAEnum("low", "normal", "high", "urgent", "critical", name="task_priority_enum"),
         default="normal",
         nullable=False,
     )
@@ -215,6 +216,9 @@ class TaskDB(Base):
 
     # Deferred execution — if set and in the future, sweeper holds until time arrives
     scheduled_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Priority auto-escalation — set once when priority is bumped by the sweeper
+    priority_escalated_at = Column(DateTime(timezone=True), nullable=True)
 
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     started_at = Column(DateTime(timezone=True), nullable=True)
@@ -1226,4 +1230,20 @@ class TaskDependencyDB(Base):
         nullable=False,
         index=True,
     )
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+class WorkerEndorsementDB(Base):
+    """Requester endorsement of a worker after task completion."""
+    __tablename__ = "worker_endorsements"
+    __table_args__ = (
+        UniqueConstraint("worker_id", "requester_id", "task_id", name="uq_worker_endorsement"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    worker_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    requester_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    task_id = Column(UUID(as_uuid=True), ForeignKey("tasks.id"), nullable=False)
+    skill_tag = Column(String(100), nullable=True)   # e.g. "data labeling", "fast turnaround"
+    note = Column(Text, nullable=True)               # max 500 chars
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)

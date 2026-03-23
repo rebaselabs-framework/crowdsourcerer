@@ -10,6 +10,8 @@ const { id } = Astro.params as { id: string };
 
 let profile: any = null;
 let verifiedSkills: any[] = [];
+let endorsements: any[] = [];
+let endorsementCount = 0;
 let error = "";
 
 try {
@@ -19,6 +21,20 @@ try {
   ]);
 } catch (e: any) {
   error = e.message ?? "Worker not found";
+}
+
+if (profile) {
+  try {
+    const [endorsementsData, countData] = await Promise.all([
+      apiFetch<any>(`/v1/workers/${id}/endorsements?limit=20`).catch(() => ({ items: [], total: 0 })),
+      apiFetch<any>(`/v1/workers/${id}/endorsements/count`).catch(() => ({ count: 0 })),
+    ]);
+    endorsements = endorsementsData.items ?? [];
+    endorsementCount = countData.count ?? 0;
+  } catch (_) {
+    endorsements = [];
+    endorsementCount = 0;
+  }
 }
 
 function levelLabel(level: number): string {
@@ -220,8 +236,54 @@ const title = profile ? `${profile.name ?? "Worker"} — CrowdSorcerer` : "Worke
           </div>
         )}
 
+        {/* ── Endorsements ─────────────────────────────────── */}
+        <div class="bg-gray-800 border border-gray-700 rounded-xl p-6">
+          <div class="flex items-center justify-between mb-4">
+            <h2 class="text-lg font-semibold text-white flex items-center gap-2">
+              ⭐ Endorsements
+              <span class="text-sm font-normal text-gray-400">({endorsementCount})</span>
+            </h2>
+          </div>
+          {endorsements.length === 0 ? (
+            <p class="text-sm text-gray-500">No endorsements yet.</p>
+          ) : (
+            <div class="space-y-4">
+              {endorsements.map((e: any) => (
+                <div class="border-b border-gray-700 pb-4 last:border-0 last:pb-0">
+                  <div class="flex items-start gap-3">
+                    <div class="w-7 h-7 rounded-full bg-violet-900/40 border border-violet-700 flex items-center justify-center text-xs text-violet-300 flex-shrink-0">
+                      ⭐
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <div class="flex flex-wrap gap-1.5 items-center mb-1">
+                        <span class="text-xs text-gray-400">A requester</span>
+                        {e.skill_tag && (
+                          <span class="px-2 py-0.5 bg-violet-900/40 border border-violet-700/60 text-violet-300 text-xs rounded-full">
+                            {e.skill_tag}
+                          </span>
+                        )}
+                        <span class="text-xs text-gray-600">
+                          {new Date(e.created_at).toLocaleDateString()}
+                        </span>
+                      </div>
+                      {e.note && (
+                        <p class="text-sm text-gray-300 leading-relaxed">"{e.note}"</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {endorsementCount > 20 && (
+                <p class="text-xs text-gray-500 text-center pt-1">
+                  Showing 20 of {endorsementCount} endorsements
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+
         {/* ── No content placeholder ────────────────────────── */}
-        {profile.skills?.length === 0 && profile.badges?.length === 0 && (
+        {profile.skills?.length === 0 && profile.badges?.length === 0 && endorsementCount === 0 && (
           <div class="bg-gray-800 border border-gray-700 rounded-xl p-8 text-center text-gray-400">
             <p class="text-4xl mb-3">🌱</p>
             <p>This worker is just getting started.</p>

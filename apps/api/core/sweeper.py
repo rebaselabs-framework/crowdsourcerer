@@ -22,7 +22,7 @@ import structlog
 from sqlalchemy import select, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from models.db import TaskDB, TaskAssignmentDB, UserDB, SLABreachDB, TaskDependencyDB
+from models.db import TaskDB, TaskAssignmentDB, UserDB, SLABreachDB, TaskDependencyDB, NotificationDB
 from core.webhooks import fire_webhook_for_task
 
 logger = structlog.get_logger()
@@ -558,6 +558,106 @@ async def _sweep_task_dependencies(session_factory: async_sessionmaker) -> int:
     return unblocked
 
 
+async def _sweep_priority_escalation(session_factory: async_sessionmaker) -> int:
+    """Auto-escalate priority for tasks that have been open/pending past SLA thresholds.
+
+    Thresholds:
+      low    open for 48 h → normal
+      normal open for 24 h → high
+      high   open for 12 h → critical
+      critical: no escalation
+
+    Each task is only escalated once (tracked via priority_escalated_at).
+    Fires an in-app notification and a task.priority_escalated webhook event.
+    """
+    from core.notify import create_notification, NotifType
+    from core.webhooks import fire_persistent_endpoints
+
+    ESCALATION_MAP = {
+        "low":    ("normal",   timedelta(hours=48)),
+        "normal": ("high",     timedelta(hours=24)),
+        "high":   ("critical", timedelta(hours=12)),
+    }
+
+    escalated = 0
+    now = datetime.now(timezone.utc)
+
+    async with session_factory() as db:
+        try:
+            result = await db.execute(
+                select(TaskDB).where(
+                    TaskDB.status.in_(["open", "pending"]),
+                    TaskDB.priority_escalated_at.is_(None),  # only escalate once
+                )
+            )
+            tasks = result.scalars().all()
+
+            for task in tasks:
+                priority = task.priority or "normal"
+                if priority not in ESCALATION_MAP:
+                    continue  # critical or unknown — skip
+
+                new_priority, threshold = ESCALATION_MAP[priority]
+                age = now - (task.created_at if task.created_at.tzinfo else task.created_at.replace(tzinfo=timezone.utc))
+                if age < threshold:
+                    continue  # not yet past SLA
+
+                try:
+                    old_priority = task.priority
+                    task.priority = new_priority
+                    task.priority_escalated_at = now
+
+                    # In-app notification for task owner
+                    await create_notification(
+                        db,
+                        task.user_id,
+                        NotifType.SYSTEM,
+                        "Task priority auto-escalated",
+                        f"Task priority auto-escalated to {new_priority}",
+                        link=f"/dashboard/tasks/{task.id}",
+                    )
+
+                    await db.commit()
+
+                    # Fire webhook event
+                    wh_extra = {
+                        "old_priority": old_priority,
+                        "new_priority": new_priority,
+                        "escalated_at": now.isoformat(),
+                        "task_type": task.type,
+                    }
+                    if task.webhook_url:
+                        asyncio.create_task(fire_webhook_for_task(
+                            task=task,
+                            event_type="task.priority_escalated",
+                            extra=wh_extra,
+                        ))
+                    asyncio.create_task(fire_persistent_endpoints(
+                        user_id=str(task.user_id),
+                        task_id=str(task.id),
+                        event_type="task.priority_escalated",
+                        extra=wh_extra,
+                    ))
+
+                    escalated += 1
+                    logger.info(
+                        "sweeper.priority_escalated",
+                        task_id=str(task.id),
+                        old_priority=old_priority,
+                        new_priority=new_priority,
+                    )
+
+                except Exception:  # noqa: BLE001
+                    logger.exception("sweeper.priority_escalation_error", task_id=str(task.id))
+                    await db.rollback()
+
+        except Exception:  # noqa: BLE001
+            logger.exception("sweeper.priority_escalation_sweep_error")
+            await db.rollback()
+
+    return escalated
+
+
 async def run_sweeper(session_factory: async_sessionmaker, interval: int = SWEEP_INTERVAL_SECONDS):
     """Infinite loop: sweep, sleep, repeat. Designed to run as an asyncio background task."""
     logger.info("sweeper.started", interval_seconds=interval)
@@ -592,6 +692,14 @@ async def run_sweeper(session_factory: async_sessionmaker, interval: int = SWEEP
             await _sweep_sla_breaches(session_factory)
         except Exception:  # noqa: BLE001
             logger.exception("sweeper.sla_check_error")
+
+        # Auto-escalate task priorities past SLA thresholds
+        try:
+            escalated = await _sweep_priority_escalation(session_factory)
+            if escalated:
+                logger.info("sweeper.priority_escalated_total", count=escalated)
+        except Exception:  # noqa: BLE001
+            logger.exception("sweeper.priority_escalation_check_error")
 
         # Send weekly digest on Monday mornings
         try:
