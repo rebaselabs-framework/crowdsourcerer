@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, text, case
 
 from core.auth import get_current_user_id
+from core.scopes import require_scope, SCOPE_ANALYTICS_READ
 from core.database import get_db
 from models.db import TaskDB, CreditTransactionDB, OrganizationDB, OrgMemberDB, UserDB
 from models.schemas import RequesterOverviewOut, OrgAnalyticsOut, CostBreakdownOut
@@ -29,7 +30,7 @@ async def requester_overview(
     days: int = Query(30, ge=1, le=365),
     org_id: Optional[UUID] = None,
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_scope(SCOPE_ANALYTICS_READ)),
 ):
     """Overview of your tasks and credit usage."""
     uid = UUID(user_id)
@@ -146,7 +147,7 @@ async def org_analytics(
     org_id: UUID,
     days: int = Query(30, ge=1, le=365),
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_scope(SCOPE_ANALYTICS_READ)),
 ):
     """Per-organization analytics — members, task volume, cost."""
     uid = UUID(user_id)
@@ -262,7 +263,7 @@ async def cost_breakdown(
     months: int = Query(6, ge=1, le=24),
     org_id: Optional[UUID] = None,
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_scope(SCOPE_ANALYTICS_READ)),
 ):
     """Detailed credit cost breakdown by task type, execution mode, and time."""
     uid = UUID(user_id)

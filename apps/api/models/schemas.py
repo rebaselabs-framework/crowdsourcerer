@@ -172,7 +172,13 @@ class PaginatedTasks(BaseModel):
 
 class ApiKeyCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=255)
-    scopes: list[str] = Field(default_factory=list)
+    scopes: list[str] = Field(
+        default_factory=list,
+        description=(
+            "List of scope strings (e.g. 'tasks:read', 'tasks:write'). "
+            "Empty list = full access (legacy behaviour)."
+        ),
+    )
 
 
 class ApiKeyOut(BaseModel):
@@ -192,6 +198,7 @@ class ApiKeyCreateResponse(BaseModel):
     id: UUID
     key: str  # plaintext — only returned once
     name: str
+    scopes: list[str] = Field(default_factory=list)
     created_at: datetime
 
 

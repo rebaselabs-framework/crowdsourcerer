@@ -1,0 +1,457 @@
+---
+/**
+ * Requester Hub — Mission control for task requesters.
+ * Shows live KPIs, recent activity, cost estimator, and quick-action links.
+ */
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Object.fromEntries(
+  Astro.cookies.getAll().map((c) => [c.name, c.value])
+));
+if (!token) return Astro.redirect("/login");
+
+let user: any = null;
+let credits: any = null;
+let overview: any = null;
+let recentTasks: any = null;
+let failedTasks: any = null;
+let costs: any = null;
+let quota: any = null;
+
+try {
+  [user, credits, overview, recentTasks, failedTasks, costs, quota] = await Promise.all([
+    apiFetch<any>("/v1/users/me", { token }),
+    apiFetch<any>("/v1/credits", { token }),
+    apiFetch<any>("/v1/analytics/overview?days=30", { token }).catch(() => null),
+    apiFetch<any>("/v1/tasks?page_size=8", { token }).catch(() => null),
+    apiFetch<any>("/v1/tasks?status=failed&page_size=5", { token }).catch(() => null),
+    apiFetch<any>("/v1/analytics/costs?months=3", { token }).catch(() => null),
+    apiFetch<any>("/v1/quota", { token }).catch(() => null),
+  ]);
+} catch (e) {
+  return Astro.redirect("/login");
+}
+
+// ── Derived stats ─────────────────────────────────────────────────────────────
+const totalTasks = overview?.total_tasks ?? 0;
+const completedTasks = overview?.completed_tasks ?? 0;
+const failedCount = overview?.failed_tasks ?? 0;
+const successRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+const avgMs = overview?.avg_completion_ms;
+const avgSec = avgMs != null ? (avgMs / 1000).toFixed(1) : null;
+const creditsSpent = overview?.credits_spent ?? 0;
+
+// Task type breakdown from costs
+const byType: Array<{ type: string; count: number; credits: number }> =
+  costs?.by_type?.slice(0, 6) ?? [];
+
+// Daily tasks sparkline data (last 7 days)
+const dailySeries: Array<{ date: string; tasks: number }> =
+  (overview?.daily_tasks ?? []).slice(-7);
+const sparkMax = Math.max(...dailySeries.map((d) => d.tasks), 1);
+
+function fmt(d: string) {
+  return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+---
+
+<Layout title="Requester Hub — CrowdSorcerer">
+  <div class="max-w-6xl mx-auto px-4 sm:px-6 py-8">
+
+    <!-- ── Header ─────────────────────────────────────────────────────────── -->
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+      <div>
+        <div class="text-sm text-gray-500 mb-1">
+          <a href="/dashboard" class="hover:text-gray-300 transition-colors">Dashboard</a>
+          <span class="mx-2">›</span>
+          <span>Requester Hub</span>
+        </div>
+        <h1 class="text-2xl font-bold">Requester Hub</h1>
+        <p class="text-gray-400 text-sm mt-0.5">
+          Mission control for your tasks, costs, and automations
+        </p>
+      </div>
+      <div class="flex items-center gap-3">
+        <a href="/dashboard/new-task"
+          class="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium rounded-lg transition-colors whitespace-nowrap">
+          + New Task
+        </a>
+        <a href="/dashboard/batch-upload"
+          class="px-4 py-2 border border-gray-700 hover:border-gray-500 text-gray-300 text-sm font-medium rounded-lg transition-colors whitespace-nowrap">
+          📤 Batch Upload
+        </a>
+      </div>
+    </div>
+
+    <!-- ── KPI strip (30-day) ──────────────────────────────────────────────── -->
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
+      <div class="bg-gray-900 border border-gray-800 rounded-2xl p-5">
+        <div class="flex items-center justify-between mb-1">
+          <div class="text-xs text-gray-400">Credits balance</div>
+          <a href="/dashboard/credits" class="text-xs text-violet-400 hover:text-violet-300">Top up →</a>
+        </div>
+        <div class="text-2xl font-bold text-violet-300">
+          {(credits?.available ?? 0).toLocaleString()}
+        </div>
+        <div class="text-xs text-gray-500 mt-0.5">
+          ≈ ${((credits?.available ?? 0) / 100).toFixed(2)} USD
+        </div>
+      </div>
+      <div class="bg-gray-900 border border-gray-800 rounded-2xl p-5">
+        <div class="text-xs text-gray-400 mb-1">Tasks (30d)</div>
+        <div class="text-2xl font-bold">{totalTasks.toLocaleString()}</div>
+        <div class="text-xs text-gray-500 mt-0.5">
+          {completedTasks} completed · {failedCount} failed
+        </div>
+      </div>
+      <div class="bg-gray-900 border border-gray-800 rounded-2xl p-5">
+        <div class="text-xs text-gray-400 mb-1">Success rate</div>
+        <div class={`text-2xl font-bold ${successRate >= 90 ? "text-emerald-300" : successRate >= 70 ? "text-yellow-300" : "text-red-300"}`}>
+          {successRate}%
+        </div>
+        <div class="text-xs text-gray-500 mt-0.5">
+          {totalTasks > 0 ? `of ${totalTasks} tasks` : "No tasks yet"}
+        </div>
+      </div>
+      <div class="bg-gray-900 border border-gray-800 rounded-2xl p-5">
+        <div class="text-xs text-gray-400 mb-1">Credits spent (30d)</div>
+        <div class="text-2xl font-bold text-orange-300">
+          {creditsSpent.toLocaleString()}
+        </div>
+        <div class="text-xs text-gray-500 mt-0.5">
+          ≈ ${(creditsSpent / 100).toFixed(2)} USD
+        </div>
+      </div>
+    </div>
+
+    <div class="grid lg:grid-cols-3 gap-6 mb-6">
+
+      <!-- ── Daily Activity Sparkline ──────────────────────────────────────── -->
+      <div class="lg:col-span-2 bg-gray-900 border border-gray-800 rounded-2xl p-6">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-sm font-semibold">Daily Tasks (last 7 days)</h2>
+          <a href="/dashboard/analytics" class="text-xs text-violet-400 hover:text-violet-300">Full analytics →</a>
+        </div>
+        {dailySeries.length > 0 ? (
+          <div class="flex items-end gap-2 h-20">
+            {dailySeries.map((d) => {
+              const pct = Math.round((d.tasks / sparkMax) * 100);
+              return (
+                <div class="flex-1 flex flex-col items-center gap-1">
+                  <div class="text-xs text-gray-500">{d.tasks}</div>
+                  <div class="w-full bg-violet-600/80 hover:bg-violet-500 rounded-t transition-all"
+                    style={`height: ${Math.max(4, pct)}%`}
+                    title={`${fmt(d.date)}: ${d.tasks} tasks`}></div>
+                  <div class="text-xs text-gray-600 rotate-0 leading-none">
+                    {new Date(d.date).toLocaleDateString("en-US", { weekday: "short" })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div class="flex items-center justify-center h-20 text-gray-600 text-sm">
+            No task data yet
+          </div>
+        )}
+
+        <!-- Avg completion time -->
+        {avgSec && (
+          <div class="mt-4 pt-4 border-t border-gray-800 flex items-center gap-2 text-xs text-gray-400">
+            <span>⏱</span>
+            <span>Avg completion: <strong class="text-gray-200">{avgSec}s</strong></span>
+          </div>
+        )}
+      </div>
+
+      <!-- ── Quota usage ──────────────────────────────────────────────────── -->
+      <div class="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-sm font-semibold">Plan Quota</h2>
+          <a href="/dashboard/quota" class="text-xs text-violet-400 hover:text-violet-300">Details →</a>
+        </div>
+        {quota ? (
+          <div class="space-y-3">
+            {[
+              { label: "Tasks today", used: quota.tasks?.used ?? 0, limit: quota.tasks?.limit },
+              { label: "Pipelines", used: quota.pipelines?.used ?? 0, limit: quota.pipelines?.limit },
+              { label: "Pipeline runs today", used: quota.pipeline_runs?.used ?? 0, limit: quota.pipeline_runs?.limit },
+            ].map(({ label, used, limit }) => {
+              const pct = limit != null ? Math.min(100, Math.round((used / limit) * 100)) : 0;
+              const unlimited = limit == null;
+              return (
+                <div>
+                  <div class="flex justify-between text-xs mb-1">
+                    <span class="text-gray-400">{label}</span>
+                    {unlimited ? (
+                      <span class="text-emerald-400">∞</span>
+                    ) : (
+                      <span class={pct >= 90 ? "text-red-400" : pct >= 70 ? "text-yellow-400" : "text-gray-300"}>
+                        {used} / {limit}
+                      </span>
+                    )}
+                  </div>
+                  {!unlimited && (
+                    <div class="bg-gray-700 rounded-full h-1.5">
+                      <div class={`h-1.5 rounded-full transition-all ${pct >= 90 ? "bg-red-500" : pct >= 70 ? "bg-yellow-500" : "bg-violet-500"}`}
+                        style={`width:${pct}%`}></div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            <div class="pt-2 text-xs text-gray-500">
+              Plan: <span class="text-gray-300 capitalize">{user?.plan ?? "free"}</span>
+              {user?.plan !== "enterprise" && (
+                <a href="/dashboard/billing" class="ml-2 text-violet-400 hover:text-violet-300">Upgrade →</a>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div class="text-gray-600 text-sm text-center py-4">Unable to load quota</div>
+        )}
+      </div>
+    </div>
+
+    <div class="grid lg:grid-cols-2 gap-6 mb-6">
+
+      <!-- ── Cost by task type ───────────────────────────────────────────── -->
+      <div class="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-sm font-semibold">Cost by Task Type (3 months)</h2>
+          <a href="/dashboard/analytics?view=costs" class="text-xs text-violet-400 hover:text-violet-300">Full breakdown →</a>
+        </div>
+        {byType.length > 0 ? (
+          <div class="space-y-2.5">
+            {byType.map(({ type, count, credits: cr }) => {
+              const totalCr = byType.reduce((s, t) => s + t.credits, 1);
+              const pct = Math.round((cr / totalCr) * 100);
+              return (
+                <div>
+                  <div class="flex justify-between text-xs mb-1">
+                    <span class="text-gray-300 font-mono">{type}</span>
+                    <span class="text-gray-400">{cr.toLocaleString()} cr · {count} tasks</span>
+                  </div>
+                  <div class="bg-gray-700 rounded-full h-1.5">
+                    <div class="h-1.5 rounded-full bg-violet-500/70" style={`width:${pct}%`}></div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div class="text-gray-600 text-sm text-center py-6">No cost data yet</div>
+        )}
+      </div>
+
+      <!-- ── Failed tasks with quick-rerun ──────────────────────────────── -->
+      <div class="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-sm font-semibold">Recent Failures</h2>
+          <a href="/dashboard/tasks?status=failed" class="text-xs text-violet-400 hover:text-violet-300">View all →</a>
+        </div>
+        {failedTasks?.items?.length > 0 ? (
+          <div class="divide-y divide-gray-800/60 -mx-2">
+            {failedTasks.items.map((t: any) => (
+              <div class="flex items-center justify-between px-2 py-2.5">
+                <div class="min-w-0">
+                  <div class="flex items-center gap-2">
+                    <span class="font-mono text-xs text-red-300">{t.type}</span>
+                    <span class="text-xs text-gray-600">#{t.id.slice(0, 8)}</span>
+                  </div>
+                  {t.error && (
+                    <p class="text-xs text-gray-600 mt-0.5 truncate max-w-xs">{t.error}</p>
+                  )}
+                </div>
+                <div class="flex items-center gap-2 ml-3 shrink-0">
+                  <a href={`/dashboard/tasks/${t.id}`}
+                    class="text-xs text-gray-400 hover:text-gray-200 transition-colors">View</a>
+                  <form method="POST" action={`/dashboard/tasks/${t.id}`}>
+                    <input type="hidden" name="action" value="rerun" />
+                    <button type="submit"
+                      class="text-xs px-2 py-1 rounded border border-emerald-700/50 text-emerald-300 hover:bg-emerald-900/30 transition-colors">
+                      ↺ Rerun
+                    </button>
+                  </form>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div class="text-center py-8">
+            <div class="text-3xl mb-2">✅</div>
+            <p class="text-gray-500 text-sm">No recent failures</p>
+          </div>
+        )}
+      </div>
+    </div>
+
+    <!-- ── Cost Estimator ────────────────────────────────────────────────── -->
+    <div class="bg-gray-900 border border-violet-800/30 rounded-2xl p-6 mb-6">
+      <div class="flex items-center gap-2 mb-4">
+        <span class="text-lg">🧮</span>
+        <h2 class="text-sm font-semibold">Cost Estimator</h2>
+        <span class="text-xs text-gray-500 ml-1">— estimate before you create</span>
+      </div>
+
+      <div class="grid sm:grid-cols-4 gap-4 mb-4">
+        <div>
+          <label class="block text-xs text-gray-400 mb-1.5">Task type</label>
+          <select id="est-type"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-violet-500">
+            <option value="llm_generate" data-cost="1">llm_generate (1 cr)</option>
+            <option value="data_transform" data-cost="2">data_transform (2 cr)</option>
+            <option value="document_parse" data-cost="3">document_parse (3 cr)</option>
+            <option value="code_execute" data-cost="3">code_execute (3 cr)</option>
+            <option value="screenshot" data-cost="2">screenshot (2 cr)</option>
+            <option value="pii_detect" data-cost="2">pii_detect (2 cr)</option>
+            <option value="entity_lookup" data-cost="5">entity_lookup (5 cr)</option>
+            <option value="web_intel" data-cost="5">web_intel (5 cr)</option>
+            <option value="web_research" data-cost="10">web_research (10 cr)</option>
+            <option value="audio_transcribe" data-cost="8">audio_transcribe (8 cr)</option>
+            <option value="human_label" data-cost="0" data-human="true">Human task (custom)</option>
+          </select>
+        </div>
+
+        <div id="est-volume-col">
+          <label class="block text-xs text-gray-400 mb-1.5">Volume (tasks)</label>
+          <input type="number" id="est-volume" value="10" min="1" max="10000"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-violet-500" />
+        </div>
+
+        <div id="est-human-col" class="hidden">
+          <label class="block text-xs text-gray-400 mb-1.5">Worker reward (credits)</label>
+          <input type="number" id="est-reward" value="5" min="1" max="10000"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-violet-500" />
+        </div>
+
+        <div id="est-workers-col" class="hidden">
+          <label class="block text-xs text-gray-400 mb-1.5">Workers per task</label>
+          <input type="number" id="est-workers" value="1" min="1" max="10"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-violet-500" />
+        </div>
+
+        <div class="flex items-end">
+          <div class="bg-gray-800/80 border border-gray-700 rounded-xl px-4 py-2.5 w-full">
+            <div class="text-xs text-gray-400 mb-0.5">Estimated total</div>
+            <div class="text-xl font-bold text-violet-300" id="est-total">10 cr</div>
+            <div class="text-xs text-gray-500" id="est-usd">≈ $0.10 USD</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Plan suggestion -->
+      <div id="est-plan-hint" class="text-xs text-gray-500 hidden">
+        💡 At this volume, consider upgrading to <strong class="text-violet-300"></strong> plan.
+      </div>
+
+      <div class="flex items-center gap-3 mt-3">
+        <a href="/dashboard/new-task" id="est-create-btn"
+          class="text-xs px-3 py-1.5 bg-violet-700 hover:bg-violet-600 text-white rounded-lg transition-colors">
+          Create this task →
+        </a>
+        <a href="/dashboard/batch-upload"
+          class="text-xs px-3 py-1.5 border border-gray-700 hover:border-gray-500 text-gray-300 rounded-lg transition-colors">
+          Batch upload CSV
+        </a>
+        <a href="/dashboard/marketplace"
+          class="text-xs px-3 py-1.5 border border-gray-700 hover:border-gray-500 text-gray-300 rounded-lg transition-colors">
+          Use a template
+        </a>
+      </div>
+    </div>
+
+    <!-- ── Quick actions grid ─────────────────────────────────────────────── -->
+    <h2 class="text-sm font-semibold text-gray-400 mb-3">Quick Actions</h2>
+    <div class="grid grid-cols-3 sm:grid-cols-6 gap-3">
+      {[
+        { href: "/dashboard/new-task",     icon: "➕", label: "New Task",      sub: "Single task" },
+        { href: "/dashboard/batch-upload", icon: "📤", label: "Batch Upload", sub: "CSV → tasks" },
+        { href: "/dashboard/marketplace",  icon: "🏪", label: "Templates",    sub: "1-click create" },
+        { href: "/dashboard/pipelines",    icon: "⛓️", label: "Pipelines",    sub: "Chain tasks" },
+        { href: "/dashboard/analytics",    icon: "📊", label: "Analytics",    sub: "Usage & costs" },
+        { href: "/dashboard/tasks",        icon: "📋", label: "All Tasks",    sub: "History" },
+        { href: "/dashboard/review",       icon: "✅", label: "Review",       sub: "Submissions" },
+        { href: "/dashboard/webhooks",     icon: "📡", label: "Webhooks",     sub: "Events" },
+        { href: "/dashboard/experiments",  icon: "🧪", label: "A/B Tests",   sub: "Experiments" },
+        { href: "/dashboard/api-keys",     icon: "🔑", label: "API Keys",     sub: "Manage" },
+        { href: "/dashboard/sla",          icon: "⏱",  label: "SLA",         sub: "Deadlines" },
+        { href: "/dashboard/billing",      icon: "💳", label: "Billing",      sub: "Plan & credits" },
+      ].map(({ href, icon, label, sub }) => (
+        <a href={href}
+          class="bg-gray-900 border border-gray-800 hover:border-gray-600 rounded-xl p-3 transition-colors flex flex-col items-center text-center gap-1">
+          <span class="text-xl">{icon}</span>
+          <div class="text-xs font-medium">{label}</div>
+          <div class="text-xs text-gray-600">{sub}</div>
+        </a>
+      ))}
+    </div>
+  </div>
+</Layout>
+
+<script define:vars={{ creditBalance: credits?.available ?? 0 }}>
+  // ── Cost estimator logic ──────────────────────────────────────────────────
+  const AI_COSTS: Record<string, number> = {
+    llm_generate: 1, data_transform: 2, document_parse: 3, code_execute: 3,
+    screenshot: 2, pii_detect: 2, entity_lookup: 5, web_intel: 5,
+    web_research: 10, audio_transcribe: 8,
+  };
+
+  function update() {
+    const typeEl = document.getElementById("est-type") as HTMLSelectElement;
+    const volEl  = document.getElementById("est-volume") as HTMLInputElement;
+    const rewardEl = document.getElementById("est-reward") as HTMLInputElement;
+    const workersEl = document.getElementById("est-workers") as HTMLInputElement;
+    const totalEl = document.getElementById("est-total")!;
+    const usdEl   = document.getElementById("est-usd")!;
+    const humanCol = document.getElementById("est-human-col")!;
+    const workersCol = document.getElementById("est-workers-col")!;
+    const hintEl  = document.getElementById("est-plan-hint")!;
+
+    const selectedOpt = typeEl.options[typeEl.selectedIndex];
+    const isHuman = selectedOpt.dataset.human === "true";
+    humanCol.classList.toggle("hidden", !isHuman);
+    workersCol.classList.toggle("hidden", !isHuman);
+
+    const volume = Math.max(1, parseInt(volEl.value) || 1);
+    let total: number;
+    if (isHuman) {
+      const reward = Math.max(1, parseInt(rewardEl?.value) || 5);
+      const workers = Math.max(1, parseInt(workersEl?.value) || 1);
+      const fee = Math.max(1, Math.round(reward * workers * 0.2));
+      total = (reward * workers + fee) * volume;
+    } else {
+      const cost = parseInt(selectedOpt.dataset.cost ?? "1");
+      total = cost * volume;
+    }
+
+    totalEl.textContent = `${total.toLocaleString()} cr`;
+    usdEl.textContent   = `≈ $${(total / 100).toFixed(2)} USD`;
+
+    // Plan suggestion
+    if (volume >= 500) {
+      hintEl.classList.remove("hidden");
+      hintEl.querySelector("strong")!.textContent = "Pro";
+    } else if (volume >= 100) {
+      hintEl.classList.remove("hidden");
+      hintEl.querySelector("strong")!.textContent = "Starter";
+    } else {
+      hintEl.classList.add("hidden");
+    }
+
+    // Colour total based on balance
+    if (total > creditBalance) {
+      totalEl.className = "text-xl font-bold text-red-300";
+      usdEl.textContent += " ⚠️ low credits";
+    } else {
+      totalEl.className = "text-xl font-bold text-violet-300";
+    }
+  }
+
+  document.getElementById("est-type")?.addEventListener("change", update);
+  document.getElementById("est-volume")?.addEventListener("input", update);
+  document.getElementById("est-reward")?.addEventListener("input", update);
+  document.getElementById("est-workers")?.addEventListener("input", update);
+  update();
+</script>

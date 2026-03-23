@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
 
 from core.auth import get_current_user_id
+from core.scopes import require_scope, SCOPE_PIPELINES_READ, SCOPE_PIPELINES_WRITE
 from core.database import get_db
 from models.db import (
     TaskPipelineDB, TaskPipelineStepDB, TaskPipelineRunDB,
@@ -193,7 +194,7 @@ def _evaluate_condition(
 async def create_pipeline(
     req: PipelineCreateRequest,
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_scope(SCOPE_PIPELINES_WRITE)),
 ):
     """Create a new pipeline definition."""
     # Enforce pipeline-total quota
@@ -258,7 +259,7 @@ async def list_pipelines(
     page_size: int = Query(20, ge=1, le=100),
     org_id: Optional[UUID] = None,
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_scope(SCOPE_PIPELINES_READ)),
 ):
     """List pipelines for the current user."""
     uid = UUID(user_id)
@@ -293,7 +294,7 @@ async def list_pipelines(
 async def get_pipeline(
     pipeline_id: UUID,
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_scope(SCOPE_PIPELINES_READ)),
 ):
     """Get a pipeline with all its steps."""
     pipeline = await _get_pipeline(pipeline_id, user_id, db)
@@ -321,7 +322,7 @@ async def get_pipeline(
 async def delete_pipeline(
     pipeline_id: UUID,
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_scope(SCOPE_PIPELINES_WRITE)),
 ):
     """Delete a pipeline definition (and all its runs)."""
     pipeline = await _get_pipeline(pipeline_id, user_id, db)
@@ -337,7 +338,7 @@ async def run_pipeline(
     req: PipelineRunRequest,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_scope(SCOPE_PIPELINES_WRITE)),
 ):
     """Start a new pipeline run with the given input."""
     pipeline = await _get_pipeline(pipeline_id, user_id, db)
@@ -422,7 +423,7 @@ async def list_pipeline_runs(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_scope(SCOPE_PIPELINES_READ)),
 ):
     """List all runs for a pipeline."""
     pipeline = await _get_pipeline(pipeline_id, user_id, db)
@@ -459,7 +460,7 @@ async def list_pipeline_runs(
 async def get_pipeline_run(
     run_id: UUID,
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_scope(SCOPE_PIPELINES_READ)),
 ):
     """Get the current state of a pipeline run."""
     run_result = await db.execute(
@@ -489,7 +490,7 @@ async def retry_pipeline_run(
     run_id: UUID,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_scope(SCOPE_PIPELINES_WRITE)),
 ):
     """Retry a failed or cancelled pipeline run from the first failed step.
 
@@ -613,7 +614,7 @@ async def retry_pipeline_run(
 async def cancel_pipeline_run(
     run_id: UUID,
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_scope(SCOPE_PIPELINES_WRITE)),
 ):
     """Cancel a running pipeline."""
     run_result = await db.execute(

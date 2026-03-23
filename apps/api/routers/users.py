@@ -8,6 +8,7 @@ from sqlalchemy import select
 
 from core.auth import get_current_user_id, generate_api_key
 from core.database import get_db
+from core.scopes import ALL_SCOPES, SCOPE_DESCRIPTIONS
 from models.db import UserDB, ApiKeyDB
 from models.schemas import (
     ApiKeyCreateRequest, ApiKeyCreateResponse, ApiKeyOut, UserOut,
@@ -41,12 +42,34 @@ async def list_api_keys(
     return result.scalars().all()
 
 
+@router.get("/scopes", tags=["api-keys"])
+async def list_scopes():
+    """Return the catalogue of available API key scopes.
+
+    Pass any subset of these scope strings when creating an API key.
+    An empty ``scopes`` array on a key means **full access** (all scopes granted).
+    """
+    return [
+        {"scope": s, "description": SCOPE_DESCRIPTIONS.get(s, "")}
+        for s in ALL_SCOPES
+    ]
+
+
 @router.post("/api-keys", response_model=ApiKeyCreateResponse, status_code=201)
 async def create_api_key(
     req: ApiKeyCreateRequest,
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ):
+    # Validate scopes — reject unknown scope strings
+    unknown = [s for s in req.scopes if s not in ALL_SCOPES]
+    if unknown:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown scope(s): {', '.join(unknown)}. "
+                   f"Valid scopes: {', '.join(ALL_SCOPES)}",
+        )
+
     plaintext, hashed = generate_api_key()
     prefix = plaintext[:12]  # "csk_" + 8 chars
 
@@ -65,6 +88,7 @@ async def create_api_key(
         id=key.id,
         key=plaintext,
         name=key.name,
+        scopes=key.scopes or [],
         created_at=key.created_at,
     )
 

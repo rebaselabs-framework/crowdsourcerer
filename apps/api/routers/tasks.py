@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
 from core.auth import get_current_user_id
+from core.scopes import require_scope, SCOPE_TASKS_READ, SCOPE_TASKS_WRITE
 from core.database import get_db
 from core.webhooks import fire_webhook_for_task, fire_persistent_endpoints, ALL_EVENTS, DEFAULT_EVENTS
 from models.db import TaskDB, UserDB, CreditTransactionDB, TaskAssignmentDB, WebhookLogDB
@@ -49,7 +50,7 @@ async def create_task(
     req: TaskCreateRequest,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_scope(SCOPE_TASKS_WRITE)),
 ):
     is_human = req.type in HUMAN_TASK_TYPES
 
@@ -239,7 +240,7 @@ async def create_tasks_batch(
     req: BatchTaskCreateRequest,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_scope(SCOPE_TASKS_WRITE)),
 ):
     """Create up to 50 tasks in a single API call.
 
@@ -589,7 +590,7 @@ async def list_tasks(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_scope(SCOPE_TASKS_READ)),
 ):
     q = select(TaskDB).where(TaskDB.user_id == user_id)
     if status:
@@ -631,7 +632,7 @@ async def bulk_task_action(
     req: BulkActionRequest,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_scope(SCOPE_TASKS_WRITE)),
 ):
     """Perform a bulk action (cancel or retry) on multiple tasks at once.
 
@@ -689,7 +690,7 @@ async def bulk_task_action(
 async def get_task(
     task_id: UUID,
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_scope(SCOPE_TASKS_READ)),
 ):
     result = await db.execute(
         select(TaskDB).where(TaskDB.id == task_id, TaskDB.user_id == user_id)
@@ -704,7 +705,7 @@ async def get_task(
 async def cancel_task(
     task_id: UUID,
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_scope(SCOPE_TASKS_WRITE)),
 ):
     result = await db.execute(
         select(TaskDB).where(TaskDB.id == task_id, TaskDB.user_id == user_id)
@@ -1384,3 +1385,140 @@ async def _run_task(task_id: str, user_id: str):
 
 
 # _send_webhook / _log_webhook removed — logic moved to core/webhooks.py
+
+
+# ─── Task Rerun ──────────────────────────────────────────────────────────────
+
+@router.post("/{task_id}/rerun", response_model=TaskCreateResponse, status_code=201)
+async def rerun_task(
+    task_id: UUID,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(require_scope(SCOPE_TASKS_WRITE)),
+):
+    """Clone an existing task and immediately queue it for execution.
+
+    Copies all settings from the original task (type, input, priority,
+    metadata, webhook config, human-task options, etc.) into a brand-new
+    task owned by the same user.  Credits are deducted from the requester's
+    balance exactly as for a new task.
+
+    Returns the new task_id together with the credit cost.
+    """
+    result = await db.execute(
+        select(TaskDB).where(TaskDB.id == task_id, TaskDB.user_id == user_id)
+    )
+    original = result.scalar_one_or_none()
+    if not original:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    is_human = original.execution_mode == "human"
+    if is_human:
+        worker_reward = original.worker_reward_credits or HUMAN_TASK_BASE_CREDITS.get(original.type, 2)
+        platform_fee = max(1, int(worker_reward * original.assignments_required * 0.2))
+        estimated_credits = worker_reward * original.assignments_required + platform_fee
+    else:
+        estimated_credits = TASK_CREDITS.get(original.type, 5)
+
+    # Deduct credits
+    user_result = await db.execute(select(UserDB).where(UserDB.id == user_id))
+    user = user_result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Use org pool if original task had an org
+    if original.org_id:
+        from models.db import OrganizationDB
+        org_result = await db.execute(
+            select(OrganizationDB).where(OrganizationDB.id == original.org_id)
+        )
+        org = org_result.scalar_one_or_none()
+        if org and org.credits >= estimated_credits:
+            org.credits -= estimated_credits
+        elif user.credits >= estimated_credits:
+            user.credits -= estimated_credits
+        else:
+            raise HTTPException(
+                status_code=402,
+                detail=f"Insufficient credits. Need {estimated_credits}, have {user.credits}.",
+            )
+    else:
+        if user.credits < estimated_credits:
+            raise HTTPException(
+                status_code=402,
+                detail=f"Insufficient credits. Need {estimated_credits}, have {user.credits}.",
+            )
+        user.credits -= estimated_credits
+
+    new_task = TaskDB(
+        user_id=user_id,
+        org_id=original.org_id,
+        type=original.type,
+        status="queued" if not is_human else "open",
+        execution_mode=original.execution_mode,
+        input=original.input,
+        priority=original.priority,
+        metadata=original.metadata,
+        webhook_url=original.webhook_url,
+        webhook_events=original.webhook_events,
+        credits_used=estimated_credits,
+        # Human-task fields
+        worker_reward_credits=original.worker_reward_credits,
+        assignments_required=original.assignments_required,
+        assignments_completed=0,
+        claim_timeout_minutes=original.claim_timeout_minutes,
+        task_instructions=original.task_instructions,
+        consensus_strategy=original.consensus_strategy,
+        min_skill_level=original.min_skill_level,
+        min_reputation_score=original.min_reputation_score,
+    )
+    db.add(new_task)
+
+    # Credit transaction log
+    txn = CreditTransactionDB(
+        user_id=user_id,
+        amount=-estimated_credits,
+        description=f"Task rerun: {original.type} (from {original.id})",
+        task_id=new_task.id,
+    )
+    db.add(txn)
+
+    await db.commit()
+    await db.refresh(new_task)
+
+    logger.info(
+        "task_rerun",
+        original_id=str(task_id),
+        new_task_id=str(new_task.id),
+        user_id=user_id,
+        credits=estimated_credits,
+    )
+
+    # Fire webhook notification if configured
+    try:
+        if new_task.webhook_url or new_task.webhook_events:
+            background_tasks.add_task(
+                fire_webhook_for_task,
+                task=new_task,
+                event_type="task.created",
+                extra={"rerun_of": str(task_id)},
+            )
+        background_tasks.add_task(
+            fire_persistent_endpoints,
+            user_id=user_id,
+            task_id=str(new_task.id),
+            event_type="task.created",
+            extra={"rerun_of": str(task_id)},
+        )
+    except Exception:
+        pass
+
+    # Queue for AI execution immediately
+    if not is_human:
+        background_tasks.add_task(_run_task, str(new_task.id), user_id)
+
+    return TaskCreateResponse(
+        task_id=new_task.id,
+        status=new_task.status,
+        estimated_credits=estimated_credits,
+    )

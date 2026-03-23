@@ -9,23 +9,40 @@ if (!token) return Astro.redirect("/login");
 
 const { id } = Astro.params;
 
-// Handle approve/reject POST actions
+// Handle approve/reject/rerun POST actions
+let rerunError = "";
+let rerunTaskId: string | null = null;
+
 if (Astro.request.method === "POST") {
   const form = await Astro.request.formData();
   const action = form.get("action") as string;
-  const assignmentId = form.get("assignment_id") as string;
-  const reason = form.get("reason") as string | undefined;
 
-  try {
-    await apiFetch(`/v1/tasks/${id}/submissions/${assignmentId}/${action}`, {
-      method: "POST",
-      token,
-      body: JSON.stringify({ reason: reason || null }),
-    });
-  } catch (_) {
-    // Fall through — errors shown on reload
+  if (action === "rerun") {
+    try {
+      const result = await apiFetch<any>(`/v1/tasks/${id}/rerun`, {
+        method: "POST",
+        token,
+      });
+      // Redirect to the new task
+      return Astro.redirect(`/dashboard/tasks/${result.task_id}`);
+    } catch (e: any) {
+      rerunError = e.message ?? "Failed to rerun task";
+    }
+  } else {
+    const assignmentId = form.get("assignment_id") as string;
+    const reason = form.get("reason") as string | undefined;
+
+    try {
+      await apiFetch(`/v1/tasks/${id}/submissions/${assignmentId}/${action}`, {
+        method: "POST",
+        token,
+        body: JSON.stringify({ reason: reason || null }),
+      });
+    } catch (_) {
+      // Fall through — errors shown on reload
+    }
+    return Astro.redirect(`/dashboard/tasks/${id}`);
   }
-  return Astro.redirect(`/dashboard/tasks/${id}`);
 }
 
 let task: any = null;
@@ -205,6 +222,12 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
       <span class="font-mono">{id?.slice(0, 8)}…</span>
     </div>
 
+    {rerunError && (
+      <div class="bg-red-900/30 border border-red-700/50 rounded-xl px-5 py-3 mb-4 text-red-300 text-sm">
+        ⚠️ Rerun failed: {rerunError}
+      </div>
+    )}
+
     {notFound ? (
       <div class="text-center py-20">
         <div class="text-4xl mb-4">🔍</div>
@@ -227,6 +250,17 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
             >
               📊 Analytics
             </a>
+            {/* Rerun button — shown once task is in a terminal state */}
+            {["completed", "failed", "cancelled"].includes(task.status) && (
+              <form method="POST">
+                <input type="hidden" name="action" value="rerun" />
+                <button type="submit"
+                  class="px-3 py-1.5 rounded-lg border border-emerald-700/60 text-sm text-emerald-300 hover:bg-emerald-900/30 hover:text-emerald-200 transition-colors"
+                  title="Clone this task and queue a fresh run">
+                  ↺ Rerun
+                </button>
+              </form>
+            )}
             {/* Live status badge — updated via SSE */}
             <div
               id="status-badge"
