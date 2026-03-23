@@ -114,6 +114,9 @@ async def create_task(
                 },
             )
         user.credits -= estimated_credits
+        # Fire low-credit alert if threshold crossed
+        from core.credit_alerts import maybe_fire_credit_alert
+        await maybe_fire_credit_alert(db, user)
 
     if is_human:
         # Human tasks go to the worker marketplace immediately

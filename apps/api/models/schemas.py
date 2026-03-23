@@ -178,10 +178,12 @@ class ApiKeyCreateRequest(BaseModel):
 class ApiKeyOut(BaseModel):
     id: UUID
     name: str
-    prefix: str
+    key_prefix: str
     scopes: list[str]
     created_at: datetime
     last_used_at: Optional[datetime] = None
+    rate_limit_rpm: Optional[int] = None
+    rate_limit_daily: Optional[int] = None
 
     model_config = {"from_attributes": True}
 
@@ -191,6 +193,28 @@ class ApiKeyCreateResponse(BaseModel):
     key: str  # plaintext — only returned once
     name: str
     created_at: datetime
+
+
+class ApiKeyRateLimitUpdate(BaseModel):
+    """PATCH body to configure per-key rate limits. Null = revert to plan default."""
+    rate_limit_rpm: Optional[int] = Field(None, ge=1, le=10_000, description="Max requests/minute (null = plan default)")
+    rate_limit_daily: Optional[int] = Field(None, ge=1, le=1_000_000, description="Max requests/day (null = plan default)")
+
+
+class ApiKeyRateStatusOut(BaseModel):
+    key_id: UUID
+    key_prefix: str
+    rpm: dict     # {limit, used, remaining, unlimited}
+    daily: dict   # {limit, used, remaining, unlimited}
+
+
+class CreditAlertOut(BaseModel):
+    threshold: Optional[int]  # None = disabled
+    alert_fired: bool         # True if alert has been sent and not yet reset
+
+
+class CreditAlertUpdate(BaseModel):
+    threshold: Optional[int] = Field(None, ge=0, le=1_000_000, description="Alert when credits drop below this. Null = disable.")
 
 
 # ─── Credits ──────────────────────────────────────────────────────────────
@@ -706,6 +730,8 @@ class PipelineStepCreate(BaseModel):
     condition: Optional[str] = None          # JSONPath expression — step runs only if truthy
     next_on_pass: Optional[int] = None       # step_order to jump to on success (None = next)
     next_on_fail: Optional[int] = None       # step_order to jump to on failure (-1 = fail pipeline)
+    # Auto-retry on failure (0 = no retry)
+    max_retries: int = Field(0, ge=0, le=5, description="Auto-retry up to this many times on step failure")
 
 
 class PipelineCreateRequest(BaseModel):
@@ -727,6 +753,7 @@ class PipelineStepOut(BaseModel):
     condition: Optional[str] = None
     next_on_pass: Optional[int] = None
     next_on_fail: Optional[int] = None
+    max_retries: int = 0
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -762,6 +789,7 @@ class PipelineStepRunOut(BaseModel):
     status: str
     input: Optional[dict]
     output: Optional[dict]
+    retry_count: int = 0
     started_at: Optional[datetime]
     completed_at: Optional[datetime]
 

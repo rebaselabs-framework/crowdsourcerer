@@ -159,6 +159,9 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
                     stripe_payment_intent=session.get("payment_intent"),
                 )
                 db.add(txn)
+                # Reset low-credit alert if balance recovered
+                from core.credit_alerts import reset_credit_alert_if_recovered
+                await reset_credit_alert_if_recovered(db, user)
                 await db.commit()
 
     return {"status": "ok"}

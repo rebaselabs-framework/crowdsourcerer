@@ -9,6 +9,31 @@ if (!token) return Astro.redirect("/login");
 
 let user: any = null;
 let transactions: any[] = [];
+let creditAlert: any = null;
+let alertSuccess = "";
+let alertError = "";
+
+// Handle POST (update credit alert threshold)
+if (Astro.request.method === "POST") {
+  const form = await Astro.request.formData();
+  const action = form.get("action") as string;
+  if (action === "set_credit_alert") {
+    const rawThreshold = form.get("threshold") as string;
+    const threshold = rawThreshold ? parseInt(rawThreshold) : null;
+    try {
+      await apiFetch<any>("/v1/users/credit-alert", {
+        method: "PATCH",
+        body: JSON.stringify({ threshold }),
+        token,
+      });
+      alertSuccess = threshold
+        ? `Alert set: you'll be notified when balance drops below ${threshold.toLocaleString()} credits.`
+        : "Credit alert disabled.";
+    } catch (e: any) {
+      alertError = e.message ?? "Failed to update alert";
+    }
+  }
+}
 
 try {
   user = await apiFetch<any>("/v1/users/me", { token });
@@ -21,6 +46,12 @@ try {
   transactions = txRes?.transactions ?? txRes ?? [];
 } catch (_) {
   transactions = [];
+}
+
+try {
+  creditAlert = await apiFetch<any>("/v1/users/credit-alert", { token });
+} catch (_) {
+  creditAlert = null;
 }
 
 const PLAN_FEATURES: Record<string, string[]> = {
@@ -90,6 +121,61 @@ const currentPlan = user?.plan ?? "free";
           </a>
         </div>
       </div>
+    </div>
+
+    <!-- Credit Burn-Rate Alert -->
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 mb-8">
+      <div class="flex items-start justify-between mb-4">
+        <div>
+          <h2 class="text-sm font-semibold text-gray-200">🔔 Low Credit Alert</h2>
+          <p class="text-xs text-gray-400 mt-1">
+            Get notified when your balance drops below a threshold so you never run out unexpectedly.
+          </p>
+        </div>
+        {creditAlert?.alert_fired && (
+          <span class="text-xs bg-red-900/40 text-red-300 border border-red-700/40 px-2 py-1 rounded-full flex-shrink-0">
+            ⚠️ Alert has fired
+          </span>
+        )}
+        {creditAlert?.threshold && !creditAlert.alert_fired && (
+          <span class="text-xs bg-emerald-900/40 text-emerald-300 border border-emerald-700/40 px-2 py-1 rounded-full flex-shrink-0">
+            ✅ Active at {creditAlert.threshold.toLocaleString()} cr
+          </span>
+        )}
+      </div>
+
+      {alertSuccess && (
+        <div class="bg-emerald-900/30 border border-emerald-700/50 rounded-lg p-3 mb-4 text-emerald-300 text-xs">{alertSuccess}</div>
+      )}
+      {alertError && (
+        <div class="bg-red-900/30 border border-red-700/50 rounded-lg p-3 mb-4 text-red-300 text-xs">{alertError}</div>
+      )}
+
+      <form method="POST" class="flex gap-3 items-end">
+        <input type="hidden" name="action" value="set_credit_alert" />
+        <div class="flex-1">
+          <label class="block text-xs text-gray-400 mb-1.5">Alert threshold (credits)</label>
+          <input
+            type="number"
+            name="threshold"
+            min="0"
+            max="1000000"
+            step="100"
+            placeholder="e.g. 500 — leave blank to disable"
+            value={creditAlert?.threshold ?? ""}
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-violet-500 placeholder-gray-600"
+          />
+          <p class="text-xs text-gray-600 mt-1">
+            Current balance: <span class="text-white">{user?.credits?.toLocaleString() ?? 0}</span> credits
+            {creditAlert?.threshold && (
+              <> · Alert at <span class="text-orange-400">{creditAlert.threshold.toLocaleString()}</span></>
+            )}
+          </p>
+        </div>
+        <button type="submit" class="px-4 py-2 bg-violet-700 hover:bg-violet-600 text-white text-sm font-medium rounded-lg transition-colors whitespace-nowrap">
+          Save Alert
+        </button>
+      </form>
     </div>
 
     <!-- Plan comparison -->

@@ -226,6 +226,7 @@ async def create_pipeline(
             condition=step_data.condition,
             next_on_pass=step_data.next_on_pass,
             next_on_fail=step_data.next_on_fail,
+            max_retries=step_data.max_retries or 0,
             created_at=utcnow(),
         )
         db.add(step)
@@ -483,6 +484,131 @@ async def get_pipeline_run(
     return out
 
 
+@router.post("/runs/{run_id}/retry", response_model=PipelineRunOut, status_code=202)
+async def retry_pipeline_run(
+    run_id: UUID,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Retry a failed or cancelled pipeline run from the first failed step.
+
+    Creates a NEW run that reuses the original input but picks up from where
+    the failed run left off. The original run is not modified.
+    """
+    run_result = await db.execute(
+        select(TaskPipelineRunDB).where(
+            TaskPipelineRunDB.id == run_id,
+            TaskPipelineRunDB.user_id == UUID(user_id),
+        )
+    )
+    run = run_result.scalar_one_or_none()
+    if not run:
+        raise HTTPException(status_code=404, detail="Pipeline run not found")
+    if run.status not in ("failed", "cancelled"):
+        raise HTTPException(status_code=400, detail=f"Only failed or cancelled runs can be retried (current: {run.status})")
+
+    # Find the step index to resume from (first step that didn't complete/skip)
+    sr_result = await db.execute(
+        select(TaskPipelineStepRunDB)
+        .where(TaskPipelineStepRunDB.run_id == run_id)
+        .order_by(TaskPipelineStepRunDB.step_order)
+    )
+    step_runs = sr_result.scalars().all()
+    resume_from = 0
+    prior_outputs: list[Optional[dict]] = []
+    for sr in step_runs:
+        if sr.status in ("completed", "skipped"):
+            resume_from = sr.step_order + 1
+            prior_outputs.append(sr.output)
+        else:
+            prior_outputs.append(None)
+            break
+
+    # Load steps
+    steps_result = await db.execute(
+        select(TaskPipelineStepDB)
+        .where(TaskPipelineStepDB.pipeline_id == run.pipeline_id)
+        .order_by(TaskPipelineStepDB.step_order)
+    )
+    steps = steps_result.scalars().all()
+
+    # Pad prior_outputs to full step count
+    while len(prior_outputs) < len(steps):
+        prior_outputs.append(None)
+
+    # Check credits
+    user_result = await db.execute(select(UserDB).where(UserDB.id == UUID(user_id)))
+    user = user_result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    remaining_steps = steps[resume_from:]
+    estimated_credits = sum(
+        TASK_CREDITS.get(s.task_type, 1)
+        for s in remaining_steps
+        if s.execution_mode == "ai"
+    )
+    if user.credits < estimated_credits:
+        raise HTTPException(
+            status_code=402,
+            detail=f"Insufficient credits to retry. Need ~{estimated_credits}, have {user.credits}.",
+        )
+
+    # Create a fresh run record (retry = new run, original preserved)
+    new_run = TaskPipelineRunDB(
+        pipeline_id=run.pipeline_id,
+        user_id=UUID(user_id),
+        status="running",
+        input=run.input,
+        current_step=resume_from,
+        created_at=utcnow(),
+        started_at=utcnow(),
+    )
+    db.add(new_run)
+    await db.flush()
+
+    for step in steps:
+        sr_status = "pending"
+        sr_output = None
+        if step.step_order < resume_from:
+            # Copy results from the original run
+            orig = next((s for s in step_runs if s.step_order == step.step_order), None)
+            if orig:
+                sr_status = orig.status
+                sr_output = orig.output
+        new_sr = TaskPipelineStepRunDB(
+            run_id=new_run.id,
+            step_id=step.id,
+            step_order=step.step_order,
+            status=sr_status,
+            output=sr_output,
+        )
+        db.add(new_sr)
+
+    await db.commit()
+    await db.refresh(new_run)
+
+    background_tasks.add_task(
+        _execute_pipeline_run,
+        new_run.id,
+        str(run.pipeline_id),
+        user_id,
+        resume_from,
+        prior_outputs,
+    )
+
+    new_step_runs = (await db.execute(
+        select(TaskPipelineStepRunDB)
+        .where(TaskPipelineStepRunDB.run_id == new_run.id)
+        .order_by(TaskPipelineStepRunDB.step_order)
+    )).scalars().all()
+
+    out = PipelineRunOut.model_validate(new_run)
+    out.step_runs = [_step_run_out(sr) for sr in new_step_runs]
+    return out
+
+
 @router.post("/runs/{run_id}/cancel", status_code=200)
 async def cancel_pipeline_run(
     run_id: UUID,
@@ -621,58 +747,89 @@ async def _execute_pipeline_run(
                 )
 
                 if step.execution_mode == "ai":
-                    try:
-                        client = get_rebasekit_client()
-                        output = await execute_task(step.task_type, task_input, client)
+                    max_retries = step.max_retries or 0
+                    last_error: Optional[Exception] = None
+                    succeeded = False
 
-                        task = TaskDB(
-                            user_id=UUID(user_id),
-                            type=step.task_type,
-                            status="completed",
-                            execution_mode="ai",
-                            input=task_input,
-                            output=output,
-                            credits_used=TASK_CREDITS.get(step.task_type, 1),
-                            created_at=utcnow(),
-                            started_at=utcnow(),
-                            completed_at=utcnow(),
-                        )
-                        db.add(task)
-                        await db.flush()
-
-                        cost = TASK_CREDITS.get(step.task_type, 1)
-                        user_result = await db.execute(select(UserDB).where(UserDB.id == UUID(user_id)))
-                        user = user_result.scalar_one()
-                        if user.credits >= cost:
-                            user.credits -= cost
-                            txn = CreditTransactionDB(
-                                user_id=user.id,
-                                amount=-cost,
-                                type="charge",
-                                description=f"Pipeline step: {step.name} ({step.task_type})",
-                                task_id=task.id,
+                    for attempt in range(max_retries + 1):  # 0..max_retries inclusive
+                        if attempt > 0:
+                            # Mark as retrying before each retry attempt
+                            sr.status = "retrying"
+                            sr.retry_count = attempt
+                            await db.commit()
+                            logger.info(
+                                "pipeline_step_retrying",
+                                run_id=str(run_id), step=current_idx,
+                                attempt=attempt, max_retries=max_retries,
                             )
-                            db.add(txn)
+                            # Brief backoff: 2^attempt seconds (1s, 2s, 4s ...)
+                            await asyncio.sleep(min(2 ** attempt, 30))
 
-                        sr.task_id = task.id
-                        sr.output = output
-                        sr.status = "completed"
-                        sr.completed_at = utcnow()
-                        step_outputs[current_idx] = output
-                        await db.commit()
+                        try:
+                            client = get_rebasekit_client()
+                            output = await execute_task(step.task_type, task_input, client)
 
+                            task = TaskDB(
+                                user_id=UUID(user_id),
+                                type=step.task_type,
+                                status="completed",
+                                execution_mode="ai",
+                                input=task_input,
+                                output=output,
+                                credits_used=TASK_CREDITS.get(step.task_type, 1),
+                                created_at=utcnow(),
+                                started_at=utcnow(),
+                                completed_at=utcnow(),
+                            )
+                            db.add(task)
+                            await db.flush()
+
+                            cost = TASK_CREDITS.get(step.task_type, 1)
+                            user_result = await db.execute(select(UserDB).where(UserDB.id == UUID(user_id)))
+                            user = user_result.scalar_one()
+                            if user.credits >= cost:
+                                user.credits -= cost
+                                txn = CreditTransactionDB(
+                                    user_id=user.id,
+                                    amount=-cost,
+                                    type="charge",
+                                    description=f"Pipeline step: {step.name} ({step.task_type})",
+                                    task_id=task.id,
+                                )
+                                db.add(txn)
+
+                            sr.task_id = task.id
+                            sr.output = output
+                            sr.status = "completed"
+                            sr.retry_count = attempt
+                            sr.completed_at = utcnow()
+                            step_outputs[current_idx] = output
+                            await db.commit()
+                            succeeded = True
+                            break  # Exit retry loop
+
+                        except (WorkerError, Exception) as e:
+                            last_error = e
+                            logger.warning(
+                                "pipeline_step_attempt_failed",
+                                run_id=str(run_id), step=current_idx,
+                                attempt=attempt, error=str(e),
+                            )
+
+                    if succeeded:
                         # Determine next step (branch on success)
                         current_idx = step.next_on_pass if step.next_on_pass is not None else current_idx + 1
-
-                    except (WorkerError, Exception) as e:
+                    else:
+                        # All attempts failed
                         sr.status = "failed"
+                        sr.retry_count = max_retries
                         sr.completed_at = utcnow()
 
                         # Check if there's an on-failure branch
                         next_fail = step.next_on_fail
                         if next_fail is not None and next_fail >= 0:
                             # Branch to failure recovery step
-                            step_outputs[current_idx] = {"error": str(e), "step": current_idx}
+                            step_outputs[current_idx] = {"error": str(last_error), "step": current_idx}
                             await db.commit()
                             logger.info(
                                 "pipeline_step_failed_branching",
@@ -682,7 +839,7 @@ async def _execute_pipeline_run(
                         else:
                             # Default: fail the pipeline
                             run.status = "failed"
-                            run.error = str(e)
+                            run.error = str(last_error)
                             run.completed_at = utcnow()
                             await db.commit()
                             return
@@ -828,6 +985,7 @@ def _step_out(step: TaskPipelineStepDB):
         condition=step.condition,
         next_on_pass=step.next_on_pass,
         next_on_fail=step.next_on_fail,
+        max_retries=step.max_retries or 0,
         created_at=step.created_at,
     )
 
@@ -841,6 +999,7 @@ def _step_run_out(sr: TaskPipelineStepRunDB):
         status=sr.status,
         input=sr.input,
         output=sr.output,
+        retry_count=sr.retry_count or 0,
         started_at=sr.started_at,
         completed_at=sr.completed_at,
     )

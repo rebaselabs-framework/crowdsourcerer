@@ -271,6 +271,13 @@ function statusBadge(status: string) {
                               )}
                             </div>
                           )}
+                          {(step.max_retries > 0) && (
+                            <div class="mt-1.5">
+                              <span class="text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full">
+                                🔄 max {step.max_retries} {step.max_retries === 1 ? "retry" : "retries"}
+                              </span>
+                            </div>
+                          )}
                         </div>
                       </div>
                       {/* Connector arrow — shows branch indicator if non-sequential */}
@@ -287,8 +294,11 @@ function statusBadge(status: string) {
 
             <!-- Recent Runs -->
             <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-              <div class="p-4 border-b border-gray-100">
+              <div class="p-4 border-b border-gray-100 flex items-center justify-between">
                 <h3 class="font-semibold text-gray-800">Recent Runs ({recentRuns.total})</h3>
+                {recentRuns.total > 10 && (
+                  <span class="text-xs text-gray-400">Showing last 10</span>
+                )}
               </div>
               {recentRuns.items?.length === 0 ? (
                 <div class="p-8 text-center text-gray-400">
@@ -299,24 +309,44 @@ function statusBadge(status: string) {
                   {recentRuns.items?.map((run: any) => (
                     <div class="p-4">
                       <div class="flex items-center justify-between mb-2">
-                        <div class="flex items-center gap-2">
+                        <div class="flex items-center gap-2 flex-wrap">
                           <span class={`px-2 py-0.5 rounded-full text-xs font-medium ${statusBadge(run.status)}`}>
                             {run.status}
                           </span>
                           <span class="text-xs text-gray-400">
                             Step {run.current_step + 1} / {pipelineDetail.steps?.length ?? '?'}
                           </span>
+                          <span class="text-xs text-gray-400">{new Date(run.created_at).toLocaleString()}</span>
                         </div>
-                        <span class="text-xs text-gray-400">{new Date(run.created_at).toLocaleString()}</span>
+                        <div class="flex gap-1.5">
+                          {(run.status === 'failed' || run.status === 'cancelled') && (
+                            <button
+                              class="retry-run-btn text-xs px-2 py-1 bg-amber-100 text-amber-700 hover:bg-amber-200 rounded-lg border border-amber-200 font-medium transition"
+                              data-run-id={run.id}
+                              title="Retry this run from the first failed step"
+                            >
+                              🔄 Retry
+                            </button>
+                          )}
+                          {run.status === 'running' && (
+                            <button
+                              class="cancel-run-btn text-xs px-2 py-1 bg-red-50 text-red-500 hover:bg-red-100 rounded-lg border border-red-200 transition"
+                              data-run-id={run.id}
+                            >
+                              ✕ Cancel
+                            </button>
+                          )}
+                        </div>
                       </div>
-                      <!-- Step run progress -->
+                      <!-- Step run progress bars -->
                       <div class="flex gap-1 mt-2">
                         {run.step_runs?.map((sr: any) => (
                           <div
-                            title={`Step ${sr.step_order}: ${sr.status}`}
+                            title={`Step ${sr.step_order}: ${sr.status}${sr.retry_count > 0 ? ` (${sr.retry_count} retries)` : ''}`}
                             class={`h-2 flex-1 rounded-full ${
                               sr.status === 'completed' ? 'bg-green-400' :
                               sr.status === 'running' ? 'bg-blue-400 animate-pulse' :
+                              sr.status === 'retrying' ? 'bg-yellow-400 animate-pulse' :
                               sr.status === 'failed' ? 'bg-red-400' :
                               sr.status === 'skipped' ? 'bg-gray-300 opacity-50' :
                               'bg-gray-200'
@@ -324,8 +354,80 @@ function statusBadge(status: string) {
                           />
                         ))}
                       </div>
-                      {run.error && (
+                      <!-- Step detail on failure -->
+                      {run.status === 'failed' && run.step_runs?.some((sr: any) => sr.status === 'failed') && (
+                        <div class="mt-2 space-y-0.5">
+                          {run.step_runs.filter((sr: any) => sr.status === 'failed').map((sr: any) => (
+                            <div class="text-xs text-red-500 flex items-center gap-1.5">
+                              <span class="font-medium">Step {sr.step_order}:</span>
+                              {sr.retry_count > 0 && (
+                                <span class="text-orange-500">retried {sr.retry_count}×</span>
+                              )}
+                              {sr.output?.error && (
+                                <span class="text-gray-500 truncate">{sr.output.error}</span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {run.error && !run.step_runs?.some((sr: any) => sr.status === 'failed') && (
                         <p class="text-xs text-red-500 mt-1">{run.error}</p>
+                      )}
+                      <!-- Expandable output / step details -->
+                      {(run.output || run.step_runs?.some((sr: any) => sr.output)) && (
+                        <div class="mt-2">
+                          <button
+                            class="text-xs text-gray-400 hover:text-gray-600 expand-run-btn"
+                            data-run-id={run.id}
+                          >
+                            ▶ Show step outputs
+                          </button>
+                          <div class="hidden run-details mt-2 space-y-2" id={`run-details-${run.id}`}>
+                            {run.step_runs?.filter((sr: any) => sr.output || sr.status !== 'pending').map((sr: any) => (
+                              <div class={`rounded-lg p-2.5 border text-xs ${
+                                sr.status === 'completed' ? 'bg-green-50 border-green-200' :
+                                sr.status === 'failed' ? 'bg-red-50 border-red-200' :
+                                sr.status === 'skipped' ? 'bg-gray-50 border-gray-200 opacity-60' :
+                                'bg-blue-50 border-blue-200'
+                              }`}>
+                                <div class="flex items-center gap-2 mb-1 font-medium text-gray-700">
+                                  <span class="w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center text-xs flex-shrink-0">
+                                    {sr.step_order}
+                                  </span>
+                                  <span class={`px-1.5 py-0.5 rounded-full text-xs ${
+                                    sr.status === 'completed' ? 'bg-green-100 text-green-700' :
+                                    sr.status === 'failed' ? 'bg-red-100 text-red-700' :
+                                    sr.status === 'skipped' ? 'bg-gray-100 text-gray-500' :
+                                    'bg-blue-100 text-blue-700'
+                                  }`}>{sr.status}</span>
+                                  {sr.retry_count > 0 && (
+                                    <span class="text-orange-500">🔄 {sr.retry_count} retries</span>
+                                  )}
+                                  {sr.completed_at && (
+                                    <span class="text-gray-400 ml-auto">
+                                      {sr.started_at && sr.completed_at
+                                        ? `${Math.round((new Date(sr.completed_at).getTime() - new Date(sr.started_at).getTime()) / 1000)}s`
+                                        : ""}
+                                    </span>
+                                  )}
+                                </div>
+                                {sr.output && (
+                                  <pre class="text-gray-600 whitespace-pre-wrap break-words overflow-auto max-h-40 bg-white/60 rounded p-1.5 font-mono text-xs">
+                                    {JSON.stringify(sr.output, null, 2)}
+                                  </pre>
+                                )}
+                              </div>
+                            ))}
+                            {run.output && (
+                              <div class="rounded-lg p-2.5 bg-violet-50 border border-violet-200 text-xs">
+                                <div class="font-medium text-violet-700 mb-1">🏁 Final Pipeline Output</div>
+                                <pre class="text-gray-600 whitespace-pre-wrap break-words overflow-auto max-h-40 font-mono text-xs">
+                                  {JSON.stringify(run.output, null, 2)}
+                                </pre>
+                              </div>
+                            )}
+                          </div>
+                        </div>
                       )}
                     </div>
                   ))}
@@ -427,7 +529,78 @@ function statusBadge(status: string) {
     </div>
   )}
 
-  <script define:vars={{ AI_TYPES, HUMAN_TYPES }}>
+  <script define:vars={{ AI_TYPES, HUMAN_TYPES, clientApiUrl: import.meta.env.PUBLIC_API_URL ?? "" }}>
+    const API = clientApiUrl;
+    const TOKEN = document.cookie.split(";").find(c => c.trim().startsWith("cs_token="))?.split("=")[1] ?? "";
+
+    // ── Retry / Cancel run handlers ────────────────────────────────────────
+    document.addEventListener("click", async (e) => {
+      const retryBtn = e.target.closest(".retry-run-btn");
+      if (retryBtn) {
+        const runId = retryBtn.dataset.runId;
+        retryBtn.textContent = "Retrying…";
+        retryBtn.disabled = true;
+        try {
+          const res = await fetch(`${API}/v1/pipelines/runs/${runId}/retry`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${TOKEN}` },
+          });
+          if (!res.ok) {
+            const d = await res.json().catch(() => ({}));
+            alert(d.detail ?? "Retry failed");
+            retryBtn.textContent = "🔄 Retry";
+            retryBtn.disabled = false;
+          } else {
+            window.location.reload();
+          }
+        } catch (err) {
+          alert("Network error: " + err.message);
+          retryBtn.textContent = "🔄 Retry";
+          retryBtn.disabled = false;
+        }
+        return;
+      }
+
+      const cancelBtn = e.target.closest(".cancel-run-btn");
+      if (cancelBtn) {
+        if (!confirm("Cancel this running pipeline?")) return;
+        const runId = cancelBtn.dataset.runId;
+        cancelBtn.textContent = "Cancelling…";
+        cancelBtn.disabled = true;
+        try {
+          const res = await fetch(`${API}/v1/pipelines/runs/${runId}/cancel`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${TOKEN}` },
+          });
+          if (res.ok || res.status === 200) {
+            window.location.reload();
+          } else {
+            alert("Cancel failed");
+            cancelBtn.disabled = false;
+            cancelBtn.textContent = "✕ Cancel";
+          }
+        } catch (err) {
+          alert("Network error");
+          cancelBtn.disabled = false;
+          cancelBtn.textContent = "✕ Cancel";
+        }
+        return;
+      }
+    });
+
+    // ── Expand/collapse run details ───────────────────────────────────────
+    document.querySelectorAll(".expand-run-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const runId = btn.dataset.runId;
+        const details = document.getElementById(`run-details-${runId}`);
+        if (details) {
+          const isHidden = details.classList.contains("hidden");
+          details.classList.toggle("hidden");
+          btn.textContent = isHidden ? "▼ Hide step outputs" : "▶ Show step outputs";
+        }
+      });
+    });
+
     let steps = [];
 
     function addStep() {
@@ -441,6 +614,7 @@ function statusBadge(status: string) {
         condition: null,
         next_on_pass: null,
         next_on_fail: null,
+        max_retries: 0,
       });
       renderSteps();
     }
@@ -554,6 +728,18 @@ function statusBadge(status: string) {
                     </select>
                   </div>
                 </div>
+                <!-- Auto-retry -->
+                <div>
+                  <label class="text-xs text-gray-500 font-medium">Auto-retry on failure</label>
+                  <select onchange="steps[${i}].max_retries = parseInt(this.value); syncJSON()"
+                    class="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs mt-1">
+                    <option value="0" ${(step.max_retries ?? 0) === 0 ? "selected" : ""}>No retry (fail immediately)</option>
+                    <option value="1" ${step.max_retries === 1 ? "selected" : ""}>Retry 1×</option>
+                    <option value="2" ${step.max_retries === 2 ? "selected" : ""}>Retry 2× (with backoff)</option>
+                    <option value="3" ${step.max_retries === 3 ? "selected" : ""}>Retry 3× (with backoff)</option>
+                    <option value="5" ${step.max_retries === 5 ? "selected" : ""}>Retry 5× (with backoff)</option>
+                  </select>
+                </div>
               </div>
             </div>
           </div>
@@ -582,6 +768,7 @@ function statusBadge(status: string) {
           condition: s.condition || null,
           next_on_pass: s.next_on_pass ?? null,
           next_on_fail: s.next_on_fail ?? null,
+          max_retries: s.max_retries ?? 0,
         }))
       );
     }

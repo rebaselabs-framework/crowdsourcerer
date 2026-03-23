@@ -69,7 +69,7 @@ async def get_current_user_id(
 
     # API key path
     if token.startswith("csk_"):
-        from models.db import ApiKeyDB  # avoid circular import
+        from models.db import ApiKeyDB, UserDB  # avoid circular import
         hashed = _hash_api_key(token)
         result = await db.execute(
             select(ApiKeyDB).where(ApiKeyDB.key_hash == hashed)
@@ -79,6 +79,16 @@ async def get_current_user_id(
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key"
             )
+
+        # Fetch owning user to resolve plan for rate-limit defaults
+        user_result = await db.execute(select(UserDB).where(UserDB.id == api_key.user_id))
+        owner = user_result.scalar_one_or_none()
+        user_plan = owner.plan if owner else "free"
+
+        # Enforce per-key rate limits (RPM + daily)
+        from core.api_key_rate_limit import check_and_record_api_key_rate_limit
+        await check_and_record_api_key_rate_limit(db, api_key, user_plan)
+
         # update last_used_at
         api_key.last_used_at = datetime.now(timezone.utc)
         await db.commit()

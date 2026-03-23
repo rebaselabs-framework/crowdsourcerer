@@ -1,6 +1,6 @@
 ---
 /**
- * API Keys — list, create, revoke, and view per-key usage analytics.
+ * API Keys — list, create, revoke, configure per-key rate limits, and view usage analytics.
  */
 import Layout from "@/layouts/Layout.astro";
 import { apiFetch, getToken } from "@/lib/api";
@@ -13,11 +13,13 @@ if (!token) return Astro.redirect("/login");
 let apiKeys: any[] = [];
 let usageOverview: any = null;
 let error = "";
+let successMsg = "";
 let newKey: string | null = null;
 const selectedKeyId = Astro.url.searchParams.get("key") ?? null;
 let selectedKeyUsage: any = null;
+let selectedKeyRateStatus: any = null;
 
-// Handle POST (create) and DELETE (revoke)
+// Handle POST (create / delete / set-rate-limits)
 if (Astro.request.method === "POST") {
   const form = await Astro.request.formData();
   const action = form.get("action") as string;
@@ -41,6 +43,23 @@ if (Astro.request.method === "POST") {
     } catch (e: any) {
       error = e.message ?? "Failed to revoke key";
     }
+  } else if (action === "set_rate_limits") {
+    const keyId = form.get("key_id") as string;
+    const rpmRaw = form.get("rate_limit_rpm") as string;
+    const dailyRaw = form.get("rate_limit_daily") as string;
+    try {
+      await apiFetch<any>(`/v1/api-keys/${keyId}/rate-limits`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          rate_limit_rpm: rpmRaw ? parseInt(rpmRaw) : null,
+          rate_limit_daily: dailyRaw ? parseInt(dailyRaw) : null,
+        }),
+        token,
+      });
+      successMsg = "Rate limits updated successfully";
+    } catch (e: any) {
+      error = e.message ?? "Failed to update rate limits";
+    }
   }
 }
 
@@ -54,10 +73,13 @@ try {
   return Astro.redirect("/login");
 }
 
-// If a specific key is selected, load its detail usage
+// If a specific key is selected, load its detail usage + rate status
 if (selectedKeyId) {
   try {
-    selectedKeyUsage = await apiFetch<any>(`/v1/api-keys/${selectedKeyId}/usage?days=30`, { token });
+    [selectedKeyUsage, selectedKeyRateStatus] = await Promise.all([
+      apiFetch<any>(`/v1/api-keys/${selectedKeyId}/usage?days=30`, { token }).catch(() => null),
+      apiFetch<any>(`/v1/api-keys/${selectedKeyId}/rate-status`, { token }).catch(() => null),
+    ]);
   } catch (_) {}
 }
 
@@ -73,12 +95,25 @@ if (usageOverview?.keys) {
   }
 }
 
+// Build a map of keyId -> key detail for rate limit display
+const keyMap: Record<string, any> = {};
+for (const k of apiKeys) {
+  keyMap[k.id] = k;
+}
+const selectedKey = selectedKeyId ? keyMap[selectedKeyId] : null;
+
 // Simple sparkline: compute bar heights (0-100%) for last 7 days from selectedKeyUsage
 function buildSparkline(daily: any[]): number[] {
   const last7 = daily.slice(-7);
   const max = Math.max(...last7.map((d: any) => d.requests), 1);
   return last7.map((d: any) => Math.round((d.requests / max) * 100));
 }
+
+// Rate status helpers
+const rpm = selectedKeyRateStatus?.rpm;
+const daily = selectedKeyRateStatus?.daily;
+const rpmPct = rpm && !rpm.unlimited ? Math.min(100, Math.round((rpm.used / rpm.limit) * 100)) : 0;
+const dailyPct = daily && !daily.unlimited ? Math.min(100, Math.round((daily.used / daily.limit) * 100)) : 0;
 ---
 
 <Layout title="API Keys — CrowdSorcerer">
@@ -102,6 +137,9 @@ function buildSparkline(daily: any[]): number[] {
 
     {error && (
       <div class="bg-red-900/30 border border-red-700/50 rounded-xl p-4 mb-6 text-red-300 text-sm">{error}</div>
+    )}
+    {successMsg && (
+      <div class="bg-emerald-900/30 border border-emerald-700/50 rounded-xl p-4 mb-6 text-emerald-300 text-sm">✅ {successMsg}</div>
     )}
 
     {newKey && (
@@ -144,69 +182,153 @@ function buildSparkline(daily: any[]): number[] {
       </div>
     )}
 
-    <!-- Key Detail Usage Panel -->
-    {selectedKeyUsage && (
-      <div class="bg-gray-900 border border-violet-800/40 rounded-2xl p-6 mb-8">
-        <div class="flex items-center justify-between mb-5">
+    <!-- Key Detail Panel (usage + rate limits) -->
+    {selectedKeyId && selectedKey && (
+      <div class="bg-gray-900 border border-violet-800/40 rounded-2xl p-6 mb-8 space-y-6">
+        <!-- Header -->
+        <div class="flex items-center justify-between">
           <div>
-            <h2 class="text-base font-semibold">{selectedKeyUsage.key_name}</h2>
-            <code class="text-xs text-violet-300">{selectedKeyUsage.key_prefix}…</code>
+            <h2 class="text-base font-semibold">{selectedKey.name}</h2>
+            <code class="text-xs text-violet-300">{selectedKey.key_prefix}…</code>
           </div>
-          <a href="/dashboard/api-keys" class="text-xs text-gray-400 hover:text-gray-200">x Close</a>
-        </div>
-        <!-- Stats row -->
-        <div class="grid grid-cols-3 gap-4 mb-5">
-          <div class="bg-gray-800/60 rounded-xl p-4 text-center">
-            <div class="text-xl font-bold">{selectedKeyUsage.total_requests.toLocaleString()}</div>
-            <div class="text-xs text-gray-400">Requests</div>
-          </div>
-          <div class="bg-gray-800/60 rounded-xl p-4 text-center">
-            <div class={`text-xl font-bold ${selectedKeyUsage.total_errors > 0 ? "text-red-400" : ""}`}>
-              {selectedKeyUsage.total_errors.toLocaleString()}
-            </div>
-            <div class="text-xs text-gray-400">Errors</div>
-          </div>
-          <div class="bg-gray-800/60 rounded-xl p-4 text-center">
-            <div class="text-xl font-bold text-violet-300">{selectedKeyUsage.total_credits_used.toLocaleString()}</div>
-            <div class="text-xs text-gray-400">Credits used</div>
-          </div>
+          <a href="/dashboard/api-keys" class="text-xs text-gray-400 hover:text-gray-200">✕ Close</a>
         </div>
 
-        <!-- Sparkline bar chart (last 7 days) -->
-        {selectedKeyUsage.daily?.length > 0 && (
-          <div class="mb-5">
-            <div class="text-xs text-gray-500 mb-2">Daily requests (last {Math.min(selectedKeyUsage.daily.length, 7)} days)</div>
-            <div class="flex items-end gap-1 h-16">
-              {buildSparkline(selectedKeyUsage.daily).map((h: number, i: number) => (
-                <div class="flex-1 bg-violet-600/70 rounded-sm transition-all hover:bg-violet-500"
-                  style={`height: ${Math.max(h, 4)}%`}
-                  title={`Day ${i+1}: ${selectedKeyUsage.daily.slice(-7)[i]?.requests ?? 0} req`}>
-                </div>
-              ))}
-            </div>
+        <!-- ── Rate Limit Configuration ─────────────────────────────────── -->
+        <div>
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-sm font-semibold text-gray-300">Rate Limits</h3>
+            <span class="text-xs text-gray-500">Null = plan default</span>
           </div>
-        )}
 
-        <!-- Top endpoints -->
-        {selectedKeyUsage.top_endpoints?.length > 0 && (
-          <div>
-            <div class="text-xs text-gray-500 mb-2">Top endpoints</div>
-            <div class="space-y-1">
-              {selectedKeyUsage.top_endpoints.slice(0, 5).map((ep: any) => (
-                <div class="flex items-center gap-3 text-xs">
-                  <span class={`px-1.5 py-0.5 rounded font-mono ${
-                    ep.method === "POST" ? "bg-green-900/40 text-green-400" :
-                    ep.method === "DELETE" ? "bg-red-900/40 text-red-400" :
-                    "bg-blue-900/40 text-blue-400"
-                  }`}>{ep.method}</span>
-                  <span class="text-gray-300 font-mono flex-1 truncate">{ep.endpoint}</span>
-                  <span class="text-gray-400">{ep.requests.toLocaleString()} req</span>
-                  {ep.avg_response_ms && (
-                    <span class="text-gray-500">{ep.avg_response_ms}ms</span>
+          <!-- Current live usage meters -->
+          {selectedKeyRateStatus && (
+            <div class="grid sm:grid-cols-2 gap-3 mb-4">
+              <div class="bg-gray-800/60 rounded-xl p-3">
+                <div class="flex justify-between text-xs mb-1.5">
+                  <span class="text-gray-400">Requests / minute</span>
+                  {rpm?.unlimited ? (
+                    <span class="text-emerald-400">Unlimited</span>
+                  ) : (
+                    <span class={rpmPct >= 90 ? "text-red-400" : rpmPct >= 70 ? "text-yellow-400" : "text-gray-300"}>
+                      {rpm?.used ?? 0} / {rpm?.limit ?? "—"}
+                    </span>
                   )}
                 </div>
-              ))}
+                {!rpm?.unlimited && (
+                  <div class="bg-gray-700 rounded-full h-1.5">
+                    <div class={`h-1.5 rounded-full transition-all ${rpmPct >= 90 ? "bg-red-500" : rpmPct >= 70 ? "bg-yellow-500" : "bg-violet-500"}`}
+                         style={`width:${rpmPct}%`}></div>
+                  </div>
+                )}
+              </div>
+              <div class="bg-gray-800/60 rounded-xl p-3">
+                <div class="flex justify-between text-xs mb-1.5">
+                  <span class="text-gray-400">Requests / day</span>
+                  {daily?.unlimited ? (
+                    <span class="text-emerald-400">Unlimited</span>
+                  ) : (
+                    <span class={dailyPct >= 90 ? "text-red-400" : dailyPct >= 70 ? "text-yellow-400" : "text-gray-300"}>
+                      {daily?.used ?? 0} / {daily?.limit ?? "—"}
+                    </span>
+                  )}
+                </div>
+                {!daily?.unlimited && (
+                  <div class="bg-gray-700 rounded-full h-1.5">
+                    <div class={`h-1.5 rounded-full transition-all ${dailyPct >= 90 ? "bg-red-500" : dailyPct >= 70 ? "bg-yellow-500" : "bg-violet-500"}`}
+                         style={`width:${dailyPct}%`}></div>
+                  </div>
+                )}
+              </div>
             </div>
+          )}
+
+          <!-- Set limits form -->
+          <form method="POST" class="grid sm:grid-cols-3 gap-3 items-end">
+            <input type="hidden" name="action" value="set_rate_limits" />
+            <input type="hidden" name="key_id" value={selectedKeyId} />
+            <div>
+              <label class="block text-xs text-gray-400 mb-1.5">Requests / minute (RPM)</label>
+              <input type="number" name="rate_limit_rpm" min="1" max="10000"
+                placeholder={`Plan default (${selectedKeyRateStatus?.rpm?.limit ?? "—"})`}
+                value={selectedKey.rate_limit_rpm ?? ""}
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-violet-500 placeholder-gray-600" />
+              <p class="text-xs text-gray-600 mt-1">Leave blank to use plan default</p>
+            </div>
+            <div>
+              <label class="block text-xs text-gray-400 mb-1.5">Requests / day</label>
+              <input type="number" name="rate_limit_daily" min="1" max="1000000"
+                placeholder={`Plan default (${selectedKeyRateStatus?.daily?.limit ?? "—"})`}
+                value={selectedKey.rate_limit_daily ?? ""}
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-violet-500 placeholder-gray-600" />
+              <p class="text-xs text-gray-600 mt-1">Leave blank to use plan default</p>
+            </div>
+            <div>
+              <button type="submit" class="w-full px-4 py-2 bg-violet-700 hover:bg-violet-600 text-white text-sm font-medium rounded-lg transition-colors">
+                Save Limits
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <!-- ── Usage Statistics ───────────────────────────────────────────── -->
+        {selectedKeyUsage && (
+          <div>
+            <h3 class="text-sm font-semibold text-gray-300 mb-3">30-Day Usage</h3>
+            <div class="grid grid-cols-3 gap-4 mb-4">
+              <div class="bg-gray-800/60 rounded-xl p-4 text-center">
+                <div class="text-xl font-bold">{selectedKeyUsage.total_requests.toLocaleString()}</div>
+                <div class="text-xs text-gray-400">Requests</div>
+              </div>
+              <div class="bg-gray-800/60 rounded-xl p-4 text-center">
+                <div class={`text-xl font-bold ${selectedKeyUsage.total_errors > 0 ? "text-red-400" : ""}`}>
+                  {selectedKeyUsage.total_errors.toLocaleString()}
+                </div>
+                <div class="text-xs text-gray-400">Errors</div>
+              </div>
+              <div class="bg-gray-800/60 rounded-xl p-4 text-center">
+                <div class="text-xl font-bold text-violet-300">{selectedKeyUsage.total_credits_used.toLocaleString()}</div>
+                <div class="text-xs text-gray-400">Credits used</div>
+              </div>
+            </div>
+
+            <!-- Sparkline bar chart (last 7 days) -->
+            {selectedKeyUsage.daily?.length > 0 && (
+              <div class="mb-4">
+                <div class="text-xs text-gray-500 mb-2">Daily requests (last {Math.min(selectedKeyUsage.daily.length, 7)} days)</div>
+                <div class="flex items-end gap-1 h-16">
+                  {buildSparkline(selectedKeyUsage.daily).map((h: number, i: number) => (
+                    <div class="flex-1 bg-violet-600/70 rounded-sm transition-all hover:bg-violet-500"
+                      style={`height: ${Math.max(h, 4)}%`}
+                      title={`Day ${i+1}: ${selectedKeyUsage.daily.slice(-7)[i]?.requests ?? 0} req`}>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <!-- Top endpoints -->
+            {selectedKeyUsage.top_endpoints?.length > 0 && (
+              <div>
+                <div class="text-xs text-gray-500 mb-2">Top endpoints</div>
+                <div class="space-y-1">
+                  {selectedKeyUsage.top_endpoints.slice(0, 5).map((ep: any) => (
+                    <div class="flex items-center gap-3 text-xs">
+                      <span class={`px-1.5 py-0.5 rounded font-mono ${
+                        ep.method === "POST" ? "bg-green-900/40 text-green-400" :
+                        ep.method === "DELETE" ? "bg-red-900/40 text-red-400" :
+                        "bg-blue-900/40 text-blue-400"
+                      }`}>{ep.method}</span>
+                      <span class="text-gray-300 font-mono flex-1 truncate">{ep.endpoint}</span>
+                      <span class="text-gray-400">{ep.requests.toLocaleString()} req</span>
+                      {ep.avg_response_ms && (
+                        <span class="text-gray-500">{ep.avg_response_ms}ms</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -232,6 +354,11 @@ function buildSparkline(daily: any[]): number[] {
                     <code class="text-xs bg-gray-800 px-2 py-0.5 rounded text-violet-300 font-mono">
                       {key.key_prefix}…
                     </code>
+                    {(key.rate_limit_rpm || key.rate_limit_daily) && (
+                      <span class="text-xs bg-orange-900/40 text-orange-300 px-2 py-0.5 rounded border border-orange-700/40">
+                        Custom limits
+                      </span>
+                    )}
                   </div>
                   <div class="flex items-center gap-4 text-xs text-gray-500">
                     <span>Created {fmt(key.created_at)}</span>
@@ -244,6 +371,12 @@ function buildSparkline(daily: any[]): number[] {
                         )}
                       </>
                     )}
+                    {key.rate_limit_rpm && (
+                      <span class="text-orange-400">{key.rate_limit_rpm} rpm</span>
+                    )}
+                    {key.rate_limit_daily && (
+                      <span class="text-orange-400">{key.rate_limit_daily.toLocaleString()}/day</span>
+                    )}
                   </div>
                 </div>
                 <div class="flex items-center gap-2 ml-4">
@@ -255,7 +388,7 @@ function buildSparkline(daily: any[]): number[] {
                         : "border-gray-700 text-gray-400 hover:border-gray-500 hover:text-gray-200"
                     }`}
                   >
-                    {isSelected ? "Hide usage" : "Usage"}
+                    {isSelected ? "Hide" : "Details"}
                   </a>
                   <form method="POST" onsubmit="return confirm('Revoke this API key?')">
                     <input type="hidden" name="action" value="delete" />

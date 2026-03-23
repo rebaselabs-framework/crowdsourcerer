@@ -70,6 +70,10 @@ class UserDB(Base):
     avatar_url = Column(String(512), nullable=True)
     profile_public = Column(Boolean, default=True, nullable=False)
 
+    # Credit burn-rate alerts
+    credit_alert_threshold = Column(Integer, nullable=True)          # fire alert when credits drop below this
+    credit_alert_fired = Column(Boolean, default=False, nullable=False)  # reset when topped up
+
     # TOTP 2FA
     totp_secret = Column(String(64), nullable=True)
     totp_enabled = Column(Boolean, default=False, nullable=False)
@@ -100,9 +104,31 @@ class ApiKeyDB(Base):
     last_used_at = Column(DateTime(timezone=True), nullable=True)
     request_count = Column(Integer, default=0, nullable=False)
     total_credits_used = Column(Integer, default=0, nullable=False)
+    # Per-key overrides for rate limiting (None = use plan default)
+    rate_limit_rpm = Column(Integer, nullable=True)    # requests per minute
+    rate_limit_daily = Column(Integer, nullable=True)  # requests per day
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
 
     user = relationship("UserDB", back_populates="api_keys")
+    rate_buckets = relationship("ApiKeyRateBucketDB", back_populates="api_key",
+                                cascade="all, delete-orphan")
+
+
+class ApiKeyRateBucketDB(Base):
+    """Per-API-key sliding-window rate-limit counters."""
+    __tablename__ = "api_key_rate_buckets"
+    __table_args__ = (
+        UniqueConstraint("api_key_id", "window_key", name="uq_api_key_rate_bucket"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    api_key_id = Column(UUID(as_uuid=True), ForeignKey("api_keys.id", ondelete="CASCADE"),
+                        nullable=False, index=True)
+    window_key = Column(String(64), nullable=False)   # e.g. "rpm:2026-03-23T14:05" or "daily:2026-03-23"
+    count = Column(Integer, default=0, nullable=False)
+    reset_at = Column(DateTime(timezone=True), nullable=False)
+
+    api_key = relationship("ApiKeyDB", back_populates="rate_buckets")
 
 
 class TaskDB(Base):
@@ -514,6 +540,8 @@ class TaskPipelineStepDB(Base):
     next_on_pass = Column(Integer, nullable=True)
     # Step index to go to on failure: -1 = fail pipeline (default), >= 0 = branch
     next_on_fail = Column(Integer, nullable=True)
+    # Auto-retry on failure: 0 = no retry, N = retry up to N times before failing
+    max_retries = Column(Integer, default=0, nullable=False)
 
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
 
@@ -564,13 +592,14 @@ class TaskPipelineStepRunDB(Base):
     task_id = Column(UUID(as_uuid=True), ForeignKey("tasks.id", ondelete="SET NULL"),
                      nullable=True)  # The actual Task created for this step
     status = Column(
-        SAEnum("pending", "running", "completed", "failed", "skipped",
+        SAEnum("pending", "running", "completed", "failed", "skipped", "retrying",
                name="step_run_status_enum"),
         default="pending",
         nullable=False,
     )
     input = Column(JSON, nullable=True)    # Resolved input for this step
     output = Column(JSON, nullable=True)   # Output from the task
+    retry_count = Column(Integer, default=0, nullable=False)  # How many retries so far
     started_at = Column(DateTime(timezone=True), nullable=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)
 
