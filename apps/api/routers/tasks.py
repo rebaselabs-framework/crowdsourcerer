@@ -1351,6 +1351,25 @@ async def task_status_stream(
 
 # ─── Background task runner ────────────────────────────────────────────────
 
+def _result_preview(output: dict | None, max_chars: int = 200) -> str:
+    """Extract a short human-readable snippet from a task output blob.
+
+    Tries common keys (``result``, ``text``, ``summary``, ``output``,
+    ``content``, ``answer``) in order, falls back to the raw JSON repr.
+    Returns at most *max_chars* characters, ellipsised.
+    """
+    if not output:
+        return ""
+    for key in ("result", "text", "summary", "output", "content", "answer", "response"):
+        val = output.get(key)
+        if isinstance(val, str) and val.strip():
+            snippet = val.strip()
+            return snippet[:max_chars] + ("…" if len(snippet) > max_chars else "")
+    # Fallback: render whole dict as JSON and truncate
+    raw = json.dumps(output, ensure_ascii=False)
+    return raw[:max_chars] + ("…" if len(raw) > max_chars else "")
+
+
 async def _run_task(task_id: str, user_id: str):
     """Execute an AI task against RebaseKit and store the result."""
     from core.database import AsyncSessionLocal  # avoid circular import at module level
@@ -1379,12 +1398,20 @@ async def _run_task(task_id: str, user_id: str):
             task.completed_at = datetime.now(timezone.utc)
             task.credits_used = TASK_CREDITS.get(task.type, 5)
 
-            # In-app notification: task completed
+            # Build result preview snippet for notifications + webhooks
+            preview = _result_preview(output)
+            task_label = task.type.replace("_", " ")
+            notif_body = (
+                f"Your {task_label} task finished in {duration_ms}ms."
+                + (f" — {preview}" if preview else "")
+            )
+
+            # In-app notification: task completed (with preview)
             await create_notification(
                 db, user_id,
                 NotifType.TASK_COMPLETED,
                 "Task completed ✅",
-                f"Your {task.type.replace('_', ' ')} task finished successfully in {duration_ms}ms.",
+                notif_body,
                 link=f"/dashboard/tasks/{task_id}",
             )
             await db.commit()
@@ -1400,9 +1427,13 @@ async def _run_task(task_id: str, user_id: str):
             user_result = await db.execute(select(UserDB).where(UserDB.id == user_id))
             owner = user_result.scalar_one_or_none()
 
-            # Fire webhook if set (per-task + persistent endpoints)
-            _wh_done_extra = {"type": task.type, "duration_ms": duration_ms,
-                              "credits_used": task.credits_used}
+            # Fire webhook if set — include result_preview in payload
+            _wh_done_extra = {
+                "type": task.type,
+                "duration_ms": duration_ms,
+                "credits_used": task.credits_used,
+                **({"result_preview": preview} if preview else {}),
+            }
             if task.webhook_url:
                 asyncio.create_task(fire_webhook_for_task(
                     task=task,

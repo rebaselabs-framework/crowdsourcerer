@@ -234,7 +234,21 @@ const totalNotifications = grouped.reduce((s, g) => s + g.items.length, 0);
                               )}
                               {n.title}
                             </p>
-                            <p class="text-sm text-gray-400 mt-0.5 leading-relaxed">{n.body}</p>
+                            {n.type === "task_completed" && n.body.includes(" — ") ? (() => {
+                              const sepIdx = n.body.indexOf(" — ");
+                              const meta    = n.body.slice(0, sepIdx);
+                              const preview = n.body.slice(sepIdx + 3);
+                              return (
+                                <>
+                                  <p class="text-sm text-gray-400 mt-0.5">{meta}</p>
+                                  <blockquote class="mt-1.5 pl-3 border-l-2 border-emerald-700/60 text-xs text-gray-300 italic leading-relaxed line-clamp-3">
+                                    {preview}
+                                  </blockquote>
+                                </>
+                              );
+                            })() : (
+                              <p class="text-sm text-gray-400 mt-0.5 leading-relaxed">{n.body}</p>
+                            )}
                           </div>
                           <div class="flex items-center gap-1 flex-shrink-0 ml-2">
                             <span class="text-xs text-gray-500 whitespace-nowrap">{timeAgo(n.created_at)}</span>

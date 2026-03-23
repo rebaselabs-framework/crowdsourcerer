@@ -9,8 +9,9 @@ const token = getToken(Object.fromEntries(
   Astro.cookies.getAll().map((c) => [c.name, c.value])
 ));
 
+// No hard redirect — workers can see the public page, but we prefer them logged in
 if (!token) {
-  return Astro.redirect("/login?next=/worker/leaderboard");
+  return Astro.redirect("/leaderboard?category=" + (Astro.url.searchParams.get("category") ?? "xp") + "&period=" + (Astro.url.searchParams.get("period") ?? "all_time"));
 }
 
 // Params from URL

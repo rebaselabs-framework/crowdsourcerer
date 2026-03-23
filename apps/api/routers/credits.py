@@ -18,6 +18,14 @@ from models.schemas import (
 router = APIRouter(prefix="/v1/credits", tags=["credits"])
 settings = get_settings()
 
+# Bonus credits awarded for quick-buy bundles (credits purchased → bonus credits)
+# These must match the frontend EXACTLY so webhook credits total is correct.
+_CREDIT_BONUSES: dict[int, int] = {
+    2500:  50,
+    5000:  150,
+    10000: 500,
+}
+
 
 @router.get("", response_model=CreditBalanceOut)
 async def get_credits(
@@ -102,6 +110,18 @@ async def create_checkout(
     if usd_amount < 1:
         raise HTTPException(status_code=400, detail="Minimum purchase: 100 credits ($1)")
 
+    # Bonus credits for qualifying bundle sizes
+    bonus = _CREDIT_BONUSES.get(req.credits, 0)
+    total_credits = req.credits + bonus
+
+    product_name = f"CrowdSorcerer Credits ({req.credits:,})"
+    product_desc = f"{req.credits:,} credits"
+    if bonus:
+        product_name += f" + {bonus:,} bonus"
+        product_desc += f" + {bonus:,} bonus credits = {total_credits:,} total"
+    else:
+        product_desc += f" at $0.01/credit"
+
     session = stripe.checkout.Session.create(
         customer=user.stripe_customer_id,
         payment_method_types=["card"],
@@ -109,10 +129,10 @@ async def create_checkout(
             "price_data": {
                 "currency": "usd",
                 "product_data": {
-                    "name": f"CrowdSorcerer Credits ({req.credits:,})",
-                    "description": f"{req.credits} credits at $0.01/credit",
+                    "name": product_name,
+                    "description": product_desc,
                 },
-                "unit_amount": usd_amount * 100,  # cents
+                "unit_amount": usd_amount * 100,  # cents — charged on purchase amount only
             },
             "quantity": 1,
         }],
@@ -121,7 +141,7 @@ async def create_checkout(
         cancel_url=req.cancel_url,
         metadata={
             "user_id": user_id,
-            "credits": str(req.credits),
+            "credits": str(total_credits),  # includes any bonus
         },
     )
 
@@ -155,13 +175,24 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
                     user_id=user_id,
                     amount=credits,
                     type="credit",
-                    description=f"Purchased {credits} credits",
+                    description=f"Purchased {credits:,} credits",
                     stripe_payment_intent=session.get("payment_intent"),
                 )
                 db.add(txn)
                 # Reset low-credit alert if balance recovered
                 from core.credit_alerts import reset_credit_alert_if_recovered
                 await reset_credit_alert_if_recovered(db, user)
+
+                # In-app payment notification
+                from core.notify import create_notification, NotifType
+                new_balance = user.credits
+                await create_notification(
+                    db, user_id,
+                    NotifType.PAYMENT_RECEIVED,
+                    "Credits added 💳",
+                    f"{credits:,} credits added. New balance: {new_balance:,} credits.",
+                    link="/dashboard/billing",
+                )
                 await db.commit()
 
     return {"status": "ok"}

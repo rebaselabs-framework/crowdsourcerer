@@ -1,4 +1,8 @@
-"""Leaderboard — top workers by XP, tasks completed, or earnings."""
+"""Leaderboard — top workers by XP, tasks completed, or earnings.
+
+Public endpoint: no authentication required.  If a valid token is supplied
+the response marks the caller's own entry so the UI can highlight "you".
+"""
 from __future__ import annotations
 from datetime import datetime, timezone, timedelta
 from typing import Literal, Optional
@@ -8,7 +12,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, desc
 
-from core.auth import get_current_user_id
+from core.auth import get_optional_user_id
 from core.database import get_db
 from models.db import UserDB, TaskAssignmentDB
 from models.schemas import LeaderboardOut, LeaderboardEntryOut
@@ -17,6 +21,21 @@ logger = structlog.get_logger()
 router = APIRouter(prefix="/v1/leaderboard", tags=["leaderboard"])
 
 _PAGE_SIZE = 50
+
+
+def _entry(i: int, u: UserDB) -> LeaderboardEntryOut:
+    return LeaderboardEntryOut(
+        rank=i + 1,
+        user_id=u.id,
+        name=u.name,
+        worker_level=u.worker_level,
+        worker_xp=u.worker_xp,
+        worker_tasks_completed=u.worker_tasks_completed,
+        worker_accuracy=u.worker_accuracy,
+        worker_reliability=u.worker_reliability,
+        worker_streak_days=u.worker_streak_days,
+        profile_public=getattr(u, "profile_public", True),
+    )
 
 
 @router.get("", response_model=LeaderboardOut)
@@ -28,17 +47,19 @@ async def get_leaderboard(
         "all_time", description="Time window: all_time | weekly"
     ),
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id),
+    caller_id: Optional[str] = Depends(get_optional_user_id),
 ):
-    """Return the top 50 workers for a given category and period."""
+    """Return the top 50 workers for a given category and period.
+
+    Authentication is **optional**.  Supply a Bearer token and the response
+    will include ``is_me=true`` on the caller's entry so the UI can highlight it.
+    """
     now = datetime.now(timezone.utc)
 
     if period == "weekly":
-        # Weekly: earnings based on credits earned in last 7 days
         week_ago = now - timedelta(days=7)
 
         if category == "earnings":
-            # Sum earnings from approved/submitted assignments in the last 7 days
             subq = (
                 select(
                     TaskAssignmentDB.worker_id,
@@ -60,28 +81,12 @@ async def get_leaderboard(
                 .order_by(desc(subq.c.total_earnings))
             )
             rows = result.all()
-            entries = [
-                LeaderboardEntryOut(
-                    rank=i + 1,
-                    user_id=u.id,
-                    name=u.name,
-                    worker_level=u.worker_level,
-                    worker_xp=u.worker_xp,
-                    worker_tasks_completed=u.worker_tasks_completed,
-                    worker_accuracy=u.worker_accuracy,
-                    worker_reliability=u.worker_reliability,
-                    worker_streak_days=u.worker_streak_days,
-                )
-                for i, (u, _earnings) in enumerate(rows)
-            ]
+            entries = [_entry(i, u) for i, (u, _) in enumerate(rows)]
             return LeaderboardOut(
-                period=period,
-                category=category,
-                entries=entries,
-                generated_at=now,
+                period=period, category=category, entries=entries,
+                generated_at=now, caller_id=caller_id,
             )
 
-        # Weekly tasks (submitted in last 7 days)
         if category == "tasks":
             subq = (
                 select(
@@ -104,35 +109,18 @@ async def get_leaderboard(
                 .order_by(desc(subq.c.task_count))
             )
             rows = result.all()
-            entries = [
-                LeaderboardEntryOut(
-                    rank=i + 1,
-                    user_id=u.id,
-                    name=u.name,
-                    worker_level=u.worker_level,
-                    worker_xp=u.worker_xp,
-                    worker_tasks_completed=u.worker_tasks_completed,
-                    worker_accuracy=u.worker_accuracy,
-                    worker_reliability=u.worker_reliability,
-                    worker_streak_days=u.worker_streak_days,
-                )
-                for i, (u, _count) in enumerate(rows)
-            ]
+            entries = [_entry(i, u) for i, (u, _) in enumerate(rows)]
             return LeaderboardOut(
-                period=period,
-                category=category,
-                entries=entries,
-                generated_at=now,
+                period=period, category=category, entries=entries,
+                generated_at=now, caller_id=caller_id,
             )
 
-    # All-time / weekly XP: just sort by column on UserDB
+    # All-time / weekly XP
     if category == "xp":
         order_col = UserDB.worker_xp
     elif category == "tasks":
         order_col = UserDB.worker_tasks_completed
     else:
-        # earnings all-time: use worker_tasks_completed as proxy,
-        # since we track earnings via transactions (not on user directly)
         order_col = UserDB.worker_tasks_completed
 
     result = await db.execute(
@@ -142,25 +130,9 @@ async def get_leaderboard(
         .limit(_PAGE_SIZE)
     )
     users = result.scalars().all()
-
-    entries = [
-        LeaderboardEntryOut(
-            rank=i + 1,
-            user_id=u.id,
-            name=u.name,
-            worker_level=u.worker_level,
-            worker_xp=u.worker_xp,
-            worker_tasks_completed=u.worker_tasks_completed,
-            worker_accuracy=u.worker_accuracy,
-            worker_reliability=u.worker_reliability,
-            worker_streak_days=u.worker_streak_days,
-        )
-        for i, u in enumerate(users)
-    ]
+    entries = [_entry(i, u) for i, u in enumerate(users)]
 
     return LeaderboardOut(
-        period=period,
-        category=category,
-        entries=entries,
-        generated_at=now,
+        period=period, category=category, entries=entries,
+        generated_at=now, caller_id=caller_id,
     )

@@ -103,6 +103,27 @@ async def get_current_user_id(
     return user_id
 
 
+async def get_optional_user_id(
+    credentials: Optional[HTTPAuthorizationCredentials] = Security(bearer_scheme),
+    db: AsyncSession = Depends(get_db),
+) -> Optional[str]:
+    """Like get_current_user_id but returns None instead of 401 when unauthenticated.
+
+    Use for public endpoints that optionally personalize the response (e.g.
+    highlighting the current user on a public leaderboard).
+    """
+    if not credentials:
+        return None
+    token = credentials.credentials
+    if token.startswith("csk_"):
+        from models.db import ApiKeyDB
+        hashed = _hash_api_key(token)
+        result = await db.execute(select(ApiKeyDB).where(ApiKeyDB.key_hash == hashed))
+        api_key = result.scalar_one_or_none()
+        return str(api_key.user_id) if api_key else None
+    return decode_access_token(token)
+
+
 async def require_admin(
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id),

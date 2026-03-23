@@ -365,13 +365,15 @@ class LeaderboardEntryOut(BaseModel):
     worker_accuracy: Optional[float]
     worker_reliability: Optional[float]
     worker_streak_days: int
+    profile_public: bool = True  # if False, link to profile is hidden
 
 
 class LeaderboardOut(BaseModel):
-    period: str   # "all_time" | "weekly"
-    category: str # "xp" | "tasks" | "earnings"
+    period: str    # "all_time" | "weekly"
+    category: str  # "xp" | "tasks" | "earnings"
     entries: list[LeaderboardEntryOut]
     generated_at: datetime
+    caller_id: Optional[str] = None  # set when caller is authenticated
 
 
 # ─── Badges ───────────────────────────────────────────────────────────────

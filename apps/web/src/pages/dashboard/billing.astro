@@ -123,6 +123,42 @@ const currentPlan = user?.plan ?? "free";
       </div>
     </div>
 
+    <!-- ⚡ Quick Buy Credits -->
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 mb-8">
+      <div class="flex items-center justify-between mb-1">
+        <h2 class="text-sm font-semibold text-gray-200">⚡ Quick Buy Credits</h2>
+        <span class="text-xs text-gray-500">1 credit = $0.01 USD</span>
+      </div>
+      <p class="text-xs text-gray-400 mb-5">One-click credit top-ups — no subscription needed.</p>
+
+      <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3" id="qb-grid">
+        {[
+          { credits: 500,    label: "Starter",  price: "$5",  bonus: "" },
+          { credits: 1000,   label: "Popular",  price: "$10", bonus: "" },
+          { credits: 2500,   label: "Value",    price: "$25", bonus: "+50 bonus" },
+          { credits: 5000,   label: "Pro",      price: "$50", bonus: "+150 bonus" },
+          { credits: 10000,  label: "Power",    price: "$100", bonus: "+500 bonus" },
+        ].map(({ credits, label, price, bonus }) => (
+          <button
+            type="button"
+            class="qb-btn relative flex flex-col items-center justify-center gap-1 p-4 rounded-xl border border-gray-700 hover:border-violet-500 hover:bg-violet-900/10 transition-all group focus:outline-none focus:ring-2 focus:ring-violet-500/50"
+            data-credits={credits}
+          >
+            <span class="text-xs font-medium text-gray-400 group-hover:text-violet-300 transition-colors">{label}</span>
+            <span class="text-xl font-bold text-white">{credits.toLocaleString()}</span>
+            <span class="text-xs text-gray-500">credits</span>
+            <span class="text-sm font-semibold text-violet-400">{price}</span>
+            {bonus && (
+              <span class="absolute -top-2 -right-2 text-[10px] bg-emerald-700 text-white px-1.5 py-0.5 rounded-full font-bold shadow">{bonus}</span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      <p id="qb-error" class="hidden text-xs text-red-400 mt-3"></p>
+      <p id="qb-info" class="hidden text-xs text-gray-400 mt-3">Redirecting to Stripe checkout…</p>
+    </div>
+
     <!-- Credit Burn-Rate Alert -->
     <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 mb-8">
       <div class="flex items-start justify-between mb-4">
@@ -290,3 +326,71 @@ const currentPlan = user?.plan ?? "free";
     </div>
   </div>
 </Layout>
+
+<script>
+  // Quick-buy credit bundles — client-side Stripe checkout redirect
+  document.querySelectorAll<HTMLButtonElement>(".qb-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const credits = parseInt(btn.dataset.credits ?? "0", 10);
+      if (!credits) return;
+
+      const errorEl  = document.getElementById("qb-error")  as HTMLParagraphElement;
+      const infoEl   = document.getElementById("qb-info")   as HTMLParagraphElement;
+      const grid     = document.getElementById("qb-grid")   as HTMLDivElement;
+
+      // UI: disable all buttons, show loading
+      grid.querySelectorAll<HTMLButtonElement>(".qb-btn").forEach((b) => b.disabled = true);
+      infoEl.classList.remove("hidden");
+      errorEl.classList.add("hidden");
+      btn.classList.add("ring-2", "ring-violet-500");
+      btn.innerHTML += `<span class="absolute inset-0 flex items-center justify-center bg-gray-900/70 rounded-xl text-sm">⏳</span>`;
+
+      try {
+        const origin = window.location.origin;
+        const res = await fetch("/api/credits/checkout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            credits,
+            success_url: `${origin}/dashboard/billing?bought=${credits}`,
+            cancel_url:  `${origin}/dashboard/billing`,
+          }),
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.detail ?? `Error ${res.status}`);
+        }
+        if (data.checkout_url) {
+          window.location.href = data.checkout_url;
+        } else {
+          throw new Error("No checkout URL returned");
+        }
+      } catch (err: any) {
+        errorEl.textContent = `Checkout failed: ${err.message}`;
+        errorEl.classList.remove("hidden");
+        infoEl.classList.add("hidden");
+        grid.querySelectorAll<HTMLButtonElement>(".qb-btn").forEach((b) => {
+          b.disabled = false;
+          b.classList.remove("ring-2", "ring-violet-500");
+        });
+        // Remove the spinner span we appended
+        btn.querySelector("span.absolute.inset-0")?.remove();
+      }
+    });
+  });
+
+  // Show success banner if redirected back with ?bought=N
+  const params = new URLSearchParams(window.location.search);
+  const bought = parseInt(params.get("bought") ?? "0", 10);
+  if (bought > 0) {
+    const banner = document.createElement("div");
+    banner.className = "fixed top-4 right-4 z-50 bg-emerald-800 border border-emerald-600 text-white text-sm font-medium px-5 py-3 rounded-xl shadow-lg flex items-center gap-3";
+    banner.innerHTML = `<span>🎉 ${bought.toLocaleString()} credits added to your account!</span><button onclick="this.parentElement.remove()" class="ml-2 text-emerald-300 hover:text-white">✕</button>`;
+    document.body.appendChild(banner);
+    // Auto-dismiss after 6s
+    setTimeout(() => banner.remove(), 6000);
+    // Remove query param without reload
+    history.replaceState({}, "", window.location.pathname);
+  }
+</script>

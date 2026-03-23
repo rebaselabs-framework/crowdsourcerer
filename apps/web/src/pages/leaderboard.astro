@@ -1,0 +1,323 @@
+---
+/**
+ * Public Worker Leaderboard — /leaderboard
+ * No login required. Optionally highlights the signed-in user if they have a
+ * session cookie.
+ */
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+// Grab token if the visitor is logged in (optional — no redirect if absent)
+const token = getToken(Object.fromEntries(
+  Astro.cookies.getAll().map((c) => [c.name, c.value])
+));
+
+const category = (Astro.url.searchParams.get("category") ?? "xp") as string;
+const period    = (Astro.url.searchParams.get("period")   ?? "all_time") as string;
+
+let leaderboard: any = null;
+let error: string | null = null;
+
+try {
+  leaderboard = await apiFetch(
+    `/v1/leaderboard?category=${category}&period=${period}`,
+    token ? { token } : {}
+  );
+} catch (e: any) {
+  error = e.message ?? "Failed to load leaderboard";
+}
+
+const LEVEL_NAMES: Record<number, string> = {
+  1: "Apprentice", 2: "Novice", 3: "Learner", 4: "Explorer", 5: "Contributor",
+  6: "Analyst", 7: "Specialist", 8: "Expert", 9: "Veteran", 10: "Elite",
+  11: "Master", 12: "Grand Master", 13: "Champion", 14: "Legend", 15: "Mythic",
+  16: "Transcendent", 17: "Ascendant", 18: "Radiant", 19: "Immortal", 20: "Divine",
+};
+
+const categoryLabels: Record<string, string> = {
+  xp: "XP Earned",
+  tasks: "Tasks Completed",
+  earnings: "Credits Earned",
+};
+const categoryIcons: Record<string, string> = {
+  xp: "⚡",
+  tasks: "✅",
+  earnings: "💰",
+};
+const periodLabels: Record<string, string> = {
+  all_time: "All Time",
+  weekly: "This Week",
+};
+
+function rankMedal(rank: number): string {
+  if (rank === 1) return "🥇";
+  if (rank === 2) return "🥈";
+  if (rank === 3) return "🥉";
+  return `#${rank}`;
+}
+
+function primaryStat(entry: any): string {
+  if (category === "xp")      return `${entry.worker_xp.toLocaleString()} XP`;
+  if (category === "tasks")   return `${entry.worker_tasks_completed.toLocaleString()} tasks`;
+  return `${entry.worker_tasks_completed.toLocaleString()} tasks`;
+}
+
+function streakBadge(days: number): string {
+  if (days >= 30) return "🔥🔥🔥";
+  if (days >= 14) return "🔥🔥";
+  if (days >= 7)  return "🔥";
+  return "";
+}
+
+// Caller's user_id from API response (set when logged-in token was sent)
+const callerId: string | null = leaderboard?.caller_id ?? null;
+---
+
+<Layout
+  title="Worker Leaderboard — CrowdSorcerer"
+  description="See the top-ranked workers on CrowdSorcerer. Filter by XP, tasks completed, or weekly earnings."
+>
+  <div class="max-w-5xl mx-auto px-4 py-12">
+
+    <!-- Page header -->
+    <div class="text-center mb-10">
+      <div class="text-5xl mb-4">🏆</div>
+      <h1 class="text-3xl font-bold mb-2">Worker Leaderboard</h1>
+      <p class="text-gray-400 text-sm">
+        Top workers competing on CrowdSorcerer — updated in real time.
+      </p>
+      {!token && (
+        <p class="mt-3 text-sm">
+          <a href="/register?next=/leaderboard" class="text-emerald-400 hover:text-emerald-300 font-medium">
+            Join the platform →
+          </a>
+          <span class="text-gray-500 mx-2">·</span>
+          <a href="/login?next=/leaderboard" class="text-gray-400 hover:text-white">
+            Sign in to see your rank
+          </a>
+        </p>
+      )}
+    </div>
+
+    <!-- Filter bar -->
+    <div class="flex flex-wrap gap-3 justify-center mb-8">
+      <!-- Period toggle -->
+      <div class="flex bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+        {["all_time", "weekly"].map((p) => (
+          <a
+            href={`/leaderboard?category=${category}&period=${p}`}
+            class={`px-5 py-2.5 text-sm font-medium transition-colors ${
+              period === p
+                ? "bg-emerald-700 text-white"
+                : "text-gray-400 hover:text-white hover:bg-gray-800"
+            }`}
+          >
+            {periodLabels[p]}
+          </a>
+        ))}
+      </div>
+
+      <!-- Category toggle -->
+      <div class="flex bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+        {["xp", "tasks", "earnings"].map((c) => (
+          <a
+            href={`/leaderboard?category=${c}&period=${period}`}
+            class={`px-5 py-2.5 text-sm font-medium transition-colors ${
+              category === c
+                ? "bg-indigo-700 text-white"
+                : "text-gray-400 hover:text-white hover:bg-gray-800"
+            }`}
+          >
+            {categoryIcons[c]} {categoryLabels[c]}
+          </a>
+        ))}
+      </div>
+    </div>
+
+    {error ? (
+      <div class="text-red-400 bg-red-900/20 border border-red-800/40 rounded-2xl p-8 text-center">
+        <div class="text-3xl mb-2">⚠️</div>
+        <p>{error}</p>
+      </div>
+    ) : !leaderboard?.entries?.length ? (
+      <div class="text-center py-24 text-gray-500">
+        <div class="text-5xl mb-4">🏆</div>
+        <p class="text-lg font-medium mb-2">No workers yet</p>
+        <p class="text-sm mb-6">Complete tasks to appear on the leaderboard!</p>
+        <a
+          href="/register"
+          class="inline-block bg-emerald-700 hover:bg-emerald-600 text-white text-sm font-medium px-6 py-3 rounded-xl transition-colors"
+        >
+          Start earning →
+        </a>
+      </div>
+    ) : (
+      <div>
+        <!-- TOP 3 PODIUM -->
+        {leaderboard.entries.length >= 3 && (
+          <div class="grid grid-cols-3 gap-4 mb-10 max-w-2xl mx-auto">
+            {/* 2nd — left column, slightly lower */}
+            <a
+              href={leaderboard.entries[1]?.profile_public ? `/workers/${leaderboard.entries[1]?.user_id}` : "#"}
+              class="bg-gray-900 border border-gray-700 rounded-2xl p-5 text-center mt-8 hover:border-gray-500 transition-colors group block"
+            >
+              <div class="text-3xl mb-2">🥈</div>
+              <div class="font-semibold truncate group-hover:text-white transition-colors">
+                {leaderboard.entries[1]?.name ?? "Anonymous"}
+              </div>
+              <div class="text-xs text-gray-500 mt-1">
+                Lv.{leaderboard.entries[1]?.worker_level}
+                &nbsp;{LEVEL_NAMES[leaderboard.entries[1]?.worker_level] ?? ""}
+              </div>
+              <div class="text-base font-bold text-gray-300 mt-2">{primaryStat(leaderboard.entries[1])}</div>
+              {leaderboard.entries[1]?.user_id === callerId && (
+                <div class="mt-2 text-xs bg-emerald-800/40 text-emerald-400 px-2 py-0.5 rounded inline-block">You</div>
+              )}
+            </a>
+
+            {/* 1st — centre, tallest */}
+            <a
+              href={leaderboard.entries[0]?.profile_public ? `/workers/${leaderboard.entries[0]?.user_id}` : "#"}
+              class="bg-gradient-to-b from-amber-900/50 to-gray-900 border border-amber-700/60 rounded-2xl p-5 text-center ring-2 ring-amber-600/40 hover:ring-amber-500/60 transition-all group block"
+            >
+              <div class="text-4xl mb-2">🥇</div>
+              <div class="font-bold text-amber-200 truncate group-hover:text-amber-100 transition-colors">
+                {leaderboard.entries[0]?.name ?? "Anonymous"}
+              </div>
+              <div class="text-xs text-amber-500/80 mt-1">
+                Lv.{leaderboard.entries[0]?.worker_level}
+                &nbsp;{LEVEL_NAMES[leaderboard.entries[0]?.worker_level] ?? ""}
+              </div>
+              <div class="text-xl font-bold text-amber-300 mt-2">{primaryStat(leaderboard.entries[0])}</div>
+              {leaderboard.entries[0]?.worker_streak_days > 0 && (
+                <div class="text-xs text-amber-400/70 mt-1">
+                  🔥 {leaderboard.entries[0]?.worker_streak_days}-day streak
+                </div>
+              )}
+              {leaderboard.entries[0]?.user_id === callerId && (
+                <div class="mt-2 text-xs bg-emerald-800/40 text-emerald-400 px-2 py-0.5 rounded inline-block">You</div>
+              )}
+            </a>
+
+            {/* 3rd — right, lowest */}
+            <a
+              href={leaderboard.entries[2]?.profile_public ? `/workers/${leaderboard.entries[2]?.user_id}` : "#"}
+              class="bg-gray-900 border border-gray-700 rounded-2xl p-5 text-center mt-12 hover:border-gray-500 transition-colors group block"
+            >
+              <div class="text-3xl mb-2">🥉</div>
+              <div class="font-semibold truncate group-hover:text-white transition-colors">
+                {leaderboard.entries[2]?.name ?? "Anonymous"}
+              </div>
+              <div class="text-xs text-gray-500 mt-1">
+                Lv.{leaderboard.entries[2]?.worker_level}
+                &nbsp;{LEVEL_NAMES[leaderboard.entries[2]?.worker_level] ?? ""}
+              </div>
+              <div class="text-base font-bold text-gray-300 mt-2">{primaryStat(leaderboard.entries[2])}</div>
+              {leaderboard.entries[2]?.user_id === callerId && (
+                <div class="mt-2 text-xs bg-emerald-800/40 text-emerald-400 px-2 py-0.5 rounded inline-block">You</div>
+              )}
+            </a>
+          </div>
+        )}
+
+        <!-- FULL TABLE -->
+        <div class="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
+          <!-- Table header -->
+          <div class="grid grid-cols-[3.5rem_1fr_auto_auto_auto] gap-4 px-5 py-3 text-xs text-gray-500 uppercase tracking-wider border-b border-gray-800">
+            <div>Rank</div>
+            <div>Worker</div>
+            <div class="text-right hidden sm:block">Accuracy</div>
+            <div class="text-right">Level</div>
+            <div class="text-right">{categoryLabels[category]}</div>
+          </div>
+
+          {leaderboard.entries.map((entry: any) => {
+            const isMe = entry.user_id === callerId;
+            const href = entry.profile_public ? `/workers/${entry.user_id}` : null;
+            return (
+              <div class={`grid grid-cols-[3.5rem_1fr_auto_auto_auto] gap-4 items-center px-5 py-4 border-b border-gray-800/50 last:border-0 transition-colors ${isMe ? "bg-emerald-900/10 ring-1 ring-inset ring-emerald-800/30" : "hover:bg-gray-800/30"}`}>
+                {/* Rank */}
+                <div class={`font-bold text-sm ${entry.rank <= 3 ? "text-lg" : "text-gray-500"}`}>
+                  {rankMedal(entry.rank)}
+                </div>
+
+                {/* Worker name + meta */}
+                <div>
+                  {href ? (
+                    <a href={href} class={`font-semibold hover:underline ${isMe ? "text-emerald-400" : "hover:text-white"}`}>
+                      {entry.name ?? "Anonymous Worker"}
+                    </a>
+                  ) : (
+                    <span class={`font-semibold ${isMe ? "text-emerald-400" : ""}`}>
+                      {entry.name ?? "Anonymous Worker"}
+                    </span>
+                  )}
+                  {isMe && (
+                    <span class="ml-2 text-xs bg-emerald-800/40 text-emerald-400 px-2 py-0.5 rounded">You</span>
+                  )}
+                  <div class="text-xs text-gray-500 mt-0.5 flex items-center gap-2">
+                    {entry.worker_streak_days > 0 && (
+                      <span>{streakBadge(entry.worker_streak_days)} {entry.worker_streak_days}d streak</span>
+                    )}
+                    {entry.profile_public && href && (
+                      <a href={href} class="text-gray-600 hover:text-gray-400 transition-colors text-xs">view profile →</a>
+                    )}
+                  </div>
+                </div>
+
+                {/* Accuracy */}
+                <div class="text-right text-sm text-gray-400 hidden sm:block">
+                  {entry.worker_accuracy != null
+                    ? `${(entry.worker_accuracy * 100).toFixed(0)}%`
+                    : "—"
+                  }
+                </div>
+
+                {/* Level */}
+                <div class="text-right text-sm">
+                  <span class="font-medium text-gray-300">Lv.{entry.worker_level}</span>
+                  <div class="text-xs text-gray-600">{LEVEL_NAMES[entry.worker_level] ?? ""}</div>
+                </div>
+
+                {/* Primary stat */}
+                <div class="text-right font-bold tabular-nums text-sm">
+                  {primaryStat(entry)}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <!-- Footer -->
+        <div class="flex items-center justify-between mt-4 text-xs text-gray-600">
+          <span>Showing top {leaderboard.entries.length} workers</span>
+          <span>Updated {new Date(leaderboard.generated_at).toLocaleString()}</span>
+        </div>
+
+        <!-- CTA banner for logged-out visitors -->
+        {!token && (
+          <div class="mt-8 bg-gradient-to-r from-emerald-900/30 to-indigo-900/30 border border-emerald-800/30 rounded-2xl p-6 text-center">
+            <p class="font-semibold text-lg mb-1">Want to see your name here?</p>
+            <p class="text-gray-400 text-sm mb-4">
+              Sign up for free, complete tasks, and climb the leaderboard.
+            </p>
+            <div class="flex justify-center gap-3">
+              <a
+                href="/register"
+                class="bg-emerald-700 hover:bg-emerald-600 text-white text-sm font-semibold px-6 py-2.5 rounded-xl transition-colors"
+              >
+                Get started free →
+              </a>
+              <a
+                href="/worker/marketplace"
+                class="bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium px-6 py-2.5 rounded-xl transition-colors"
+              >
+                Browse tasks
+              </a>
+            </div>
+          </div>
+        )}
+      </div>
+    )}
+  </div>
+</Layout>

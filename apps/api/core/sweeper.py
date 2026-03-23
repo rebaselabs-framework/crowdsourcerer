@@ -418,11 +418,49 @@ async def _run_scheduled_ai_task(task_id: str, user_id: str) -> None:
             await db.commit()
             await db.refresh(task)
             # Execute
+            import time as _time
+            t0 = _time.perf_counter()
             output = await execute_task(task.type, task.input)
+            duration_ms = int((_time.perf_counter() - t0) * 1000)
             task.status = "completed"
             task.output = output
+            task.duration_ms = duration_ms
             task.completed_at = datetime.now(timezone.utc)
+
+            # Build preview snippet for notifications
+            from routers.tasks import _result_preview
+            preview = _result_preview(output)
+            task_label = task.type.replace("_", " ")
+            notif_body = (
+                f"Your scheduled {task_label} task finished in {duration_ms}ms."
+                + (f" — {preview}" if preview else "")
+            )
+            from core.notify import create_notification, NotifType
+            await create_notification(
+                db, task.user_id,
+                NotifType.TASK_COMPLETED,
+                "Scheduled task completed ✅",
+                notif_body,
+                link=f"/dashboard/tasks/{task_id}",
+            )
             await db.commit()
+
+            # Fire webhooks with result_preview
+            wh_extra = {
+                "type": task.type,
+                "duration_ms": duration_ms,
+                **({"result_preview": preview} if preview else {}),
+            }
+            if task.webhook_url:
+                asyncio.create_task(fire_webhook_for_task(
+                    task=task, event_type="task.completed", extra=wh_extra,
+                ))
+            asyncio.create_task(fire_persistent_endpoints(
+                user_id=str(task.user_id),
+                task_id=str(task_id),
+                event_type="task.completed",
+                extra=wh_extra,
+            ))
         except Exception as exc:  # noqa: BLE001
             logger.exception("sweeper.scheduled_ai_task_failed", task_id=task_id)
             async with AsyncSessionLocal() as db2:
