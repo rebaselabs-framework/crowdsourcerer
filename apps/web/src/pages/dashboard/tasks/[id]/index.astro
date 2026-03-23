@@ -30,6 +30,7 @@ if (Astro.request.method === "POST") {
 
 let task: any = null;
 let submissions: any[] = [];
+let comments: any[] = [];
 let notFound = false;
 
 try {
@@ -49,6 +50,14 @@ if (task?.execution_mode === "human") {
   } catch (_) {
     submissions = [];
   }
+}
+
+// Load comments
+try {
+  const commentData = await apiFetch<any>(`/v1/tasks/${id}/comments?per_page=100`, { token });
+  comments = commentData?.comments ?? [];
+} catch (_) {
+  comments = [];
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -366,6 +375,87 @@ const pendingSubmissions = submissions.filter((s: any) => s.status === "submitte
           </div>
         )}
 
+        <!-- Comments / Discussion -->
+        <div id="comments" class="bg-gray-900 border border-gray-800 rounded-xl mb-4">
+          <div class="px-5 py-3 border-b border-gray-800 flex items-center justify-between">
+            <h2 class="text-sm font-semibold text-gray-300">
+              💬 Discussion
+              <span class="ml-2 text-gray-500 font-normal text-xs">({comments.length})</span>
+            </h2>
+          </div>
+
+          <!-- Comment list -->
+          <div id="comment-list" class="divide-y divide-gray-800/60">
+            {comments.length === 0 && (
+              <div class="px-5 py-6 text-center text-gray-500 text-sm">
+                No comments yet. Be the first to ask a question or leave a note.
+              </div>
+            )}
+            {comments.map((c: any) => (
+              <div class:list={["px-5 py-4", c.parent_id ? "ml-8 bg-gray-950/30" : ""]}>
+                <div class="flex items-start gap-3">
+                  <div class="w-7 h-7 rounded-full bg-violet-900/50 border border-violet-800 flex items-center justify-center text-xs font-semibold text-violet-300 flex-shrink-0 mt-0.5">
+                    {c.author_name?.[0]?.toUpperCase() ?? "?"}
+                  </div>
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2 mb-1">
+                      <span class="text-sm font-medium text-gray-200">{c.author_name}</span>
+                      {c.is_internal && (
+                        <span class="text-xs bg-amber-950/50 border border-amber-800 text-amber-400 px-1.5 py-0.5 rounded">internal</span>
+                      )}
+                      {c.edited_at && (
+                        <span class="text-xs text-gray-600">(edited)</span>
+                      )}
+                      <span class="text-xs text-gray-600">
+                        {new Date(c.created_at).toLocaleString()}
+                      </span>
+                    </div>
+                    <p class="text-sm text-gray-300 whitespace-pre-wrap break-words">{c.body}</p>
+                    <button
+                      class="text-xs text-gray-600 hover:text-violet-400 mt-1 transition-colors reply-btn"
+                      data-comment-id={c.id}
+                      data-author={c.author_name}
+                    >
+                      ↩ reply
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <!-- New comment form -->
+          <div class="px-5 py-4 border-t border-gray-800">
+            <div id="reply-indicator" class="hidden mb-2 text-xs text-violet-400 flex items-center gap-2">
+              <span>Replying to <strong id="reply-name"></strong></span>
+              <button id="cancel-reply" class="text-gray-500 hover:text-gray-300">[cancel]</button>
+            </div>
+            <div class="flex gap-3">
+              <textarea
+                id="comment-body"
+                rows="2"
+                maxlength="500"
+                placeholder="Leave a comment or ask a question…"
+                class="flex-1 bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-violet-600 resize-none"
+              ></textarea>
+              <div class="flex flex-col gap-2">
+                <button
+                  id="submit-comment"
+                  class="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium rounded-lg transition-colors whitespace-nowrap"
+                >
+                  Post
+                </button>
+                <label class="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
+                  <input type="checkbox" id="comment-internal" class="accent-amber-500" />
+                  Internal
+                </label>
+              </div>
+            </div>
+            <div id="comment-error" class="hidden mt-2 text-xs text-red-400"></div>
+            <div class="text-xs text-gray-600 mt-1">Max 500 chars · Internal notes are only visible to you</div>
+          </div>
+        </div>
+
         <!-- Retry if failed -->
         {task.status === "failed" && (
           <div class="mt-6">
@@ -392,6 +482,69 @@ const pendingSubmissions = submissions.filter((s: any) => s.status === "submitte
       </div>
     ) : null}
   </div>
+
+  {/* Comments interaction script */}
+  <script define:vars={{ taskId: id }}>
+    let replyToId = null;
+
+    // Reply button handler
+    document.querySelectorAll(".reply-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        replyToId = btn.dataset.commentId;
+        const indicator = document.getElementById("reply-indicator");
+        const nameEl = document.getElementById("reply-name");
+        if (indicator && nameEl) {
+          nameEl.textContent = btn.dataset.author;
+          indicator.classList.remove("hidden");
+        }
+        document.getElementById("comment-body")?.focus();
+      });
+    });
+
+    document.getElementById("cancel-reply")?.addEventListener("click", () => {
+      replyToId = null;
+      document.getElementById("reply-indicator")?.classList.add("hidden");
+    });
+
+    document.getElementById("submit-comment")?.addEventListener("click", async () => {
+      const body = document.getElementById("comment-body")?.value?.trim();
+      const isInternal = document.getElementById("comment-internal")?.checked ?? false;
+      const errEl = document.getElementById("comment-error");
+
+      if (!body) {
+        if (errEl) { errEl.textContent = "Comment cannot be empty."; errEl.classList.remove("hidden"); }
+        return;
+      }
+      errEl?.classList.add("hidden");
+
+      const submitBtn = document.getElementById("submit-comment");
+      if (submitBtn) submitBtn.disabled = true;
+
+      try {
+        const res = await fetch(`/api/tasks/${taskId}/comments`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ body, is_internal: isInternal, parent_id: replyToId || null }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.detail ?? "Failed to post comment");
+        }
+        // Reload page to show new comment
+        location.reload();
+      } catch (e) {
+        if (errEl) { errEl.textContent = e.message ?? "Failed to post comment."; errEl.classList.remove("hidden"); }
+        if (submitBtn) submitBtn.disabled = false;
+      }
+    });
+
+    // Ctrl+Enter shortcut for textarea
+    document.getElementById("comment-body")?.addEventListener("keydown", (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+        document.getElementById("submit-comment")?.click();
+      }
+    });
+  </script>
 
   {/* SSE client script — only loaded for non-terminal tasks */}
   {isLive && (

@@ -7,7 +7,7 @@ from sqlalchemy import (
     Text, ForeignKey, Enum as SAEnum, JSON, Date, UniqueConstraint
 )
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, backref
 
 from core.database import Base
 
@@ -890,3 +890,42 @@ class SLABreachDB(Base):
     breach_at = Column(DateTime(timezone=True), nullable=False)       # when SLA was first exceeded
     resolved_at = Column(DateTime(timezone=True), nullable=True)      # when task finally completed
     credits_refunded = Column(Integer, default=0, nullable=False)     # partial refund on breach
+
+
+# ─── Task Comments ────────────────────────────────────────────────────────────
+
+class TaskCommentDB(Base):
+    """Threaded comment/discussion on a task between requester and workers."""
+    __tablename__ = "task_comments"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    task_id = Column(UUID(as_uuid=True), ForeignKey("tasks.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    parent_id = Column(UUID(as_uuid=True), ForeignKey("task_comments.id", ondelete="CASCADE"),
+                       nullable=True, index=True)  # None = top-level comment
+    body = Column(Text, nullable=False)
+    is_internal = Column(Boolean, default=False, nullable=False)  # True = requester-only note
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    task = relationship("TaskDB", backref="comments")
+    author = relationship("UserDB", backref="task_comments", foreign_keys=[user_id])
+    replies = relationship("TaskCommentDB", backref=backref("parent", remote_side=[id]))
+
+
+class StripeEventLogDB(Base):
+    """Log of processed Stripe webhook events (for idempotency)."""
+    __tablename__ = "stripe_event_log"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    stripe_event_id = Column(String(128), unique=True, nullable=False, index=True)
+    event_type = Column(String(64), nullable=False, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    payload = Column(JSON, nullable=True)
+    processed = Column(Boolean, default=False, nullable=False)
+    error = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    user = relationship("UserDB", backref="stripe_events")

@@ -15,7 +15,7 @@ from slowapi.util import get_remote_address
 from core.config import get_settings
 from core.database import Base, engine, AsyncSessionLocal
 from core.sweeper import start_sweeper, stop_sweeper
-from routers import auth, credits, tasks, users, worker, leaderboard, badges, challenges, quality, admin, webhooks, payouts, referrals, notifications, skills, disputes, export, orgs, pipelines, certifications, analytics, marketplace, reputation, triggers, search, experiments, onboarding, sla
+from routers import auth, credits, tasks, users, worker, leaderboard, badges, challenges, quality, admin, webhooks, payouts, referrals, notifications, skills, disputes, export, orgs, pipelines, certifications, analytics, marketplace, reputation, triggers, search, experiments, onboarding, sla, comments, stripe_webhooks
 from workers.base import get_rebasekit_client
 
 settings = get_settings()
@@ -175,6 +175,8 @@ app.include_router(search.router)
 app.include_router(experiments.router)
 app.include_router(onboarding.router)
 app.include_router(sla.router)
+app.include_router(comments.router)
+app.include_router(stripe_webhooks.router)
 
 # ─── Health ───────────────────────────────────────────────────────────────
 

@@ -716,3 +716,102 @@ async def get_task_queue(
         },
         "generated_at": now.isoformat(),
     }
+
+
+# ─── Weekly Digest ────────────────────────────────────────────────────────────
+
+@router.post("/digest/send", tags=["admin"])
+async def trigger_weekly_digest(
+    db: AsyncSession = Depends(get_db),
+    current_user: UserDB = Depends(require_admin),
+):
+    """Manually trigger the weekly digest email to all active users (admin only)."""
+    from core.email import send_weekly_digest
+    from sqlalchemy import func as sqlfunc
+
+    now = datetime.now(timezone.utc)
+    week_start = now - timedelta(days=7)
+    week_label = f"{week_start.strftime('%b %d')} – {now.strftime('%b %d, %Y')}"
+    sent = 0
+
+    # Get top 5 workers this week
+    top_workers_res = await db.execute(
+        select(UserDB.id, UserDB.name, UserDB.email,
+               sqlfunc.count(TaskAssignmentDB.id).label("task_count"),
+               sqlfunc.sum(TaskAssignmentDB.earnings_credits).label("earnings"))
+        .join(TaskAssignmentDB, TaskAssignmentDB.worker_id == UserDB.id)
+        .where(
+            TaskAssignmentDB.status == "approved",
+            TaskAssignmentDB.submitted_at >= week_start,
+        )
+        .group_by(UserDB.id, UserDB.name, UserDB.email)
+        .order_by(sqlfunc.count(TaskAssignmentDB.id).desc())
+        .limit(5)
+    )
+    top_workers = [
+        {"name": r.name or r.email.split("@")[0], "tasks": r.task_count, "earnings": r.earnings or 0}
+        for r in top_workers_res
+    ]
+
+    users_res = await db.execute(
+        select(UserDB).where(UserDB.is_active == True, UserDB.is_banned == False)
+    )
+    users = users_res.scalars().all()
+
+    for user in users:
+        tasks_created = await db.scalar(
+            select(sqlfunc.count(TaskDB.id)).where(
+                TaskDB.user_id == user.id, TaskDB.created_at >= week_start
+            )
+        ) or 0
+        tasks_completed = await db.scalar(
+            select(sqlfunc.count(TaskDB.id)).where(
+                TaskDB.user_id == user.id, TaskDB.status == "completed",
+                TaskDB.updated_at >= week_start
+            )
+        ) or 0
+        credits_spent = await db.scalar(
+            select(sqlfunc.abs(sqlfunc.sum(CreditTransactionDB.amount))).where(
+                CreditTransactionDB.user_id == user.id,
+                CreditTransactionDB.amount < 0,
+                CreditTransactionDB.created_at >= week_start,
+            )
+        ) or 0
+        is_worker = user.role in ("worker", "both")
+        worker_tasks = worker_earnings_val = worker_xp = 0
+        if is_worker:
+            worker_tasks = await db.scalar(
+                select(sqlfunc.count(TaskAssignmentDB.id)).where(
+                    TaskAssignmentDB.worker_id == user.id,
+                    TaskAssignmentDB.status == "approved",
+                    TaskAssignmentDB.submitted_at >= week_start,
+                )
+            ) or 0
+            we = await db.scalar(
+                select(sqlfunc.sum(TaskAssignmentDB.earnings_credits)).where(
+                    TaskAssignmentDB.worker_id == user.id,
+                    TaskAssignmentDB.status == "approved",
+                    TaskAssignmentDB.submitted_at >= week_start,
+                )
+            )
+            worker_earnings_val = int(we or 0)
+            worker_xp = worker_tasks * 10
+
+        user_name = user.name or user.email.split("@")[0]
+        await send_weekly_digest(
+            to_email=user.email,
+            user_name=user_name,
+            week_label=week_label,
+            tasks_created=tasks_created,
+            tasks_completed=tasks_completed,
+            credits_spent=int(credits_spent),
+            credits_balance=user.credits,
+            top_workers=top_workers,
+            worker_tasks_done=worker_tasks,
+            worker_earnings=worker_earnings_val,
+            worker_xp=worker_xp,
+            is_worker=is_worker,
+        )
+        sent += 1
+
+    return {"sent": sent, "week": week_label}

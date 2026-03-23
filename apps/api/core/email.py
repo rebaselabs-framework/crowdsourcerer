@@ -377,3 +377,141 @@ async def notify_payout_update_gated(
 </body></html>
 """
     await send_email(to_email, f"{emoji} Payout {status}: ${amount_usd:.2f}", html)
+
+
+# ─── Weekly Analytics Digest ─────────────────────────────────────────────────
+
+def _weekly_digest_html(
+    user_name: str,
+    week_label: str,
+    tasks_created: int,
+    tasks_completed: int,
+    credits_spent: int,
+    credits_balance: int,
+    top_workers: list[dict],  # [{"name": str, "tasks": int, "earnings": int}]
+    # Worker-specific fields (only shown if user is a worker)
+    worker_tasks_done: int = 0,
+    worker_earnings: int = 0,
+    worker_xp: int = 0,
+    is_worker: bool = False,
+) -> str:
+    top_workers_rows = "".join(
+        f'<tr><td style="padding:6px 8px">{i+1}. {w["name"]}</td>'
+        f'<td style="padding:6px 8px;text-align:right">{w["tasks"]} tasks</td>'
+        f'<td style="padding:6px 8px;text-align:right">{w["earnings"]} cr</td></tr>'
+        for i, w in enumerate(top_workers[:5])
+    )
+    worker_section = ""
+    if is_worker:
+        worker_section = f"""
+<h3 style="color:#10b981;margin:24px 0 8px">Your Worker Stats</h3>
+<table style="width:100%;border-collapse:collapse;margin:8px 0">
+  <tr>
+    <td style="padding:12px;background:#ecfdf5;border-radius:8px;text-align:center;width:33%">
+      <div style="font-size:24px;font-weight:bold;color:#10b981">{worker_tasks_done}</div>
+      <div style="font-size:12px;color:#6b7280">Tasks Completed</div>
+    </td>
+    <td style="width:12px"></td>
+    <td style="padding:12px;background:#f0fdf4;border-radius:8px;text-align:center;width:33%">
+      <div style="font-size:24px;font-weight:bold;color:#10b981">{worker_earnings}</div>
+      <div style="font-size:12px;color:#6b7280">Credits Earned</div>
+    </td>
+    <td style="width:12px"></td>
+    <td style="padding:12px;background:#f7fee7;border-radius:8px;text-align:center;width:33%">
+      <div style="font-size:24px;font-weight:bold;color:#84cc16">+{worker_xp} XP</div>
+      <div style="font-size:12px;color:#6b7280">XP This Week</div>
+    </td>
+  </tr>
+</table>"""
+
+    top_table = f"""
+<h3 style="color:#6366f1;margin:24px 0 8px">🏆 Top Workers This Week</h3>
+<table style="width:100%;border-collapse:collapse;border:1px solid #e5e7eb;border-radius:8px">
+  <thead><tr style="background:#f8f9fa">
+    <th style="padding:8px;text-align:left">Worker</th>
+    <th style="padding:8px;text-align:right">Tasks</th>
+    <th style="padding:8px;text-align:right">Earned</th>
+  </tr></thead>
+  <tbody>{top_workers_rows if top_workers_rows else '<tr><td colspan="3" style="padding:12px;text-align:center;color:#9ca3af">No completed tasks this week</td></tr>'}</tbody>
+</table>""" if top_workers else ""
+
+    return f"""
+<html><body style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px;color:#111827">
+<div style="background:linear-gradient(135deg,#6366f1,#8b5cf6);padding:24px;border-radius:12px;margin-bottom:24px;text-align:center">
+  <h1 style="color:white;margin:0;font-size:24px">📊 Weekly Digest</h1>
+  <p style="color:#c7d2fe;margin:8px 0 0">{week_label}</p>
+</div>
+<p>Hi {user_name}, here's your CrowdSorcerer summary for the week.</p>
+
+<h3 style="color:#6366f1;margin:24px 0 8px">Platform Activity</h3>
+<table style="width:100%;border-collapse:collapse;margin:8px 0">
+  <tr>
+    <td style="padding:12px;background:#f0f4ff;border-radius:8px;text-align:center;width:33%">
+      <div style="font-size:28px;font-weight:bold;color:#6366f1">{tasks_created}</div>
+      <div style="font-size:12px;color:#6b7280">Tasks Created</div>
+    </td>
+    <td style="width:12px"></td>
+    <td style="padding:12px;background:#f0fdf4;border-radius:8px;text-align:center;width:33%">
+      <div style="font-size:28px;font-weight:bold;color:#10b981">{tasks_completed}</div>
+      <div style="font-size:12px;color:#6b7280">Completed</div>
+    </td>
+    <td style="width:12px"></td>
+    <td style="padding:12px;background:#fff7ed;border-radius:8px;text-align:center;width:33%">
+      <div style="font-size:28px;font-weight:bold;color:#f59e0b">{credits_spent}</div>
+      <div style="font-size:12px;color:#6b7280">Credits Spent</div>
+    </td>
+  </tr>
+</table>
+
+<p style="color:#6b7280;font-size:13px">Your current balance: <strong style="color:#111">{credits_balance} credits</strong></p>
+{worker_section}
+{top_table}
+
+<div style="margin-top:24px;display:flex;gap:12px">
+  <a href="https://crowdsourcerer.rebaselabs.online/dashboard"
+     style="background:#6366f1;color:white;padding:10px 20px;border-radius:6px;text-decoration:none;display:inline-block">
+     Go to Dashboard →</a>
+  <a href="https://crowdsourcerer.rebaselabs.online/dashboard/notification-preferences"
+     style="background:#f3f4f6;color:#374151;padding:10px 20px;border-radius:6px;text-decoration:none;display:inline-block;margin-left:8px">
+     Manage preferences</a>
+</div>
+<hr style="margin:24px 0;border:none;border-top:1px solid #e5e7eb">
+<p style="color:#9ca3af;font-size:12px">
+  CrowdSorcerer Weekly Digest ·
+  <a href="https://crowdsourcerer.rebaselabs.online/dashboard/notification-preferences">Unsubscribe</a>
+</p>
+</body></html>
+"""
+
+
+async def send_weekly_digest(
+    to_email: str,
+    user_name: str,
+    week_label: str,
+    tasks_created: int,
+    tasks_completed: int,
+    credits_spent: int,
+    credits_balance: int,
+    top_workers: list,
+    worker_tasks_done: int = 0,
+    worker_earnings: int = 0,
+    worker_xp: int = 0,
+    is_worker: bool = False,
+) -> None:
+    await send_email(
+        to_email=to_email,
+        subject=f"📊 Your CrowdSorcerer Weekly Digest — {week_label}",
+        html_body=_weekly_digest_html(
+            user_name=user_name,
+            week_label=week_label,
+            tasks_created=tasks_created,
+            tasks_completed=tasks_completed,
+            credits_spent=credits_spent,
+            credits_balance=credits_balance,
+            top_workers=top_workers,
+            worker_tasks_done=worker_tasks_done,
+            worker_earnings=worker_earnings,
+            worker_xp=worker_xp,
+            is_worker=is_worker,
+        ),
+    )

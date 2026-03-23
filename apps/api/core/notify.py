@@ -36,6 +36,11 @@ class NotifType:
     DISPUTE_RESOLVED     = "dispute_resolved"
     ORG_INVITE           = "org_invite"
     ORG_MEMBER_JOINED    = "org_member_joined"
+    SYSTEM               = "system"           # Generic system/platform notification
+    COMMENT_RECEIVED     = "comment_received" # New comment on a task
+    PLAN_UPDATED         = "plan_updated"     # Subscription plan changed
+    PAYMENT_RECEIVED     = "payment_received" # Successful payment / credits added
+    PAYMENT_FAILED       = "payment_failed"   # Failed payment
 
 
 async def create_notification(

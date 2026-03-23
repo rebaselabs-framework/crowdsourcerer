@@ -14,7 +14,8 @@ What it does:
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+import datetime as dt_module
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 import structlog
@@ -27,6 +28,9 @@ from core.webhooks import fire_webhook_for_task
 logger = structlog.get_logger()
 
 SWEEP_INTERVAL_SECONDS = 300  # 5 minutes
+
+# Module-level state for digest tracking
+_last_digest_date: Optional[dt_module.date] = None
 
 
 async def sweep_once(session_factory: async_sessionmaker) -> dict:
@@ -202,6 +206,142 @@ async def _sweep_sla_breaches(session_factory: async_sessionmaker) -> int:
     return breached
 
 
+async def send_weekly_digests(session_factory) -> int:
+    """Send weekly digest emails to all active users. Returns count sent."""
+    global _last_digest_date
+    now = datetime.now(timezone.utc)
+    today = now.date()
+
+    # Only run on Mondays between 8:00–9:00 UTC
+    if now.weekday() != 0 or now.hour != 8:
+        return 0
+    if _last_digest_date == today:
+        return 0  # Already sent today
+
+    from core.email import send_weekly_digest
+    sent = 0
+    week_start = now - timedelta(days=7)
+    week_label = f"{week_start.strftime('%b %d')} – {now.strftime('%b %d, %Y')}"
+
+    async with session_factory() as db:
+        try:
+            # Get top 5 workers this week (global)
+            from sqlalchemy import func as sqlfunc
+            top_workers_res = await db.execute(
+                select(UserDB.id, UserDB.name, UserDB.email,
+                       sqlfunc.count(TaskAssignmentDB.id).label("task_count"),
+                       sqlfunc.sum(TaskAssignmentDB.earnings_credits).label("earnings"))
+                .join(TaskAssignmentDB, TaskAssignmentDB.worker_id == UserDB.id)
+                .where(
+                    TaskAssignmentDB.status == "approved",
+                    TaskAssignmentDB.submitted_at >= week_start,
+                )
+                .group_by(UserDB.id, UserDB.name, UserDB.email)
+                .order_by(sqlfunc.count(TaskAssignmentDB.id).desc())
+                .limit(5)
+            )
+            top_workers = [
+                {"name": r.name or r.email.split("@")[0], "tasks": r.task_count, "earnings": r.earnings or 0}
+                for r in top_workers_res
+            ]
+
+            # Get all active users
+            users_res = await db.execute(
+                select(UserDB).where(UserDB.is_active == True, UserDB.is_banned == False)
+            )
+            users = users_res.scalars().all()
+
+            for user in users:
+                try:
+                    # Check if user has opted out of weekly digest
+                    from models.db import NotificationPreferencesDB
+                    prefs_res = await db.execute(
+                        select(NotificationPreferencesDB).where(
+                            NotificationPreferencesDB.user_id == user.id
+                        )
+                    )
+                    prefs = prefs_res.scalar_one_or_none()
+                    # Use email_task_completed as proxy: if all email notifications are off, skip
+                    if prefs and not prefs.email_task_completed and not prefs.email_task_failed:
+                        continue  # All emails off, skip
+
+                    # User's tasks this week
+                    tasks_created = await db.scalar(
+                        select(sqlfunc.count(TaskDB.id)).where(
+                            TaskDB.user_id == user.id,
+                            TaskDB.created_at >= week_start,
+                        )
+                    ) or 0
+                    tasks_completed = await db.scalar(
+                        select(sqlfunc.count(TaskDB.id)).where(
+                            TaskDB.user_id == user.id,
+                            TaskDB.status == "completed",
+                            TaskDB.updated_at >= week_start,
+                        )
+                    ) or 0
+
+                    # Credits spent (negative transactions)
+                    from models.db import CreditTransactionDB
+                    credits_spent = await db.scalar(
+                        select(sqlfunc.abs(sqlfunc.sum(CreditTransactionDB.amount))).where(
+                            CreditTransactionDB.user_id == user.id,
+                            CreditTransactionDB.amount < 0,
+                            CreditTransactionDB.created_at >= week_start,
+                        )
+                    ) or 0
+
+                    # Worker stats
+                    worker_tasks = 0
+                    worker_earnings = 0
+                    worker_xp_gained = 0
+                    is_worker = user.role in ("worker", "both")
+
+                    if is_worker:
+                        worker_tasks = await db.scalar(
+                            select(sqlfunc.count(TaskAssignmentDB.id)).where(
+                                TaskAssignmentDB.worker_id == user.id,
+                                TaskAssignmentDB.status == "approved",
+                                TaskAssignmentDB.submitted_at >= week_start,
+                            )
+                        ) or 0
+                        worker_earnings_res = await db.scalar(
+                            select(sqlfunc.sum(TaskAssignmentDB.earnings_credits)).where(
+                                TaskAssignmentDB.worker_id == user.id,
+                                TaskAssignmentDB.status == "approved",
+                                TaskAssignmentDB.submitted_at >= week_start,
+                            )
+                        )
+                        worker_earnings = int(worker_earnings_res or 0)
+                        # XP gained this week (approximate from tasks * 10)
+                        worker_xp_gained = worker_tasks * 10
+
+                    user_name = user.name or user.email.split("@")[0]
+                    await send_weekly_digest(
+                        to_email=user.email,
+                        user_name=user_name,
+                        week_label=week_label,
+                        tasks_created=tasks_created,
+                        tasks_completed=tasks_completed,
+                        credits_spent=int(credits_spent),
+                        credits_balance=user.credits,
+                        top_workers=top_workers,
+                        worker_tasks_done=worker_tasks,
+                        worker_earnings=worker_earnings,
+                        worker_xp=worker_xp_gained,
+                        is_worker=is_worker,
+                    )
+                    sent += 1
+                except Exception:
+                    logger.exception("digest.user_error", user_id=str(user.id))
+
+            _last_digest_date = today
+            logger.info("digest.sent", count=sent, week=week_label)
+        except Exception:
+            logger.exception("digest.error")
+
+    return sent
+
+
 async def run_sweeper(session_factory: async_sessionmaker, interval: int = SWEEP_INTERVAL_SECONDS):
     """Infinite loop: sweep, sleep, repeat. Designed to run as an asyncio background task."""
     logger.info("sweeper.started", interval_seconds=interval)
@@ -220,6 +360,14 @@ async def run_sweeper(session_factory: async_sessionmaker, interval: int = SWEEP
             await _sweep_sla_breaches(session_factory)
         except Exception:  # noqa: BLE001
             logger.exception("sweeper.sla_check_error")
+
+        # Send weekly digest on Monday mornings
+        try:
+            digest_count = await send_weekly_digests(session_factory)
+            if digest_count:
+                logger.info("digest.weekly_sent", count=digest_count)
+        except Exception:
+            logger.exception("digest.weekly_error")
 
         # Check schedule triggers every ~60 seconds (regardless of sweep interval)
         import time
