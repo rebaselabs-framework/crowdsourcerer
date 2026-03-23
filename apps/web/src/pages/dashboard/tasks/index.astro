@@ -47,15 +47,21 @@ const STATUS_COLORS: Record<string, string> = {
           <span class="mx-2">›</span>
           <span>Tasks</span>
         </div>
-        <h1 class="text-2xl font-bold">All tasks</h1>
+        <h1 class="text-2xl font-bold flex items-center gap-2">
+          All tasks
+          <span
+            id="live-indicator"
+            class="hidden text-xs px-2 py-0.5 bg-emerald-900/40 text-emerald-400 border border-emerald-700/40 rounded-full animate-pulse"
+            title="Live updates active"
+          >● live</span>
+        </h1>
       </div>
       <div class="flex gap-2">
         <a
-          href="/v1/tasks/export?format=csv"
-          target="_blank"
+          href="/dashboard/export"
           class="px-4 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 text-sm font-medium rounded-lg transition-colors flex items-center gap-1.5"
         >
-          <span>⬇️</span> Export CSV
+          <span>⬇️</span> Export
         </a>
         <a
           href="/dashboard/new-task"
@@ -233,9 +239,22 @@ const STATUS_COLORS: Record<string, string> = {
                       )}
                     </div>
                     <div class="col-span-2">
-                      <span class:list={["text-xs px-2 py-0.5 rounded-full", STATUS_COLORS[t.status] ?? "bg-gray-800 text-gray-400"]}>
+                      <span
+                        id={`status-${t.id}`}
+                        data-status={t.status}
+                        class:list={["status-badge text-xs px-2 py-0.5 rounded-full transition-all", STATUS_COLORS[t.status] ?? "bg-gray-800 text-gray-400"]}
+                      >
                         {t.status}
                       </span>
+                      {/* Progress for human tasks */}
+                      {t.assignments_required > 1 && t.status !== "completed" && t.status !== "failed" && (
+                        <div
+                          id={`progress-${t.id}`}
+                          class="text-xs text-gray-600 mt-0.5"
+                        >
+                          {t.assignments_completed}/{t.assignments_required} workers
+                        </div>
+                      )}
                     </div>
                     <div class="col-span-2 text-sm text-gray-400">
                       {t.credits_used != null ? `${t.credits_used} cr` : "—"}
@@ -463,6 +482,113 @@ const STATUS_COLORS: Record<string, string> = {
     // Build URL with task_ids as repeated query params for the existing export endpoint
     const ids = [...selected];
     const qs = ids.map(id => `task_ids=${id}`).join("&");
-    window.open(`/v1/tasks/export?format=csv&${qs}`, "_blank");
+    window.open(`/api/tasks/export?format=csv&${qs}`, "_blank");
   });
+
+  // ── Live SSE status updates ───────────────────────────────────────────────
+  const STATUS_CLASSES: Record<string, string> = {
+    completed: "bg-green-950 text-green-400",
+    failed:    "bg-red-950 text-red-400",
+    running:   "bg-yellow-950 text-yellow-400",
+    queued:    "bg-blue-950 text-blue-400",
+    pending:   "bg-gray-800 text-gray-400",
+    cancelled: "bg-gray-800 text-gray-500",
+    open:      "bg-emerald-950 text-emerald-400",
+    archived:  "bg-gray-900 text-gray-600",
+  };
+  const ALL_STATUS_CLASSES = Object.values(STATUS_CLASSES).join(" ").split(" ");
+
+  const liveIndicator = document.getElementById("live-indicator");
+  let sseRetries = 0;
+  const MAX_RETRIES = 5;
+
+  function connectSSE() {
+    // Only connect if there are active tasks visible on the page
+    const activeStatuses = new Set(["running", "queued", "pending", "open"]);
+    const hasTasks = Array.from(
+      document.querySelectorAll<HTMLElement>(".status-badge")
+    ).some(el => activeStatuses.has(el.dataset.status ?? ""));
+
+    if (!hasTasks) return;
+
+    const es = new EventSource("/api/tasks/stream");
+
+    es.onopen = () => {
+      liveIndicator?.classList.remove("hidden");
+      sseRetries = 0;
+    };
+
+    es.onmessage = (e) => {
+      try {
+        const data = JSON.parse(e.data);
+
+        // Ignore control events
+        if (data.event) return;
+
+        const { task_id, status, assignments_completed, assignments_required, priority_escalated_at } = data;
+
+        // Update status badge
+        const badge = document.getElementById(`status-${task_id}`);
+        if (badge) {
+          const prev = badge.dataset.status;
+          if (prev !== status) {
+            badge.dataset.status = status;
+            badge.textContent = status;
+            // Replace color classes
+            badge.classList.remove(...ALL_STATUS_CLASSES);
+            const newClasses = (STATUS_CLASSES[status] ?? "bg-gray-800 text-gray-400").split(" ");
+            badge.classList.add(...newClasses);
+
+            // Flash animation
+            badge.classList.add("scale-110");
+            setTimeout(() => badge.classList.remove("scale-110"), 300);
+
+            // If terminal, hide progress counter
+            const TERMINAL = new Set(["completed", "failed", "cancelled", "archived"]);
+            if (TERMINAL.has(status)) {
+              const prog = document.getElementById(`progress-${task_id}`);
+              if (prog) prog.style.display = "none";
+            }
+          }
+        }
+
+        // Update progress counter (human tasks)
+        const prog = document.getElementById(`progress-${task_id}`);
+        if (prog && assignments_completed !== undefined) {
+          prog.textContent = `${assignments_completed}/${assignments_required} workers`;
+        }
+
+        // Add escalated badge if newly escalated
+        const row = document.querySelector<HTMLElement>(`.task-row[data-id="${task_id}"]`);
+        if (row && priority_escalated_at && !row.querySelector(".escalated-badge")) {
+          const typeCol = row.querySelector(".col-span-4");
+          if (typeCol) {
+            const badge = document.createElement("div");
+            badge.className = "escalated-badge mt-1";
+            badge.innerHTML = '<span class="text-xs text-orange-400 bg-orange-900/20 px-1.5 py-0.5 rounded">⬆️ escalated</span>';
+            typeCol.appendChild(badge);
+          }
+        }
+      } catch (_) {
+        // ignore parse errors
+      }
+    };
+
+    es.onerror = () => {
+      es.close();
+      liveIndicator?.classList.add("hidden");
+      if (sseRetries < MAX_RETRIES) {
+        sseRetries++;
+        // Exponential back-off: 2s, 4s, 8s…
+        setTimeout(connectSSE, Math.pow(2, sseRetries) * 1000);
+      }
+    };
+  }
+
+  // Start SSE on page load (only on page 1, not if filtered to terminal statuses)
+  const currentStatus = new URLSearchParams(window.location.search).get("status") ?? "";
+  const terminalStatuses = new Set(["completed", "failed", "cancelled", "archived"]);
+  if (!terminalStatuses.has(currentStatus)) {
+    connectSSE();
+  }
 </script>

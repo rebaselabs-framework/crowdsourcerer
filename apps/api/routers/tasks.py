@@ -1431,6 +1431,94 @@ async def task_status_stream(
     )
 
 
+# ─── SSE — dashboard live stream (all active tasks) ─────────────────────────
+
+@router.get("/stream")
+async def dashboard_task_stream(
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Server-Sent Events stream for the task dashboard.
+
+    Polls all of the current user's non-terminal tasks and emits events
+    whenever any status, progress, or priority changes.  Closes automatically
+    once no active tasks remain (or after 10 minutes).
+
+    Event format::
+
+        data: {"task_id": "...", "status": "...", "assignments_completed": N,
+               "assignments_required": N, "priority": "...",
+               "completed_at": "ISO-or-null", "error": "or-null"}
+
+    A ``{"event": "heartbeat"}`` is sent every 5 s to keep connections alive.
+    A ``{"event": "stream_end"}`` is sent before the connection closes.
+    """
+    TERMINAL = {"completed", "failed", "cancelled", "archived"}
+
+    async def event_generator() -> AsyncIterator[str]:
+        from core.database import AsyncSessionLocal
+
+        poll_interval = 2.0   # seconds between DB checks
+        max_polls = 300        # 10 minutes at 2s intervals
+        # last seen snapshot: task_id → (status, assignments_completed, priority)
+        snapshot: dict[str, tuple[str, int, str]] = {}
+        heartbeat_counter = 0
+
+        for _ in range(max_polls):
+            async with AsyncSessionLocal() as session:
+                result = await session.execute(
+                    select(TaskDB).where(
+                        TaskDB.user_id == user_id,
+                        TaskDB.status.notin_(list(TERMINAL)),
+                    )
+                )
+                active_tasks = result.scalars().all()
+
+            for t in active_tasks:
+                tid = str(t.id)
+                current = (t.status, t.assignments_completed or 0, t.priority or "normal")
+                if snapshot.get(tid) != current:
+                    snapshot[tid] = current
+                    payload = {
+                        "task_id": tid,
+                        "status": t.status,
+                        "assignments_completed": t.assignments_completed or 0,
+                        "assignments_required": t.assignments_required or 1,
+                        "priority": t.priority or "normal",
+                        "priority_escalated_at": (
+                            t.priority_escalated_at.isoformat()
+                            if getattr(t, "priority_escalated_at", None)
+                            else None
+                        ),
+                        "completed_at": t.completed_at.isoformat() if t.completed_at else None,
+                        "error": t.error,
+                    }
+                    yield f"data: {json.dumps(payload)}\n\n"
+
+            # If nothing active, we're done
+            if not active_tasks:
+                break
+
+            # Heartbeat every ~5 s (every 2-3 polls)
+            heartbeat_counter += 1
+            if heartbeat_counter % 3 == 0:
+                yield 'data: {"event": "heartbeat"}\n\n'
+
+            await asyncio.sleep(poll_interval)
+
+        yield 'data: {"event": "stream_end"}\n\n'
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 # ─── Background task runner ────────────────────────────────────────────────
 
 def _result_preview(output: dict | None, max_chars: int = 200) -> str:

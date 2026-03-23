@@ -1,0 +1,348 @@
+---
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Astro.cookies);
+if (!token) return Astro.redirect("/login");
+
+const search = Astro.url.searchParams.get("search") ?? "";
+const taskType = Astro.url.searchParams.get("type") ?? "";
+const sort = Astro.url.searchParams.get("sort") ?? "popular";
+const page = Number(Astro.url.searchParams.get("page") ?? 1);
+
+let marketplaceData: any = { templates: [], total: 0, has_next: false };
+let myTemplates: any[] = [];
+let error: string | null = null;
+
+const TASK_TYPES = [
+  "web_research","entity_lookup","document_parse","data_transform","llm_generate",
+  "screenshot","audio_transcribe","pii_detect","code_execute","web_intel",
+  "label_image","label_text","rate_quality","verify_fact","moderate_content",
+  "compare_rank","answer_question","transcription_review",
+];
+
+try {
+  const qs = new URLSearchParams({ sort, page: String(page), page_size: "20" });
+  if (search) qs.set("search", search);
+  if (taskType) qs.set("task_type", taskType);
+
+  [marketplaceData, myTemplates] = await Promise.all([
+    apiFetch<any>(`/v1/template-marketplace?${qs}`, { token }),
+    apiFetch<any>("/v1/task-templates?page_size=50", { token })
+      .then((d: any) => d.templates ?? [])
+      .catch(() => []),
+  ]);
+} catch (e: any) {
+  if (e.message?.includes("401")) return Astro.redirect("/login");
+  error = "Failed to load marketplace";
+}
+
+const templates: any[] = marketplaceData.templates ?? [];
+const myIds = new Set<string>(myTemplates.map((t: any) => String(t.id)));
+// Collect templates I published (to know which to show Unpublish for)
+const myPublishedIds = new Set<string>(
+  myTemplates.filter((t: any) => t.is_public).map((t: any) => String(t.id))
+);
+---
+
+<Layout title="Template Marketplace — CrowdSorcerer">
+  <div class="max-w-6xl mx-auto px-6 py-10">
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-8">
+      <div>
+        <div class="text-sm text-gray-500 mb-1">
+          <a href="/dashboard" class="hover:text-gray-300 transition-colors">Dashboard</a>
+          <span class="mx-2">›</span>
+          <span>Template Marketplace</span>
+        </div>
+        <h1 class="text-2xl font-bold">Template Marketplace</h1>
+        <p class="text-gray-400 mt-1 text-sm">
+          Browse community-shared task templates. Import them into your library in one click.
+        </p>
+      </div>
+      <div class="flex gap-2">
+        <a
+          href="/dashboard/task-templates"
+          class="px-4 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 text-sm font-medium rounded-lg transition-colors"
+        >
+          📋 My Templates
+        </a>
+      </div>
+    </div>
+
+    {error && (
+      <div class="mb-6 px-4 py-3 bg-red-950 border border-red-700 text-red-300 text-sm rounded-lg">
+        {error}
+      </div>
+    )}
+
+    <!-- Search + filters -->
+    <form class="flex flex-wrap gap-3 mb-6">
+      <input
+        name="search"
+        value={search}
+        placeholder="Search templates…"
+        class="flex-1 min-w-48 bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500"
+      />
+      <select
+        name="type"
+        class="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-indigo-500"
+      >
+        <option value="" selected={!taskType}>All types</option>
+        {TASK_TYPES.map(t => (
+          <option value={t} selected={taskType === t}>{t}</option>
+        ))}
+      </select>
+      <select
+        name="sort"
+        class="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-indigo-500"
+      >
+        <option value="popular" selected={sort === "popular"}>🔥 Most popular</option>
+        <option value="newest" selected={sort === "newest"}>🆕 Newest</option>
+        <option value="most_used" selected={sort === "most_used"}>📈 Most used</option>
+      </select>
+      <button
+        type="submit"
+        class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition-colors"
+      >
+        Search
+      </button>
+      {(search || taskType || sort !== "popular") && (
+        <a
+          href="/dashboard/template-marketplace"
+          class="px-4 py-2 text-sm text-gray-500 hover:text-gray-300 transition-colors self-center"
+        >
+          Clear
+        </a>
+      )}
+    </form>
+
+    <!-- Stats bar -->
+    <div class="flex items-center gap-4 mb-6 text-sm text-gray-500">
+      <span>{marketplaceData.total ?? 0} public templates</span>
+      {search && <span class="text-indigo-400">filtered</span>}
+    </div>
+
+    <!-- Template grid -->
+    {templates.length === 0 ? (
+      <div class="bg-gray-900 border border-gray-800 rounded-xl px-6 py-16 text-center">
+        <div class="text-4xl mb-3">🏪</div>
+        <div class="text-gray-400 font-medium">No templates found</div>
+        <p class="text-gray-600 text-sm mt-1">
+          {search || taskType
+            ? "Try adjusting your filters."
+            : "Be the first to share a template! Go to My Templates → publish one."}
+        </p>
+      </div>
+    ) : (
+      <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        {templates.map((tpl: any) => {
+          const isImported = myIds.has(String(tpl.id));
+          const isMyOwn = myPublishedIds.has(String(tpl.id));
+          const title = tpl.marketplace_title || tpl.name;
+          const desc = tpl.marketplace_description || "";
+          const tags: string[] = tpl.marketplace_tags ?? [];
+
+          return (
+            <div
+              class="bg-gray-900 border border-gray-800 hover:border-gray-600 rounded-xl p-5 transition-colors flex flex-col gap-3"
+              data-template-id={tpl.id}
+            >
+              <!-- Title row -->
+              <div class="flex items-start gap-3">
+                <span class="text-2xl shrink-0">{tpl.icon ?? "📋"}</span>
+                <div class="min-w-0 flex-1">
+                  <div class="font-semibold text-white truncate">{title}</div>
+                  <div class="text-xs text-gray-500 font-mono mt-0.5">{tpl.task_type}</div>
+                </div>
+              </div>
+
+              {/* Description */}
+              {desc && (
+                <p class="text-sm text-gray-400 line-clamp-2">{desc}</p>
+              )}
+
+              {/* Tags */}
+              {tags.length > 0 && (
+                <div class="flex flex-wrap gap-1">
+                  {tags.slice(0, 5).map((tag: string) => (
+                    <span class="px-2 py-0.5 bg-indigo-950/50 text-indigo-400 border border-indigo-800/40 text-xs rounded-full">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {/* Stats row */}
+              <div class="flex items-center gap-4 text-xs text-gray-500">
+                <span title="Times imported">⬇️ {tpl.import_count}</span>
+                <span title="Times used">▶️ {tpl.use_count}</span>
+                {tpl.author_name && (
+                  <span class="truncate">by {tpl.author_name}</span>
+                )}
+                {tpl.published_at && (
+                  <span class="ml-auto">{new Date(tpl.published_at).toLocaleDateString()}</span>
+                )}
+              </div>
+
+              {/* Action button */}
+              <div class="mt-auto pt-1">
+                {isMyOwn ? (
+                  <div class="flex gap-2">
+                    <span class="flex-1 text-center px-3 py-1.5 bg-gray-800 border border-gray-700 text-gray-500 text-xs rounded-lg">
+                      ✓ Your template
+                    </span>
+                    <button
+                      class="unpublish-btn px-3 py-1.5 bg-red-950 hover:bg-red-900 border border-red-800 text-red-400 text-xs rounded-lg transition-colors"
+                      data-id={tpl.id}
+                    >
+                      Unpublish
+                    </button>
+                  </div>
+                ) : isImported ? (
+                  <button
+                    disabled
+                    class="w-full px-3 py-1.5 bg-green-950 border border-green-800 text-green-400 text-xs rounded-lg cursor-default"
+                  >
+                    ✓ In your library
+                  </button>
+                ) : (
+                  <button
+                    class="import-btn w-full px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium rounded-lg transition-colors"
+                    data-id={tpl.id}
+                    data-title={title}
+                  >
+                    ⬇️ Import to my library
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    )}
+
+    <!-- Pagination -->
+    {(page > 1 || marketplaceData.has_next) && (
+      <div class="flex items-center justify-between mt-6">
+        <div class="text-sm text-gray-500">{marketplaceData.total} templates total</div>
+        <div class="flex gap-2">
+          {page > 1 && (
+            <a
+              href={`?${new URLSearchParams({ search, type: taskType, sort, page: String(page - 1) })}`}
+              class="px-3 py-1.5 bg-gray-900 border border-gray-700 rounded-lg text-sm text-gray-300 hover:border-gray-500 transition-colors"
+            >
+              ← Prev
+            </a>
+          )}
+          <span class="px-3 py-1.5 text-sm text-gray-500">Page {page}</span>
+          {marketplaceData.has_next && (
+            <a
+              href={`?${new URLSearchParams({ search, type: taskType, sort, page: String(page + 1) })}`}
+              class="px-3 py-1.5 bg-gray-900 border border-gray-700 rounded-lg text-sm text-gray-300 hover:border-gray-500 transition-colors"
+            >
+              Next →
+            </a>
+          )}
+        </div>
+      </div>
+    )}
+
+    <!-- Publish my template CTA -->
+    <div class="mt-10 bg-gradient-to-r from-indigo-950/60 to-purple-950/60 border border-indigo-800/40 rounded-xl p-6 flex items-center gap-5">
+      <div class="text-3xl">🚀</div>
+      <div class="flex-1">
+        <div class="font-semibold text-white mb-1">Share your templates</div>
+        <p class="text-sm text-gray-400">
+          Have a useful task configuration? Publish it to the marketplace so the community can benefit.
+        </p>
+      </div>
+      <a
+        href="/dashboard/task-templates"
+        class="shrink-0 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition-colors"
+      >
+        My Templates →
+      </a>
+    </div>
+  </div>
+
+  <!-- Toast notification -->
+  <div
+    id="toast"
+    class="hidden fixed bottom-6 right-6 px-4 py-3 rounded-lg text-sm shadow-xl z-50 border"
+  ></div>
+</Layout>
+
+<script>
+  function showToast(msg: string, ok: boolean) {
+    const toast = document.getElementById("toast")!;
+    toast.textContent = msg;
+    toast.className = ok
+      ? "fixed bottom-6 right-6 px-4 py-3 rounded-lg text-sm shadow-xl z-50 border bg-green-950 border-green-700 text-green-300"
+      : "fixed bottom-6 right-6 px-4 py-3 rounded-lg text-sm shadow-xl z-50 border bg-red-950 border-red-700 text-red-300";
+    setTimeout(() => {
+      toast.className = "hidden fixed bottom-6 right-6 px-4 py-3 rounded-lg text-sm shadow-xl z-50 border";
+    }, 4000);
+  }
+
+  // Import buttons
+  document.querySelectorAll<HTMLButtonElement>(".import-btn").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const id = btn.dataset.id!;
+      const title = btn.dataset.title ?? "template";
+      btn.disabled = true;
+      btn.textContent = "Importing…";
+
+      try {
+        const res = await fetch(`/api/template-marketplace/${id}/import`, {
+          method: "POST",
+        });
+        if (res.ok) {
+          btn.textContent = "✓ Imported!";
+          btn.className = "w-full px-3 py-1.5 bg-green-950 border border-green-800 text-green-400 text-xs rounded-lg cursor-default";
+          showToast(`✓ "${title}" added to your library`, true);
+        } else {
+          const data = await res.json();
+          const msg = data.detail ?? "Import failed";
+          btn.disabled = false;
+          btn.textContent = "⬇️ Import to my library";
+          showToast(`Error: ${msg}`, false);
+        }
+      } catch {
+        btn.disabled = false;
+        btn.textContent = "⬇️ Import to my library";
+        showToast("Network error. Please try again.", false);
+      }
+    });
+  });
+
+  // Unpublish buttons
+  document.querySelectorAll<HTMLButtonElement>(".unpublish-btn").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      if (!confirm("Remove this template from the marketplace? (Your personal copy is kept.)")) return;
+      const id = btn.dataset.id!;
+      btn.disabled = true;
+      btn.textContent = "Removing…";
+
+      try {
+        const res = await fetch(`/api/task-templates/${id}/publish`, {
+          method: "DELETE",
+        });
+        if (res.ok || res.status === 204) {
+          // Remove the card
+          const card = btn.closest<HTMLElement>("[data-template-id]");
+          if (card) card.remove();
+          showToast("Template removed from marketplace", true);
+        } else {
+          btn.disabled = false;
+          btn.textContent = "Unpublish";
+          showToast("Failed to unpublish", false);
+        }
+      } catch {
+        btn.disabled = false;
+        btn.textContent = "Unpublish";
+        showToast("Network error", false);
+      }
+    });
+  });
+</script>

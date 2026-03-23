@@ -1418,6 +1418,13 @@ class RequesterTemplateOut(BaseModel):
     task_config: dict
     icon: Optional[str]
     use_count: int
+    # Marketplace fields
+    is_public: bool = False
+    marketplace_title: Optional[str] = None
+    marketplace_description: Optional[str] = None
+    marketplace_tags: list[str] = []
+    import_count: int = 0
+    published_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
 
@@ -1427,6 +1434,41 @@ class RequesterTemplateOut(BaseModel):
 class RequesterTemplateListOut(BaseModel):
     templates: list[RequesterTemplateOut]
     total: int
+
+
+# ─── Template Marketplace ─────────────────────────────────────────────────────
+
+class TemplatePublishRequest(BaseModel):
+    marketplace_title: Optional[str] = Field(None, max_length=255)
+    marketplace_description: Optional[str] = Field(None, max_length=2000)
+    marketplace_tags: list[str] = Field(default_factory=list, max_length=10)
+
+
+class MarketplaceTemplateOut(BaseModel):
+    """Public view of a template in the marketplace."""
+    id: UUID
+    name: str
+    task_type: str
+    icon: Optional[str]
+    use_count: int
+    import_count: int
+    marketplace_title: Optional[str]
+    marketplace_description: Optional[str]
+    marketplace_tags: list[str]
+    published_at: Optional[datetime]
+    # Author info (stripped — just display name)
+    author_name: Optional[str] = None
+    author_reputation: Optional[float] = None
+
+    model_config = {"from_attributes": True}
+
+
+class MarketplaceTemplateListOut(BaseModel):
+    templates: list[MarketplaceTemplateOut]
+    total: int
+    page: int
+    page_size: int
+    has_next: bool
 
 
 # ─── Bulk Worker Invites ───────────────────────────────────────────────────

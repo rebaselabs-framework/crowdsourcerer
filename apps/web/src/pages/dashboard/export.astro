@@ -1,0 +1,306 @@
+---
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Astro.cookies);
+if (!token) return Astro.redirect("/login");
+
+let orgs: any[] = [];
+try {
+  const data = await apiFetch<any>("/v1/orgs", { token });
+  orgs = Array.isArray(data) ? data : (data as any).items ?? [];
+} catch (_) {}
+---
+
+<Layout title="Export Tasks — CrowdSorcerer">
+  <div class="max-w-3xl mx-auto px-6 py-10">
+    <div class="mb-8">
+      <div class="text-sm text-gray-500 mb-1">
+        <a href="/dashboard" class="hover:text-gray-300 transition-colors">Dashboard</a>
+        <span class="mx-2">›</span>
+        <span>Export Tasks</span>
+      </div>
+      <h1 class="text-2xl font-bold">Export Tasks</h1>
+      <p class="text-gray-400 mt-1 text-sm">
+        Download your task data in CSV, JSON, or Excel format with optional filters.
+      </p>
+    </div>
+
+    <!-- Export Form Card -->
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 space-y-6">
+      <h2 class="text-base font-semibold text-white">Export settings</h2>
+
+      <!-- Format -->
+      <div>
+        <label class="block text-sm font-medium text-gray-300 mb-2">Format</label>
+        <div class="flex gap-3" id="format-selector">
+          {[
+            { value: "csv",  label: "📄 CSV",   desc: "Comma-separated values — opens in Excel / Google Sheets" },
+            { value: "json", label: "📦 JSON",  desc: "Machine-readable structured data" },
+            { value: "xlsx", label: "📊 Excel", desc: "Formatted spreadsheet with Summary sheet" },
+          ].map(f => (
+            <label class="flex-1 cursor-pointer">
+              <input
+                type="radio"
+                name="format"
+                value={f.value}
+                class="sr-only format-radio"
+                checked={f.value === "csv"}
+              />
+              <div
+                class={`format-card border rounded-lg px-4 py-3 text-center transition-all ${
+                  f.value === "csv"
+                    ? "border-indigo-500 bg-indigo-950/40"
+                    : "border-gray-700 hover:border-gray-600"
+                }`}
+              >
+                <div class="text-base font-semibold">{f.label}</div>
+                <div class="text-xs text-gray-500 mt-0.5">{f.desc}</div>
+              </div>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <!-- Filters row -->
+      <div class="grid grid-cols-2 gap-4">
+        <!-- Status -->
+        <div>
+          <label class="block text-sm font-medium text-gray-300 mb-1">Status</label>
+          <select
+            id="filter-status"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          >
+            <option value="">All statuses</option>
+            <option value="completed">Completed</option>
+            <option value="failed">Failed</option>
+            <option value="running">Running</option>
+            <option value="queued">Queued</option>
+            <option value="pending">Pending</option>
+            <option value="cancelled">Cancelled</option>
+            <option value="open">Open</option>
+          </select>
+        </div>
+
+        <!-- Execution mode -->
+        <div>
+          <label class="block text-sm font-medium text-gray-300 mb-1">Execution mode</label>
+          <select
+            id="filter-mode"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          >
+            <option value="">All modes</option>
+            <option value="ai">AI</option>
+            <option value="human">Human</option>
+          </select>
+        </div>
+
+        <!-- From date -->
+        <div>
+          <label class="block text-sm font-medium text-gray-300 mb-1">From date</label>
+          <input
+            type="date"
+            id="filter-from"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          />
+        </div>
+
+        <!-- To date -->
+        <div>
+          <label class="block text-sm font-medium text-gray-300 mb-1">To date</label>
+          <input
+            type="date"
+            id="filter-to"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          />
+        </div>
+      </div>
+
+      <!-- Org filter (if user has orgs) -->
+      {orgs.length > 0 && (
+        <div>
+          <label class="block text-sm font-medium text-gray-300 mb-1">Organization</label>
+          <select
+            id="filter-org"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          >
+            <option value="">My personal tasks</option>
+            {orgs.map((o: any) => (
+              <option value={o.id}>{o.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      <!-- Include submissions toggle -->
+      <div class="flex items-center gap-3">
+        <input
+          type="checkbox"
+          id="include-submissions"
+          class="w-4 h-4 rounded border-gray-600 bg-gray-800 accent-indigo-500"
+        />
+        <div>
+          <label for="include-submissions" class="text-sm font-medium text-gray-200 cursor-pointer">
+            Include worker submissions
+          </label>
+          <p class="text-xs text-gray-500">Embed per-worker submission data (human tasks only)</p>
+        </div>
+      </div>
+
+      <!-- Preview stats -->
+      <div
+        id="preview-bar"
+        class="hidden bg-gray-800 rounded-lg px-4 py-3 flex items-center gap-3 text-sm"
+      >
+        <div class="animate-spin text-indigo-400 text-lg hidden" id="preview-spinner">⟳</div>
+        <span id="preview-text" class="text-gray-300"></span>
+      </div>
+
+      <!-- Download button -->
+      <div class="flex gap-3 pt-2">
+        <button
+          id="export-btn"
+          class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2.5 rounded-lg transition-colors text-sm flex items-center justify-center gap-2"
+        >
+          <span id="export-btn-icon">⬇️</span>
+          <span id="export-btn-label">Download export</span>
+        </button>
+        <button
+          id="preview-btn"
+          class="px-4 py-2.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 text-sm font-medium rounded-lg transition-colors"
+        >
+          Preview count
+        </button>
+      </div>
+    </div>
+
+    <!-- Recent exports tip -->
+    <div class="mt-6 bg-gray-900 border border-gray-800 rounded-xl p-5">
+      <h3 class="text-sm font-semibold text-white mb-3">Export tips</h3>
+      <ul class="space-y-2 text-sm text-gray-400">
+        <li class="flex gap-2">
+          <span class="text-indigo-400 shrink-0">•</span>
+          <span><strong class="text-gray-200">CSV</strong> — Best for opening in spreadsheet apps. Each task is one row.</span>
+        </li>
+        <li class="flex gap-2">
+          <span class="text-indigo-400 shrink-0">•</span>
+          <span><strong class="text-gray-200">JSON</strong> — Best for programmatic processing. Includes full input/output objects.</span>
+        </li>
+        <li class="flex gap-2">
+          <span class="text-indigo-400 shrink-0">•</span>
+          <span><strong class="text-gray-200">Excel</strong> — Styled .xlsx with auto-fit columns, alternating rows, and a Summary sheet.</span>
+        </li>
+        <li class="flex gap-2">
+          <span class="text-indigo-400 shrink-0">•</span>
+          <span>Large exports may take a few seconds. The file downloads automatically.</span>
+        </li>
+      </ul>
+    </div>
+  </div>
+</Layout>
+
+<script>
+  // Format card selection
+  document.querySelectorAll<HTMLInputElement>(".format-radio").forEach(radio => {
+    radio.addEventListener("change", () => {
+      document.querySelectorAll(".format-card").forEach(card => {
+        card.classList.remove("border-indigo-500", "bg-indigo-950/40");
+        card.classList.add("border-gray-700");
+      });
+      const card = radio.nextElementSibling as HTMLElement;
+      if (card) {
+        card.classList.remove("border-gray-700");
+        card.classList.add("border-indigo-500", "bg-indigo-950/40");
+      }
+    });
+  });
+
+  function buildParams(): URLSearchParams {
+    const qs = new URLSearchParams();
+
+    const format = (document.querySelector<HTMLInputElement>(".format-radio:checked"))?.value ?? "csv";
+    qs.set("format", format);
+
+    const status = (document.getElementById("filter-status") as HTMLSelectElement)?.value;
+    if (status) qs.set("status", status);
+
+    const mode = (document.getElementById("filter-mode") as HTMLSelectElement)?.value;
+    if (mode) qs.set("execution_mode", mode);
+
+    const from = (document.getElementById("filter-from") as HTMLInputElement)?.value;
+    if (from) qs.set("from_date", from);
+
+    const to = (document.getElementById("filter-to") as HTMLInputElement)?.value;
+    if (to) qs.set("to_date", to);
+
+    const org = (document.getElementById("filter-org") as HTMLSelectElement)?.value;
+    if (org) qs.set("org_id", org);
+
+    const subs = (document.getElementById("include-submissions") as HTMLInputElement)?.checked;
+    if (subs) qs.set("include_submissions", "true");
+
+    return qs;
+  }
+
+  // Preview count by requesting JSON and counting
+  document.getElementById("preview-btn")?.addEventListener("click", async () => {
+    const bar = document.getElementById("preview-bar")!;
+    const spinner = document.getElementById("preview-spinner")!;
+    const text = document.getElementById("preview-text")!;
+
+    bar.classList.remove("hidden");
+    bar.classList.add("flex");
+    spinner.classList.remove("hidden");
+    text.textContent = "Counting tasks…";
+
+    try {
+      // Fetch as JSON to get count
+      const qs = buildParams();
+      qs.set("format", "json");
+      const res = await fetch(`/api/tasks/export?${qs}`, {
+        headers: { accept: "application/json" },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const count = data.count ?? data.tasks?.length ?? "?";
+        text.textContent = `${count} task${count === 1 ? "" : "s"} match your filters.`;
+      } else {
+        text.textContent = "Could not preview.";
+      }
+    } catch {
+      text.textContent = "Error fetching preview.";
+    } finally {
+      spinner.classList.add("hidden");
+    }
+  });
+
+  // Export / download
+  document.getElementById("export-btn")?.addEventListener("click", async () => {
+    const btn = document.getElementById("export-btn")!;
+    const label = document.getElementById("export-btn-label")!;
+    const icon = document.getElementById("export-btn-icon")!;
+
+    btn.setAttribute("disabled", "true");
+    btn.classList.add("opacity-70");
+    icon.textContent = "⏳";
+    label.textContent = "Preparing download…";
+
+    try {
+      const qs = buildParams();
+      // Direct navigation triggers browser download via the proxy
+      window.location.href = `/api/tasks/export?${qs}`;
+
+      // Reset after a moment
+      setTimeout(() => {
+        btn.removeAttribute("disabled");
+        btn.classList.remove("opacity-70");
+        icon.textContent = "⬇️";
+        label.textContent = "Download export";
+      }, 2000);
+    } catch {
+      label.textContent = "Error — try again";
+      btn.removeAttribute("disabled");
+      btn.classList.remove("opacity-70");
+    }
+  });
+</script>

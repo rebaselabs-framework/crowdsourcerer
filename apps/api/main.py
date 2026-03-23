@@ -193,6 +193,7 @@ app.include_router(portfolio.router)
 app.include_router(portfolio.public_router)
 app.include_router(requester_templates.router)
 app.include_router(requester_templates.tasks_alias_router)
+app.include_router(requester_templates.marketplace_router)
 
 # ─── Health ───────────────────────────────────────────────────────────────
 

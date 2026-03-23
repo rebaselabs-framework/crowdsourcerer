@@ -22,3 +22,4 @@ mypy==1.13.0
 email-validator==2.2.0
 croniter==3.0.3
 pyotp==2.9.0
+openpyxl==3.1.5

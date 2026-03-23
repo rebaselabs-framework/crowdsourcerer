@@ -376,6 +376,8 @@ function fmt(d: string) {
         { href: "/dashboard/api-keys",     icon: "🔑", label: "API Keys",     sub: "Manage" },
         { href: "/dashboard/sla",          icon: "⏱",  label: "SLA",         sub: "Deadlines" },
         { href: "/workers/browse",         icon: "👷", label: "Browse Workers", sub: "Find & invite" },
+        { href: "/dashboard/export",                icon: "⬇️", label: "Export",          sub: "CSV/JSON/Excel" },
+        { href: "/dashboard/template-marketplace", icon: "🏪", label: "Tmpl Marketplace", sub: "Community templates" },
         { href: "/dashboard/billing",      icon: "💳", label: "Billing",      sub: "Plan & credits" },
       ].map(({ href, icon, label, sub }) => (
         <a href={href}

@@ -1378,9 +1378,10 @@ class WorkerPortfolioItemDB(Base):
 class RequesterSavedTemplateDB(Base):
     """A requester's private saved task configuration template.
 
-    These are personal templates (not public marketplace templates) that allow
-    requesters to quickly re-create tasks with the same parameters.  Up to 50
-    templates per user.
+    These are personal templates that allow requesters to quickly re-create
+    tasks with the same parameters.  They can optionally be published to the
+    public template marketplace so other requesters can discover and import them.
+    Up to 50 templates per user.
     """
     __tablename__ = "requester_saved_templates"
 
@@ -1396,5 +1397,13 @@ class RequesterSavedTemplateDB(Base):
     use_count = Column(Integer, default=0, nullable=False)
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+
+    # ── Marketplace fields (migration 0031) ────────────────────────────────
+    is_public = Column(Boolean, default=False, nullable=False)
+    marketplace_title = Column(String(255), nullable=True)          # override display name
+    marketplace_description = Column(Text, nullable=True)           # long-form public description
+    marketplace_tags = Column(JSON, nullable=True, default=list)    # discoverability tags
+    import_count = Column(Integer, default=0, nullable=False)       # times imported by others
+    published_at = Column(DateTime(timezone=True), nullable=True)   # when made public
 
     user = relationship("UserDB", backref="saved_task_templates")
