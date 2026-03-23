@@ -126,6 +126,29 @@ const title = profile ? `${profile.name ?? "Worker"} — CrowdSorcerer` : "Worke
                 <p class="mt-3 text-gray-300 text-sm leading-relaxed max-w-prose">{profile.bio}</p>
               )}
 
+              {/* Location & website */}
+              {(profile.location || profile.website_url) && (
+                <div class="mt-2 flex flex-wrap items-center gap-3 text-xs text-gray-400">
+                  {profile.location && (
+                    <span class="flex items-center gap-1">
+                      <span>📍</span>
+                      <span>{profile.location}</span>
+                    </span>
+                  )}
+                  {profile.website_url && (
+                    <a
+                      href={profile.website_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="flex items-center gap-1 text-indigo-400 hover:text-indigo-300 transition-colors"
+                    >
+                      <span>🔗</span>
+                      <span>{new URL(profile.website_url).hostname}</span>
+                    </a>
+                  )}
+                </div>
+              )}
+
               {/* Level badge */}
               <div class="mt-3 flex flex-wrap gap-2">
                 <span class={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-gray-700 ${levelColor(profile.worker_level)}`}>

@@ -1,0 +1,321 @@
+---
+/**
+ * Worker Profile Setup Wizard
+ * Multi-step guided flow to fill in profile details for better task matching.
+ */
+import Layout from '../../layouts/Layout.astro';
+
+const token = Astro.cookies.get('token')?.value;
+if (!token) return Astro.redirect('/login');
+
+const apiBase = import.meta.env.API_BASE_URL ?? 'http://localhost:8100';
+
+// Fetch current user data
+let user: any = null;
+let profileStatus: any = null;
+try {
+  const [userRes, statusRes] = await Promise.all([
+    fetch(`${apiBase}/v1/users/me`, { headers: { Authorization: `Bearer ${token}` } }),
+    fetch(`${apiBase}/v1/users/me/profile-status`, { headers: { Authorization: `Bearer ${token}` } }),
+  ]);
+  if (userRes.ok) user = await userRes.json();
+  if (statusRes.ok) profileStatus = await statusRes.json();
+} catch {}
+
+if (!user) return Astro.redirect('/login');
+
+// Handle form submission (each step saves via PATCH /v1/users/me/profile)
+let success = false;
+let saveError = "";
+if (Astro.request.method === "POST") {
+  const form = await Astro.request.formData();
+  const step = form.get("step") as string;
+
+  const body: Record<string, unknown> = {};
+
+  if (step === "basic") {
+    body.name = form.get("name") as string;
+    body.bio = form.get("bio") as string;
+    body.avatar_url = form.get("avatar_url") as string || null;
+  } else if (step === "location") {
+    body.location = form.get("location") as string || null;
+    body.website_url = form.get("website_url") as string || null;
+  } else if (step === "visibility") {
+    body.profile_public = form.get("profile_public") === "true";
+  }
+
+  try {
+    const res = await fetch(`${apiBase}/v1/users/me/profile`, {
+      method: "PATCH",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (res.ok) {
+      // Refresh user data
+      const refreshRes = await fetch(`${apiBase}/v1/users/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (refreshRes.ok) user = await refreshRes.json();
+      success = true;
+    } else {
+      const err = await res.json().catch(() => ({}));
+      saveError = err.detail || "Failed to save changes.";
+    }
+  } catch {
+    saveError = "Network error — could not save.";
+  }
+}
+
+const pct = profileStatus?.completeness_pct ?? 0;
+---
+<Layout title="Profile Setup — CrowdSorcerer">
+  <div class="max-w-2xl mx-auto px-4 py-8">
+    <!-- Header -->
+    <div class="text-center mb-8">
+      <div class="text-5xl mb-3">👤</div>
+      <h1 class="text-2xl font-bold mb-1">Complete Your Profile</h1>
+      <p class="text-gray-500 text-sm">A complete profile helps requesters find you and invite you to better-paying tasks.</p>
+
+      <!-- Progress bar -->
+      <div class="mt-4 max-w-xs mx-auto">
+        <div class="flex justify-between text-xs text-gray-500 mb-1">
+          <span>Profile completion</span>
+          <span class="font-semibold text-indigo-600">{pct}%</span>
+        </div>
+        <div class="h-2 bg-gray-100 rounded-full overflow-hidden">
+          <div class="h-full bg-indigo-500 rounded-full transition-all" style={`width:${pct}%`} />
+        </div>
+      </div>
+    </div>
+
+    {success && (
+      <div class="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg px-4 py-3 text-sm mb-6">
+        ✓ Changes saved successfully!
+      </div>
+    )}
+    {saveError && (
+      <div class="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm mb-6">
+        {saveError}
+      </div>
+    )}
+
+    <!-- Completion items grid -->
+    <div class="space-y-4 mb-8">
+
+      <!-- ── Step 1: Basic Info ─────────────────────────────────────────── -->
+      <details class="bg-white border rounded-xl shadow-sm overflow-hidden group" open={!user.name || !user.bio}>
+        <summary class="flex items-center justify-between px-6 py-4 cursor-pointer select-none hover:bg-gray-50 transition-colors">
+          <div class="flex items-center gap-3">
+            <span class="text-xl">{user.name && user.bio ? "✅" : "⚪"}</span>
+            <div>
+              <div class="font-semibold text-gray-800">Basic Info</div>
+              <div class="text-xs text-gray-500">Name and bio</div>
+            </div>
+          </div>
+          <span class="text-gray-400 text-sm group-open:rotate-180 transition-transform">▾</span>
+        </summary>
+        <div class="px-6 pb-6 border-t">
+          <form method="POST" class="space-y-4 pt-4">
+            <input type="hidden" name="step" value="basic" />
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Display Name</label>
+              <input
+                type="text"
+                name="name"
+                value={user.name ?? ""}
+                maxlength="255"
+                placeholder="How you appear to requesters"
+                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">
+                Bio <span class="text-gray-400 font-normal">(max 500 chars)</span>
+              </label>
+              <textarea
+                name="bio"
+                rows={4}
+                maxlength="500"
+                placeholder="Tell requesters about your skills, experience, and what kind of tasks you love…"
+                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+              >{user.bio ?? ""}</textarea>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Avatar URL</label>
+              <input
+                type="url"
+                name="avatar_url"
+                value={user.avatar_url ?? ""}
+                maxlength="512"
+                placeholder="https://avatars.githubusercontent.com/u/…"
+                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+              <p class="text-xs text-gray-400 mt-1">Paste a URL to a profile picture (e.g. GitHub avatar, Gravatar)</p>
+            </div>
+            <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
+              Save Basic Info
+            </button>
+          </form>
+        </div>
+      </details>
+
+      <!-- ── Step 2: Location & Links ──────────────────────────────────── -->
+      <details class="bg-white border rounded-xl shadow-sm overflow-hidden group" open={!user.location && !user.website_url}>
+        <summary class="flex items-center justify-between px-6 py-4 cursor-pointer select-none hover:bg-gray-50 transition-colors">
+          <div class="flex items-center gap-3">
+            <span class="text-xl">{user.location || user.website_url ? "✅" : "⚪"}</span>
+            <div>
+              <div class="font-semibold text-gray-800">Location &amp; Links</div>
+              <div class="text-xs text-gray-500">Where you're based + your website</div>
+            </div>
+          </div>
+          <span class="text-gray-400 text-sm group-open:rotate-180 transition-transform">▾</span>
+        </summary>
+        <div class="px-6 pb-6 border-t">
+          <form method="POST" class="space-y-4 pt-4">
+            <input type="hidden" name="step" value="location" />
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Location</label>
+              <input
+                type="text"
+                name="location"
+                value={user.location ?? ""}
+                maxlength="128"
+                placeholder="e.g. San Francisco, CA · Remote"
+                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Website / Portfolio</label>
+              <input
+                type="url"
+                name="website_url"
+                value={user.website_url ?? ""}
+                maxlength="512"
+                placeholder="https://yourportfolio.com"
+                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+            <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
+              Save Location &amp; Links
+            </button>
+          </form>
+        </div>
+      </details>
+
+      <!-- ── Step 3: Skills ─────────────────────────────────────────────── -->
+      <div class="bg-white border rounded-xl shadow-sm overflow-hidden">
+        <div class="flex items-center justify-between px-6 py-4">
+          <div class="flex items-center gap-3">
+            <span class="text-xl">{(profileStatus?.skill_count ?? 0) > 0 ? "✅" : "⚪"}</span>
+            <div>
+              <div class="font-semibold text-gray-800">Skills</div>
+              <div class="text-xs text-gray-500">
+                {(profileStatus?.skill_count ?? 0) > 0
+                  ? `${profileStatus.skill_count} skill${profileStatus.skill_count === 1 ? "" : "s"} recorded`
+                  : "No skills yet — complete tasks to build your skill profile"}
+              </div>
+            </div>
+          </div>
+          <a
+            href="/worker/skills"
+            class="text-xs text-indigo-600 hover:text-indigo-500 font-medium"
+          >
+            View Skills →
+          </a>
+        </div>
+      </div>
+
+      <!-- ── Step 4: Certification ──────────────────────────────────────── -->
+      <div class="bg-white border rounded-xl shadow-sm overflow-hidden">
+        <div class="flex items-center justify-between px-6 py-4">
+          <div class="flex items-center gap-3">
+            <span class="text-xl">{(profileStatus?.cert_count ?? 0) > 0 ? "✅" : "⚪"}</span>
+            <div>
+              <div class="font-semibold text-gray-800">Certification</div>
+              <div class="text-xs text-gray-500">
+                {(profileStatus?.cert_count ?? 0) > 0
+                  ? `${profileStatus.cert_count} certification${profileStatus.cert_count === 1 ? "" : "s"} earned`
+                  : "Pass a certification exam to stand out to requesters"}
+              </div>
+            </div>
+          </div>
+          <a
+            href="/worker/certifications"
+            class="text-xs text-indigo-600 hover:text-indigo-500 font-medium"
+          >
+            Take Exam →
+          </a>
+        </div>
+      </div>
+
+      <!-- ── Step 5: Profile Visibility ─────────────────────────────────── -->
+      <details class="bg-white border rounded-xl shadow-sm overflow-hidden group">
+        <summary class="flex items-center justify-between px-6 py-4 cursor-pointer select-none hover:bg-gray-50 transition-colors">
+          <div class="flex items-center gap-3">
+            <span class="text-xl">{user.profile_public ? "✅" : "⚠️"}</span>
+            <div>
+              <div class="font-semibold text-gray-800">Profile Visibility</div>
+              <div class="text-xs text-gray-500">
+                Currently: <strong>{user.profile_public ? "Public" : "Private"}</strong>
+                {!user.profile_public && " — requesters can't find you!"}
+              </div>
+            </div>
+          </div>
+          <span class="text-gray-400 text-sm group-open:rotate-180 transition-transform">▾</span>
+        </summary>
+        <div class="px-6 pb-6 border-t">
+          <form method="POST" class="pt-4">
+            <input type="hidden" name="step" value="visibility" />
+            <div class="flex items-center gap-4 mb-4">
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="profile_public"
+                  value="true"
+                  checked={user.profile_public}
+                  class="text-indigo-600"
+                />
+                <span class="text-sm font-medium text-gray-700">Public — visible to requesters</span>
+              </label>
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="profile_public"
+                  value="false"
+                  checked={!user.profile_public}
+                  class="text-indigo-600"
+                />
+                <span class="text-sm font-medium text-gray-700">Private</span>
+              </label>
+            </div>
+            <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
+              Save Visibility
+            </button>
+          </form>
+        </div>
+      </details>
+    </div>
+
+    <!-- Bottom actions -->
+    <div class="flex items-center justify-between">
+      <a href="/worker" class="text-sm text-gray-500 hover:text-gray-700 transition-colors">
+        ← Back to Dashboard
+      </a>
+      {pct >= 100 ? (
+        <div class="flex items-center gap-2 text-emerald-600 font-semibold text-sm">
+          <span>🎉</span>
+          <span>Profile complete!</span>
+        </div>
+      ) : (
+        <a
+          href={`/workers/${user.id}`}
+          class="text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg transition-colors"
+          target="_blank"
+        >
+          Preview public profile →
+        </a>
+      )}
+    </div>
+  </div>
+</Layout>

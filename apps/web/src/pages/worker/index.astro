@@ -22,22 +22,28 @@ let dailyChallenge: any = null;
 let reputation: any = null;
 let notifications: any = null;
 
+let profileStatus: any = null;
+
 try {
   user = await apiFetch("/v1/users/me", { token });
   isWorker = user?.role === "worker" || user?.role === "both";
 
   if (isWorker) {
-    [stats, assignments, dailyChallenge, reputation, notifications] = await Promise.all([
+    [stats, assignments, dailyChallenge, reputation, notifications, profileStatus] = await Promise.all([
       apiFetch("/v1/worker/stats", { token }),
       apiFetch("/v1/worker/assignments?status=active&page_size=5", { token }),
       apiFetch("/v1/challenges/today", { token }).catch(() => null),
       apiFetch("/v1/reputation/me", { token }).catch(() => null),
       apiFetch("/v1/notifications?unread_only=true&page_size=3", { token }).catch(() => null),
+      apiFetch("/v1/users/me/profile-status", { token }).catch(() => null),
     ]);
   }
 } catch (e) {
   // Non-fatal; page will show enrollment prompt
 }
+
+const profilePct = profileStatus?.completeness_pct ?? 100;
+const showProfileBanner = isWorker && profilePct < 80;
 
 const LEVEL_NAMES: Record<number, string> = {
   1: "Apprentice", 2: "Novice", 3: "Learner", 4: "Explorer", 5: "Contributor",
@@ -74,6 +80,36 @@ const TASK_TYPE_LABELS: Record<string, string> = {
         </a>
       )}
     </div>
+
+    {/* Profile completion banner */}
+    {showProfileBanner && (
+      <div class="bg-amber-950/40 border border-amber-700/60 rounded-xl px-5 py-4 mb-6 flex items-center justify-between gap-4">
+        <div class="flex items-start gap-3">
+          <span class="text-2xl mt-0.5">👤</span>
+          <div>
+            <div class="font-semibold text-amber-300 text-sm">Complete your profile — {profilePct}% done</div>
+            <div class="w-48 h-1.5 bg-amber-900/60 rounded-full mt-1.5 mb-1">
+              <div
+                class="h-full bg-amber-400 rounded-full"
+                style={`width:${profilePct}%`}
+              />
+            </div>
+            <p class="text-xs text-amber-200/70">
+              A complete profile helps requesters find you and increases your chances of getting invited to tasks.
+              {profileStatus?.missing?.length > 0 && (
+                <span> Missing: {(profileStatus.missing as string[]).join(", ")}.</span>
+              )}
+            </p>
+          </div>
+        </div>
+        <a
+          href="/worker/profile-setup"
+          class="whitespace-nowrap text-xs bg-amber-600 hover:bg-amber-500 text-white px-3 py-1.5 rounded-lg font-medium transition-colors"
+        >
+          Complete profile →
+        </a>
+      </div>
+    )}
 
     {!isWorker ? (
       <!-- Enrollment prompt -->
@@ -430,6 +466,16 @@ const TASK_TYPE_LABELS: Record<string, string> = {
             <div>
               <div class="font-semibold group-hover:text-indigo-300 transition-colors">Portfolio</div>
               <div class="text-sm text-gray-400">Showcase your best work</div>
+            </div>
+          </a>
+          <a
+            href="/worker/profile-setup"
+            class="flex items-center gap-4 bg-gray-900 border border-gray-800 hover:border-amber-600 rounded-xl p-5 transition-colors group"
+          >
+            <span class="text-3xl">👤</span>
+            <div>
+              <div class="font-semibold group-hover:text-amber-300 transition-colors">Profile Setup</div>
+              <div class="text-sm text-gray-400">{profilePct}% complete</div>
             </div>
           </a>
         </div>

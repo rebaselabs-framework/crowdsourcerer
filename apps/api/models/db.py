@@ -69,6 +69,8 @@ class UserDB(Base):
     bio = Column(Text, nullable=True)
     avatar_url = Column(String(512), nullable=True)
     profile_public = Column(Boolean, default=True, nullable=False)
+    location = Column(String(128), nullable=True)       # e.g. "San Francisco, CA"
+    website_url = Column(String(512), nullable=True)    # personal/portfolio URL
 
     # Credit burn-rate alerts
     credit_alert_threshold = Column(Integer, nullable=True)          # fire alert when credits drop below this
@@ -1370,3 +1372,28 @@ class WorkerPortfolioItemDB(Base):
 
     worker = relationship("UserDB", backref="portfolio_items")
     task = relationship("TaskDB", backref="portfolio_pins")
+
+
+class RequesterSavedTemplateDB(Base):
+    """A requester's private saved task configuration template.
+
+    These are personal templates (not public marketplace templates) that allow
+    requesters to quickly re-create tasks with the same parameters.  Up to 50
+    templates per user.
+    """
+    __tablename__ = "requester_saved_templates"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    task_type = Column(String(64), nullable=False, index=True)
+    task_input = Column(JSON, nullable=False, default=dict)     # default input fields
+    task_config = Column(JSON, nullable=False, default=dict)    # priority, tags, worker_reward, etc.
+    icon = Column(String(8), nullable=True)                     # emoji icon (optional)
+    use_count = Column(Integer, default=0, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+
+    user = relationship("UserDB", backref="saved_task_templates")

@@ -4,7 +4,7 @@ from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth import get_current_user_id
@@ -92,6 +92,8 @@ async def get_public_profile(
         name=user.name,
         bio=user.bio,
         avatar_url=user.avatar_url,
+        location=user.location,
+        website_url=user.website_url,
         role=user.role,
         worker_level=user.worker_level,
         worker_xp=user.worker_xp,
@@ -132,6 +134,13 @@ async def update_my_profile(
         user.avatar_url = url or None
     if req.profile_public is not None:
         user.profile_public = req.profile_public
+    if req.location is not None:
+        user.location = req.location.strip() or None
+    if req.website_url is not None:
+        url = req.website_url.strip()
+        if url and not url.startswith(("https://", "http://")):
+            raise HTTPException(status_code=400, detail="website_url must be a valid URL")
+        user.website_url = url or None
 
     await db.commit()
     await db.refresh(user)
@@ -143,24 +152,71 @@ async def get_profile_status(
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ):
-    """Return profile completeness info for the authenticated user."""
+    """Return profile completeness info for the authenticated user.
+
+    Returns a 0-100 completeness score based on filled fields, skill count,
+    and certification count.  Used to show the profile completion banner on
+    the worker dashboard.
+    """
     result = await db.execute(select(UserDB).where(UserDB.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    completeness_fields = [
-        bool(user.name),
-        bool(user.bio),
-        bool(user.avatar_url),
-    ]
-    pct = int(sum(completeness_fields) / len(completeness_fields) * 100)
+    # Count skills and certifications
+    skill_count = await db.scalar(
+        select(func.count()).where(WorkerSkillDB.worker_id == user_id)
+    ) or 0
+    cert_count = await db.scalar(
+        select(func.count()).where(
+            WorkerCertificationDB.worker_id == user_id,
+            WorkerCertificationDB.passed == True,  # noqa: E712
+        )
+    ) or 0
+
+    # Weighted completion score:
+    # name (15), bio (20), avatar (15), location (10), website (10),
+    # has_skills (20), has_cert (10)
+    score = 0
+    if user.name:
+        score += 15
+    if user.bio:
+        score += 20
+    if user.avatar_url:
+        score += 15
+    if user.location:
+        score += 10
+    if user.website_url:
+        score += 10
+    if skill_count > 0:
+        score += 20
+    if cert_count > 0:
+        score += 10
+
+    missing = []
+    if not user.bio:
+        missing.append("bio")
+    if not user.avatar_url:
+        missing.append("avatar")
+    if not user.location:
+        missing.append("location")
+    if not user.website_url:
+        missing.append("website")
+    if skill_count == 0:
+        missing.append("skills")
+    if cert_count == 0:
+        missing.append("certification")
 
     return {
         "profile_public": user.profile_public,
-        "completeness_pct": pct,
+        "completeness_pct": score,
         "has_name": bool(user.name),
         "has_bio": bool(user.bio),
         "has_avatar": bool(user.avatar_url),
+        "has_location": bool(user.location),
+        "has_website": bool(user.website_url),
+        "skill_count": skill_count,
+        "cert_count": cert_count,
         "totp_enabled": user.totp_enabled,
+        "missing": missing,
     }

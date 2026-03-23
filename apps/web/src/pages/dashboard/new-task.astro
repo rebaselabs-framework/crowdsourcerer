@@ -11,6 +11,7 @@ if (!token) return Astro.redirect("/login");
 let error = "";
 let submittedTaskId = "";
 let templates: any[] = [];
+let savedTemplates: any[] = [];
 
 try {
   const tplRes = await apiFetch<any>("/v1/tasks/templates", { token });
@@ -19,11 +20,20 @@ try {
   // non-fatal
 }
 
+try {
+  const savedRes = await apiFetch<any>("/v1/task-templates?page_size=50", { token });
+  savedTemplates = savedRes?.templates ?? [];
+} catch {
+  // non-fatal
+}
+
 // Duplicate pre-fill: check if ?duplicate=<task_id> is in URL
 const urlParams = new URL(Astro.request.url).searchParams;
 const duplicateTaskId = urlParams.get("duplicate") ?? "";
+const savedTplId = urlParams.get("tpl") ?? "";
 let duplicateParams: any = null;
 let duplicateTitle = "";
+let savedTplParams: any = null;
 
 if (duplicateTaskId) {
   try {
@@ -34,6 +44,16 @@ if (duplicateTaskId) {
   } catch {
     // non-fatal — duplicate params load failed, just proceed as normal new task
     duplicateParams = null;
+  }
+}
+
+if (savedTplId) {
+  try {
+    savedTplParams = await apiFetch<any>(`/v1/task-templates/${savedTplId}`, { token });
+    // Increment use count (fire-and-forget)
+    apiFetch(`/v1/task-templates/${savedTplId}/use`, { token, method: "POST" }).catch(() => {});
+  } catch {
+    savedTplParams = null;
   }
 }
 
@@ -153,7 +173,45 @@ if (Astro.request.method === "POST") {
       </div>
     )}
 
-    <!-- Templates quick-start -->
+    {/* Saved template banner */}
+    {savedTplParams && (
+      <div class="bg-violet-950/30 border border-violet-700 rounded-xl px-5 py-3 mb-6 flex items-center justify-between gap-4">
+        <div class="flex items-center gap-2 text-violet-300 text-sm">
+          <span class="text-base">📋</span>
+          <span>Using template: <strong>{savedTplParams.name}</strong> — form is pre-filled and fully editable.</span>
+        </div>
+        <a href="/dashboard/new-task" class="text-xs text-violet-400 hover:text-violet-300 transition-colors whitespace-nowrap">
+          Start fresh →
+        </a>
+      </div>
+    )}
+
+    <!-- Saved Templates quick-start (personal) -->
+    {savedTemplates.length > 0 && (
+      <div class="mb-6">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-sm font-medium text-gray-400">📋 My Templates</h2>
+          <a href="/dashboard/task-templates" class="text-xs text-violet-400 hover:text-violet-300">Manage →</a>
+        </div>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {savedTemplates.slice(0, 8).map((tpl: any) => (
+            <button
+              type="button"
+              class="saved-tpl-btn text-left bg-gray-900 border border-gray-700 hover:border-violet-500 rounded-lg p-3 transition-colors group"
+              data-type={tpl.task_type}
+              data-input={JSON.stringify(tpl.task_input, null, 2)}
+              data-config={JSON.stringify(tpl.task_config ?? {})}
+              data-id={tpl.id}
+            >
+              <div class="text-lg mb-1">{tpl.icon || "📋"}</div>
+              <div class="font-medium text-xs group-hover:text-violet-300 transition-colors line-clamp-2">{tpl.name}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+    )}
+
+    <!-- Templates quick-start (marketplace) -->
     {templates.length > 0 && (
       <div class="mb-8">
         <div class="flex items-center justify-between mb-3">
@@ -419,15 +477,62 @@ if (Astro.request.method === "POST") {
         </div>
       </div>
 
-      <button
-        type="submit"
-        class="w-full bg-violet-600 hover:bg-violet-500 text-white font-semibold py-3 rounded-lg transition-colors"
-      >
-        Submit task →
-      </button>
+      <div class="flex gap-3">
+        <button
+          type="submit"
+          class="flex-1 bg-violet-600 hover:bg-violet-500 text-white font-semibold py-3 rounded-lg transition-colors"
+        >
+          Submit task →
+        </button>
+        <button
+          type="button"
+          id="save-tpl-btn"
+          class="px-4 py-3 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium rounded-lg transition-colors whitespace-nowrap"
+          title="Save current form as a reusable template"
+        >
+          💾 Save as Template
+        </button>
+      </div>
     </form>
   </div>
+
+  <!-- Save-as-template modal -->
+  <div id="save-tpl-modal" class="fixed inset-0 bg-black/60 z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-gray-950 border border-gray-700 rounded-2xl shadow-2xl w-full max-w-sm p-6">
+      <h2 class="text-lg font-semibold mb-1 text-white">Save as Template</h2>
+      <p class="text-sm text-gray-400 mb-4">Give this template a name so you can reuse it later.</p>
+      <input
+        id="save-tpl-name"
+        type="text"
+        maxlength="255"
+        placeholder="Template name…"
+        class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-violet-500 mb-3"
+      />
+      <input
+        id="save-tpl-desc"
+        type="text"
+        maxlength="500"
+        placeholder="Short description (optional)…"
+        class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-violet-500 mb-4"
+      />
+      <div id="save-tpl-error" class="hidden bg-red-950/60 border border-red-800 text-red-300 rounded-lg px-3 py-2 text-xs mb-3"></div>
+      <div class="flex justify-end gap-3">
+        <button id="save-tpl-cancel" class="px-4 py-2 text-sm border border-gray-600 rounded-lg text-gray-300 hover:bg-gray-800">Cancel</button>
+        <button id="save-tpl-confirm" class="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium rounded-lg">Save</button>
+      </div>
+    </div>
+  </div>
 </Layout>
+
+{savedTplParams && (
+  <script
+    define:vars={{ savedTplData: savedTplParams }}
+    is:inline
+  >
+    // Pre-fill form with saved template data (SSR-injected)
+    window.__savedTplData = savedTplData;
+  </script>
+)}
 
 <script>
   // Human task options toggle
@@ -460,6 +565,30 @@ if (Astro.request.method === "POST") {
   // Run on load
   updateHumanOptions();
   updateConsensusVisibility();
+
+  // Pre-fill from saved template (SSR data)
+  const savedTplData = (window as any).__savedTplData;
+  if (savedTplData) {
+    const type = savedTplData.task_type;
+    const radio = document.querySelector<HTMLInputElement>(`input[name="type"][value="${type}"]`);
+    if (radio) {
+      radio.checked = true;
+      radio.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    const inputTA = document.getElementById("input") as HTMLTextAreaElement;
+    if (inputTA && savedTplData.task_input) {
+      try { inputTA.value = JSON.stringify(savedTplData.task_input, null, 2); } catch {}
+    }
+    const cfg = savedTplData.task_config ?? {};
+    if (cfg.priority) {
+      const sel = document.querySelector<HTMLSelectElement>(`select[name="priority"]`);
+      if (sel) sel.value = cfg.priority;
+    }
+    if (cfg.tags && Array.isArray(cfg.tags)) {
+      const el = document.querySelector<HTMLInputElement>(`input[name="tags"]`);
+      if (el) el.value = cfg.tags.join(", ");
+    }
+  }
 
   // Template pre-fill
   document.querySelectorAll<HTMLButtonElement>(".template-btn").forEach((btn) => {
@@ -572,4 +701,105 @@ if (Astro.request.method === "POST") {
       if (el) el.value = taskInstructions;
     }
   })();
+</script>
+
+<script>
+  // ── Saved templates (personal) pre-fill ───────────────────────────────────
+  document.querySelectorAll<HTMLButtonElement>(".saved-tpl-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const type = btn.dataset.type!;
+      const input = btn.dataset.input!;
+      const config = btn.dataset.config ? JSON.parse(btn.dataset.config) : {};
+
+      // Select radio
+      const radio = document.querySelector<HTMLInputElement>(`input[name="type"][value="${type}"]`);
+      if (radio) {
+        radio.checked = true;
+        radio.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      // Fill input
+      const textarea = document.getElementById("input") as HTMLTextAreaElement;
+      if (textarea) textarea.value = input;
+      // Fill config fields
+      if (config.priority) {
+        const sel = document.querySelector<HTMLSelectElement>(`select[name="priority"]`);
+        if (sel) sel.value = config.priority;
+      }
+      if (config.tags && Array.isArray(config.tags)) {
+        const el = document.querySelector<HTMLInputElement>(`input[name="tags"]`);
+        if (el) el.value = config.tags.join(", ");
+      }
+      // Highlight
+      document.querySelectorAll(".saved-tpl-btn").forEach((b) => {
+        b.classList.remove("border-violet-500", "bg-violet-950/20");
+        b.classList.add("border-gray-700");
+      });
+      btn.classList.add("border-violet-500", "bg-violet-950/20");
+      btn.classList.remove("border-gray-700");
+
+      document.querySelector("form")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  });
+
+  // ── Save as Template button ───────────────────────────────────────────────
+  const saveTplModal = document.getElementById("save-tpl-modal")!;
+  const saveTplError = document.getElementById("save-tpl-error")!;
+
+  document.getElementById("save-tpl-btn")?.addEventListener("click", () => {
+    (document.getElementById("save-tpl-name") as HTMLInputElement).value = "";
+    (document.getElementById("save-tpl-desc") as HTMLInputElement).value = "";
+    saveTplError.classList.add("hidden");
+    saveTplModal.classList.remove("hidden");
+    (document.getElementById("save-tpl-name") as HTMLInputElement).focus();
+  });
+  document.getElementById("save-tpl-cancel")?.addEventListener("click", () => saveTplModal.classList.add("hidden"));
+  saveTplModal.addEventListener("click", (e) => { if (e.target === saveTplModal) saveTplModal.classList.add("hidden"); });
+
+  document.getElementById("save-tpl-confirm")?.addEventListener("click", async () => {
+    const name = (document.getElementById("save-tpl-name") as HTMLInputElement).value.trim();
+    if (!name) {
+      saveTplError.textContent = "Template name is required.";
+      saveTplError.classList.remove("hidden");
+      return;
+    }
+    // Collect current form state
+    const typeRadio = document.querySelector<HTMLInputElement>(`input[name="type"]:checked`);
+    const task_type = typeRadio?.value ?? "";
+    const inputTA = document.getElementById("input") as HTMLTextAreaElement;
+    let task_input: object;
+    try { task_input = JSON.parse(inputTA.value || "{}"); } catch { task_input = {}; }
+
+    const prioritySel = document.querySelector<HTMLSelectElement>(`select[name="priority"]`);
+    const tagsEl = document.querySelector<HTMLInputElement>(`input[name="tags"]`);
+    const task_config: Record<string, unknown> = {};
+    if (prioritySel?.value) task_config.priority = prioritySel.value;
+    if (tagsEl?.value) task_config.tags = tagsEl.value.split(",").map((t: string) => t.trim()).filter(Boolean);
+
+    const description = (document.getElementById("save-tpl-desc") as HTMLInputElement).value.trim() || null;
+
+    const confirmBtn = document.getElementById("save-tpl-confirm")!;
+    confirmBtn.textContent = "Saving…";
+    (confirmBtn as HTMLButtonElement).disabled = true;
+
+    const res = await fetch("/api/task-templates", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, description, task_type, task_input, task_config }),
+    });
+    if (res.ok) {
+      saveTplModal.classList.add("hidden");
+      // Show success toast
+      const toast = document.createElement("div");
+      toast.className = "fixed bottom-4 right-4 bg-emerald-600 text-white text-sm px-4 py-2.5 rounded-lg shadow-lg z-50";
+      toast.textContent = `Template "${name}" saved!`;
+      document.body.appendChild(toast);
+      setTimeout(() => toast.remove(), 3000);
+    } else {
+      const err = await res.json().catch(() => ({}));
+      saveTplError.textContent = err.detail || "Failed to save template.";
+      saveTplError.classList.remove("hidden");
+    }
+    confirmBtn.textContent = "Save";
+    (confirmBtn as HTMLButtonElement).disabled = false;
+  });
 </script>

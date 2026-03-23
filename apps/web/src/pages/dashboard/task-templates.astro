@@ -1,0 +1,382 @@
+---
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Object.fromEntries(
+  Astro.cookies.getAll().map((c) => [c.name, c.value])
+));
+if (!token) return Astro.redirect("/login");
+
+let templateData: any = { templates: [], total: 0 };
+try {
+  templateData = await apiFetch<any>("/v1/task-templates", { token });
+} catch {}
+
+const templates: any[] = templateData?.templates ?? [];
+const total: number = templateData?.total ?? 0;
+
+// Task type icon map
+const TYPE_ICONS: Record<string, string> = {
+  web_research: "🌐", entity_lookup: "🏢", document_parse: "📄",
+  data_transform: "🔄", llm_generate: "🤖", screenshot: "📸",
+  audio_transcribe: "🎙️", pii_detect: "🔒", code_execute: "⚡",
+  web_intel: "🕵️", label_image: "🖼️", label_text: "🏷️",
+  rate_quality: "⭐", verify_fact: "✅", moderate_content: "🛡️",
+  compare_rank: "📊", answer_question: "💬", transcription_review: "📝",
+};
+
+const HUMAN_TYPES = new Set([
+  "label_image","label_text","rate_quality","verify_fact",
+  "moderate_content","compare_rank","answer_question","transcription_review"
+]);
+---
+<Layout title="My Task Templates — CrowdSorcerer">
+  <div class="max-w-5xl mx-auto px-4 py-8">
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-6">
+      <div>
+        <h1 class="text-2xl font-bold">📋 My Task Templates</h1>
+        <p class="text-gray-500 text-sm mt-0.5">Save and reuse your task configurations</p>
+      </div>
+      <button
+        id="new-tpl-btn"
+        class="bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+      >
+        + New Template
+      </button>
+    </div>
+
+    <!-- Empty state -->
+    {templates.length === 0 && (
+      <div class="bg-white border rounded-2xl p-12 text-center shadow-sm">
+        <div class="text-5xl mb-4">📋</div>
+        <h3 class="text-xl font-semibold text-gray-700 mb-2">No templates yet</h3>
+        <p class="text-gray-500 text-sm mb-6 max-w-md mx-auto">
+          Save your frequently-used task configurations as templates. Click one to instantly
+          pre-fill the new-task form.
+        </p>
+        <button
+          id="new-tpl-btn-empty"
+          class="bg-violet-600 hover:bg-violet-500 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-colors"
+        >
+          Create your first template
+        </button>
+      </div>
+    )}
+
+    <!-- Template grid -->
+    {templates.length > 0 && (
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+        {templates.map((tpl: any) => (
+          <div
+            class="bg-white border rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow group relative"
+            data-id={tpl.id}
+          >
+            <!-- Action buttons -->
+            <div class="absolute top-3 right-3 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <button
+                class="edit-btn p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded"
+                data-id={tpl.id}
+                data-name={tpl.name}
+                data-description={tpl.description ?? ""}
+                data-type={tpl.task_type}
+                data-input={JSON.stringify(tpl.task_input)}
+                data-config={JSON.stringify(tpl.task_config)}
+                data-icon={tpl.icon ?? ""}
+                title="Edit template"
+              >
+                ✏️
+              </button>
+              <button
+                class="delete-btn p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
+                data-id={tpl.id}
+                data-name={tpl.name}
+                title="Delete template"
+              >
+                🗑️
+              </button>
+            </div>
+
+            <!-- Icon + type -->
+            <div class="flex items-start gap-3 mb-3">
+              <span class="text-2xl">{tpl.icon || TYPE_ICONS[tpl.task_type] || "📋"}</span>
+              <div class="flex-1 min-w-0">
+                <div class="font-semibold text-gray-800 truncate">{tpl.name}</div>
+                <div class="flex items-center gap-1.5 mt-0.5">
+                  <span class:list={["text-[10px] px-1.5 py-0.5 rounded font-medium", HUMAN_TYPES.has(tpl.task_type) ? "bg-violet-100 text-violet-700" : "bg-cyan-100 text-cyan-700"]}>
+                    {HUMAN_TYPES.has(tpl.task_type) ? "Human" : "AI"}
+                  </span>
+                  <span class="text-xs text-gray-400">{tpl.task_type.replace(/_/g, " ")}</span>
+                </div>
+              </div>
+            </div>
+
+            {tpl.description && (
+              <p class="text-sm text-gray-500 line-clamp-2 mb-3">{tpl.description}</p>
+            )}
+
+            <!-- Footer -->
+            <div class="flex items-center justify-between mt-auto">
+              <span class="text-xs text-gray-400">Used {tpl.use_count}×</span>
+              <a
+                href={`/dashboard/new-task?tpl=${tpl.id}`}
+                class="text-xs bg-violet-600 hover:bg-violet-500 text-white px-3 py-1.5 rounded-lg font-medium transition-colors"
+              >
+                Use →
+              </a>
+            </div>
+          </div>
+        ))}
+      </div>
+    )}
+
+    {total > templates.length && (
+      <p class="text-center text-sm text-gray-500">Showing {templates.length} of {total} templates</p>
+    )}
+  </div>
+
+  <!-- Create / Edit Modal -->
+  <div id="tpl-modal" class="fixed inset-0 bg-black/60 z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between px-6 py-4 border-b">
+        <h2 id="modal-title" class="text-lg font-semibold">New Template</h2>
+        <button id="modal-close" class="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
+      </div>
+      <form id="tpl-form" class="px-6 py-5 space-y-4">
+        <input type="hidden" id="tpl-id" value="" />
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Template Name *</label>
+          <input
+            id="tpl-name"
+            type="text"
+            maxlength="255"
+            placeholder="e.g. Weekly sentiment analysis"
+            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
+            required
+          />
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Description</label>
+          <textarea
+            id="tpl-description"
+            rows={2}
+            maxlength="1000"
+            placeholder="Brief description of what this template does…"
+            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 resize-none"
+          ></textarea>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Task Type *</label>
+            <select
+              id="tpl-type"
+              class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
+              required
+            >
+              <optgroup label="AI Tasks">
+                <option value="web_research">Web Research</option>
+                <option value="entity_lookup">Entity Lookup</option>
+                <option value="document_parse">Document Parse</option>
+                <option value="data_transform">Data Transform</option>
+                <option value="llm_generate">LLM Generate</option>
+                <option value="screenshot">Screenshot</option>
+                <option value="audio_transcribe">Transcribe</option>
+                <option value="pii_detect">PII Detect</option>
+                <option value="code_execute">Code Execute</option>
+                <option value="web_intel">Web Intel</option>
+              </optgroup>
+              <optgroup label="Human Tasks">
+                <option value="label_image">Label Image</option>
+                <option value="label_text">Label Text</option>
+                <option value="rate_quality">Rate Quality</option>
+                <option value="verify_fact">Verify Fact</option>
+                <option value="moderate_content">Moderate Content</option>
+                <option value="compare_rank">Compare &amp; Rank</option>
+                <option value="answer_question">Answer Question</option>
+                <option value="transcription_review">Review Transcript</option>
+              </optgroup>
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Icon (emoji)</label>
+            <input
+              id="tpl-icon"
+              type="text"
+              maxlength="8"
+              placeholder="e.g. 🌐"
+              class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Default Input (JSON) *</label>
+          <textarea
+            id="tpl-input"
+            rows={5}
+            placeholder='{"url": "https://example.com", "instruction": "..."}'
+            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-violet-500 resize-y"
+            required
+          ></textarea>
+          <p class="text-xs text-gray-400 mt-1">JSON object that will pre-fill the task input when using this template.</p>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Default Settings (JSON)</label>
+          <textarea
+            id="tpl-config"
+            rows={3}
+            placeholder='{"priority": "normal", "tags": ["weekly", "sentiment"]}'
+            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-violet-500 resize-y"
+          ></textarea>
+          <p class="text-xs text-gray-400 mt-1">Optional: priority, tags, webhook_url, worker_reward_credits, etc.</p>
+        </div>
+
+        <div id="form-error" class="hidden bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2 text-sm"></div>
+
+        <div class="flex justify-end gap-3 pt-2">
+          <button type="button" id="modal-cancel" class="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">Cancel</button>
+          <button type="submit" id="form-submit" class="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium rounded-lg transition-colors">
+            Save Template
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Delete confirmation modal -->
+  <div id="del-modal" class="fixed inset-0 bg-black/60 z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+      <h2 class="text-lg font-semibold mb-2">Delete Template?</h2>
+      <p class="text-sm text-gray-500 mb-5">Are you sure you want to delete <strong id="del-name"></strong>? This cannot be undone.</p>
+      <div class="flex justify-end gap-3">
+        <button id="del-cancel" class="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
+        <button id="del-confirm" class="px-4 py-2 bg-red-600 hover:bg-red-500 text-white text-sm font-medium rounded-lg">Delete</button>
+      </div>
+    </div>
+  </div>
+</Layout>
+
+<script>
+const modal = document.getElementById("tpl-modal")!;
+const delModal = document.getElementById("del-modal")!;
+const form = document.getElementById("tpl-form") as HTMLFormElement;
+const formError = document.getElementById("form-error")!;
+const modalTitle = document.getElementById("modal-title")!;
+const submitBtn = document.getElementById("form-submit")!;
+
+function openModal(edit?: {id:string,name:string,desc:string,type:string,input:string,config:string,icon:string}) {
+  (document.getElementById("tpl-id") as HTMLInputElement).value = edit?.id ?? "";
+  (document.getElementById("tpl-name") as HTMLInputElement).value = edit?.name ?? "";
+  (document.getElementById("tpl-description") as HTMLTextAreaElement).value = edit?.desc ?? "";
+  (document.getElementById("tpl-type") as HTMLSelectElement).value = edit?.type ?? "web_research";
+  (document.getElementById("tpl-input") as HTMLTextAreaElement).value = edit ? tryPretty(edit.input) : "";
+  (document.getElementById("tpl-config") as HTMLTextAreaElement).value = edit ? tryPretty(edit.config) : '{"priority": "normal"}';
+  (document.getElementById("tpl-icon") as HTMLInputElement).value = edit?.icon ?? "";
+  modalTitle.textContent = edit ? "Edit Template" : "New Template";
+  submitBtn.textContent = edit ? "Save Changes" : "Save Template";
+  formError.classList.add("hidden");
+  modal.classList.remove("hidden");
+}
+
+function closeModal() { modal.classList.add("hidden"); }
+
+function tryPretty(str: string) {
+  try { return JSON.stringify(JSON.parse(str), null, 2); } catch { return str; }
+}
+
+document.getElementById("new-tpl-btn")?.addEventListener("click", () => openModal());
+document.getElementById("new-tpl-btn-empty")?.addEventListener("click", () => openModal());
+document.getElementById("modal-close")?.addEventListener("click", closeModal);
+document.getElementById("modal-cancel")?.addEventListener("click", closeModal);
+modal.addEventListener("click", (e) => { if (e.target === modal) closeModal(); });
+
+document.querySelectorAll<HTMLButtonElement>(".edit-btn").forEach(btn => {
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    openModal({
+      id: btn.dataset.id!,
+      name: btn.dataset.name!,
+      desc: btn.dataset.description!,
+      type: btn.dataset.type!,
+      input: btn.dataset.input!,
+      config: btn.dataset.config!,
+      icon: btn.dataset.icon ?? "",
+    });
+  });
+});
+
+// Delete
+let deleteId = "";
+document.querySelectorAll<HTMLButtonElement>(".delete-btn").forEach(btn => {
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    deleteId = btn.dataset.id!;
+    document.getElementById("del-name")!.textContent = btn.dataset.name!;
+    delModal.classList.remove("hidden");
+  });
+});
+document.getElementById("del-cancel")?.addEventListener("click", () => delModal.classList.add("hidden"));
+delModal.addEventListener("click", (e) => { if (e.target === delModal) delModal.classList.add("hidden"); });
+document.getElementById("del-confirm")?.addEventListener("click", async () => {
+  if (!deleteId) return;
+  await fetch(`/api/task-templates/${deleteId}`, { method: "DELETE" });
+  location.reload();
+});
+
+// Form submit
+form.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  formError.classList.add("hidden");
+
+  const id = (document.getElementById("tpl-id") as HTMLInputElement).value;
+  const name = (document.getElementById("tpl-name") as HTMLInputElement).value.trim();
+  const description = (document.getElementById("tpl-description") as HTMLTextAreaElement).value.trim() || null;
+  const task_type = (document.getElementById("tpl-type") as HTMLSelectElement).value;
+  const icon = (document.getElementById("tpl-icon") as HTMLInputElement).value.trim() || null;
+
+  let task_input: object;
+  let task_config: object;
+  try {
+    task_input = JSON.parse((document.getElementById("tpl-input") as HTMLTextAreaElement).value);
+  } catch {
+    showError("Default Input must be valid JSON.");
+    return;
+  }
+  const configRaw = (document.getElementById("tpl-config") as HTMLTextAreaElement).value.trim();
+  try {
+    task_config = configRaw ? JSON.parse(configRaw) : {};
+  } catch {
+    showError("Default Settings must be valid JSON.");
+    return;
+  }
+
+  submitBtn.textContent = "Saving…";
+  submitBtn.setAttribute("disabled", "true");
+
+  const url = id ? `/api/task-templates/${id}` : "/api/task-templates";
+  const method = id ? "PATCH" : "POST";
+  const res = await fetch(url, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, description, task_type, task_input, task_config, icon }),
+  });
+
+  if (res.ok) {
+    location.reload();
+  } else {
+    const err = await res.json().catch(() => ({}));
+    showError(err.detail || "Failed to save template.");
+    submitBtn.textContent = id ? "Save Changes" : "Save Template";
+    submitBtn.removeAttribute("disabled");
+  }
+});
+
+function showError(msg: string) {
+  formError.textContent = msg;
+  formError.classList.remove("hidden");
+}
+</script>

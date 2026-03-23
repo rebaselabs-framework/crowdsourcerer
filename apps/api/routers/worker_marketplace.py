@@ -357,6 +357,101 @@ async def invite_worker(
     }
 
 
+@router.post("/v1/tasks/{task_id}/bulk-invite", status_code=201)
+async def bulk_invite_workers(
+    task_id: UUID,
+    req: "BulkInviteRequest",
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(require_scope(SCOPE_TASKS_WRITE)),
+):
+    """Invite multiple workers to a task in a single request.
+
+    Workers already invited or not found are silently skipped.
+    Returns counts of invited vs skipped workers.
+    """
+    from models.schemas import BulkInviteRequest as BulkInviteRequest  # local import to avoid circular
+    task_result = await db.execute(
+        select(TaskDB).where(TaskDB.id == task_id, TaskDB.user_id == user_id)
+    )
+    task = task_result.scalar_one_or_none()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    if task.execution_mode != "human":
+        raise HTTPException(status_code=400, detail="Can only invite workers to human tasks")
+
+    if task.status not in ("open", "pending"):
+        raise HTTPException(
+            status_code=400,
+            detail="Invites can only be sent for open or pending tasks",
+        )
+
+    # Fetch requester name once
+    requester_result = await db.execute(select(UserDB).where(UserDB.id == user_id))
+    requester = requester_result.scalar_one_or_none()
+    requester_name = requester.name if requester else "Someone"
+
+    invited: list[str] = []
+    skipped: int = 0
+
+    for worker_id in req.worker_ids:
+        # Check worker exists
+        worker_result = await db.execute(
+            select(UserDB).where(
+                UserDB.id == worker_id,
+                UserDB.role.in_(["worker", "both"]),
+                UserDB.is_active == True,  # noqa: E712
+            )
+        )
+        worker = worker_result.scalar_one_or_none()
+        if not worker:
+            skipped += 1
+            continue
+
+        # Skip duplicates
+        existing = await db.scalar(
+            select(func.count()).where(
+                WorkerInviteDB.task_id == task_id,
+                WorkerInviteDB.worker_id == worker_id,
+            )
+        )
+        if existing:
+            skipped += 1
+            continue
+
+        invite = WorkerInviteDB(
+            id=_uuid.uuid4(),
+            task_id=task_id,
+            worker_id=worker_id,
+            requester_id=user_id,
+            message=req.message,
+        )
+        db.add(invite)
+        await db.flush()
+
+        await create_notification(
+            db,
+            user_id=worker_id,
+            type=NotifType.WORKER_INVITED,
+            title="You've been invited to a task!",
+            body=(
+                f"{requester_name} invited you to: {_task_label(task)}. "
+                + (f'"{req.message}"' if req.message else "Check it out!")
+            ),
+            link="/worker/invites",
+        )
+        invited.append(str(invite.id))
+
+    await db.commit()
+    logger.info(
+        "bulk_invite.done",
+        task_id=str(task_id),
+        invited=len(invited),
+        skipped=skipped,
+    )
+    return {"invited": len(invited), "skipped": skipped, "invite_ids": invited}
+
+
 @router.get("/v1/tasks/{task_id}/invites", response_model=list[InviteOut])
 async def list_task_invites(
     task_id: UUID,

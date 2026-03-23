@@ -1078,6 +1078,8 @@ class PublicWorkerProfileOut(BaseModel):
     name: Optional[str]
     bio: Optional[str]
     avatar_url: Optional[str]
+    location: Optional[str] = None
+    website_url: Optional[str] = None
     role: str
     worker_level: int
     worker_xp: int
@@ -1098,6 +1100,8 @@ class ProfileUpdateRequest(BaseModel):
     bio: Optional[str] = Field(None, max_length=500)
     avatar_url: Optional[str] = Field(None, max_length=512)
     profile_public: Optional[bool] = None
+    location: Optional[str] = Field(None, max_length=128)
+    website_url: Optional[str] = Field(None, max_length=512)
 
 
 # ─── Two-Factor Authentication ────────────────────────────────────────────
@@ -1382,5 +1386,58 @@ class WebhookPayloadTemplateOut(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+# ─── Requester Saved Templates ─────────────────────────────────────────────
+
+class RequesterTemplateCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    description: Optional[str] = Field(None, max_length=1000)
+    task_type: str = Field(min_length=1, max_length=64)
+    task_input: dict[str, Any] = Field(default_factory=dict)
+    task_config: dict[str, Any] = Field(default_factory=dict)   # priority, tags, etc.
+    icon: Optional[str] = Field(None, max_length=8)
+
+
+class RequesterTemplateUpdateRequest(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=255)
+    description: Optional[str] = Field(None, max_length=1000)
+    task_input: Optional[dict[str, Any]] = None
+    task_config: Optional[dict[str, Any]] = None
+    icon: Optional[str] = Field(None, max_length=8)
+
+
+class RequesterTemplateOut(BaseModel):
+    id: UUID
+    user_id: UUID
+    name: str
+    description: Optional[str]
+    task_type: str
+    task_input: dict
+    task_config: dict
+    icon: Optional[str]
+    use_count: int
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class RequesterTemplateListOut(BaseModel):
+    templates: list[RequesterTemplateOut]
+    total: int
+
+
+# ─── Bulk Worker Invites ───────────────────────────────────────────────────
+
+class BulkInviteRequest(BaseModel):
+    worker_ids: list[UUID] = Field(min_length=1, max_length=50)
+    message: Optional[str] = Field(None, max_length=500)
+
+
+class BulkInviteResult(BaseModel):
+    invited: int
+    skipped: int
+    invite_ids: list[str]
 
 

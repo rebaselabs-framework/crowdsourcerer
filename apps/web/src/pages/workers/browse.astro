@@ -128,12 +128,20 @@ const SORT_OPTIONS = [
 
     {workers && (
       <>
-        <!-- Result count -->
-        <p class="text-sm text-gray-500 mb-4">
-          {workers.total} worker{workers.total !== 1 ? "s" : ""} found
-          {skill ? ` with ${skill.replace(/_/g, " ")} skill` : ""}
-          — page {workers.page} of {workers.pages}
-        </p>
+        <!-- Result count + Select all -->
+        <div class="flex items-center justify-between mb-4">
+          <p class="text-sm text-gray-500">
+            {workers.total} worker{workers.total !== 1 ? "s" : ""} found
+            {skill ? ` with ${skill.replace(/_/g, " ")} skill` : ""}
+            — page {workers.page} of {workers.pages}
+          </p>
+          <button
+            id="select-all-btn"
+            class="text-xs text-indigo-600 hover:text-indigo-500 font-medium"
+          >
+            Select all
+          </button>
+        </div>
 
         <!-- Worker grid -->
         {workers.items.length === 0 ? (
@@ -145,9 +153,21 @@ const SORT_OPTIONS = [
         ) : (
           <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {workers.items.map((w: any) => (
-              <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 hover:shadow-md transition-shadow">
+              <div
+                class="worker-card bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 hover:shadow-md transition-shadow relative"
+                data-worker-id={w.id}
+                data-worker-name={w.name || "Anonymous Worker"}
+              >
+                <!-- Select checkbox -->
+                <label class="absolute top-3 left-3 cursor-pointer z-10">
+                  <input
+                    type="checkbox"
+                    class="worker-checkbox w-4 h-4 text-indigo-600 rounded border-gray-300 cursor-pointer"
+                    data-worker-id={w.id}
+                  />
+                </label>
                 <!-- Worker header -->
-                <div class="flex items-start gap-3 mb-3">
+                <div class="flex items-start gap-3 mb-3 pl-7">
                   <div class="w-12 h-12 rounded-full overflow-hidden bg-gradient-to-br from-indigo-400 to-purple-600 flex items-center justify-center flex-shrink-0">
                     {w.avatar_url ? (
                       <img src={w.avatar_url} alt={w.name || "Worker"} class="w-full h-full object-cover" />
@@ -262,6 +282,71 @@ const SORT_OPTIONS = [
     )}
   </div>
 
+  <!-- Bulk Selection Bar -->
+  <div id="bulk-bar" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 hidden">
+    <div class="bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl px-5 py-3 flex items-center gap-4">
+      <span id="bulk-count" class="text-white font-semibold text-sm">0 selected</span>
+      <button
+        id="bulk-invite-btn"
+        class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+      >
+        ✉️ Bulk Invite
+      </button>
+      <button
+        id="bulk-clear-btn"
+        class="text-gray-400 hover:text-white text-sm transition-colors"
+      >
+        Clear
+      </button>
+    </div>
+  </div>
+
+  <!-- Bulk Invite Modal -->
+  <div id="bulkInviteModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50">
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-md mx-4 p-6">
+      <h2 class="text-lg font-bold mb-1">✉️ Bulk Invite Workers</h2>
+      <p class="text-sm text-gray-500 mb-4">
+        Invite <span id="bulkWorkerList" class="font-medium text-gray-700 dark:text-gray-300"></span> to one of your tasks.
+      </p>
+
+      <!-- Task selector -->
+      <div class="mb-4">
+        <label class="block text-sm font-medium mb-1">Task</label>
+        <select id="bulkTaskSelect" class="w-full border dark:border-gray-600 dark:bg-gray-700 rounded-lg px-3 py-2 text-sm">
+          <option value="">-- Select a task --</option>
+          {(userTasks ?? []).map((t: any) => (
+            <option value={t.id}>{t.title || t.task_type} ({t.status})</option>
+          ))}
+        </select>
+        {(userTasks ?? []).length === 0 && (
+          <p class="text-xs text-amber-600 mt-1">No open human tasks. <a href="/dashboard/new-task" class="underline">Create one first.</a></p>
+        )}
+      </div>
+
+      <!-- Optional message -->
+      <div class="mb-5">
+        <label class="block text-sm font-medium mb-1">Message <span class="text-gray-400 font-normal">(optional)</span></label>
+        <textarea id="bulkMessage" rows="2"
+                  placeholder="Hi! I think you'd be great for this task..."
+                  class="w-full border dark:border-gray-600 dark:bg-gray-700 rounded-lg px-3 py-2 text-sm resize-none"></textarea>
+      </div>
+
+      <div id="bulkError" class="hidden text-red-600 text-sm mb-3"></div>
+      <div id="bulkSuccess" class="hidden text-green-600 text-sm mb-3"></div>
+
+      <div class="flex gap-3">
+        <button onclick="closeBulkModal()"
+                class="flex-1 border dark:border-gray-600 rounded-lg py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700">
+          Cancel
+        </button>
+        <button onclick="submitBulkInvite()"
+                class="flex-1 bg-indigo-600 text-white rounded-lg py-2 text-sm font-medium hover:bg-indigo-700">
+          Send All Invites
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- Invite Modal -->
   <div id="inviteModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50">
     <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-md mx-4 p-6">
@@ -309,8 +394,9 @@ const SORT_OPTIONS = [
   </div>
 
   <script>
+    // ── Single invite ──────────────────────────────────────────────────────
     function openInviteModal(workerId: string, workerName: string) {
-      document.getElementById("inviteWorkerId")!.value = workerId;
+      (document.getElementById("inviteWorkerId") as HTMLInputElement).value = workerId;
       document.getElementById("inviteWorkerName")!.textContent = workerName;
       document.getElementById("inviteError")!.classList.add("hidden");
       document.getElementById("inviteSuccess")!.classList.add("hidden");
@@ -367,5 +453,123 @@ const SORT_OPTIONS = [
     document.getElementById("inviteModal")?.addEventListener("click", (e) => {
       if (e.target === e.currentTarget) closeInviteModal();
     });
+
+    // ── Multi-select + Bulk Invite ─────────────────────────────────────────
+    const selectedWorkers = new Map<string, string>(); // id → name
+    const bulkBar = document.getElementById("bulk-bar")!;
+    const bulkCountEl = document.getElementById("bulk-count")!;
+
+    function updateBulkBar() {
+      const count = selectedWorkers.size;
+      bulkCountEl.textContent = `${count} selected`;
+      if (count > 0) {
+        bulkBar.classList.remove("hidden");
+      } else {
+        bulkBar.classList.add("hidden");
+      }
+    }
+
+    document.querySelectorAll<HTMLInputElement>(".worker-checkbox").forEach(cb => {
+      cb.addEventListener("change", () => {
+        const card = cb.closest<HTMLElement>(".worker-card")!;
+        const id = card.dataset.workerId!;
+        const name = card.dataset.workerName!;
+        if (cb.checked) {
+          selectedWorkers.set(id, name);
+          card.classList.add("ring-2", "ring-indigo-500");
+        } else {
+          selectedWorkers.delete(id);
+          card.classList.remove("ring-2", "ring-indigo-500");
+        }
+        updateBulkBar();
+      });
+    });
+
+    document.getElementById("select-all-btn")?.addEventListener("click", () => {
+      const checkboxes = document.querySelectorAll<HTMLInputElement>(".worker-checkbox");
+      const allChecked = Array.from(checkboxes).every(c => c.checked);
+      checkboxes.forEach(cb => {
+        cb.checked = !allChecked;
+        cb.dispatchEvent(new Event("change"));
+      });
+    });
+
+    document.getElementById("bulk-clear-btn")?.addEventListener("click", () => {
+      document.querySelectorAll<HTMLInputElement>(".worker-checkbox").forEach(cb => {
+        cb.checked = false;
+        cb.closest<HTMLElement>(".worker-card")?.classList.remove("ring-2", "ring-indigo-500");
+      });
+      selectedWorkers.clear();
+      updateBulkBar();
+    });
+
+    document.getElementById("bulk-invite-btn")?.addEventListener("click", () => {
+      const names = Array.from(selectedWorkers.values()).slice(0, 3).join(", ");
+      const extra = selectedWorkers.size > 3 ? ` +${selectedWorkers.size - 3} more` : "";
+      document.getElementById("bulkWorkerList")!.textContent = names + extra;
+      document.getElementById("bulkError")!.classList.add("hidden");
+      document.getElementById("bulkSuccess")!.classList.add("hidden");
+      (document.getElementById("bulkMessage") as HTMLTextAreaElement).value = "";
+      const modal = document.getElementById("bulkInviteModal")!;
+      modal.classList.remove("hidden");
+      modal.classList.add("flex");
+    });
+
+    function closeBulkModal() {
+      const modal = document.getElementById("bulkInviteModal")!;
+      modal.classList.add("hidden");
+      modal.classList.remove("flex");
+    }
+
+    document.getElementById("bulkInviteModal")?.addEventListener("click", (e) => {
+      if (e.target === e.currentTarget) closeBulkModal();
+    });
+
+    async function submitBulkInvite() {
+      const taskId  = (document.getElementById("bulkTaskSelect") as HTMLSelectElement).value;
+      const message = (document.getElementById("bulkMessage") as HTMLTextAreaElement).value.trim();
+      const errEl   = document.getElementById("bulkError")!;
+      const okEl    = document.getElementById("bulkSuccess")!;
+
+      errEl.classList.add("hidden");
+      okEl.classList.add("hidden");
+
+      if (!taskId) {
+        errEl.textContent = "Please select a task.";
+        errEl.classList.remove("hidden");
+        return;
+      }
+
+      try {
+        const res = await fetch(`/api/tasks/${taskId}/bulk-invite`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            worker_ids: Array.from(selectedWorkers.keys()),
+            message: message || null,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          errEl.textContent = data.detail ?? "Failed to send invites";
+          errEl.classList.remove("hidden");
+          return;
+        }
+        okEl.textContent = `✅ Sent ${data.invited} invite${data.invited !== 1 ? "s" : ""}${data.skipped > 0 ? ` (${data.skipped} skipped — already invited or not found)` : ""}`;
+        okEl.classList.remove("hidden");
+        setTimeout(() => {
+          closeBulkModal();
+          // Uncheck all
+          document.getElementById("bulk-clear-btn")?.click();
+        }, 3000);
+      } catch {
+        errEl.textContent = "Network error. Please try again.";
+        errEl.classList.remove("hidden");
+      }
+    }
+
+    // Make bulk functions global for inline onclick
+    (window as any).closeBulkModal = closeBulkModal;
+    (window as any).submitBulkInvite = submitBulkInvite;
   </script>
 </Layout>
