@@ -588,7 +588,43 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
                     {richOutput.tokens && <span class="text-xs text-gray-500">{richOutput.tokens} tokens</span>}
                   </div>
                 )}
-                <p class="text-sm text-gray-200 leading-relaxed whitespace-pre-wrap">{richOutput.text}</p>
+
+                <!-- Static output -->
+                <div id="static-output">
+                  <p class="text-sm text-gray-200 leading-relaxed whitespace-pre-wrap">{richOutput.text}</p>
+                </div>
+
+                <!-- Streaming output panel (hidden by default) -->
+                <div id="stream-panel" class="hidden">
+                  <div class="bg-gray-950 border border-violet-800/40 rounded-lg p-4 min-h-[80px] relative">
+                    <pre id="stream-text" class="text-sm text-gray-200 leading-relaxed whitespace-pre-wrap font-mono"></pre>
+                    <span id="stream-cursor" class="inline-block w-2 h-4 bg-violet-400 animate-pulse ml-0.5 align-middle hidden"></span>
+                  </div>
+                  <div class="flex items-center justify-between mt-2">
+                    <div id="stream-status" class="text-xs text-gray-500"></div>
+                    <button id="stream-stop-btn" class="text-xs text-red-400 hover:text-red-300 hidden">⬛ Stop</button>
+                  </div>
+                </div>
+
+                <!-- Stream controls -->
+                <div class="flex items-center gap-3 mt-4">
+                  <button
+                    id="stream-btn"
+                    data-task-id={task.id}
+                    class="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-violet-700 text-violet-400 hover:bg-violet-950/30 transition-colors"
+                  >
+                    ▶ Stream Output
+                  </button>
+                  <label class="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
+                    Speed:
+                    <select id="stream-speed" class="bg-gray-900 border border-gray-700 rounded px-2 py-0.5 text-gray-300 text-xs">
+                      <option value="20">Slow (20 c/s)</option>
+                      <option value="40" selected>Normal (40 c/s)</option>
+                      <option value="100">Fast (100 c/s)</option>
+                      <option value="500">Max</option>
+                    </select>
+                  </label>
+                </div>
               </div>
             )}
 
@@ -1821,4 +1857,82 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
       window.addEventListener("beforeunload", () => clearInterval(intervalId));
     </script>
   )}
+
+  <!-- LLM Output Streaming -->
+  <script define:vars={{ taskId: id }}>
+    const streamBtn = document.getElementById("stream-btn");
+    if (streamBtn) {
+      let es = null;
+      let streamActive = false;
+
+      const streamText = document.getElementById("stream-text");
+      const streamCursor = document.getElementById("stream-cursor");
+      const streamStatus = document.getElementById("stream-status");
+      const streamPanel = document.getElementById("stream-panel");
+      const staticOutput = document.getElementById("static-output");
+      const streamStopBtn = document.getElementById("stream-stop-btn");
+      const speedSelect = document.getElementById("stream-speed");
+
+      function stopStream() {
+        if (es) { es.close(); es = null; }
+        streamActive = false;
+        streamBtn.textContent = "▶ Stream Output";
+        streamBtn.disabled = false;
+        streamCursor.classList.add("hidden");
+        streamStopBtn.classList.add("hidden");
+        speedSelect.disabled = false;
+      }
+
+      streamStopBtn?.addEventListener("click", () => {
+        stopStream();
+        streamStatus.textContent = "Stopped.";
+      });
+
+      streamBtn.addEventListener("click", () => {
+        if (streamActive) { stopStream(); return; }
+
+        const speed = speedSelect?.value ?? "40";
+        streamActive = true;
+        streamBtn.textContent = "⏸ Streaming…";
+        streamBtn.disabled = false;
+        speedSelect.disabled = true;
+        streamStopBtn.classList.remove("hidden");
+
+        // Show stream panel, hide static
+        staticOutput.classList.add("hidden");
+        streamPanel.classList.remove("hidden");
+        streamText.textContent = "";
+        streamCursor.classList.remove("hidden");
+        streamStatus.textContent = "Connecting…";
+
+        const url = `/api/tasks/${taskId}/output-stream?speed=${speed}`;
+        es = new EventSource(url);
+
+        es.onmessage = (evt) => {
+          try {
+            const data = JSON.parse(evt.data);
+            if (data.event === "token") {
+              streamText.textContent += data.char;
+              streamStatus.textContent = `${data.position + 1} chars`;
+            } else if (data.event === "buffering") {
+              streamStatus.textContent = `Waiting for task (${data.status})…`;
+            } else if (data.event === "done") {
+              streamStatus.textContent = `Done — ${data.total_chars} chars`;
+              stopStream();
+            } else if (data.event === "error") {
+              streamStatus.textContent = `Error: ${data.detail}`;
+              stopStream();
+            }
+          } catch {}
+        };
+
+        es.onerror = () => {
+          if (streamActive) {
+            streamStatus.textContent = "Connection lost";
+            stopStream();
+          }
+        };
+      });
+    }
+  </script>
 </Layout>

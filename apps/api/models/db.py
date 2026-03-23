@@ -186,6 +186,7 @@ class TaskDB(Base):
 
     input = Column(JSON, nullable=False)
     output = Column(JSON, nullable=True)
+    streaming_output = Column(Text, nullable=True)   # incremental LLM output text (for streaming)
     error = Column(Text, nullable=True)
     credits_used = Column(Integer, nullable=True)
     duration_ms = Column(BigInteger, nullable=True)
@@ -353,6 +354,9 @@ class WebhookLogDB(Base):
     duration_ms = Column(Integer, nullable=True)
     retry_of = Column(UUID(as_uuid=True), nullable=True)  # original log ID if this is a manual retry
     is_manual_retry = Column(Boolean, default=False, nullable=False)
+    payload = Column(JSON, nullable=True)                 # original payload fired (for replay)
+    is_replay = Column(Boolean, default=False, nullable=False)
+    replay_of = Column(UUID(as_uuid=True), nullable=True)  # original log ID if this is a replay
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
 
 
@@ -492,6 +496,24 @@ class OrgInviteDB(Base):
 
     org = relationship("OrganizationDB", back_populates="invites")
     inviter = relationship("UserDB", backref="org_invites_sent", foreign_keys=[invited_by])
+
+
+class OrgActivityLogDB(Base):
+    """Lightweight event log for org-level analytics (task created/completed, credit spend)."""
+    __tablename__ = "org_activity_log"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    org_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"),
+                    nullable=False, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"),
+                     nullable=True)
+    event_type = Column(String(64), nullable=False)  # task_created | task_completed | credit_spend
+    task_id = Column(UUID(as_uuid=True), nullable=True)
+    credits = Column(Integer, default=0, nullable=False)
+    metadata = Column(JSON, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    org = relationship("OrganizationDB", backref="activity_log")
 
 
 class NotificationDB(Base):

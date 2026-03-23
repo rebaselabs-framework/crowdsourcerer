@@ -8,12 +8,12 @@ from uuid import UUID, uuid4
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func, and_, case
 
 from core.auth import get_current_user_id
 from core.database import get_db
 from core.notify import create_notification, NotifType
-from models.db import OrganizationDB, OrgMemberDB, OrgInviteDB, UserDB, CreditTransactionDB
+from models.db import OrganizationDB, OrgMemberDB, OrgInviteDB, UserDB, CreditTransactionDB, TaskDB
 from models.schemas import (
     OrgCreateRequest, OrgUpdateRequest, OrgOut, OrgMemberOut,
     OrgInviteRequest, OrgInviteOut,
@@ -611,3 +611,132 @@ async def deactivate_org(
     if user:
         user.active_org_id = None
         await db.commit()
+
+
+# ── Org Analytics ──────────────────────────────────────────────────────────────
+
+@router.get("/{org_id}/analytics")
+async def org_analytics(
+    org_id: UUID,
+    days: int = Query(default=30, ge=1, le=365),
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """
+    Return org-level analytics for the past N days.
+
+    Includes:
+    - Aggregate stats: total tasks, completed, failed, credits spent
+    - Task type breakdown (count + credits per type)
+    - Per-member breakdown: tasks created, completed, credits spent
+    - Daily activity series (task counts per day, last 30 days)
+
+    Requires: caller must be a member of the org.
+    """
+    org, _ = await _get_org_and_require_role(org_id, user_id, db, min_role="member")
+
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+
+    # ── Aggregate task stats ───────────────────────────────────────────────
+    agg_result = await db.execute(
+        select(
+            func.count(TaskDB.id).label("total"),
+            func.sum(case((TaskDB.status == "completed", 1), else_=0)).label("completed"),
+            func.sum(case((TaskDB.status == "failed", 1), else_=0)).label("failed"),
+            func.sum(case((TaskDB.status == "running", 1), else_=0)).label("running"),
+            func.coalesce(func.sum(TaskDB.credits_used), 0).label("credits_spent"),
+            func.avg(TaskDB.duration_ms).label("avg_duration_ms"),
+        ).where(
+            TaskDB.org_id == org_id,
+            TaskDB.created_at >= since,
+        )
+    )
+    agg = agg_result.one()
+
+    # ── Task type breakdown ────────────────────────────────────────────────
+    type_result = await db.execute(
+        select(
+            TaskDB.type,
+            func.count(TaskDB.id).label("count"),
+            func.coalesce(func.sum(TaskDB.credits_used), 0).label("credits"),
+            func.sum(case((TaskDB.status == "completed", 1), else_=0)).label("completed"),
+        ).where(
+            TaskDB.org_id == org_id,
+            TaskDB.created_at >= since,
+        ).group_by(TaskDB.type)
+        .order_by(func.count(TaskDB.id).desc())
+    )
+    by_type = [
+        {
+            "type": r.type,
+            "count": r.count,
+            "completed": r.completed,
+            "credits": int(r.credits),
+            "completion_rate": round(r.completed / r.count * 100, 1) if r.count else 0,
+        }
+        for r in type_result.all()
+    ]
+
+    # ── Per-member breakdown ───────────────────────────────────────────────
+    member_result = await db.execute(
+        select(
+            UserDB.id,
+            UserDB.name,
+            UserDB.email,
+            func.count(TaskDB.id).label("tasks_created"),
+            func.sum(case((TaskDB.status == "completed", 1), else_=0)).label("tasks_completed"),
+            func.coalesce(func.sum(TaskDB.credits_used), 0).label("credits_spent"),
+        ).join(TaskDB, and_(TaskDB.user_id == UserDB.id, TaskDB.org_id == org_id, TaskDB.created_at >= since), isouter=True)
+        .join(OrgMemberDB, and_(OrgMemberDB.org_id == org_id, OrgMemberDB.user_id == UserDB.id))
+        .group_by(UserDB.id, UserDB.name, UserDB.email)
+        .order_by(func.count(TaskDB.id).desc())
+    )
+    by_member = [
+        {
+            "user_id": str(r.id),
+            "name": r.name or r.email,
+            "tasks_created": r.tasks_created or 0,
+            "tasks_completed": r.tasks_completed or 0,
+            "credits_spent": int(r.credits_spent or 0),
+        }
+        for r in member_result.all()
+    ]
+
+    # ── Daily series (last 30 days, bucketed by day) ───────────────────────
+    from sqlalchemy import text, cast, Date
+    daily_result = await db.execute(
+        select(
+            cast(TaskDB.created_at, Date).label("day"),
+            func.count(TaskDB.id).label("count"),
+            func.sum(case((TaskDB.status == "completed", 1), else_=0)).label("completed"),
+        ).where(
+            TaskDB.org_id == org_id,
+            TaskDB.created_at >= since,
+        ).group_by(cast(TaskDB.created_at, Date))
+        .order_by(cast(TaskDB.created_at, Date))
+    )
+    daily = [
+        {"day": str(r.day), "count": r.count, "completed": r.completed}
+        for r in daily_result.all()
+    ]
+
+    total = int(agg.total or 0)
+    completed = int(agg.completed or 0)
+
+    return {
+        "org_id": str(org_id),
+        "org_name": org.name,
+        "days": days,
+        "summary": {
+            "total_tasks": total,
+            "completed": completed,
+            "failed": int(agg.failed or 0),
+            "running": int(agg.running or 0),
+            "credits_spent": int(agg.credits_spent or 0),
+            "completion_rate": round(completed / total * 100, 1) if total else 0.0,
+            "avg_duration_ms": round(float(agg.avg_duration_ms)) if agg.avg_duration_ms else None,
+        },
+        "by_type": by_type,
+        "by_member": by_member,
+        "daily": daily,
+    }

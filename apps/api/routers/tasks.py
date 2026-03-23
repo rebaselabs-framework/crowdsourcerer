@@ -1519,6 +1519,107 @@ async def dashboard_task_stream(
     )
 
 
+# ─── SSE — LLM output token stream ─────────────────────────────────────────
+
+@router.get("/{task_id}/output-stream")
+async def task_output_stream(
+    task_id: UUID,
+    speed: float = Query(default=40.0, ge=1.0, le=500.0, description="Characters per second"),
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """
+    Server-Sent Events stream that delivers the LLM output of a completed task
+    character-by-character at the requested speed (default 40 chars/sec).
+
+    For ``llm_generate`` (and any AI task with a text output), this creates
+    the effect of live token streaming even for already-completed tasks.
+
+    While the task is still running, emits buffering heartbeats and waits up
+    to 10 minutes for completion before closing the stream.
+
+    Events:
+    - ``{"event": "token", "char": "x", "position": N}``  — one character
+    - ``{"event": "done"}``  — all characters delivered
+    - ``{"event": "buffering"}``  — task still running, waiting
+    - ``{"event": "error", "detail": "..."}``  — task failed
+    """
+    result = await db.execute(
+        select(TaskDB).where(TaskDB.id == task_id, TaskDB.user_id == user_id)
+    )
+    task = result.scalar_one_or_none()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    delay = 1.0 / speed  # seconds per character
+
+    async def event_generator() -> AsyncIterator[str]:
+        from core.database import AsyncSessionLocal
+        TERMINAL = {"completed", "failed", "cancelled"}
+        max_wait_polls = 300  # 10 minutes at 2s intervals
+
+        # ── Phase 1: wait for task to reach a terminal state ─────────────
+        polls = 0
+        while polls < max_wait_polls:
+            async with AsyncSessionLocal() as session:
+                r = await session.execute(select(TaskDB).where(TaskDB.id == task_id))
+                t = r.scalar_one_or_none()
+                if t is None:
+                    yield 'data: {"event": "error", "detail": "Task not found"}\n\n'
+                    return
+                if t.status in TERMINAL:
+                    break
+            yield 'data: {"event": "buffering", "status": "' + (t.status or "pending") + '"}\n\n'
+            await asyncio.sleep(2.0)
+            polls += 1
+        else:
+            yield 'data: {"event": "error", "detail": "Timed out waiting for task completion"}\n\n'
+            return
+
+        # ── Phase 2: load output text ────────────────────────────────────
+        async with AsyncSessionLocal() as session:
+            r = await session.execute(select(TaskDB).where(TaskDB.id == task_id))
+            t = r.scalar_one_or_none()
+
+        if not t or t.status != "completed":
+            error_detail = (t.error or "Task did not complete successfully") if t else "Task not found"
+            yield f'data: {{"event": "error", "detail": {json.dumps(error_detail)}}}\n\n'
+            return
+
+        # Extract text from output — try common LLM output keys
+        output_text = ""
+        if t.output:
+            for key in ("result", "text", "content", "answer", "response", "output", "summary"):
+                val = t.output.get(key)
+                if isinstance(val, str) and val.strip():
+                    output_text = val
+                    break
+            if not output_text:
+                output_text = json.dumps(t.output, ensure_ascii=False, indent=2)
+
+        if not output_text:
+            yield 'data: {"event": "done", "total_chars": 0}\n\n'
+            return
+
+        # ── Phase 3: stream characters ───────────────────────────────────
+        for pos, char in enumerate(output_text):
+            payload = json.dumps({"event": "token", "char": char, "position": pos})
+            yield f"data: {payload}\n\n"
+            await asyncio.sleep(delay)
+
+        yield f'data: {{"event": "done", "total_chars": {len(output_text)}}}\n\n'
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 # ─── Background task runner ────────────────────────────────────────────────
 
 def _result_preview(output: dict | None, max_chars: int = 200) -> str:

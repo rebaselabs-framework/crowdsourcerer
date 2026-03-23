@@ -301,6 +301,7 @@ async def _deliver_to_endpoint(
                     success=success,
                     error=error_msg,
                     duration_ms=duration_ms,
+                    payload=payload,
                 )
                 await _update_endpoint_stats(endpoint_id=endpoint_id, success=success)
                 return
@@ -324,6 +325,7 @@ async def _deliver_to_endpoint(
             success=False,
             error=error_msg,
             duration_ms=duration_ms,
+            payload=payload,
         )
 
         if attempt < max_retries - 1:
@@ -376,6 +378,9 @@ async def _log_endpoint_delivery(
     success: bool,
     error: Optional[str],
     duration_ms: int,
+    payload: Optional[dict[str, Any]] = None,
+    is_replay: bool = False,
+    replay_of: Optional[str] = None,
 ) -> None:
     """Persist a WebhookLogDB row for a persistent endpoint delivery."""
     try:
@@ -390,6 +395,9 @@ async def _log_endpoint_delivery(
                 success=success,
                 error=error,
                 duration_ms=duration_ms,
+                payload=payload,
+                is_replay=is_replay,
+                replay_of=replay_of,
             )
             db.add(log)
             await db.commit()
@@ -541,6 +549,7 @@ async def _log(
     success: bool,
     error: Optional[str],
     duration_ms: int,
+    payload: Optional[dict[str, Any]] = None,
 ) -> None:
     try:
         async with AsyncSessionLocal() as db:
@@ -554,8 +563,135 @@ async def _log(
                 success=success,
                 error=error,
                 duration_ms=duration_ms,
+                payload=payload,
             )
             db.add(log)
             await db.commit()
     except Exception:
         logger.warning("webhook_log_failed", task_id=task_id)
+
+
+async def replay_webhook_log(*, log_id: str, user_id: str) -> dict:
+    """
+    Re-fire the original payload from a past webhook log entry to all currently
+    active persistent endpoints owned by user_id.
+
+    Unlike retry (which re-sends to the same URL), replay broadcasts the original
+    event payload to ALL active endpoints that subscribe to the same event type.
+
+    Returns a summary of how many endpoints were targeted and their outcomes.
+    Raises ValueError if the log is not found or access is denied.
+    """
+    from sqlalchemy import select as sa_select
+
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            sa_select(WebhookLogDB).where(
+                WebhookLogDB.id == log_id,
+                WebhookLogDB.user_id == user_id,
+            )
+        )
+        original: Optional[WebhookLogDB] = result.scalar_one_or_none()
+        if original is None:
+            raise ValueError("Webhook log not found or access denied")
+
+        # Fetch all active endpoints for this user
+        ep_result = await db.execute(
+            sa_select(WebhookEndpointDB).where(
+                WebhookEndpointDB.user_id == user_id,
+                WebhookEndpointDB.is_active.is_(True),
+            )
+        )
+        endpoints: list[WebhookEndpointDB] = ep_result.scalars().all()
+
+    event_type = original.event_type or "task.completed"
+
+    # Use original payload if stored; otherwise reconstruct minimal one
+    if original.payload:
+        base_payload: dict[str, Any] = dict(original.payload)
+        base_payload["is_replay"] = True
+        base_payload["original_log_id"] = str(original.id)
+        base_payload["occurred_at"] = _utcnow_iso()
+    else:
+        base_payload = {
+            "event": event_type,
+            "task_id": str(original.task_id),
+            "occurred_at": _utcnow_iso(),
+            "is_replay": True,
+            "original_log_id": str(original.id),
+        }
+
+    results = []
+    for ep in endpoints:
+        subscribed: list[str] | None = ep.events  # type: ignore[assignment]
+        if subscribed is not None and event_type not in subscribed:
+            continue
+
+        payload_bytes = json.dumps(base_payload).encode()
+        sig = hmac.new(ep.secret.encode(), payload_bytes, hashlib.sha256).hexdigest()
+
+        t0 = _time.perf_counter()
+        status_code: Optional[int] = None
+        error_msg: Optional[str] = None
+        success = False
+
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(
+                    ep.url,
+                    content=payload_bytes,
+                    headers={
+                        "Content-Type": "application/json",
+                        "X-Crowdsourcerer-Event": event_type,
+                        "X-Crowdsourcerer-Signature": sig,
+                        "X-Crowdsourcerer-Replay": "true",
+                        "User-Agent": "CrowdSorcerer-Webhooks/1.0",
+                    },
+                )
+            status_code = resp.status_code
+            success = resp.status_code < 400
+            if not success:
+                error_msg = f"HTTP {resp.status_code}"
+        except Exception as exc:
+            error_msg = str(exc)
+
+        duration_ms = int((_time.perf_counter() - t0) * 1000)
+
+        # Log the replay delivery
+        try:
+            async with AsyncSessionLocal() as db:
+                replay_log = WebhookLogDB(
+                    task_id=original.task_id,
+                    user_id=original.user_id,
+                    url=ep.url,
+                    event_type=event_type,
+                    attempt=1,
+                    status_code=status_code,
+                    success=success,
+                    error=error_msg,
+                    duration_ms=duration_ms,
+                    payload=base_payload,
+                    is_replay=True,
+                    replay_of=original.id,
+                )
+                db.add(replay_log)
+                await db.commit()
+        except Exception:
+            logger.warning("webhook_replay_log_failed", original_id=log_id, endpoint=ep.url)
+
+        results.append({
+            "endpoint_id": str(ep.id),
+            "url": ep.url,
+            "success": success,
+            "status_code": status_code,
+            "duration_ms": duration_ms,
+            "error": error_msg,
+        })
+
+    return {
+        "original_log_id": log_id,
+        "event_type": event_type,
+        "endpoints_targeted": len(results),
+        "endpoints_succeeded": sum(1 for r in results if r["success"]),
+        "results": results,
+    }

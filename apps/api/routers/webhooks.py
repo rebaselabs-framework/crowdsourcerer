@@ -22,7 +22,7 @@ from core.scopes import (
     SCOPE_WEBHOOKS_READ,
     SCOPE_WEBHOOKS_WRITE,
 )
-from core.webhooks import ALL_EVENTS, DEFAULT_EVENTS, retry_webhook_log
+from core.webhooks import ALL_EVENTS, DEFAULT_EVENTS, retry_webhook_log, replay_webhook_log
 from models.db import WebhookLogDB, WebhookEndpointDB
 from models.schemas import (
     WebhookEndpointCreate,
@@ -366,6 +366,28 @@ async def retry_webhook(
     """
     try:
         result = await retry_webhook_log(log_id=str(log_id), user_id=str(user_id))
+    except ValueError as exc:
+        raise HTTPException(404, str(exc))
+    return result
+
+
+@router.post("/logs/{log_id}/replay")
+async def replay_webhook(
+    log_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(require_scope(SCOPE_WEBHOOKS_WRITE)),
+):
+    """
+    Replay a past webhook event to all currently active endpoints.
+
+    Unlike retry (which re-sends to the same URL), replay broadcasts the
+    original event payload to ALL active persistent endpoints that subscribe
+    to the same event type.  Useful for re-syncing consumers after downtime.
+
+    Returns per-endpoint delivery results.
+    """
+    try:
+        result = await replay_webhook_log(log_id=str(log_id), user_id=str(user_id))
     except ValueError as exc:
         raise HTTPException(404, str(exc))
     return result
