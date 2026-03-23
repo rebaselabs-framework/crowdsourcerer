@@ -4,7 +4,7 @@ from typing import Any
 
 import structlog
 
-from .base import RebaseKitClient, WorkerError
+from workers.base import RebaseKitClient, WorkerError
 
 logger = structlog.get_logger()
 

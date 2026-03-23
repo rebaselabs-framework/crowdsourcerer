@@ -3,10 +3,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from ..core.auth import get_current_user_id, generate_api_key
-from ..core.database import get_db
-from ..models.db import UserDB, ApiKeyDB
-from ..models.schemas import (
+from core.auth import get_current_user_id, generate_api_key
+from core.database import get_db
+from models.db import UserDB, ApiKeyDB
+from models.schemas import (
     ApiKeyCreateRequest, ApiKeyCreateResponse, ApiKeyOut, UserOut
 )
 

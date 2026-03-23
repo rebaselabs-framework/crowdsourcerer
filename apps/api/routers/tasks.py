@@ -11,14 +11,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
-from ..core.auth import get_current_user_id
-from ..core.database import get_db
-from ..models.db import TaskDB, UserDB, CreditTransactionDB
-from ..models.schemas import (
+from core.auth import get_current_user_id
+from core.database import get_db
+from models.db import TaskDB, UserDB, CreditTransactionDB
+from models.schemas import (
     TaskCreateRequest, TaskCreateResponse, TaskOut, PaginatedTasks
 )
-from ..workers.base import get_rebasekit_client, WorkerError
-from ..workers.router import execute_task, TASK_CREDITS
+from workers.base import get_rebasekit_client, WorkerError
+from workers.router import execute_task, TASK_CREDITS
 
 logger = structlog.get_logger()
 router = APIRouter(prefix="/v1/tasks", tags=["tasks"])
@@ -155,7 +155,7 @@ async def cancel_task(
 
 async def _run_task(task_id: str, user_id: str):
     """Execute a task against RebaseKit and store the result."""
-    from ..core.database import AsyncSessionLocal  # avoid circular import at module level
+    from core.database import AsyncSessionLocal  # avoid circular import at module level
 
     async with AsyncSessionLocal() as db:
         try:

@@ -47,10 +47,10 @@ async def test_docs_available(client):
 @pytest.mark.asyncio
 async def test_unauthorized_tasks(client):
     r = await client.get("/v1/tasks")
-    assert r.status_code == 403  # No auth header
+    assert r.status_code == 401  # No auth header
 
 
 @pytest.mark.asyncio
 async def test_unauthorized_credits(client):
     r = await client.get("/v1/credits")
-    assert r.status_code == 403
+    assert r.status_code == 401

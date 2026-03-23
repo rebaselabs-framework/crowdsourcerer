@@ -4,7 +4,7 @@ import time
 from typing import Any
 import httpx
 import structlog
-from ..core.config import get_settings
+from core.config import get_settings
 
 logger = structlog.get_logger()
 settings = get_settings()

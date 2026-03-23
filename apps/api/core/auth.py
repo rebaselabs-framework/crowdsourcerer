@@ -11,8 +11,8 @@ from jose import JWTError, jwt
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from .config import get_settings
-from .database import get_db
+from core.config import get_settings
+from core.database import get_db
 
 settings = get_settings()
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -69,7 +69,7 @@ async def get_current_user_id(
 
     # API key path
     if token.startswith("csk_"):
-        from ..models.db import ApiKeyDB  # avoid circular import
+        from models.db import ApiKeyDB  # avoid circular import
         hashed = _hash_api_key(token)
         result = await db.execute(
             select(ApiKeyDB).where(ApiKeyDB.key_hash == hashed)

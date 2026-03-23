@@ -6,11 +6,11 @@ from passlib.context import CryptContext
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from ..core.auth import create_access_token
-from ..core.config import get_settings
-from ..core.database import get_db
-from ..models.db import UserDB
-from ..models.schemas import LoginRequest, RegisterRequest, TokenResponse
+from core.auth import create_access_token
+from core.config import get_settings
+from core.database import get_db
+from models.db import UserDB
+from models.schemas import LoginRequest, RegisterRequest, TokenResponse
 
 router = APIRouter(prefix="/v1/auth", tags=["auth"])
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")

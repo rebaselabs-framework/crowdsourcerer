@@ -8,10 +8,10 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from .core.config import get_settings
-from .core.database import Base, engine
-from .routers import auth, credits, tasks, users
-from .workers.base import get_rebasekit_client
+from core.config import get_settings
+from core.database import Base, engine
+from routers import auth, credits, tasks, users
+from workers.base import get_rebasekit_client
 
 settings = get_settings()
 logger = structlog.get_logger()
