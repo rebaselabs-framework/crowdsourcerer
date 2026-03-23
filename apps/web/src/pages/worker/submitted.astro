@@ -1,0 +1,70 @@
+---
+/**
+ * Task submitted success page — shown after worker submits a task.
+ */
+import Layout from "@/layouts/Layout.astro";
+import { getToken } from "@/lib/api";
+
+const token = getToken(Object.fromEntries(
+  Astro.cookies.getAll().map((c) => [c.name, c.value])
+));
+
+if (!token) return Astro.redirect("/login");
+
+const url = new URL(Astro.request.url);
+const credits = parseInt(url.searchParams.get("credits") ?? "0");
+const xp = parseInt(url.searchParams.get("xp") ?? "0");
+---
+
+<Layout title="Task Submitted — CrowdSorcerer">
+  <div class="max-w-lg mx-auto px-6 py-20 text-center">
+    <!-- Success animation -->
+    <div class="text-7xl mb-6 animate-bounce">🎉</div>
+
+    <h1 class="text-3xl font-bold mb-3">Task Submitted!</h1>
+    <p class="text-gray-400 mb-10">Your answer has been recorded. Thanks for contributing!</p>
+
+    <!-- Rewards -->
+    <div class="grid grid-cols-2 gap-4 mb-10">
+      <div class="bg-gray-900 border border-emerald-800/50 rounded-2xl p-6">
+        <div class="text-4xl font-bold text-emerald-400 mb-1">+{credits}</div>
+        <div class="text-sm text-gray-400">Credits earned</div>
+        <div class="text-xs text-gray-600 mt-1">≈ ${(credits / 100).toFixed(2)}</div>
+      </div>
+      <div class="bg-gray-900 border border-violet-800/50 rounded-2xl p-6">
+        <div class="text-4xl font-bold text-violet-400 mb-1">+{xp}</div>
+        <div class="text-sm text-gray-400">XP gained</div>
+        <div class="text-xs text-gray-600 mt-1">Progress to next level</div>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="flex flex-col gap-3 max-w-sm mx-auto">
+      <a
+        href="/worker/marketplace"
+        class="py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-xl transition-colors"
+      >
+        Complete another task
+      </a>
+      <a
+        href="/worker"
+        class="py-3.5 border border-gray-700 hover:border-gray-500 text-gray-300 rounded-xl transition-colors text-sm"
+      >
+        View my stats
+      </a>
+    </div>
+
+    <!-- Motivational tip -->
+    <div class="mt-12 text-sm text-gray-600">
+      <span class="text-orange-400">🔥</span> Keep your streak going — complete a task every day for bonus multipliers!
+    </div>
+  </div>
+</Layout>
+
+<style>
+  @keyframes bounce {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-20px); }
+  }
+  .animate-bounce { animation: bounce 1s ease-in-out 2; }
+</style>

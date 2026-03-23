@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import (
-    Column, String, Integer, BigInteger, Boolean, DateTime,
+    Column, String, Integer, BigInteger, Boolean, DateTime, Float,
     Text, ForeignKey, Enum as SAEnum, JSON
 )
 from sqlalchemy.dialects.postgresql import UUID
@@ -28,15 +28,33 @@ class UserDB(Base):
         default="free",
         nullable=False,
     )
+    # Role: requester = posts tasks; worker = completes tasks; both = can do either
+    role = Column(
+        SAEnum("requester", "worker", "both", name="user_role_enum"),
+        default="requester",
+        nullable=False,
+    )
     credits = Column(Integer, default=100, nullable=False)
     stripe_customer_id = Column(String(255), nullable=True, unique=True)
     is_active = Column(Boolean, default=True, nullable=False)
+
+    # Worker gamification
+    worker_xp = Column(Integer, default=0, nullable=False)
+    worker_level = Column(Integer, default=1, nullable=False)
+    worker_accuracy = Column(Float, nullable=True)       # 0.0–1.0
+    worker_reliability = Column(Float, nullable=True)    # 0.0–1.0
+    worker_tasks_completed = Column(Integer, default=0, nullable=False)
+    worker_streak_days = Column(Integer, default=0, nullable=False)
+    worker_last_active_date = Column(DateTime(timezone=True), nullable=True)
+
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     tasks = relationship("TaskDB", back_populates="user", lazy="dynamic")
     api_keys = relationship("ApiKeyDB", back_populates="user", lazy="dynamic")
     transactions = relationship("CreditTransactionDB", back_populates="user", lazy="dynamic")
+    assignments = relationship("TaskAssignmentDB", back_populates="worker", lazy="dynamic",
+                               foreign_keys="TaskAssignmentDB.worker_id")
 
 
 class ApiKeyDB(Base):
@@ -61,16 +79,26 @@ class TaskDB(Base):
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     type = Column(
         SAEnum(
+            # AI-powered task types (executed by RebaseKit APIs)
             "web_research", "entity_lookup", "document_parse", "data_transform",
             "llm_generate", "screenshot", "audio_transcribe", "pii_detect",
             "code_execute", "web_intel",
+            # Human task types (completed by workers in the marketplace)
+            "label_image", "label_text", "rate_quality",
+            "verify_fact", "moderate_content", "compare_rank",
+            "answer_question", "transcription_review",
             name="task_type_enum",
         ),
         nullable=False,
     )
     status = Column(
-        SAEnum("pending", "queued", "running", "completed", "failed", "cancelled",
-               name="task_status_enum"),
+        SAEnum(
+            "pending", "queued", "running",  # AI task lifecycle
+            "open",                           # Human task: available in marketplace
+            "assigned",                       # Human task: claimed by a worker
+            "completed", "failed", "cancelled",
+            name="task_status_enum",
+        ),
         default="pending",
         nullable=False,
     )
@@ -79,6 +107,13 @@ class TaskDB(Base):
         default="normal",
         nullable=False,
     )
+    # Execution mode determines whether task is run by AI or sent to human workers
+    execution_mode = Column(
+        SAEnum("ai", "human", name="execution_mode_enum"),
+        default="ai",
+        nullable=False,
+    )
+
     input = Column(JSON, nullable=False)
     output = Column(JSON, nullable=True)
     error = Column(Text, nullable=True)
@@ -86,11 +121,48 @@ class TaskDB(Base):
     duration_ms = Column(BigInteger, nullable=True)
     webhook_url = Column(String(2048), nullable=True)
     metadata = Column(JSON, nullable=True)
+
+    # Human task fields
+    worker_reward_credits = Column(Integer, nullable=True)      # Credits paid to each worker
+    assignments_required = Column(Integer, default=1, nullable=False)  # Workers needed (for consensus)
+    assignments_completed = Column(Integer, default=0, nullable=False)
+    claim_timeout_minutes = Column(Integer, default=30, nullable=False)
+    task_instructions = Column(Text, nullable=True)             # Extra guidance for workers
+
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     started_at = Column(DateTime(timezone=True), nullable=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)
 
     user = relationship("UserDB", back_populates="tasks")
+    assignments = relationship("TaskAssignmentDB", back_populates="task", lazy="dynamic")
+
+
+class TaskAssignmentDB(Base):
+    """Links a worker to a specific human task they are working on or completed."""
+    __tablename__ = "task_assignments"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    task_id = Column(UUID(as_uuid=True), ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False, index=True)
+    worker_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    status = Column(
+        SAEnum("active", "submitted", "approved", "rejected", "released", "timed_out",
+               name="assignment_status_enum"),
+        default="active",
+        nullable=False,
+    )
+    response = Column(JSON, nullable=True)          # Worker's answer/completion data
+    worker_note = Column(Text, nullable=True)       # Optional note from worker
+    earnings_credits = Column(Integer, default=0, nullable=False)  # Credits earned
+    xp_earned = Column(Integer, default=0, nullable=False)
+
+    claimed_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    submitted_at = Column(DateTime(timezone=True), nullable=True)
+    released_at = Column(DateTime(timezone=True), nullable=True)
+    timeout_at = Column(DateTime(timezone=True), nullable=True)  # When the claim expires
+
+    task = relationship("TaskDB", back_populates="assignments")
+    worker = relationship("UserDB", back_populates="assignments", foreign_keys=[worker_id])
 
 
 class CreditTransactionDB(Base):
@@ -101,7 +173,7 @@ class CreditTransactionDB(Base):
     task_id = Column(UUID(as_uuid=True), ForeignKey("tasks.id", ondelete="SET NULL"), nullable=True)
     amount = Column(Integer, nullable=False)  # positive = credit, negative = charge
     type = Column(
-        SAEnum("charge", "credit", "refund", name="transaction_type_enum"),
+        SAEnum("charge", "credit", "refund", "earning", name="transaction_type_enum"),
         nullable=False,
     )
     description = Column(String(512), nullable=False)

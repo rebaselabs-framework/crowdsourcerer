@@ -15,13 +15,26 @@ from core.auth import get_current_user_id
 from core.database import get_db
 from models.db import TaskDB, UserDB, CreditTransactionDB
 from models.schemas import (
-    TaskCreateRequest, TaskCreateResponse, TaskOut, PaginatedTasks
+    TaskCreateRequest, TaskCreateResponse, TaskOut, PaginatedTasks,
+    HUMAN_TASK_TYPES,
 )
 from workers.base import get_rebasekit_client, WorkerError
 from workers.router import execute_task, TASK_CREDITS
 
 logger = structlog.get_logger()
 router = APIRouter(prefix="/v1/tasks", tags=["tasks"])
+
+# Default credits cost for human tasks (requester pays this to fund worker rewards)
+HUMAN_TASK_BASE_CREDITS: dict[str, int] = {
+    "label_image": 3,
+    "label_text": 2,
+    "rate_quality": 2,
+    "verify_fact": 3,
+    "moderate_content": 2,
+    "compare_rank": 2,
+    "answer_question": 4,
+    "transcription_review": 5,
+}
 
 
 @router.post("", response_model=TaskCreateResponse, status_code=201)
@@ -31,7 +44,17 @@ async def create_task(
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ):
-    estimated_credits = TASK_CREDITS.get(req.type, 5)
+    is_human = req.type in HUMAN_TASK_TYPES
+
+    if is_human:
+        # For human tasks: requester pays a platform fee.
+        # The worker reward is set by requester (or defaults to base cost).
+        worker_reward = req.worker_reward_credits or HUMAN_TASK_BASE_CREDITS.get(req.type, 2)
+        # Total cost = worker_reward * assignments_required + 20% platform fee
+        platform_fee = max(1, int(worker_reward * req.assignments_required * 0.2))
+        estimated_credits = worker_reward * req.assignments_required + platform_fee
+    else:
+        estimated_credits = TASK_CREDITS.get(req.type, 5)
 
     # Check credits
     result = await db.execute(select(UserDB).where(UserDB.id == user_id))
@@ -51,15 +74,35 @@ async def create_task(
     # Deduct credits (reserve)
     user.credits -= estimated_credits
 
-    task = TaskDB(
-        user_id=user_id,
-        type=req.type,
-        status="queued",
-        priority=req.priority,
-        input=req.input,
-        metadata=req.metadata,
-        webhook_url=req.webhook_url,
-    )
+    if is_human:
+        # Human tasks go to the worker marketplace immediately
+        task = TaskDB(
+            user_id=user_id,
+            type=req.type,
+            status="open",
+            execution_mode="human",
+            priority=req.priority,
+            input=req.input,
+            metadata=req.metadata,
+            webhook_url=req.webhook_url,
+            worker_reward_credits=worker_reward,
+            assignments_required=req.assignments_required,
+            claim_timeout_minutes=req.claim_timeout_minutes,
+            task_instructions=req.task_instructions,
+        )
+    else:
+        # AI tasks go straight to the processing queue
+        task = TaskDB(
+            user_id=user_id,
+            type=req.type,
+            status="queued",
+            execution_mode="ai",
+            priority=req.priority,
+            input=req.input,
+            metadata=req.metadata,
+            webhook_url=req.webhook_url,
+        )
+
     db.add(task)
 
     # Log credit charge
@@ -75,12 +118,13 @@ async def create_task(
     await db.commit()
     await db.refresh(task)
 
-    # Run task in background
-    background_tasks.add_task(_run_task, str(task.id), str(user_id))
+    if not is_human:
+        # Run AI task in background
+        background_tasks.add_task(_run_task, str(task.id), str(user_id))
 
     return TaskCreateResponse(
         task_id=task.id,
-        status="queued",
+        status=task.status,
         estimated_credits=estimated_credits,
     )
 
@@ -145,7 +189,7 @@ async def cancel_task(
     task = result.scalar_one_or_none()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    if task.status not in ("pending", "queued"):
+    if task.status not in ("pending", "queued", "open"):
         raise HTTPException(status_code=409, detail="Task cannot be cancelled")
     task.status = "cancelled"
     await db.commit()
@@ -154,7 +198,7 @@ async def cancel_task(
 # ─── Background task runner ────────────────────────────────────────────────
 
 async def _run_task(task_id: str, user_id: str):
-    """Execute a task against RebaseKit and store the result."""
+    """Execute an AI task against RebaseKit and store the result."""
     from core.database import AsyncSessionLocal  # avoid circular import at module level
 
     async with AsyncSessionLocal() as db:
@@ -227,7 +271,6 @@ async def _send_webhook(url: str, task_id: str, max_retries: int = 3):
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.post(url, json=payload)
                 if resp.status_code < 500:
-                    # 2xx/3xx/4xx — don't retry (client errors are not transient)
                     if resp.status_code >= 400:
                         logger.warning(
                             "webhook_client_error",
@@ -235,7 +278,6 @@ async def _send_webhook(url: str, task_id: str, max_retries: int = 3):
                             status=resp.status_code,
                         )
                     return
-                # 5xx — server error, retry
                 logger.warning(
                     "webhook_server_error",
                     url=url,

@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 
 from core.config import get_settings
 from core.database import Base, engine
-from routers import auth, credits, tasks, users
+from routers import auth, credits, tasks, users, worker
 from workers.base import get_rebasekit_client
 
 settings = get_settings()
@@ -64,6 +64,7 @@ app.include_router(auth.router)
 app.include_router(tasks.router)
 app.include_router(credits.router)
 app.include_router(users.router)
+app.include_router(worker.router)
 
 # ─── Health ───────────────────────────────────────────────────────────────
 

@@ -1,0 +1,585 @@
+---
+/**
+ * Worker task completion page.
+ * Shows type-specific UI. Worker claims then completes the task.
+ */
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Object.fromEntries(
+  Astro.cookies.getAll().map((c) => [c.name, c.value])
+));
+
+if (!token) return Astro.redirect("/login");
+
+const { id } = Astro.params;
+let task: any = null;
+let hasActiveAssignment = false;
+let activeAssignment: any = null;
+let error = "";
+let user: any = null;
+
+try {
+  [user, task] = await Promise.all([
+    apiFetch<any>("/v1/users/me", { token }),
+    apiFetch<any>(`/v1/worker/tasks/${id}`, { token }),
+  ]);
+  if (!user || (user.role !== "worker" && user.role !== "both")) {
+    return Astro.redirect("/worker");
+  }
+  // Check active assignment
+  const myAssignments = await apiFetch<any[]>(
+    `/v1/worker/assignments?status=active&page_size=50`, { token }
+  );
+  activeAssignment = myAssignments?.find((a: any) => a.task_id === id) ?? null;
+  hasActiveAssignment = !!activeAssignment;
+} catch (e: any) {
+  error = (e as Error).message ?? "Task not found";
+}
+
+const TASK_META: Record<string, { label: string; icon: string }> = {
+  label_image:          { label: "Label Image",       icon: "🖼️" },
+  label_text:           { label: "Classify Text",     icon: "📝" },
+  rate_quality:         { label: "Rate Quality",      icon: "⭐" },
+  verify_fact:          { label: "Verify Fact",       icon: "✅" },
+  moderate_content:     { label: "Moderate Content",  icon: "🛡️" },
+  compare_rank:         { label: "A/B Comparison",    icon: "⚖️" },
+  answer_question:      { label: "Answer Question",   icon: "💬" },
+  transcription_review: { label: "Review Transcript", icon: "🎙️" },
+};
+
+const meta = task ? (TASK_META[task.type] ?? { label: task.type, icon: "🔮" }) : null;
+const inp = task?.input ?? {};
+const timeoutStr = activeAssignment?.timeout_at
+  ? new Date(activeAssignment.timeout_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+  : null;
+---
+
+<Layout title={`${meta?.label ?? "Task"} — CrowdSorcerer`}>
+  <div class="max-w-3xl mx-auto px-6 py-10">
+    <div class="flex items-center justify-between mb-8">
+      <a href="/worker/marketplace" class="text-sm text-gray-400 hover:text-gray-200 transition-colors">
+        ← Marketplace
+      </a>
+      {timeoutStr && (
+        <div class="text-sm text-amber-400 flex items-center gap-2">
+          <span>⏱</span>
+          <span>Expires at {timeoutStr}</span>
+        </div>
+      )}
+    </div>
+
+    {error && (
+      <div class="text-center py-20">
+        <div class="text-5xl mb-4">😕</div>
+        <p class="text-gray-400 text-lg mb-4">{error}</p>
+        <a href="/worker/marketplace" class="text-violet-400 hover:text-violet-300 text-sm">← Back to marketplace</a>
+      </div>
+    )}
+
+    {task && (
+      <div>
+        <!-- Task header card -->
+        <div class="bg-gray-900 border border-gray-800 rounded-2xl p-6 mb-6">
+          <div class="flex items-start gap-4">
+            <span class="text-4xl">{meta?.icon}</span>
+            <div class="flex-1">
+              <h1 class="text-xl font-bold mb-1">{meta?.label}</h1>
+              {task.task_instructions && (
+                <div class="mt-2 p-3 bg-gray-800/60 border border-gray-700 rounded-lg text-sm text-gray-300">
+                  <strong class="text-gray-200 block mb-1">Instructions:</strong>
+                  {task.task_instructions}
+                </div>
+              )}
+            </div>
+          </div>
+          <div class="flex items-center gap-6 mt-4 pt-4 border-t border-gray-800 text-sm text-gray-400">
+            <span class="text-emerald-400 font-bold">+{task.worker_reward_credits ?? 2} credits</span>
+            <span>Priority: <span class="capitalize">{task.priority}</span></span>
+            <span>{task.assignments_completed}/{task.assignments_required} completed</span>
+          </div>
+        </div>
+
+        <!-- Task content area -->
+        <div class="bg-gray-900 border border-gray-800 rounded-2xl p-6 mb-6">
+          <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Task Content</h2>
+
+          {task.type === "label_image" && (
+            <div>
+              {inp.image_url && (
+                <img
+                  src={inp.image_url}
+                  alt="Task image"
+                  class="max-w-full rounded-xl mb-4 max-h-80 object-contain mx-auto block border border-gray-700"
+                />
+              )}
+              {inp.description && (
+                <p class="text-gray-300 text-sm">{inp.description}</p>
+              )}
+            </div>
+          )}
+
+          {task.type === "label_text" && (
+            <div class="bg-gray-800 rounded-xl p-4 text-gray-200 leading-relaxed">
+              {inp.text ?? "No text provided."}
+            </div>
+          )}
+
+          {task.type === "rate_quality" && (
+            <div>
+              {inp.title && <h3 class="font-semibold mb-2">{inp.title}</h3>}
+              <div class="bg-gray-800 rounded-xl p-4 text-gray-200 leading-relaxed">
+                {inp.content ?? inp.text ?? "No content provided."}
+              </div>
+              {inp.criteria && (
+                <div class="mt-3 text-sm text-gray-400">
+                  <strong class="text-gray-300">Rating criteria:</strong> {inp.criteria}
+                </div>
+              )}
+            </div>
+          )}
+
+          {task.type === "verify_fact" && (
+            <div class="bg-gray-800 rounded-xl p-5 border-l-4 border-violet-500">
+              <div class="text-xs text-violet-400 uppercase tracking-wider mb-2">Claim to verify</div>
+              <p class="text-lg text-gray-100 font-medium">{inp.claim ?? "No claim provided."}</p>
+              {inp.context && (
+                <div class="mt-3 pt-3 border-t border-gray-700 text-sm text-gray-400">
+                  <strong class="text-gray-300">Context:</strong> {inp.context}
+                </div>
+              )}
+            </div>
+          )}
+
+          {task.type === "moderate_content" && (
+            <div>
+              {inp.content_type && (
+                <div class="text-xs text-gray-500 mb-2">Content type: {inp.content_type}</div>
+              )}
+              <div class="bg-gray-800 rounded-xl p-4 text-gray-200 leading-relaxed">
+                {inp.content ?? "No content provided."}
+              </div>
+              {inp.policy_context && (
+                <div class="mt-3 text-sm text-gray-400 bg-gray-800/50 rounded-lg p-3">
+                  <strong class="text-gray-300">Policy context:</strong> {inp.policy_context}
+                </div>
+              )}
+            </div>
+          )}
+
+          {task.type === "compare_rank" && (
+            <div class="grid grid-cols-2 gap-4">
+              <div class="bg-gray-800 rounded-xl p-4">
+                <div class="text-xs text-blue-400 font-bold uppercase tracking-wider mb-2">Option A</div>
+                <p class="text-gray-200 text-sm leading-relaxed">
+                  {inp.option_a ?? "Option A not provided."}
+                </p>
+              </div>
+              <div class="bg-gray-800 rounded-xl p-4">
+                <div class="text-xs text-purple-400 font-bold uppercase tracking-wider mb-2">Option B</div>
+                <p class="text-gray-200 text-sm leading-relaxed">
+                  {inp.option_b ?? "Option B not provided."}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {task.type === "answer_question" && (
+            <div>
+              {inp.content && (
+                <div class="bg-gray-800 rounded-xl p-4 mb-4 text-gray-200 text-sm leading-relaxed max-h-60 overflow-y-auto">
+                  {inp.content}
+                </div>
+              )}
+              <div class="bg-violet-900/20 border border-violet-700/40 rounded-xl p-4">
+                <div class="text-xs text-violet-400 uppercase tracking-wider mb-2">Question</div>
+                <p class="text-gray-100 font-medium">{inp.question ?? "No question provided."}</p>
+              </div>
+            </div>
+          )}
+
+          {task.type === "transcription_review" && (
+            <div>
+              {inp.audio_url && (
+                <div class="mb-4">
+                  <div class="text-xs text-gray-500 mb-2">Audio:</div>
+                  <audio controls class="w-full rounded-lg">
+                    <source src={inp.audio_url} />
+                    Your browser does not support the audio element.
+                  </audio>
+                </div>
+              )}
+              <div class="text-xs text-gray-500 mb-2">AI transcript (may contain errors):</div>
+              <div class="bg-gray-800 rounded-xl p-4 text-gray-300 text-sm leading-relaxed">
+                {inp.ai_transcript ?? "No transcript provided."}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <!-- Response area -->
+        {!hasActiveAssignment ? (
+          <!-- Pre-claim: show claim button -->
+          <div class="text-center">
+            <button
+              id="claim-btn"
+              data-task-id={task.id}
+              class="px-10 py-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-2xl transition-colors text-lg shadow-lg shadow-emerald-900/40"
+            >
+              Claim & Start
+            </button>
+            <p class="text-sm text-gray-500 mt-3">
+              You'll have {task.claim_timeout_minutes} min to complete after claiming.
+              Max 5 active tasks at once.
+            </p>
+            <p id="claim-error" class="text-sm text-red-400 mt-2 hidden"></p>
+          </div>
+        ) : (
+          <!-- Active assignment: completion form -->
+          <div class="bg-gray-900 border border-emerald-800/40 rounded-2xl p-6">
+            <h2 class="text-lg font-bold mb-6">Your Answer</h2>
+
+            <!-- Type-specific response UI -->
+            {task.type === "label_image" || task.type === "label_text" ? (
+              <div>
+                <p class="text-sm text-gray-400 mb-4">Select all that apply:</p>
+                <div class="flex flex-wrap gap-2" id="labels-container">
+                  {(inp.labels ?? inp.categories ?? ["Category A", "Category B", "Category C"]).map((label: string) => (
+                    <button
+                      type="button"
+                      class="label-btn px-4 py-2 border border-gray-700 hover:border-emerald-500 rounded-xl text-sm transition-all"
+                      data-label={label}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <p class="text-xs text-gray-600 mt-3">Click to select/deselect. Multiple selections allowed.</p>
+              </div>
+            ) : task.type === "rate_quality" ? (
+              <div>
+                <p class="text-sm text-gray-400 mb-4">Select a quality rating:</p>
+                <div class="flex gap-3 mb-6">
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <button
+                      type="button"
+                      class="star-btn flex-1 py-4 border border-gray-700 hover:border-amber-500 rounded-xl text-center transition-all"
+                      data-rating={String(n)}
+                    >
+                      <div class="text-2xl mb-1">{"⭐".repeat(n)}</div>
+                      <div class="text-xs text-gray-400">
+                        {n === 1 ? "Poor" : n === 2 ? "Fair" : n === 3 ? "Good" : n === 4 ? "Great" : "Excellent"}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+                <label class="block text-sm text-gray-400 mb-2">Justification (optional)</label>
+                <textarea
+                  id="justification"
+                  rows="3"
+                  placeholder="What influenced your rating?"
+                  class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-violet-500"
+                ></textarea>
+              </div>
+            ) : task.type === "verify_fact" ? (
+              <div>
+                <p class="text-sm text-gray-400 mb-4">Is the claim true or false?</p>
+                <div class="grid grid-cols-3 gap-3 mb-6">
+                  {[
+                    { verdict: "true", label: "✅ True", color: "hover:border-emerald-500" },
+                    { verdict: "false", label: "❌ False", color: "hover:border-red-500" },
+                    { verdict: "unverifiable", label: "❓ Can't tell", color: "hover:border-gray-400" },
+                  ].map(({ verdict, label, color }) => (
+                    <button
+                      type="button"
+                      class={`verdict-btn py-4 border border-gray-700 ${color} rounded-xl text-sm font-medium transition-all`}
+                      data-verdict={verdict}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <label class="block text-sm text-gray-400 mb-2">Citation or source (optional)</label>
+                <input
+                  id="citation"
+                  type="text"
+                  placeholder="https://..."
+                  class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-violet-500"
+                />
+              </div>
+            ) : task.type === "moderate_content" ? (
+              <div>
+                <p class="text-sm text-gray-400 mb-4">Your moderation decision:</p>
+                <div class="grid grid-cols-3 gap-3 mb-6">
+                  {[
+                    { decision: "approve", label: "✅ Approve", color: "hover:border-emerald-500" },
+                    { decision: "reject", label: "🚫 Reject", color: "hover:border-red-500" },
+                    { decision: "escalate", label: "⚠️ Escalate", color: "hover:border-amber-500" },
+                  ].map(({ decision, label, color }) => (
+                    <button
+                      type="button"
+                      class={`mod-btn py-4 border border-gray-700 ${color} rounded-xl text-sm font-medium transition-all`}
+                      data-decision={decision}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <label class="block text-sm text-gray-400 mb-2">Reason</label>
+                <textarea
+                  id="mod-reason"
+                  rows="3"
+                  placeholder="Why did you make this decision?"
+                  class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-violet-500"
+                ></textarea>
+              </div>
+            ) : task.type === "compare_rank" ? (
+              <div>
+                <p class="text-sm text-gray-400 mb-4">Which option is better?</p>
+                <div class="grid grid-cols-3 gap-3 mb-6">
+                  {[
+                    { choice: "a", label: "🔵 Option A is better", color: "hover:border-blue-500" },
+                    { choice: "tie", label: "⚪ About the same", color: "hover:border-gray-400" },
+                    { choice: "b", label: "🟣 Option B is better", color: "hover:border-purple-500" },
+                  ].map(({ choice, label, color }) => (
+                    <button
+                      type="button"
+                      class={`rank-btn py-4 border border-gray-700 ${color} rounded-xl text-sm font-medium transition-all`}
+                      data-choice={choice}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <label class="block text-sm text-gray-400 mb-2">Reason (optional)</label>
+                <textarea
+                  id="rank-reason"
+                  rows="3"
+                  placeholder="Why is this option better?"
+                  class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-violet-500"
+                ></textarea>
+              </div>
+            ) : task.type === "answer_question" ? (
+              <div>
+                <label class="block text-sm text-gray-400 mb-2">Your answer:</label>
+                <textarea
+                  id="free-answer"
+                  rows="5"
+                  placeholder="Type your answer here..."
+                  class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-violet-500"
+                ></textarea>
+              </div>
+            ) : task.type === "transcription_review" ? (
+              <div>
+                <label class="block text-sm text-gray-400 mb-2">Corrected transcript:</label>
+                <textarea
+                  id="corrected-text"
+                  rows="8"
+                  class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm font-mono text-gray-200 placeholder-gray-600 focus:outline-none focus:border-violet-500"
+                >{inp.ai_transcript ?? ""}</textarea>
+                <p class="text-xs text-gray-600 mt-1">Edit any errors in the transcript above.</p>
+              </div>
+            ) : (
+              <div class="text-gray-500 text-sm">
+                No completion UI for task type: {task.type}
+              </div>
+            )}
+
+            <!-- Worker note -->
+            <div class="mt-6">
+              <label class="block text-sm text-gray-400 mb-2">Note to requester (optional)</label>
+              <textarea
+                id="worker-note"
+                rows="2"
+                placeholder="Anything to flag or add context?"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-violet-500"
+              ></textarea>
+            </div>
+
+            <!-- Actions -->
+            <div class="flex gap-3 mt-6">
+              <button
+                id="submit-btn"
+                data-task-id={task.id}
+                class="flex-1 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-xl transition-colors"
+              >
+                Submit answer (+{task.worker_reward_credits ?? 2} credits)
+              </button>
+              <button
+                id="release-btn"
+                data-task-id={task.id}
+                class="px-6 py-3 border border-gray-700 hover:border-red-600/60 text-gray-400 hover:text-red-400 text-sm rounded-xl transition-colors"
+              >
+                Release
+              </button>
+            </div>
+            <p id="submit-error" class="text-sm text-red-400 mt-3 hidden"></p>
+          </div>
+        )}
+      </div>
+    )}
+  </div>
+</Layout>
+
+<input type="hidden" id="task-type" value={task?.type ?? ""} />
+<input type="hidden" id="task-id" value={task?.id ?? ""} />
+
+<script>
+// ─── Response builder ─────────────────────────────────────────────────────
+function getResponse(): Record<string, unknown> {
+  const type = (document.getElementById("task-type") as HTMLInputElement)?.value;
+  switch (type) {
+    case "label_image":
+    case "label_text": {
+      const labels = [...document.querySelectorAll<HTMLElement>(".label-btn.selected")]
+        .map(b => b.dataset.label!);
+      return { labels };
+    }
+    case "rate_quality": {
+      const ratingEl = document.querySelector<HTMLElement>(".star-btn.selected");
+      const rating = ratingEl ? parseInt(ratingEl.dataset.rating!) : 0;
+      const justification = (document.getElementById("justification") as HTMLTextAreaElement)?.value ?? "";
+      return { rating, justification };
+    }
+    case "verify_fact": {
+      const verdictEl = document.querySelector<HTMLElement>(".verdict-btn.selected");
+      return {
+        verdict: verdictEl?.dataset.verdict ?? "",
+        citation: (document.getElementById("citation") as HTMLInputElement)?.value ?? "",
+      };
+    }
+    case "moderate_content": {
+      const decisionEl = document.querySelector<HTMLElement>(".mod-btn.selected");
+      return {
+        decision: decisionEl?.dataset.decision ?? "",
+        reason: (document.getElementById("mod-reason") as HTMLTextAreaElement)?.value ?? "",
+      };
+    }
+    case "compare_rank": {
+      const choiceEl = document.querySelector<HTMLElement>(".rank-btn.selected");
+      return {
+        choice: choiceEl?.dataset.choice ?? "",
+        reason: (document.getElementById("rank-reason") as HTMLTextAreaElement)?.value ?? "",
+      };
+    }
+    case "answer_question":
+      return { answer: (document.getElementById("free-answer") as HTMLTextAreaElement)?.value ?? "" };
+    case "transcription_review":
+      return { corrected_text: (document.getElementById("corrected-text") as HTMLTextAreaElement)?.value ?? "" };
+    default:
+      return {};
+  }
+}
+
+function setSelected(btn: HTMLElement, groupSelector: string) {
+  document.querySelectorAll<HTMLElement>(groupSelector).forEach(b => {
+    b.classList.remove("selected", "bg-emerald-900/30", "border-emerald-500");
+    b.classList.add("border-gray-700");
+  });
+  btn.classList.add("selected", "bg-emerald-900/30", "border-emerald-500");
+  btn.classList.remove("border-gray-700");
+}
+
+function toggleLabel(btn: HTMLElement) {
+  if (btn.classList.contains("selected")) {
+    btn.classList.remove("selected", "bg-emerald-900/30", "border-emerald-500");
+    btn.classList.add("border-gray-700");
+  } else {
+    btn.classList.add("selected", "bg-emerald-900/30", "border-emerald-500");
+    btn.classList.remove("border-gray-700");
+  }
+}
+
+// Wire up buttons
+document.querySelectorAll<HTMLElement>(".label-btn").forEach(btn =>
+  btn.addEventListener("click", () => toggleLabel(btn))
+);
+["star-btn", "verdict-btn", "mod-btn", "rank-btn"].forEach(cls => {
+  document.querySelectorAll<HTMLElement>(`.${cls}`).forEach(btn =>
+    btn.addEventListener("click", () => setSelected(btn, `.${cls}`))
+  );
+});
+
+// ─── Claim ────────────────────────────────────────────────────────────────
+document.getElementById("claim-btn")?.addEventListener("click", async (e) => {
+  const btn = e.currentTarget as HTMLButtonElement;
+  const taskId = btn.dataset.taskId;
+  const errEl = document.getElementById("claim-error")!;
+
+  btn.textContent = "Claiming...";
+  btn.disabled = true;
+
+  try {
+    const res = await fetch(`/api/worker/tasks/${taskId}/claim`, { method: "POST" });
+    if (res.ok) {
+      window.location.reload();
+    } else {
+      const body = await res.json().catch(() => ({}));
+      errEl.textContent = body.detail ?? "Failed to claim. Try again.";
+      errEl.classList.remove("hidden");
+      btn.textContent = "Claim & Start";
+      btn.disabled = false;
+    }
+  } catch {
+    errEl.textContent = "Network error. Please try again.";
+    errEl.classList.remove("hidden");
+    btn.textContent = "Claim & Start";
+    btn.disabled = false;
+  }
+});
+
+// ─── Submit ───────────────────────────────────────────────────────────────
+document.getElementById("submit-btn")?.addEventListener("click", async (e) => {
+  const btn = e.currentTarget as HTMLButtonElement;
+  const taskId = btn.dataset.taskId;
+  const errEl = document.getElementById("submit-error")!;
+
+  const response = getResponse();
+  const note = (document.getElementById("worker-note") as HTMLTextAreaElement)?.value ?? "";
+
+  btn.textContent = "Submitting...";
+  btn.disabled = true;
+
+  try {
+    const res = await fetch(`/api/worker/tasks/${taskId}/submit`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ response, worker_note: note || null }),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      const params = new URLSearchParams({
+        credits: String(data.earnings_credits ?? 0),
+        xp: String(data.xp_earned ?? 0),
+      });
+      window.location.href = `/worker/submitted?${params}`;
+    } else {
+      const body = await res.json().catch(() => ({}));
+      errEl.textContent = body.detail ?? "Submission failed. Try again.";
+      errEl.classList.remove("hidden");
+      btn.disabled = false;
+      btn.textContent = "Submit answer";
+    }
+  } catch {
+    errEl.textContent = "Network error. Please try again.";
+    errEl.classList.remove("hidden");
+    btn.disabled = false;
+    btn.textContent = "Submit answer";
+  }
+});
+
+// ─── Release ──────────────────────────────────────────────────────────────
+document.getElementById("release-btn")?.addEventListener("click", async (e) => {
+  if (!confirm("Release this task? It returns to the marketplace.")) return;
+  const btn = e.currentTarget as HTMLButtonElement;
+  const taskId = btn.dataset.taskId;
+
+  try {
+    await fetch(`/api/worker/tasks/${taskId}/release`, { method: "DELETE" });
+    window.location.href = "/worker/marketplace";
+  } catch {
+    alert("Failed to release. Try again.");
+  }
+});
+</script>

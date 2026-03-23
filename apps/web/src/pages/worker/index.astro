@@ -1,0 +1,266 @@
+---
+/**
+ * Worker dashboard — shows stats, active assignments, and quick access to marketplace.
+ * If not enrolled as a worker, shows an enrollment prompt.
+ */
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Object.fromEntries(
+  Astro.cookies.getAll().map((c) => [c.name, c.value])
+));
+
+if (!token) {
+  return Astro.redirect("/login?next=/worker");
+}
+
+let user: any = null;
+let stats: any = null;
+let assignments: any[] = [];
+let isWorker = false;
+
+try {
+  user = await apiFetch("/v1/users/me", { token });
+  isWorker = user?.role === "worker" || user?.role === "both";
+
+  if (isWorker) {
+    [stats, assignments] = await Promise.all([
+      apiFetch("/v1/worker/stats", { token }),
+      apiFetch("/v1/worker/assignments?status=active&page_size=5", { token }),
+    ]);
+  }
+} catch (e) {
+  // Non-fatal; page will show enrollment prompt
+}
+
+const LEVEL_NAMES: Record<number, string> = {
+  1: "Apprentice", 2: "Novice", 3: "Learner", 4: "Explorer", 5: "Contributor",
+  6: "Analyst", 7: "Specialist", 8: "Expert", 9: "Veteran", 10: "Elite",
+  11: "Master", 12: "Grand Master", 13: "Champion", 14: "Legend", 15: "Mythic",
+  16: "Transcendent", 17: "Ascendant", 18: "Radiant", 19: "Immortal", 20: "Divine",
+};
+
+function levelName(level: number): string {
+  return LEVEL_NAMES[level] ?? `Level ${level}`;
+}
+
+const TASK_TYPE_LABELS: Record<string, string> = {
+  label_image: "Label Image", label_text: "Classify Text",
+  rate_quality: "Rate Quality", verify_fact: "Verify Fact",
+  moderate_content: "Moderate Content", compare_rank: "A/B Compare",
+  answer_question: "Answer Q", transcription_review: "Review Transcript",
+};
+---
+
+<Layout title="Earn — CrowdSorcerer">
+  <div class="max-w-5xl mx-auto px-6 py-10">
+    <div class="flex items-center justify-between mb-8">
+      <div>
+        <h1 class="text-2xl font-bold">Earn Credits</h1>
+        <p class="text-gray-400 text-sm mt-0.5">Complete tasks, earn credits, level up</p>
+      </div>
+      {isWorker && (
+        <a
+          href="/worker/marketplace"
+          class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium rounded-lg transition-colors"
+        >
+          Browse tasks →
+        </a>
+      )}
+    </div>
+
+    {!isWorker ? (
+      <!-- Enrollment prompt -->
+      <div class="bg-gray-900 border border-emerald-800/40 rounded-2xl p-10 text-center max-w-2xl mx-auto">
+        <div class="text-5xl mb-4">🎯</div>
+        <h2 class="text-2xl font-bold mb-3">Become a Worker</h2>
+        <p class="text-gray-400 mb-6 leading-relaxed">
+          Complete short tasks — label images, classify text, verify facts — and earn credits for each one.
+          Level up, unlock bonuses, and compete on the leaderboard.
+        </p>
+        <ul class="text-left text-sm text-gray-300 space-y-3 mb-8 max-w-sm mx-auto">
+          <li class="flex items-center gap-3">
+            <span class="text-emerald-400 text-lg">✓</span>
+            <span>Earn credits for every completed task</span>
+          </li>
+          <li class="flex items-center gap-3">
+            <span class="text-emerald-400 text-lg">✓</span>
+            <span>Level up from Apprentice to Divine</span>
+          </li>
+          <li class="flex items-center gap-3">
+            <span class="text-emerald-400 text-lg">✓</span>
+            <span>Streak bonuses for consecutive days</span>
+          </li>
+          <li class="flex items-center gap-3">
+            <span class="text-emerald-400 text-lg">✓</span>
+            <span>Tasks take 1–5 minutes each</span>
+          </li>
+        </ul>
+        <button
+          id="enroll-btn"
+          class="px-8 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-xl transition-colors"
+        >
+          Enable Worker Mode
+        </button>
+        <p id="enroll-msg" class="text-sm text-gray-500 mt-3 hidden"></p>
+      </div>
+    ) : (
+      <!-- Worker dashboard -->
+      <div>
+        <!-- Level + XP bar -->
+        <div class="bg-gray-900 border border-gray-800 rounded-2xl p-6 mb-6">
+          <div class="flex items-center justify-between mb-4">
+            <div>
+              <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Worker Level</div>
+              <div class="text-2xl font-bold">
+                Lv.{stats?.level ?? 1} — {levelName(stats?.level ?? 1)}
+              </div>
+            </div>
+            <div class="text-right">
+              <div class="text-xs text-gray-500 mb-1">{stats?.xp?.toLocaleString() ?? 0} XP total</div>
+              <div class="text-sm text-emerald-400">
+                {stats?.xp_to_next_level > 0
+                  ? `${stats.xp_to_next_level.toLocaleString()} XP to next level`
+                  : "Max level!"}
+              </div>
+            </div>
+          </div>
+          <!-- XP progress bar -->
+          {stats?.xp_to_next_level > 0 && (
+            <div class="h-2 bg-gray-800 rounded-full overflow-hidden">
+              <div
+                class="h-full bg-gradient-to-r from-emerald-600 to-emerald-400 rounded-full transition-all"
+                style={`width: ${Math.min(100, 100 - (stats.xp_to_next_level / (stats.xp + stats.xp_to_next_level)) * 100).toFixed(1)}%`}
+              ></div>
+            </div>
+          )}
+        </div>
+
+        <!-- Stats grid -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+          <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+            <div class="text-sm text-gray-400 mb-1">Tasks completed</div>
+            <div class="text-3xl font-bold text-emerald-300">{stats?.tasks_completed?.toLocaleString() ?? 0}</div>
+          </div>
+          <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+            <div class="text-sm text-gray-400 mb-1">Total earned</div>
+            <div class="text-3xl font-bold text-amber-300">{stats?.total_earnings_credits?.toLocaleString() ?? 0}</div>
+            <div class="text-xs text-gray-500 mt-0.5">credits</div>
+          </div>
+          <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+            <div class="text-sm text-gray-400 mb-1">Streak</div>
+            <div class="text-3xl font-bold text-orange-300">
+              {stats?.streak_days ?? 0}
+              <span class="text-base ml-1">🔥</span>
+            </div>
+            <div class="text-xs text-gray-500 mt-0.5">days</div>
+          </div>
+          <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+            <div class="text-sm text-gray-400 mb-1">Accuracy</div>
+            <div class="text-3xl font-bold">
+              {stats?.accuracy != null
+                ? `${(stats.accuracy * 100).toFixed(0)}%`
+                : "—"}
+            </div>
+          </div>
+        </div>
+
+        <!-- Active assignments -->
+        {assignments.length > 0 ? (
+          <div class="mb-8">
+            <h2 class="text-lg font-semibold mb-4">Active assignments ({stats?.tasks_active ?? 0})</h2>
+            <div class="space-y-3">
+              {assignments.map((a: any) => (
+                <a
+                  href={`/worker/tasks/${a.task_id}`}
+                  class="flex items-center justify-between bg-gray-900 border border-amber-800/40 hover:border-amber-600/60 rounded-xl p-4 transition-colors"
+                >
+                  <div class="flex items-center gap-3">
+                    <span class="text-amber-400 text-xs uppercase font-bold tracking-wider bg-amber-900/30 px-2 py-0.5 rounded">
+                      Active
+                    </span>
+                    <span class="text-sm font-medium">{TASK_TYPE_LABELS[a.task_type] ?? a.task_type}</span>
+                  </div>
+                  <div class="text-sm text-gray-400">
+                    Expires {a.timeout_at
+                      ? new Date(a.timeout_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                      : "—"}
+                    <span class="ml-3 text-emerald-400 text-xs">→</span>
+                  </div>
+                </a>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <!-- No active assignments -->
+          <div class="bg-gray-900/40 border border-dashed border-gray-700 rounded-2xl p-10 text-center mb-8">
+            <div class="text-3xl mb-3">🎯</div>
+            <p class="text-gray-400 mb-4">No active tasks. Head to the marketplace to start earning!</p>
+            <a
+              href="/worker/marketplace"
+              class="inline-block px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              Browse marketplace
+            </a>
+          </div>
+        )}
+
+        <!-- Quick links -->
+        <div class="grid sm:grid-cols-2 gap-4">
+          <a
+            href="/worker/marketplace"
+            class="flex items-center gap-4 bg-gray-900 border border-gray-800 hover:border-emerald-700 rounded-xl p-5 transition-colors group"
+          >
+            <span class="text-3xl">🛒</span>
+            <div>
+              <div class="font-semibold group-hover:text-emerald-300 transition-colors">Task Marketplace</div>
+              <div class="text-sm text-gray-400">Browse and claim open tasks</div>
+            </div>
+          </a>
+          <a
+            href="/worker/earnings"
+            class="flex items-center gap-4 bg-gray-900 border border-gray-800 hover:border-amber-700 rounded-xl p-5 transition-colors group"
+          >
+            <span class="text-3xl">💰</span>
+            <div>
+              <div class="font-semibold group-hover:text-amber-300 transition-colors">Earnings History</div>
+              <div class="text-sm text-gray-400">View your completed tasks and credits earned</div>
+            </div>
+          </a>
+        </div>
+      </div>
+    )}
+  </div>
+</Layout>
+
+<script>
+  const btn = document.getElementById("enroll-btn");
+  const msg = document.getElementById("enroll-msg");
+
+  btn?.addEventListener("click", async () => {
+    btn.textContent = "Enrolling...";
+    btn.setAttribute("disabled", "true");
+
+    try {
+      const res = await fetch("/api/worker/enroll", { method: "POST" });
+      if (res.ok) {
+        window.location.reload();
+      } else {
+        const body = await res.json().catch(() => ({}));
+        if (msg) {
+          msg.textContent = body.detail ?? "Enrollment failed. Try again.";
+          msg.classList.remove("hidden");
+        }
+        btn.textContent = "Enable Worker Mode";
+        btn.removeAttribute("disabled");
+      }
+    } catch {
+      if (msg) {
+        msg.textContent = "Network error. Please try again.";
+        msg.classList.remove("hidden");
+      }
+      btn.textContent = "Enable Worker Mode";
+      btn.removeAttribute("disabled");
+    }
+  });
+</script>

@@ -1,0 +1,210 @@
+---
+/**
+ * Task Marketplace — browse open human tasks available for workers.
+ */
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Object.fromEntries(
+  Astro.cookies.getAll().map((c) => [c.name, c.value])
+));
+
+if (!token) {
+  return Astro.redirect("/login?next=/worker/marketplace");
+}
+
+const url = new URL(Astro.request.url);
+const page = parseInt(url.searchParams.get("page") ?? "1");
+const filterType = url.searchParams.get("type") ?? "";
+const filterPriority = url.searchParams.get("priority") ?? "";
+
+let user: any = null;
+let tasks: any = null;
+let error = "";
+
+try {
+  user = await apiFetch("/v1/users/me", { token });
+
+  if (user?.role !== "worker" && user?.role !== "both") {
+    return Astro.redirect("/worker");
+  }
+
+  const params = new URLSearchParams({
+    page: String(page),
+    page_size: "20",
+    ...(filterType ? { type: filterType } : {}),
+    ...(filterPriority ? { priority: filterPriority } : {}),
+  });
+
+  tasks = await apiFetch(`/v1/worker/tasks?${params}`, { token });
+} catch (e: any) {
+  if ((e as Error).message?.includes("403")) {
+    return Astro.redirect("/worker");
+  }
+  error = (e as Error).message ?? "Failed to load tasks";
+}
+
+const TASK_TYPE_META: Record<string, { label: string; icon: string; desc: string }> = {
+  label_image:          { label: "Label Image",       icon: "🖼️",  desc: "Classify an image into categories" },
+  label_text:           { label: "Classify Text",     icon: "📝",  desc: "Assign labels to text content" },
+  rate_quality:         { label: "Rate Quality",      icon: "⭐",  desc: "Score content quality 1–5" },
+  verify_fact:          { label: "Verify Fact",       icon: "✅",  desc: "Confirm or refute a claim" },
+  moderate_content:     { label: "Moderate",          icon: "🛡️",  desc: "Review content for policy" },
+  compare_rank:         { label: "A/B Compare",       icon: "⚖️",  desc: "Pick the better of two options" },
+  answer_question:      { label: "Answer Q",          icon: "💬",  desc: "Answer a question about content" },
+  transcription_review: { label: "Review Transcript", icon: "🎙️", desc: "Correct an AI transcript" },
+};
+
+const PRIORITY_COLORS: Record<string, string> = {
+  low:    "text-gray-400 bg-gray-800",
+  normal: "text-blue-300 bg-blue-900/40",
+  high:   "text-orange-300 bg-orange-900/40",
+  urgent: "text-red-300 bg-red-900/40",
+};
+
+const HUMAN_TASK_TYPES = Object.keys(TASK_TYPE_META);
+---
+
+<Layout title="Task Marketplace — CrowdSorcerer">
+  <div class="max-w-5xl mx-auto px-6 py-10">
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-6">
+      <div>
+        <h1 class="text-2xl font-bold">Task Marketplace</h1>
+        <p class="text-gray-400 text-sm mt-0.5">
+          {tasks?.total ?? 0} task{tasks?.total !== 1 ? "s" : ""} available
+        </p>
+      </div>
+      <a href="/worker" class="text-sm text-gray-400 hover:text-gray-200">← Worker hub</a>
+    </div>
+
+    <!-- Filters -->
+    <form method="get" class="flex flex-wrap gap-3 mb-8">
+      <select
+        name="type"
+        class="bg-gray-900 border border-gray-700 text-sm rounded-lg px-3 py-2 text-gray-200 focus:outline-none focus:border-violet-500"
+      >
+        <option value="" selected={!filterType}>All types</option>
+        {HUMAN_TASK_TYPES.map((t) => (
+          <option value={t} selected={filterType === t}>
+            {TASK_TYPE_META[t].icon} {TASK_TYPE_META[t].label}
+          </option>
+        ))}
+      </select>
+
+      <select
+        name="priority"
+        class="bg-gray-900 border border-gray-700 text-sm rounded-lg px-3 py-2 text-gray-200 focus:outline-none focus:border-violet-500"
+      >
+        <option value="" selected={!filterPriority}>All priorities</option>
+        <option value="urgent" selected={filterPriority === "urgent"}>🔴 Urgent</option>
+        <option value="high" selected={filterPriority === "high"}>🟠 High</option>
+        <option value="normal" selected={filterPriority === "normal"}>🔵 Normal</option>
+        <option value="low" selected={filterPriority === "low"}>⚪ Low</option>
+      </select>
+
+      <button
+        type="submit"
+        class="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-sm rounded-lg transition-colors"
+      >
+        Filter
+      </button>
+      {(filterType || filterPriority) && (
+        <a
+          href="/worker/marketplace"
+          class="px-4 py-2 text-sm text-gray-400 hover:text-gray-200 transition-colors"
+        >
+          Clear
+        </a>
+      )}
+    </form>
+
+    <!-- Error -->
+    {error && (
+      <div class="bg-red-900/30 border border-red-700/50 rounded-xl p-4 mb-6 text-red-300 text-sm">
+        {error}
+      </div>
+    )}
+
+    <!-- Task list -->
+    {tasks?.items?.length === 0 ? (
+      <div class="text-center py-20">
+        <div class="text-5xl mb-4">🔮</div>
+        <p class="text-gray-400 text-lg mb-2">No tasks available right now</p>
+        <p class="text-gray-500 text-sm">Check back soon — new tasks are added continuously</p>
+      </div>
+    ) : (
+      <div class="space-y-3">
+        {tasks?.items?.map((task: any) => {
+          const meta = TASK_TYPE_META[task.type] ?? { label: task.type, icon: "🔮", desc: "" };
+          const priorityClass = PRIORITY_COLORS[task.priority] ?? PRIORITY_COLORS.normal;
+          const slotsLeft = task.slots_available ?? (task.assignments_required - task.assignments_completed);
+
+          return (
+            <div class="group bg-gray-900 border border-gray-800 hover:border-emerald-700/60 rounded-xl p-5 transition-colors">
+              <div class="flex items-start justify-between gap-4">
+                <div class="flex items-start gap-4 flex-1 min-w-0">
+                  <span class="text-3xl shrink-0">{meta.icon}</span>
+                  <div class="min-w-0">
+                    <div class="flex items-center gap-2 flex-wrap mb-1">
+                      <span class="font-semibold">{meta.label}</span>
+                      <span class={`text-xs font-medium px-2 py-0.5 rounded capitalize ${priorityClass}`}>
+                        {task.priority}
+                      </span>
+                      {slotsLeft <= 2 && slotsLeft > 0 && (
+                        <span class="text-xs text-orange-400 font-medium">Only {slotsLeft} slot{slotsLeft > 1 ? "s" : ""} left!</span>
+                      )}
+                    </div>
+                    <p class="text-sm text-gray-400 mb-2">{meta.desc}</p>
+                    {task.task_instructions && (
+                      <p class="text-sm text-gray-300 line-clamp-2">{task.task_instructions}</p>
+                    )}
+                    <div class="flex items-center gap-4 mt-2 text-xs text-gray-500">
+                      <span>⏱ ~{task.estimated_minutes} min</span>
+                      <span>👥 {task.assignments_completed}/{task.assignments_required} completed</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="shrink-0 text-right">
+                  <div class="text-emerald-300 font-bold text-lg mb-1">+{task.reward_credits}</div>
+                  <div class="text-xs text-gray-500 mb-3">credits</div>
+                  <a
+                    href={`/worker/tasks/${task.id}`}
+                    class="inline-block px-4 py-2 bg-emerald-700 hover:bg-emerald-600 text-white text-sm font-medium rounded-lg transition-colors"
+                  >
+                    Claim →
+                  </a>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    )}
+
+    <!-- Pagination -->
+    {tasks && tasks.total > 20 && (
+      <div class="flex justify-center gap-3 mt-10">
+        {page > 1 && (
+          <a
+            href={`?page=${page - 1}${filterType ? `&type=${filterType}` : ""}${filterPriority ? `&priority=${filterPriority}` : ""}`}
+            class="px-4 py-2 bg-gray-900 border border-gray-700 hover:border-gray-500 rounded-lg text-sm transition-colors"
+          >
+            ← Prev
+          </a>
+        )}
+        <span class="px-4 py-2 text-sm text-gray-400">
+          Page {page} of {Math.ceil(tasks.total / 20)}
+        </span>
+        {tasks.has_next && (
+          <a
+            href={`?page=${page + 1}${filterType ? `&type=${filterType}` : ""}${filterPriority ? `&priority=${filterPriority}` : ""}`}
+            class="px-4 py-2 bg-gray-900 border border-gray-700 hover:border-gray-500 rounded-lg text-sm transition-colors"
+          >
+            Next →
+          </a>
+        )}
+      </div>
+    )}
+  </div>
+</Layout>
