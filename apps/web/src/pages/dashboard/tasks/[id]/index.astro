@@ -268,6 +268,15 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
                 </button>
               </form>
             )}
+            {/* Duplicate button — pre-fills new-task form, does NOT auto-execute */}
+            <button
+              id="duplicate-task-btn"
+              data-task-id={task.id}
+              class="px-3 py-1.5 rounded-lg border border-blue-700/60 text-sm text-blue-300 hover:bg-blue-900/30 hover:text-blue-200 transition-colors"
+              title="Open a pre-filled new-task form (does not execute immediately)"
+            >
+              📋 Duplicate
+            </button>
             {/* Live status badge — updated via SSE */}
             <div
               id="status-badge"
@@ -1165,6 +1174,44 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
         saveBtn.textContent = "Save";
       }
     });
+  </script>
+
+  {/* Duplicate task button script */}
+  <script define:vars={{ taskId: id }}>
+    const dupBtn = document.getElementById("duplicate-task-btn");
+    if (dupBtn) {
+      dupBtn.addEventListener("click", async () => {
+        dupBtn.disabled = true;
+        dupBtn.textContent = "Loading…";
+        try {
+          const res = await fetch(`/api/tasks/${taskId}/duplicate-params`);
+          if (!res.ok) {
+            const d = await res.json().catch(() => ({}));
+            alert(d.detail ?? "Failed to fetch task params");
+            dupBtn.disabled = false;
+            dupBtn.textContent = "📋 Duplicate";
+            return;
+          }
+          const params = await res.json();
+          // Build query string for pre-filling new-task form
+          const qs = new URLSearchParams({ duplicate: taskId });
+          if (params.type) qs.set("type", params.type);
+          if (params.priority) qs.set("priority", params.priority);
+          if (params.input) qs.set("input", JSON.stringify(params.input));
+          if (params.tags?.length) qs.set("tags", params.tags.join(","));
+          if (params.scheduled_at) qs.set("scheduled_at", params.scheduled_at);
+          if (params.webhook_url) qs.set("webhook_url", params.webhook_url);
+          if (params.worker_reward_credits) qs.set("worker_reward_credits", String(params.worker_reward_credits));
+          if (params.assignments_required) qs.set("assignments_required", String(params.assignments_required));
+          if (params.task_instructions) qs.set("task_instructions", params.task_instructions);
+          window.location.href = `/dashboard/new-task?${qs.toString()}`;
+        } catch {
+          alert("Network error — could not fetch task params");
+          dupBtn.disabled = false;
+          dupBtn.textContent = "📋 Duplicate";
+        }
+      });
+    }
   </script>
 
   {/* SSE client script — only loaded for non-terminal tasks */}

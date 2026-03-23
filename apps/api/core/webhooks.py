@@ -34,7 +34,7 @@ import structlog
 from sqlalchemy import select
 
 from core.database import AsyncSessionLocal
-from models.db import WebhookLogDB, TaskDB, WebhookEndpointDB
+from models.db import WebhookLogDB, TaskDB, WebhookEndpointDB, WebhookPayloadTemplateDB
 
 logger = structlog.get_logger()
 
@@ -57,6 +57,50 @@ DEFAULT_EVENTS = ["task.completed"]
 
 def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+# ---------------------------------------------------------------------------
+# Custom payload template support
+# ---------------------------------------------------------------------------
+
+def _render_payload_template(template_str: str, context: dict[str, Any]) -> dict:
+    """Replace {{key}} placeholders in template_str with values from context dict."""
+    import json
+    import re
+
+    def replacer(m: Any) -> str:
+        key = m.group(1).strip()
+        value = context.get(key, "")
+        if isinstance(value, (dict, list)):
+            return json.dumps(value)
+        return str(value) if value is not None else ""
+
+    rendered = re.sub(r"\{\{(\s*\w[\w.]*\s*)\}\}", replacer, template_str)
+    try:
+        return json.loads(rendered)
+    except Exception:
+        # Fall back to raw rendered string if not valid JSON
+        return {"_raw": rendered}
+
+
+async def _get_user_event_template(
+    user_id: str,
+    event_type: str,
+) -> Optional[str]:
+    """Return the user's custom payload template string for event_type, or None."""
+    from sqlalchemy import select as sa_select
+    try:
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                sa_select(WebhookPayloadTemplateDB).where(
+                    WebhookPayloadTemplateDB.user_id == user_id,
+                    WebhookPayloadTemplateDB.event_type == event_type,
+                )
+            )
+            tpl = result.scalar_one_or_none()
+            return tpl.template if tpl else None
+    except Exception:
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -189,14 +233,33 @@ async def _deliver_to_endpoint(
     max_retries: int,
 ) -> None:
     """Deliver a signed event payload to a single persistent endpoint."""
-    payload: dict[str, Any] = {
+    # Build default payload
+    default_payload: dict[str, Any] = {
         "event": event_type,
         "task_id": task_id,
         "occurred_at": _utcnow_iso(),
         "endpoint_id": str(endpoint.id),
     }
     if extra:
-        payload.update(extra)
+        default_payload.update(extra)
+
+    # Check if user has a custom template for this event
+    custom_template = await _get_user_event_template(user_id, event_type)
+    if custom_template:
+        context = {
+            "event_type": event_type,
+            "task_id": task_id,
+            "user_id": user_id,
+            "occurred_at": _utcnow_iso(),
+            "timestamp": _utcnow_iso(),
+            **(extra or {}),
+        }
+        try:
+            payload = _render_payload_template(custom_template, context)
+        except Exception:
+            payload = default_payload
+    else:
+        payload = default_payload
 
     payload_bytes = json.dumps(payload).encode()
     sig = hmac.new(endpoint.secret.encode(), payload_bytes, hashlib.sha256).hexdigest()

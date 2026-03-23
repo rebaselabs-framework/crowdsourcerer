@@ -1173,3 +1173,28 @@ class RequesterOnboardingDB(Base):
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
 
     user = relationship("UserDB", backref="requester_onboarding")
+
+
+# ─── Webhook Payload Templates ────────────────────────────────────────────────
+
+class WebhookPayloadTemplateDB(Base):
+    """
+    Custom payload templates for webhook events.
+
+    Users can define per-event-type JSON payload templates using
+    {{field}} placeholders which are replaced with task context at delivery time.
+    One template per (user_id, event_type) pair — upserted on creation.
+    """
+    __tablename__ = "webhook_payload_templates"
+    __table_args__ = (UniqueConstraint("user_id", "event_type"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    event_type = Column(String(64), nullable=False)
+    template = Column(Text, nullable=False)
+    description = Column(String(255), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+
+    user = relationship("UserDB", backref="webhook_payload_templates")

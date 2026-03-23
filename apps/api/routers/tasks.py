@@ -758,6 +758,53 @@ async def get_task(
     return task
 
 
+@router.get("/{task_id}/duplicate-params")
+async def get_duplicate_params(
+    task_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(require_scope(SCOPE_TASKS_READ)),
+):
+    """
+    Return the task's parameters in a form-friendly format for pre-filling
+    a new-task form.  Does NOT create a new task — just returns params.
+    """
+    result = await db.execute(
+        select(TaskDB).where(TaskDB.id == task_id, TaskDB.user_id == user_id)
+    )
+    task = result.scalar_one_or_none()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    params: dict = {
+        "source_task_id": str(task.id),
+        "type": task.type,
+        "title": task.title if hasattr(task, "title") else None,
+        "input": task.input,
+        "priority": task.priority or "normal",
+        "tags": task.tags or [],
+        "scheduled_at": task.scheduled_at.isoformat() if task.scheduled_at else None,
+    }
+
+    # Human task params
+    if task.execution_mode == "human":
+        params["worker_reward_credits"] = task.worker_reward_credits
+        params["assignments_required"] = task.assignments_required or 1
+        params["claim_timeout_minutes"] = task.claim_timeout_minutes or 30
+        params["task_instructions"] = task.task_instructions
+        params["consensus_strategy"] = task.consensus_strategy or "any_first"
+        params["min_skill_level"] = task.min_skill_level
+
+    # Webhook params
+    if task.webhook_url:
+        params["webhook_url"] = task.webhook_url
+        params["webhook_events"] = task.webhook_events
+
+    # Remove None values for a clean response
+    params = {k: v for k, v in params.items() if v is not None}
+
+    return params
+
+
 @router.put("/{task_id}/tags", response_model=TaskOut)
 async def update_task_tags(
     task_id: UUID,

@@ -1319,3 +1319,23 @@ class RequesterOnboardingStatusOut(BaseModel):
     bonus_credits: int = 200
 
 
+# ─── Webhook Payload Templates ─────────────────────────────────────────────
+
+class WebhookPayloadTemplate(BaseModel):
+    event_type: str
+    template: str  # JSON string with {{field}} placeholders
+    description: Optional[str] = None
+
+
+class WebhookPayloadTemplateOut(BaseModel):
+    id: int
+    user_id: str
+    event_type: str
+    template: str
+    description: Optional[str]
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+

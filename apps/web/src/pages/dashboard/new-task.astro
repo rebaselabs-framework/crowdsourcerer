@@ -19,6 +19,24 @@ try {
   // non-fatal
 }
 
+// Duplicate pre-fill: check if ?duplicate=<task_id> is in URL
+const urlParams = new URL(Astro.request.url).searchParams;
+const duplicateTaskId = urlParams.get("duplicate") ?? "";
+let duplicateParams: any = null;
+let duplicateTitle = "";
+
+if (duplicateTaskId) {
+  try {
+    duplicateParams = await apiFetch<any>(`/v1/tasks/${duplicateTaskId}/duplicate-params`, { token });
+    duplicateTitle = duplicateParams?.type
+      ? `${duplicateParams.type} (${duplicateTaskId.slice(0, 8)}…)`
+      : duplicateTaskId.slice(0, 8) + "…";
+  } catch {
+    // non-fatal — duplicate params load failed, just proceed as normal new task
+    duplicateParams = null;
+  }
+}
+
 const AI_TASK_TYPES = [
   { type: "web_research", label: "Web Research", icon: "🌐", placeholder: '{\n  "url": "https://example.com/article",\n  "instruction": "Extract the main content and key points"\n}' },
   { type: "entity_lookup", label: "Entity Lookup", icon: "🏢", placeholder: '{\n  "entity_type": "company",\n  "name": "OpenAI",\n  "domain": "openai.com"\n}' },
@@ -121,6 +139,19 @@ if (Astro.request.method === "POST") {
       </a>
     </div>
     <p class="text-gray-400 text-sm mb-6">Select a task type, provide JSON input, and get results.</p>
+
+    {/* Duplication banner */}
+    {duplicateParams && (
+      <div class="bg-blue-950/30 border border-blue-800 rounded-xl px-5 py-3 mb-6 flex items-center justify-between gap-4">
+        <div class="flex items-center gap-2 text-blue-300 text-sm">
+          <span class="text-base">📋</span>
+          <span>Duplicating task: <strong class="font-mono">{duplicateTitle}</strong> — form is pre-filled and fully editable.</span>
+        </div>
+        <a href="/dashboard/new-task" class="text-xs text-blue-400 hover:text-blue-300 transition-colors whitespace-nowrap">
+          Start fresh →
+        </a>
+      </div>
+    )}
 
     <!-- Templates quick-start -->
     {templates.length > 0 && (
@@ -459,4 +490,86 @@ if (Astro.request.method === "POST") {
       document.querySelector("form")?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
   });
+</script>
+
+<script>
+  // Duplicate task pre-fill from URL query params
+  (function () {
+    const params = new URLSearchParams(window.location.search);
+    const duplicateId = params.get("duplicate");
+    if (!duplicateId) return;
+
+    const type = params.get("type");
+    const inputStr = params.get("input");
+    const priority = params.get("priority");
+    const tags = params.get("tags");
+    const scheduledAt = params.get("scheduled_at");
+    const webhookUrl = params.get("webhook_url");
+    const workerReward = params.get("worker_reward_credits");
+    const assignmentsRequired = params.get("assignments_required");
+    const taskInstructions = params.get("task_instructions");
+
+    // Select task type radio
+    if (type) {
+      const radio = document.querySelector<HTMLInputElement>(`input[name="type"][value="${type}"]`);
+      if (radio) {
+        radio.checked = true;
+        radio.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    }
+
+    // Fill JSON input
+    if (inputStr) {
+      try {
+        const parsed = JSON.parse(inputStr);
+        const textarea = document.getElementById("input") as HTMLTextAreaElement;
+        if (textarea) textarea.value = JSON.stringify(parsed, null, 2);
+      } catch {}
+    }
+
+    // Fill priority
+    if (priority) {
+      const sel = document.querySelector<HTMLSelectElement>(`select[name="priority"]`);
+      if (sel) sel.value = priority;
+    }
+
+    // Fill tags
+    if (tags) {
+      const tagInput = document.querySelector<HTMLInputElement>(`input[name="tags"]`);
+      if (tagInput) tagInput.value = tags;
+    }
+
+    // Fill scheduled_at
+    if (scheduledAt) {
+      const schedInput = document.querySelector<HTMLInputElement>(`input[name="scheduled_at"]`);
+      if (schedInput) {
+        // Convert ISO string to datetime-local format
+        try {
+          const dt = new Date(scheduledAt);
+          const local = dt.toISOString().slice(0, 16);
+          schedInput.value = local;
+        } catch {}
+      }
+    }
+
+    // Fill webhook URL
+    if (webhookUrl) {
+      const wh = document.querySelector<HTMLInputElement>(`input[name="webhook_url"]`);
+      if (wh) wh.value = webhookUrl;
+    }
+
+    // Fill human task fields
+    if (workerReward) {
+      const el = document.querySelector<HTMLInputElement>(`input[name="worker_reward_credits"]`);
+      if (el) el.value = workerReward;
+    }
+    if (assignmentsRequired) {
+      const el = document.querySelector<HTMLInputElement>(`input[name="assignments_required"]`);
+      if (el) { el.value = assignmentsRequired; el.dispatchEvent(new Event("input")); }
+    }
+    if (taskInstructions) {
+      const el = document.querySelector<HTMLTextAreaElement>(`textarea[name="task_instructions"]`);
+      if (el) el.value = taskInstructions;
+    }
+  })();
 </script>

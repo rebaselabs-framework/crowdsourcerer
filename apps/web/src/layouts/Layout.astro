@@ -79,6 +79,49 @@ const currentPath = Astro.url.pathname;
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 
+    <!-- Dark mode: apply class before paint to avoid flash -->
+    <script is:inline>
+      (function () {
+        var stored = localStorage.getItem("theme");
+        var prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+        if (stored === "dark" || (!stored && prefersDark)) {
+          document.documentElement.classList.add("dark");
+        } else {
+          document.documentElement.classList.remove("dark");
+        }
+      })();
+    </script>
+
+    <style is:global>
+      /* ── CSS custom properties ──────────────────────────────────────── */
+      :root {
+        --bg: #030712;
+        --text: #f3f4f6;
+        --card-bg: #111827;
+        --border: #1f2937;
+        --nav-bg: rgba(3, 7, 18, 0.95);
+        --muted: #6b7280;
+      }
+
+      html.dark {
+        --bg: #030712;
+        --text: #f3f4f6;
+        --card-bg: #111827;
+        --border: #1f2937;
+        --nav-bg: rgba(3, 7, 18, 0.95);
+        --muted: #6b7280;
+      }
+
+      html:not(.dark) {
+        --bg: #f9fafb;
+        --text: #111827;
+        --card-bg: #ffffff;
+        --border: #e5e7eb;
+        --nav-bg: rgba(249, 250, 251, 0.95);
+        --muted: #6b7280;
+      }
+    </style>
+
     <!-- Structured data (JSON-LD) -->
     <script type="application/ld+json" set:html={JSON.stringify({
       "@context": "https://schema.org",
@@ -122,6 +165,17 @@ const currentPath = Astro.url.pathname;
           <a href="/pricing" class:list={["transition-colors", currentPath === "/pricing" ? "text-white" : "text-gray-400 hover:text-gray-100"]}>
             Pricing
           </a>
+          {/* Theme toggle button (desktop) */}
+          <button
+            id="theme-toggle"
+            class="p-1.5 rounded-lg text-gray-400 hover:text-gray-100 hover:bg-gray-800 transition-colors"
+            aria-label="Toggle dark mode"
+            title="Toggle dark/light mode"
+          >
+            <span id="theme-icon-moon" class="hidden text-base leading-none">🌙</span>
+            <span id="theme-icon-sun" class="hidden text-base leading-none">☀️</span>
+          </button>
+
           {isLoggedIn ? (
             <>
               <a href="/dashboard" class:list={["transition-colors", currentPath === "/dashboard" ? "text-white" : "text-gray-400 hover:text-gray-100"]}>
@@ -162,6 +216,15 @@ const currentPath = Astro.url.pathname;
 
         <!-- Mobile: notification + hamburger -->
         <div class="flex items-center gap-3 md:hidden">
+          {/* Mobile theme toggle */}
+          <button
+            id="theme-toggle-mobile"
+            class="p-1.5 rounded-lg text-gray-400 hover:text-gray-100 transition-colors"
+            aria-label="Toggle dark mode"
+          >
+            <span id="theme-icon-moon-mobile" class="hidden text-base leading-none">🌙</span>
+            <span id="theme-icon-sun-mobile" class="hidden text-base leading-none">☀️</span>
+          </button>
           {isLoggedIn && (
             <a href="/dashboard/notifications" class="relative inline-flex items-center text-gray-400 p-1.5" title="Notifications">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -404,6 +467,59 @@ const currentPath = Astro.url.pathname;
         </div>
       </nav>
     )}
+
+    <!-- Dark mode toggle script -->
+    <script is:inline>
+      (function () {
+        function isDark() {
+          return document.documentElement.classList.contains("dark");
+        }
+
+        function setTheme(dark) {
+          if (dark) {
+            document.documentElement.classList.add("dark");
+            localStorage.setItem("theme", "dark");
+          } else {
+            document.documentElement.classList.remove("dark");
+            localStorage.setItem("theme", "light");
+          }
+          updateIcons();
+        }
+
+        function updateIcons() {
+          var dark = isDark();
+          // Desktop icons
+          var moonD = document.getElementById("theme-icon-moon");
+          var sunD = document.getElementById("theme-icon-sun");
+          if (moonD) moonD.classList.toggle("hidden", dark);
+          if (sunD) sunD.classList.toggle("hidden", !dark);
+          // Mobile icons
+          var moonM = document.getElementById("theme-icon-moon-mobile");
+          var sunM = document.getElementById("theme-icon-sun-mobile");
+          if (moonM) moonM.classList.toggle("hidden", dark);
+          if (sunM) sunM.classList.toggle("hidden", !dark);
+        }
+
+        // Init icons after DOM ready
+        updateIcons();
+
+        // Desktop toggle
+        var btn = document.getElementById("theme-toggle");
+        if (btn) {
+          btn.addEventListener("click", function () {
+            setTheme(!isDark());
+          });
+        }
+
+        // Mobile toggle
+        var btnM = document.getElementById("theme-toggle-mobile");
+        if (btnM) {
+          btnM.addEventListener("click", function () {
+            setTheme(!isDark());
+          });
+        }
+      })();
+    </script>
 
     <!-- Mobile nav toggle script -->
     <script is:inline>
