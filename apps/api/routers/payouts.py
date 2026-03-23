@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth import get_current_user_id
 from core.database import get_db
+from core.notify import create_notification, NotifType
 from models.db import UserDB, PayoutRequestDB, CreditTransactionDB
 from models.schemas import (
     PayoutRequestCreate,
@@ -253,6 +254,36 @@ async def admin_review_payout(
     payout.status = body.status
     payout.admin_note = body.admin_note
     payout.processed_at = datetime.now(timezone.utc)
+
+    # ── Notify worker of status change ────────────────────────────────────
+    usd_str = f"${payout.usd_amount:.2f}"
+    if body.status == "processing":
+        await create_notification(
+            db, payout.worker_id,
+            NotifType.PAYOUT_PROCESSING,
+            "Payout in progress",
+            f"Your payout request of {usd_str} is now being processed. "
+            "Funds will arrive within 1–3 business days.",
+            link="/worker/earnings",
+        )
+    elif body.status == "paid":
+        await create_notification(
+            db, payout.worker_id,
+            NotifType.PAYOUT_PAID,
+            "Payout sent! 💸",
+            f"Your payout of {usd_str} has been sent. Check your {payout.payout_method.replace('_', ' ')} account.",
+            link="/worker/earnings",
+        )
+    elif body.status == "rejected":
+        note_suffix = f" Reason: {body.admin_note}" if body.admin_note else ""
+        await create_notification(
+            db, payout.worker_id,
+            NotifType.PAYOUT_REJECTED,
+            "Payout rejected",
+            f"Your payout request of {usd_str} was rejected and credits have been refunded to your account.{note_suffix}",
+            link="/worker/earnings",
+        )
+
     await db.commit()
     await db.refresh(payout)
 

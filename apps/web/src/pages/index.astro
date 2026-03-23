@@ -54,7 +54,7 @@ function taskLabel(type: string): string {
       No API juggling. Just results.
     </p>
 
-    <div class="flex items-center justify-center gap-4">
+    <div class="flex flex-wrap items-center justify-center gap-4">
       <a
         href="/register"
         class="px-6 py-3 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-semibold transition-colors"
@@ -62,10 +62,16 @@ function taskLabel(type: string): string {
         Start free — 100 credits
       </a>
       <a
+        href="/tasks"
+        class="px-6 py-3 rounded-xl border border-violet-700 hover:border-violet-500 text-violet-300 font-semibold transition-colors"
+      >
+        Browse open tasks →
+      </a>
+      <a
         href="/docs"
         class="px-6 py-3 rounded-xl border border-gray-700 hover:border-gray-500 text-gray-300 font-semibold transition-colors"
       >
-        View docs →
+        View docs
       </a>
     </div>
   </section>

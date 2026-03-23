@@ -11,9 +11,27 @@ const {
   description = "Submit any task. CrowdSorcerer routes it to the right AI worker and delivers results.",
 } = Astro.props;
 
-const isLoggedIn = !!getToken(Object.fromEntries(
+const token = getToken(Object.fromEntries(
   Astro.cookies.getAll().map((c) => [c.name, c.value])
 ));
+const isLoggedIn = !!token;
+
+// Fetch unread notification count (SSR) — fails gracefully
+let unreadCount = 0;
+if (isLoggedIn) {
+  try {
+    const API_URL = import.meta.env.PUBLIC_API_URL ?? "http://api:8100";
+    const r = await fetch(`${API_URL}/v1/notifications/unread-count`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (r.ok) {
+      const data = await r.json();
+      unreadCount = data.unread_count ?? 0;
+    }
+  } catch {
+    // silently ignore — non-critical
+  }
+}
 ---
 
 <!doctype html>
@@ -33,6 +51,7 @@ const isLoggedIn = !!getToken(Object.fromEntries(
         CrowdSorcerer
       </a>
       <div class="flex items-center gap-6 text-sm">
+        <a href="/tasks" class="text-gray-400 hover:text-gray-100 transition-colors">Browse Tasks</a>
         <a href="/docs" class="text-gray-400 hover:text-gray-100 transition-colors">Docs</a>
         <a href="/pricing" class="text-gray-400 hover:text-gray-100 transition-colors">Pricing</a>
         {isLoggedIn ? (
@@ -43,6 +62,17 @@ const isLoggedIn = !!getToken(Object.fromEntries(
             <a href="/dashboard/review" class="text-gray-400 hover:text-gray-100 transition-colors">Review</a>
             <a href="/worker" class="text-gray-400 hover:text-gray-100 transition-colors">Earn</a>
             <a href="/worker/leaderboard" class="text-gray-400 hover:text-gray-100 transition-colors">Leaderboard</a>
+            <!-- Notification bell -->
+            <a href="/dashboard/notifications" class="relative inline-flex items-center text-gray-400 hover:text-gray-100 transition-colors" title="Notifications">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+              </svg>
+              {unreadCount > 0 && (
+                <span class="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-violet-500 text-white text-[10px] flex items-center justify-center font-bold leading-none">
+                  {unreadCount > 9 ? "9+" : unreadCount}
+                </span>
+              )}
+            </a>
             <a href="/dashboard/new-task" class="px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-sm transition-colors">
               + New task
             </a>

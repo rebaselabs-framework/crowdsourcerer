@@ -1,0 +1,227 @@
+---
+/**
+ * Notification center — view and manage in-app notifications.
+ */
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Object.fromEntries(
+  Astro.cookies.getAll().map((c) => [c.name, c.value])
+));
+if (!token) return Astro.redirect("/login");
+
+let notifications: any[] = [];
+let totalCount = 0;
+let unreadCount = 0;
+let error = "";
+
+try {
+  const data = await apiFetch<any>("/v1/notifications?limit=50&offset=0", { token });
+  notifications = data.items ?? [];
+  totalCount = data.total ?? 0;
+  unreadCount = data.unread_count ?? 0;
+} catch (e: any) {
+  error = (e as Error).message ?? "Failed to load notifications";
+}
+
+// Notification type → icon + colour
+const TYPE_META: Record<string, { icon: string; colour: string }> = {
+  task_completed:      { icon: "✅", colour: "text-emerald-400" },
+  task_failed:         { icon: "❌", colour: "text-red-400" },
+  submission_received: { icon: "📬", colour: "text-blue-400" },
+  submission_approved: { icon: "🎉", colour: "text-emerald-400" },
+  submission_rejected: { icon: "⚠️",  colour: "text-amber-400" },
+  referral_bonus:      { icon: "🎁", colour: "text-violet-400" },
+  payout_processing:   { icon: "⏳", colour: "text-amber-400" },
+  payout_paid:         { icon: "💸", colour: "text-emerald-400" },
+  payout_rejected:     { icon: "❌", colour: "text-red-400" },
+  challenge_completed: { icon: "🏆", colour: "text-yellow-400" },
+  badge_earned:        { icon: "🏅", colour: "text-violet-400" },
+};
+
+function meta(type: string) {
+  return TYPE_META[type] ?? { icon: "🔔", colour: "text-gray-400" };
+}
+
+function timeAgo(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ago`;
+}
+---
+
+<Layout title="Notifications — CrowdSorcerer">
+  <div class="max-w-3xl mx-auto px-6 py-10">
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-8">
+      <div>
+        <h1 class="text-2xl font-bold">Notifications</h1>
+        <p class="text-gray-400 text-sm mt-1">
+          {unreadCount > 0 ? `${unreadCount} unread` : "All caught up!"}
+        </p>
+      </div>
+      {unreadCount > 0 && (
+        <button
+          id="mark-all-btn"
+          class="px-4 py-2 rounded-lg border border-gray-700 text-sm text-gray-300 hover:border-violet-500 hover:text-violet-300 transition-colors"
+        >
+          Mark all as read
+        </button>
+      )}
+    </div>
+
+    {error && (
+      <div class="rounded-lg bg-red-900/30 border border-red-700 p-4 text-red-300 mb-6">
+        {error}
+      </div>
+    )}
+
+    <!-- Notification list -->
+    {notifications.length === 0 ? (
+      <div class="text-center py-20 text-gray-500">
+        <div class="text-5xl mb-4">🔔</div>
+        <p class="text-lg font-medium text-gray-400 mb-2">No notifications yet</p>
+        <p class="text-sm">You'll be notified when tasks complete, submissions arrive, and more.</p>
+      </div>
+    ) : (
+      <div class="space-y-2" id="notif-list">
+        {notifications.map((n: any) => {
+          const m = meta(n.type);
+          return (
+            <div
+              class={`rounded-xl border p-4 transition-all ${
+                n.is_read
+                  ? "border-gray-800 bg-gray-900/30"
+                  : "border-violet-700/50 bg-gray-900/60"
+              }`}
+              data-id={n.id}
+              data-read={n.is_read ? "true" : "false"}
+            >
+              <div class="flex items-start gap-3">
+                <!-- Icon -->
+                <span class={`text-xl flex-shrink-0 mt-0.5 ${m.colour}`}>{m.icon}</span>
+
+                <!-- Content -->
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center justify-between gap-2">
+                    <p class={`font-semibold text-sm ${n.is_read ? "text-gray-300" : "text-white"}`}>
+                      {n.title}
+                    </p>
+                    <div class="flex items-center gap-2 flex-shrink-0">
+                      {!n.is_read && (
+                        <span class="h-2 w-2 rounded-full bg-violet-500 flex-shrink-0"></span>
+                      )}
+                      <span class="text-xs text-gray-500">{timeAgo(n.created_at)}</span>
+                    </div>
+                  </div>
+                  <p class="text-sm text-gray-400 mt-0.5">{n.body}</p>
+                  {n.link && (
+                    <a
+                      href={n.link}
+                      class="inline-block mt-2 text-xs text-violet-400 hover:text-violet-300 transition-colors"
+                      data-notif-id={n.id}
+                    >
+                      View →
+                    </a>
+                  )}
+                </div>
+
+                <!-- Mark read button -->
+                {!n.is_read && (
+                  <button
+                    class="mark-read-btn flex-shrink-0 text-xs text-gray-500 hover:text-gray-300 transition-colors mt-0.5"
+                    data-id={n.id}
+                    title="Mark as read"
+                  >
+                    ✓
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    )}
+
+    {totalCount > 50 && (
+      <p class="text-center text-gray-500 text-sm mt-6">
+        Showing 50 of {totalCount} notifications.
+      </p>
+    )}
+  </div>
+
+  <script>
+    // Mark single notification as read
+    document.querySelectorAll(".mark-read-btn").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        const id = (e.currentTarget as HTMLElement).dataset.id;
+        if (!id) return;
+        try {
+          await fetch(`/api/notifications/${id}/read`, { method: "POST" });
+          const card = document.querySelector(`[data-id="${id}"]`);
+          if (card) {
+            card.classList.remove("border-violet-700/50", "bg-gray-900/60");
+            card.classList.add("border-gray-800", "bg-gray-900/30");
+            (e.currentTarget as HTMLElement).remove();
+            const dot = card.querySelector(".h-2.w-2.rounded-full.bg-violet-500");
+            dot?.remove();
+            // Update the title style
+            const title = card.querySelector("p.font-semibold");
+            if (title) {
+              title.classList.remove("text-white");
+              title.classList.add("text-gray-300");
+            }
+          }
+        } catch {
+          // ignore
+        }
+      });
+    });
+
+    // Mark all as read
+    const markAllBtn = document.getElementById("mark-all-btn");
+    markAllBtn?.addEventListener("click", async () => {
+      try {
+        await fetch("/api/notifications/read-all", { method: "POST" });
+        // Update all cards in the DOM
+        document.querySelectorAll("#notif-list > div[data-read='false']").forEach((card) => {
+          card.classList.remove("border-violet-700/50", "bg-gray-900/60");
+          card.classList.add("border-gray-800", "bg-gray-900/30");
+          card.querySelector(".h-2.w-2.rounded-full.bg-violet-500")?.remove();
+          card.querySelectorAll(".mark-read-btn").forEach((b) => b.remove());
+          const title = card.querySelector("p.font-semibold");
+          if (title) {
+            title.classList.remove("text-white");
+            title.classList.add("text-gray-300");
+          }
+          (card as HTMLElement).dataset.read = "true";
+        });
+        markAllBtn.remove();
+        // Update header
+        const subtitle = document.querySelector("h1 + p");
+        if (subtitle) subtitle.textContent = "All caught up!";
+      } catch {
+        // ignore
+      }
+    });
+
+    // Mark as read when clicking a "View →" link
+    document.querySelectorAll("a[data-notif-id]").forEach((link) => {
+      link.addEventListener("click", async () => {
+        const id = (link as HTMLElement).dataset.notifId;
+        if (id) {
+          try {
+            await fetch(`/api/notifications/${id}/read`, { method: "POST" });
+          } catch {
+            // ignore
+          }
+        }
+      });
+    });
+  </script>
+</Layout>

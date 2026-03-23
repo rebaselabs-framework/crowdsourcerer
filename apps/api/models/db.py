@@ -309,3 +309,23 @@ class ReferralDB(Base):
                             foreign_keys=[referrer_id])
     referred = relationship("UserDB", backref="referral_from",
                             foreign_keys=[referred_id])
+
+
+class NotificationDB(Base):
+    """In-app notification for a user."""
+    __tablename__ = "notifications"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    # Type: task_completed, task_failed, submission_received, submission_approved,
+    #       submission_rejected, referral_bonus, payout_processing, payout_paid,
+    #       payout_rejected, challenge_completed, badge_earned
+    type = Column(String(64), nullable=False, index=True)
+    title = Column(String(255), nullable=False)
+    body = Column(Text, nullable=False)
+    link = Column(String(512), nullable=True)   # optional URL to navigate to
+    is_read = Column(Boolean, default=False, nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    user = relationship("UserDB", backref="notifications")

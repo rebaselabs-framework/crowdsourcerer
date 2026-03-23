@@ -1,0 +1,227 @@
+---
+/**
+ * Public task feed — browse open human tasks without logging in.
+ * Shows task type, reward, and a CTA to sign up or start working.
+ */
+import Layout from "@/layouts/Layout.astro";
+
+const API_URL = import.meta.env.PUBLIC_API_URL ?? "http://api:8100";
+
+// Read filters from URL
+const typeFilter = Astro.url.searchParams.get("type") ?? "";
+const page = parseInt(Astro.url.searchParams.get("page") ?? "1", 10);
+
+let tasks: any[] = [];
+let total = 0;
+let pageSize = 20;
+let error = "";
+
+try {
+  const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+  if (typeFilter) params.set("type", typeFilter);
+  const res = await fetch(`${API_URL}/v1/tasks/public?${params}`);
+  if (res.ok) {
+    const data = await res.json();
+    tasks = data.items ?? [];
+    total = data.total ?? 0;
+    pageSize = data.page_size ?? 20;
+  }
+} catch {
+  error = "Could not load tasks. Please try again shortly.";
+}
+
+const TASK_TYPES = [
+  "label_image", "label_text", "rate_quality", "verify_fact",
+  "moderate_content", "compare_rank", "answer_question", "transcription_review",
+];
+
+const TYPE_ICONS: Record<string, string> = {
+  label_image: "🖼️",
+  label_text: "📝",
+  rate_quality: "⭐",
+  verify_fact: "🔍",
+  moderate_content: "🛡️",
+  compare_rank: "⚖️",
+  answer_question: "💬",
+  transcription_review: "🎤",
+};
+
+const PRIORITY_COLOURS: Record<string, string> = {
+  low: "text-gray-400 border-gray-700",
+  normal: "text-blue-400 border-blue-700/50",
+  high: "text-amber-400 border-amber-700/50",
+  urgent: "text-red-400 border-red-700/50",
+};
+
+function timeAgo(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ago`;
+}
+
+const totalPages = Math.ceil(total / pageSize);
+const prevPage = page > 1 ? page - 1 : null;
+const nextPage = page < totalPages ? page + 1 : null;
+
+function pageUrl(p: number) {
+  const u = new URL(Astro.url);
+  u.searchParams.set("page", String(p));
+  return u.pathname + "?" + u.searchParams.toString();
+}
+---
+
+<Layout title="Browse Tasks — CrowdSorcerer" description="Earn credits by completing human intelligence tasks. Browse open tasks on CrowdSorcerer.">
+  <div class="max-w-5xl mx-auto px-6 py-12">
+    <!-- Hero -->
+    <div class="text-center mb-12">
+      <h1 class="text-4xl font-bold mb-3">
+        Earn by completing tasks
+      </h1>
+      <p class="text-gray-400 text-lg max-w-xl mx-auto">
+        Browse open tasks posted by AI teams. Complete them to earn credits — redeemable for cash.
+      </p>
+      <div class="flex items-center justify-center gap-3 mt-6">
+        <a href="/register?role=worker" class="px-5 py-2.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-white font-medium transition-colors">
+          Start earning →
+        </a>
+        <a href="/login" class="px-5 py-2.5 rounded-lg border border-gray-700 hover:border-gray-500 text-gray-300 transition-colors">
+          Sign in
+        </a>
+      </div>
+    </div>
+
+    <!-- Stats bar -->
+    <div class="flex items-center justify-between mb-6">
+      <p class="text-gray-400 text-sm">
+        {total === 0 ? "No open tasks" : `${total} open task${total !== 1 ? "s" : ""} available`}
+      </p>
+      <!-- Type filter pills -->
+      <div class="flex flex-wrap gap-2">
+        <a
+          href="/tasks"
+          class={`px-3 py-1 rounded-full text-xs border transition-colors ${
+            !typeFilter
+              ? "bg-violet-600 border-violet-500 text-white"
+              : "border-gray-700 text-gray-400 hover:border-gray-500 hover:text-gray-200"
+          }`}
+        >
+          All
+        </a>
+        {TASK_TYPES.map((t) => (
+          <a
+            href={`/tasks?type=${t}`}
+            class={`px-3 py-1 rounded-full text-xs border transition-colors ${
+              typeFilter === t
+                ? "bg-violet-600 border-violet-500 text-white"
+                : "border-gray-700 text-gray-400 hover:border-gray-500 hover:text-gray-200"
+            }`}
+          >
+            {TYPE_ICONS[t] ?? "📋"} {t.replace(/_/g, " ")}
+          </a>
+        ))}
+      </div>
+    </div>
+
+    {error && (
+      <div class="rounded-lg bg-red-900/30 border border-red-700 p-4 text-red-300 mb-6">
+        {error}
+      </div>
+    )}
+
+    <!-- Task cards grid -->
+    {tasks.length === 0 ? (
+      <div class="text-center py-20 border border-gray-800 rounded-2xl">
+        <div class="text-5xl mb-4">📭</div>
+        <p class="text-gray-400 text-lg font-medium mb-2">No open tasks right now</p>
+        <p class="text-gray-500 text-sm">Check back soon — new tasks are posted continuously.</p>
+      </div>
+    ) : (
+      <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {tasks.map((task: any) => (
+          <div class="bg-gray-900 border border-gray-800 hover:border-gray-600 rounded-xl p-5 transition-all flex flex-col gap-3">
+            <!-- Type + priority -->
+            <div class="flex items-center justify-between">
+              <span class="flex items-center gap-1.5 text-sm font-medium text-gray-200">
+                <span>{TYPE_ICONS[task.type] ?? "📋"}</span>
+                <span>{task.type.replace(/_/g, " ")}</span>
+              </span>
+              <span class={`text-xs px-2 py-0.5 rounded border ${PRIORITY_COLOURS[task.priority] ?? PRIORITY_COLOURS.normal}`}>
+                {task.priority}
+              </span>
+            </div>
+
+            <!-- Title / description -->
+            <p class="text-sm text-gray-300 flex-1 leading-relaxed">
+              {task.title}
+            </p>
+
+            <!-- Reward + slots -->
+            <div class="flex items-center justify-between pt-2 border-t border-gray-800">
+              <div class="flex items-center gap-1 text-emerald-400 font-semibold text-sm">
+                <span>💰</span>
+                <span>{task.worker_reward_credits} credits</span>
+              </div>
+              <div class="text-xs text-gray-500">
+                {task.assignments_completed}/{task.assignments_required} slots filled
+              </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="flex items-center justify-between">
+              <span class="text-xs text-gray-600">{timeAgo(task.created_at)}</span>
+              <a
+                href="/register?role=worker"
+                class="text-xs px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-white transition-colors"
+              >
+                Claim task →
+              </a>
+            </div>
+          </div>
+        ))}
+      </div>
+    )}
+
+    <!-- Pagination -->
+    {totalPages > 1 && (
+      <div class="flex items-center justify-center gap-4 mt-8">
+        {prevPage ? (
+          <a href={pageUrl(prevPage)} class="px-4 py-2 rounded-lg border border-gray-700 text-sm hover:border-gray-500 transition-colors">
+            ← Previous
+          </a>
+        ) : (
+          <span class="px-4 py-2 rounded-lg border border-gray-800 text-sm text-gray-600 cursor-not-allowed">← Previous</span>
+        )}
+        <span class="text-sm text-gray-400">Page {page} of {totalPages}</span>
+        {nextPage ? (
+          <a href={pageUrl(nextPage)} class="px-4 py-2 rounded-lg border border-gray-700 text-sm hover:border-gray-500 transition-colors">
+            Next →
+          </a>
+        ) : (
+          <span class="px-4 py-2 rounded-lg border border-gray-800 text-sm text-gray-600 cursor-not-allowed">Next →</span>
+        )}
+      </div>
+    )}
+
+    <!-- CTA section -->
+    <div class="mt-16 rounded-2xl border border-violet-700/40 bg-violet-900/10 p-8 text-center">
+      <h2 class="text-2xl font-bold mb-2">Ready to earn?</h2>
+      <p class="text-gray-400 mb-6 max-w-md mx-auto">
+        Sign up as a worker, complete tasks at your own pace, and cash out when you're ready.
+        1,000 credits = $10.
+      </p>
+      <div class="flex items-center justify-center gap-4">
+        <a href="/register?role=worker" class="px-6 py-3 rounded-lg bg-violet-600 hover:bg-violet-500 text-white font-semibold transition-colors">
+          Create free account →
+        </a>
+        <a href="/docs" class="text-sm text-gray-400 hover:text-gray-200 transition-colors">
+          How it works
+        </a>
+      </div>
+    </div>
+  </div>
+</Layout>

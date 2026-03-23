@@ -550,6 +550,20 @@ async def submit_task(
             chall_count = len(chall_count_result.scalars().all())
             new_badge_ids = await award_new_badges(worker, db, challenge_completions=chall_count)
             if new_badge_ids:
+                # In-app notification per badge
+                try:
+                    from core.notify import create_notification, NotifType
+                    for bid in new_badge_ids:
+                        badge_label = bid.replace("_", " ").title()
+                        await create_notification(
+                            db, user_id,
+                            NotifType.BADGE_EARNED,
+                            f"Badge unlocked: {badge_label} 🏅",
+                            f"You earned the '{badge_label}' badge. Keep it up!",
+                            link="/worker/achievements",
+                        )
+                except Exception:
+                    pass
                 await db.commit()
         except Exception:
             pass  # Badge errors never block task submission
@@ -563,14 +577,28 @@ async def submit_task(
         new_badges=new_badge_ids,
     )
 
-    # ── Email the task requester about the new submission ─────────────────
+    # ── Notify the task requester about the new submission ────────────────
     if task:
         try:
-            from core.email import notify_submission_received
             requester_result = await db.execute(select(UserDB).where(UserDB.id == task.user_id))
             requester = requester_result.scalar_one_or_none()
             worker_display = worker.name or worker.email if worker else "A worker"
+
+            # In-app notification to requester
+            if requester and str(requester.id) != user_id:
+                from core.notify import create_notification, NotifType
+                await create_notification(
+                    db, task.user_id,
+                    NotifType.SUBMISSION_RECEIVED,
+                    "New submission received 📬",
+                    f"{worker_display} submitted a {task.type.replace('_', ' ')} response. Review it now.",
+                    link=f"/dashboard/tasks/{task_id}",
+                )
+                await db.commit()
+
+            # Email notification to requester
             if requester and requester.email and str(requester.id) != user_id:
+                from core.email import notify_submission_received
                 import asyncio as _asyncio
                 _asyncio.create_task(notify_submission_received(
                     requester.email,
@@ -579,7 +607,7 @@ async def submit_task(
                     worker_name=worker_display,
                 ))
         except Exception:
-            pass  # Email errors never block submission response
+            pass  # Notification errors never block submission response
 
     # ── Pay referral bonus on first task completion ───────────────────────
     if worker and worker.worker_tasks_completed == 1:

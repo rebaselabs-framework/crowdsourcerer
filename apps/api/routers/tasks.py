@@ -132,6 +132,49 @@ async def create_task(
     )
 
 
+@router.get("/public")
+async def public_task_feed(
+    type: Optional[str] = Query(None, description="Filter by task type"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=50),
+    db: AsyncSession = Depends(get_db),
+):
+    """Public task feed — returns open human tasks (no auth required).
+
+    Only exposes safe, non-sensitive fields: id, type, title (from instructions),
+    worker_reward_credits, assignments_required, assignments_completed, created_at.
+    """
+    q = select(TaskDB).where(
+        TaskDB.status == "open",
+        TaskDB.execution_mode == "human",
+    )
+    if type:
+        q = q.where(TaskDB.type == type)
+
+    total_result = await db.execute(select(func.count()).select_from(q.subquery()))
+    total = total_result.scalar() or 0
+
+    q = q.order_by(TaskDB.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
+    result = await db.execute(q)
+    tasks = result.scalars().all()
+
+    # Return sanitised subset of fields only
+    items = [
+        {
+            "id": str(t.id),
+            "type": t.type,
+            "title": (t.task_instructions[:60] + "…") if t.task_instructions and len(t.task_instructions) > 60 else (t.task_instructions or t.type.replace("_", " ").title()),
+            "worker_reward_credits": t.worker_reward_credits,
+            "assignments_required": t.assignments_required,
+            "assignments_completed": t.assignments_completed,
+            "priority": t.priority,
+            "created_at": t.created_at.isoformat() if t.created_at else None,
+        }
+        for t in tasks
+    ]
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
+
+
 @router.get("", response_model=PaginatedTasks)
 async def list_tasks(
     status: Optional[str] = Query(None),
@@ -304,6 +347,21 @@ async def approve_submission(
         )
 
     assignment.status = "approved"
+
+    # In-app notification to worker
+    try:
+        from core.notify import create_notification, NotifType
+        await create_notification(
+            db, assignment.worker_id,
+            NotifType.SUBMISSION_APPROVED,
+            "Submission approved! 🎉",
+            f"Your {task.type.replace('_', ' ')} submission was approved. "
+            f"You earned {assignment.earnings_credits} credits and {assignment.xp_earned} XP.",
+            link="/worker/earnings",
+        )
+    except Exception:
+        pass
+
     await db.commit()
 
     logger.info(
@@ -313,7 +371,7 @@ async def approve_submission(
         requester_id=user_id,
     )
 
-    # Notify the worker their submission was approved
+    # Email notification to worker
     try:
         from core.email import notify_worker_approved
         worker_result = await db.execute(select(UserDB).where(UserDB.id == assignment.worker_id))
@@ -391,6 +449,20 @@ async def reject_submission(
         task.assignments_completed = max(0, task.assignments_completed - 1)
         task.status = "open"
         task.completed_at = None
+
+    # In-app notification to worker
+    try:
+        from core.notify import create_notification, NotifType
+        await create_notification(
+            db, assignment.worker_id,
+            NotifType.SUBMISSION_REJECTED,
+            "Submission rejected",
+            f"Your {task.type.replace('_', ' ')} submission was not accepted. "
+            "Check the task guidelines and try again.",
+            link="/worker/marketplace",
+        )
+    except Exception:
+        pass
 
     await db.commit()
 
@@ -486,6 +558,7 @@ async def _run_task(task_id: str, user_id: str):
     """Execute an AI task against RebaseKit and store the result."""
     from core.database import AsyncSessionLocal  # avoid circular import at module level
     from core.email import notify_task_completed, notify_task_failed
+    from core.notify import create_notification, NotifType
 
     async with AsyncSessionLocal() as db:
         try:
@@ -508,6 +581,15 @@ async def _run_task(task_id: str, user_id: str):
             task.duration_ms = duration_ms
             task.completed_at = datetime.now(timezone.utc)
             task.credits_used = TASK_CREDITS.get(task.type, 5)
+
+            # In-app notification: task completed
+            await create_notification(
+                db, user_id,
+                NotifType.TASK_COMPLETED,
+                "Task completed ✅",
+                f"Your {task.type.replace('_', ' ')} task finished successfully in {duration_ms}ms.",
+                link=f"/dashboard/tasks/{task_id}",
+            )
             await db.commit()
 
             logger.info(
@@ -540,6 +622,15 @@ async def _run_task(task_id: str, user_id: str):
                     task.status = "failed"
                     task.error = str(e)
                     task.completed_at = datetime.now(timezone.utc)
+
+                    # In-app notification: task failed
+                    await create_notification(
+                        db, user_id,
+                        NotifType.TASK_FAILED,
+                        "Task failed ❌",
+                        f"Your {task.type.replace('_', ' ')} task failed: {str(e)[:120]}",
+                        link=f"/dashboard/tasks/{task_id}",
+                    )
                     await db.commit()
 
                     # Email notification
@@ -561,6 +652,15 @@ async def _run_task(task_id: str, user_id: str):
                     task.status = "failed"
                     task.error = f"Unexpected error: {type(e).__name__}"
                     task.completed_at = datetime.now(timezone.utc)
+
+                    # In-app notification
+                    await create_notification(
+                        db, user_id,
+                        NotifType.TASK_FAILED,
+                        "Task failed ❌",
+                        f"Your {task.type.replace('_', ' ')} task encountered an unexpected error.",
+                        link=f"/dashboard/tasks/{task_id}",
+                    )
                     await db.commit()
 
                     # Email notification

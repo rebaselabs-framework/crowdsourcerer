@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth import get_current_user_id
 from core.database import get_db
+from core.notify import create_notification, NotifType
 from models.db import UserDB, ReferralDB, CreditTransactionDB
 from models.schemas import ReferralStatsOut, ReferralOut
 
@@ -222,5 +223,19 @@ async def pay_referral_bonus_on_first_task(
         db.add(txn)
 
     referral.bonus_paid = True
+
+    # In-app notification to referrer
+    if referrer:
+        try:
+            await create_notification(
+                db, referral.referrer_id,
+                NotifType.REFERRAL_BONUS,
+                "Referral bonus earned! 🎁",
+                f"Your referral completed their first task — you earned +{referral.referrer_bonus_credits} credits!",
+                link="/dashboard/referrals",
+            )
+        except Exception:
+            pass
+
     logger.info("referral_bonus_paid", referral_id=str(referral.id),
                 referrer_id=str(referral.referrer_id))
