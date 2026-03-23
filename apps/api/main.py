@@ -7,14 +7,22 @@ import structlog
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 from core.config import get_settings
-from core.database import Base, engine
+from core.database import Base, engine, AsyncSessionLocal
+from core.sweeper import start_sweeper, stop_sweeper
 from routers import auth, credits, tasks, users, worker, leaderboard, badges, challenges, quality, admin, webhooks
 from workers.base import get_rebasekit_client
 
 settings = get_settings()
 logger = structlog.get_logger()
+
+# ─── Rate limiting ────────────────────────────────────────────────────────
+
+limiter = Limiter(key_func=get_remote_address, default_limits=["200/minute"])
 
 app = FastAPI(
     title="CrowdSorcerer API",
@@ -23,6 +31,9 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # ─── CORS ─────────────────────────────────────────────────────────────────
 
@@ -100,11 +111,15 @@ async def startup():
     if settings.debug:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+    # Start background sweeper (expires timed-out task assignments)
+    start_sweeper(AsyncSessionLocal)
+    logger.info("sweeper.scheduled", interval_seconds=300)
 
 
 @app.on_event("shutdown")
 async def shutdown():
     logger.info("shutdown")
+    stop_sweeper()
     await get_rebasekit_client().close()
 
 # ─── Global error handler ─────────────────────────────────────────────────

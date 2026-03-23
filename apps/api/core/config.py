@@ -46,6 +46,15 @@ class Settings(BaseSettings):
         "https://crowd.rebaselabs.online",
     ]
 
+    # Email (SMTP)
+    email_enabled: bool = False          # Set true once SMTP is configured
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_pass: str = ""
+    smtp_from: str = "noreply@crowdsourcerer.rebaselabs.online"
+    smtp_use_tls: bool = True            # True = SSL (port 465), False = STARTTLS (port 587)
+
 
 @lru_cache
 def get_settings() -> Settings:

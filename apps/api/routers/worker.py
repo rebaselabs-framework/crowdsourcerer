@@ -563,6 +563,24 @@ async def submit_task(
         new_badges=new_badge_ids,
     )
 
+    # ── Email the task requester about the new submission ─────────────────
+    if task:
+        try:
+            from core.email import notify_submission_received
+            requester_result = await db.execute(select(UserDB).where(UserDB.id == task.user_id))
+            requester = requester_result.scalar_one_or_none()
+            worker_display = worker.name or worker.email if worker else "A worker"
+            if requester and requester.email and str(requester.id) != user_id:
+                import asyncio as _asyncio
+                _asyncio.create_task(notify_submission_received(
+                    requester.email,
+                    str(task_id),
+                    task.type,
+                    worker_name=worker_display,
+                ))
+        except Exception:
+            pass  # Email errors never block submission response
+
     msg = f"Submitted! You earned {earnings} credits and {xp} XP."
     if new_badge_ids:
         msg += f" 🏆 New badge(s) earned: {', '.join(new_badge_ids)}"

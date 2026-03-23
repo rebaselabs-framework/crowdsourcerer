@@ -312,6 +312,22 @@ async def approve_submission(
         assignment_id=str(assignment_id),
         requester_id=user_id,
     )
+
+    # Notify the worker their submission was approved
+    try:
+        from core.email import notify_worker_approved
+        worker_result = await db.execute(select(UserDB).where(UserDB.id == assignment.worker_id))
+        worker_user = worker_result.scalar_one_or_none()
+        if worker_user and worker_user.email:
+            asyncio.create_task(notify_worker_approved(
+                worker_user.email,
+                task_type=task.type,
+                earnings=assignment.earnings_credits,
+                xp=assignment.xp_earned,
+            ))
+    except Exception:
+        pass
+
     return SubmissionReviewResponse(
         assignment_id=assignment.id,
         status="approved",
@@ -469,6 +485,7 @@ async def task_status_stream(
 async def _run_task(task_id: str, user_id: str):
     """Execute an AI task against RebaseKit and store the result."""
     from core.database import AsyncSessionLocal  # avoid circular import at module level
+    from core.email import notify_task_completed, notify_task_failed
 
     async with AsyncSessionLocal() as db:
         try:
@@ -500,9 +517,19 @@ async def _run_task(task_id: str, user_id: str):
                 duration_ms=duration_ms,
             )
 
+            # Fetch user email for notification
+            user_result = await db.execute(select(UserDB).where(UserDB.id == user_id))
+            owner = user_result.scalar_one_or_none()
+
             # Fire webhook if set
             if task.webhook_url:
                 asyncio.create_task(_send_webhook(task.webhook_url, task_id, user_id))
+
+            # Email notification
+            if owner and owner.email:
+                asyncio.create_task(notify_task_completed(
+                    owner.email, task_id, task.type
+                ))
 
         except WorkerError as e:
             logger.error("task_failed", task_id=task_id, error=str(e))
@@ -514,6 +541,14 @@ async def _run_task(task_id: str, user_id: str):
                     task.error = str(e)
                     task.completed_at = datetime.now(timezone.utc)
                     await db.commit()
+
+                    # Email notification
+                    user_result = await db.execute(select(UserDB).where(UserDB.id == user_id))
+                    owner = user_result.scalar_one_or_none()
+                    if owner and owner.email:
+                        asyncio.create_task(notify_task_failed(
+                            owner.email, task_id, task.type, str(e)
+                        ))
             except Exception:
                 pass
 
@@ -527,6 +562,14 @@ async def _run_task(task_id: str, user_id: str):
                     task.error = f"Unexpected error: {type(e).__name__}"
                     task.completed_at = datetime.now(timezone.utc)
                     await db.commit()
+
+                    # Email notification
+                    user_result = await db.execute(select(UserDB).where(UserDB.id == user_id))
+                    owner = user_result.scalar_one_or_none()
+                    if owner and owner.email:
+                        asyncio.create_task(notify_task_failed(
+                            owner.email, task_id, task.type, f"Unexpected error: {type(e).__name__}"
+                        ))
             except Exception:
                 pass
 

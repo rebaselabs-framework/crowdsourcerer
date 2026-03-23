@@ -13,7 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
 from core.auth import get_current_user_id
-from core.database import get_db
+from core.database import get_db, AsyncSessionLocal
+from core.sweeper import sweep_once, get_sweeper_task
 from models.db import TaskDB, UserDB, CreditTransactionDB, TaskAssignmentDB, WebhookLogDB
 
 logger = structlog.get_logger()
@@ -318,4 +319,63 @@ async def list_all_tasks(
         "page": page,
         "page_size": page_size,
         "has_next": (page * page_size) < total,
+    }
+
+
+# ─── Sweeper Controls ──────────────────────────────────────────────────────
+
+@router.post("/sweep")
+async def trigger_sweep(
+    _: str = Depends(require_admin),
+):
+    """Manually trigger the assignment timeout sweep.
+
+    Useful for testing or recovering from a period when the sweeper was down.
+    """
+    result = await sweep_once(AsyncSessionLocal)
+    return {
+        "ok": True,
+        "summary": result,
+    }
+
+
+@router.get("/sweeper/status")
+async def get_sweeper_status(
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(require_admin),
+):
+    """Return sweeper task status and count of currently expired (un-swept) assignments."""
+    from sqlalchemy import and_
+    now = datetime.now(timezone.utc)
+
+    task = get_sweeper_task()
+    sweeper_alive = task is not None and not task.done()
+
+    # Count assignments that are currently expired but not yet swept
+    expired_count = await db.scalar(
+        select(func.count()).select_from(TaskAssignmentDB).where(
+            and_(
+                TaskAssignmentDB.status == "active",
+                TaskAssignmentDB.timeout_at != None,  # noqa: E711
+                TaskAssignmentDB.timeout_at <= now,
+            )
+        )
+    ) or 0
+
+    # Count timed_out assignments in the last 24h
+    day_ago = now - timedelta(hours=24)
+    recent_timeouts = await db.scalar(
+        select(func.count()).select_from(TaskAssignmentDB).where(
+            and_(
+                TaskAssignmentDB.status == "timed_out",
+                TaskAssignmentDB.released_at >= day_ago,
+            )
+        )
+    ) or 0
+
+    return {
+        "sweeper_running": sweeper_alive,
+        "expired_pending_sweep": expired_count,
+        "timed_out_last_24h": recent_timeouts,
+        "checked_at": now.isoformat(),
     }
