@@ -468,9 +468,17 @@ if (Astro.request.method === "POST") {
             <input
               type="datetime-local"
               name="scheduled_at"
+              id="scheduled-at-input"
               class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-violet-500"
             />
             <p class="text-xs text-gray-600 mt-1">Leave blank to run immediately.</p>
+            <!-- Scheduled badge — shown when a future date is selected -->
+            <div
+              id="scheduled-badge"
+              class="hidden mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-900/30 border border-amber-700/50 text-amber-300 text-xs rounded-lg font-medium"
+            >
+              ⏰ Scheduled for <span id="scheduled-badge-date"></span>
+            </div>
           </div>
         </div>
       </div>
@@ -800,4 +808,39 @@ if (Astro.request.method === "POST") {
     confirmBtn.textContent = "Save";
     (confirmBtn as HTMLButtonElement).disabled = false;
   });
+</script>
+
+<script>
+  // ── Scheduling badge ──────────────────────────────────────────────────────
+  // When a future datetime is selected, show an "Scheduled for …" badge.
+  const scheduledInput = document.getElementById("scheduled-at-input") as HTMLInputElement | null;
+  const scheduledBadge = document.getElementById("scheduled-badge") as HTMLElement | null;
+  const scheduledBadgeDate = document.getElementById("scheduled-badge-date") as HTMLElement | null;
+
+  function updateScheduledBadge() {
+    if (!scheduledInput || !scheduledBadge || !scheduledBadgeDate) return;
+    const value = scheduledInput.value;
+    if (!value) {
+      scheduledBadge.classList.add("hidden");
+      return;
+    }
+    const selected = new Date(value);
+    const now = new Date();
+    if (selected > now) {
+      scheduledBadge.classList.remove("hidden");
+      scheduledBadgeDate.textContent = selected.toLocaleString(undefined, {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    } else {
+      scheduledBadge.classList.add("hidden");
+    }
+  }
+
+  scheduledInput?.addEventListener("change", updateScheduledBadge);
+  scheduledInput?.addEventListener("input", updateScheduledBadge);
+  updateScheduledBadge();
 </script>

@@ -990,6 +990,12 @@ class NotificationPreferencesDB(Base):
     # Values: bool — True = fires (default when key absent), False = suppressed globally
     webhook_event_prefs = Column(JSON, nullable=True, default=dict)
 
+    # ── Digest preferences (extended) ─────────────────────────────────────────
+    # JSON: {"enabled": bool, "frequency": "daily"|"weekly", "send_at_hour": int,
+    #        "include_task_updates": bool, "include_worker_activity": bool,
+    #        "include_credit_changes": bool}
+    notification_digest_prefs = Column(JSON, nullable=True, default=dict)
+
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 

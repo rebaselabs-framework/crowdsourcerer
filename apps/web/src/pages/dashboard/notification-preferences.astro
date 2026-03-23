@@ -1,6 +1,7 @@
 ---
 /**
  * Notification Preferences — opt in/out of email and in-app notification types.
+ * Tabs: Email | In-App | Digest
  */
 import Layout from "@/layouts/Layout.astro";
 import { apiFetch, getToken } from "@/lib/api";
@@ -9,12 +10,19 @@ const token = getToken(Astro.cookies);
 if (!token) return Astro.redirect("/login");
 
 let prefs: any = null;
+let digestPrefs: any = null;
 let error = "";
 
 try {
   prefs = await apiFetch<any>("/v1/notifications/preferences", { token });
 } catch (e: any) {
   error = e.message ?? "Failed to load preferences";
+}
+
+try {
+  digestPrefs = await apiFetch<any>("/v1/notifications/digest-prefs", { token });
+} catch {
+  // non-fatal — use defaults
 }
 
 // Default prefs if none loaded
@@ -32,6 +40,16 @@ prefs ??= {
   notif_payouts: true,
   notif_gamification: true,
   notif_system: true,
+  digest_frequency: "weekly",
+};
+
+digestPrefs ??= {
+  enabled: true,
+  frequency: "daily",
+  send_at_hour: 8,
+  include_task_updates: true,
+  include_worker_activity: true,
+  include_credit_changes: true,
 };
 
 const EMAIL_PREFS = [
@@ -52,6 +70,8 @@ const NOTIF_PREFS = [
   { key: "notif_gamification",  label: "Gamification",   desc: "Badges earned, challenges, XP milestones, streaks" },
   { key: "notif_system",        label: "System",         desc: "Platform news, referral bonuses, announcements" },
 ];
+
+const activeTab = Astro.url.searchParams.get("tab") ?? "email";
 ---
 
 <Layout title="Notification Preferences — CrowdSorcerer">
@@ -65,7 +85,7 @@ const NOTIF_PREFS = [
       <span>Preferences</span>
     </div>
 
-    <div class="mb-8">
+    <div class="mb-6">
       <h1 class="text-2xl font-bold">Notification Preferences</h1>
       <p class="text-gray-400 text-sm mt-1">
         Control which emails and in-app notifications you receive.
@@ -81,156 +101,401 @@ const NOTIF_PREFS = [
       ✓ Preferences saved
     </div>
 
-    <form id="prefs-form" class="space-y-8">
-      <!-- Email Notifications -->
-      <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-        <div class="px-6 py-4 border-b border-gray-800">
-          <h2 class="font-semibold text-base">📧 Email Notifications</h2>
-          <p class="text-xs text-gray-500 mt-0.5">Delivered to your account email address</p>
-        </div>
-        <div class="divide-y divide-gray-800">
-          {EMAIL_PREFS.map(({ key, label, desc }) => (
-            <div class="px-6 py-4 flex items-center justify-between gap-4">
-              <div>
-                <div class="text-sm font-medium text-gray-200">{label}</div>
-                <div class="text-xs text-gray-500 mt-0.5">{desc}</div>
-              </div>
-              <label class="relative inline-flex items-center cursor-pointer flex-shrink-0">
-                <input
-                  type="checkbox"
-                  name={key}
-                  class="sr-only peer pref-toggle"
-                  checked={prefs[key] === true}
-                  data-key={key}
-                />
-                <div class="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-violet-600"></div>
-              </label>
-            </div>
-          ))}
-        </div>
-      </div>
+    <!-- Tab bar -->
+    <div class="flex border-b border-gray-800 mb-6 gap-1">
+      {[
+        { id: "email",  label: "📧 Email" },
+        { id: "inapp",  label: "🔔 In-App" },
+        { id: "digest", label: "📬 Digest" },
+      ].map(tab => (
+        <button
+          type="button"
+          data-tab={tab.id}
+          class:list={[
+            "tab-btn px-4 py-2.5 text-sm font-medium rounded-t-lg -mb-px border border-transparent transition-colors",
+            activeTab === tab.id
+              ? "border-gray-800 border-b-gray-950 bg-gray-950 text-white"
+              : "text-gray-500 hover:text-gray-300"
+          ]}
+        >
+          {tab.label}
+        </button>
+      ))}
+    </div>
 
-      <!-- In-App Notifications -->
-      <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-        <div class="px-6 py-4 border-b border-gray-800">
-          <h2 class="font-semibold text-base">🔔 In-App Notifications</h2>
-          <p class="text-xs text-gray-500 mt-0.5">Shown in the notification bell in the top nav</p>
-        </div>
-        <div class="divide-y divide-gray-800">
-          {NOTIF_PREFS.map(({ key, label, desc }) => (
-            <div class="px-6 py-4 flex items-center justify-between gap-4">
-              <div>
-                <div class="text-sm font-medium text-gray-200">{label}</div>
-                <div class="text-xs text-gray-500 mt-0.5">{desc}</div>
-              </div>
-              <label class="relative inline-flex items-center cursor-pointer flex-shrink-0">
-                <input
-                  type="checkbox"
-                  name={key}
-                  class="sr-only peer pref-toggle"
-                  checked={prefs[key] === true}
-                  data-key={key}
-                />
-                <div class="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-violet-600"></div>
-              </label>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <!-- Digest Frequency -->
-      <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-        <div class="px-6 py-4 border-b border-gray-800">
-          <h2 class="font-semibold text-base">📬 Email Digest</h2>
-          <p class="text-xs text-gray-500 mt-0.5">
-            A summary of your activity delivered by email. Daily digests arrive every morning around 8 AM UTC when you have unread notifications.
-          </p>
-        </div>
-        <div class="px-6 py-5">
-          <label class="block text-sm font-medium text-gray-300 mb-3">Digest frequency</label>
-          <div class="flex flex-wrap gap-3">
-            {[
-              { value: "none",   label: "🚫 Off",    desc: "No digest emails" },
-              { value: "daily",  label: "☀️ Daily",  desc: "Every morning (if unread notifs exist)" },
-              { value: "weekly", label: "📅 Weekly", desc: "Every Monday with weekly summary" },
-            ].map(opt => (
-              <label class="flex-1 min-w-[130px] cursor-pointer">
-                <input
-                  type="radio"
-                  name="digest_frequency"
-                  value={opt.value}
-                  class="sr-only peer digest-radio"
-                  checked={prefs.digest_frequency === opt.value || (!prefs.digest_frequency && opt.value === "weekly")}
-                />
-                <div class="border-2 border-gray-700 peer-checked:border-violet-500 rounded-xl px-4 py-3 transition-colors peer-checked:bg-violet-950/30">
-                  <div class="text-sm font-semibold text-gray-200">{opt.label}</div>
-                  <div class="text-xs text-gray-500 mt-0.5">{opt.desc}</div>
+    <!-- ── Tab: Email ─────────────────────────────────────────────── -->
+    <div id="tab-email" class:list={["tab-panel space-y-6", activeTab !== "email" ? "hidden" : ""]}>
+      <form id="email-form">
+        <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+          <div class="px-6 py-4 border-b border-gray-800">
+            <h2 class="font-semibold text-base">📧 Email Notifications</h2>
+            <p class="text-xs text-gray-500 mt-0.5">Delivered to your account email address</p>
+          </div>
+          <div class="divide-y divide-gray-800">
+            {EMAIL_PREFS.map(({ key, label, desc }) => (
+              <div class="px-6 py-4 flex items-center justify-between gap-4">
+                <div>
+                  <div class="text-sm font-medium text-gray-200">{label}</div>
+                  <div class="text-xs text-gray-500 mt-0.5">{desc}</div>
                 </div>
-              </label>
+                <label class="relative inline-flex items-center cursor-pointer flex-shrink-0">
+                  <input
+                    type="checkbox"
+                    name={key}
+                    class="sr-only peer pref-toggle"
+                    checked={prefs[key] === true}
+                    data-key={key}
+                  />
+                  <div class="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-violet-600"></div>
+                </label>
+              </div>
             ))}
           </div>
         </div>
-      </div>
 
-      <!-- Save -->
-      <div class="flex items-center gap-4">
-        <button
-          type="submit"
-          id="save-btn"
-          class="px-6 py-2.5 bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium rounded-lg transition-colors"
-        >
-          Save preferences
-        </button>
-        <a href="/dashboard/notifications" class="text-sm text-gray-500 hover:text-gray-300 transition-colors">
-          ← Back to notifications
-        </a>
-      </div>
-    </form>
+        <!-- Digest Frequency (legacy) -->
+        <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden mt-6">
+          <div class="px-6 py-4 border-b border-gray-800">
+            <h2 class="font-semibold text-base">Legacy Digest Frequency</h2>
+            <p class="text-xs text-gray-500 mt-0.5">
+              For detailed digest settings, use the Digest tab.
+            </p>
+          </div>
+          <div class="px-6 py-5">
+            <div class="flex flex-wrap gap-3">
+              {[
+                { value: "none",   label: "🚫 Off",    desc: "No digest emails" },
+                { value: "daily",  label: "☀️ Daily",  desc: "Every morning (if unread notifs exist)" },
+                { value: "weekly", label: "📅 Weekly", desc: "Every Monday with weekly summary" },
+              ].map(opt => (
+                <label class="flex-1 min-w-[130px] cursor-pointer">
+                  <input
+                    type="radio"
+                    name="digest_frequency"
+                    value={opt.value}
+                    class="sr-only peer digest-radio"
+                    checked={prefs.digest_frequency === opt.value || (!prefs.digest_frequency && opt.value === "weekly")}
+                  />
+                  <div class="border-2 border-gray-700 peer-checked:border-violet-500 rounded-xl px-4 py-3 transition-colors peer-checked:bg-violet-950/30">
+                    <div class="text-sm font-semibold text-gray-200">{opt.label}</div>
+                    <div class="text-xs text-gray-500 mt-0.5">{opt.desc}</div>
+                  </div>
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-4 mt-6">
+          <button
+            type="submit"
+            id="email-save-btn"
+            class="px-6 py-2.5 bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium rounded-lg transition-colors"
+          >
+            Save email preferences
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <!-- ── Tab: In-App ─────────────────────────────────────────────── -->
+    <div id="tab-inapp" class:list={["tab-panel space-y-6", activeTab !== "inapp" ? "hidden" : ""]}>
+      <form id="inapp-form">
+        <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+          <div class="px-6 py-4 border-b border-gray-800">
+            <h2 class="font-semibold text-base">🔔 In-App Notifications</h2>
+            <p class="text-xs text-gray-500 mt-0.5">Shown in the notification bell in the top nav</p>
+          </div>
+          <div class="divide-y divide-gray-800">
+            {NOTIF_PREFS.map(({ key, label, desc }) => (
+              <div class="px-6 py-4 flex items-center justify-between gap-4">
+                <div>
+                  <div class="text-sm font-medium text-gray-200">{label}</div>
+                  <div class="text-xs text-gray-500 mt-0.5">{desc}</div>
+                </div>
+                <label class="relative inline-flex items-center cursor-pointer flex-shrink-0">
+                  <input
+                    type="checkbox"
+                    name={key}
+                    class="sr-only peer pref-toggle"
+                    checked={prefs[key] === true}
+                    data-key={key}
+                  />
+                  <div class="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-violet-600"></div>
+                </label>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div class="flex items-center gap-4 mt-6">
+          <button
+            type="submit"
+            id="inapp-save-btn"
+            class="px-6 py-2.5 bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium rounded-lg transition-colors"
+          >
+            Save in-app preferences
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <!-- ── Tab: Digest ─────────────────────────────────────────────── -->
+    <div id="tab-digest" class:list={["tab-panel space-y-6", activeTab !== "digest" ? "hidden" : ""]}>
+      <form id="digest-form">
+        <!-- Enable toggle -->
+        <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+          <div class="px-6 py-4 border-b border-gray-800 flex items-center justify-between">
+            <div>
+              <h2 class="font-semibold text-base">📧 Digest Emails</h2>
+              <p class="text-xs text-gray-500 mt-0.5">Receive a summary of your activity by email</p>
+            </div>
+            <label class="relative inline-flex items-center cursor-pointer flex-shrink-0">
+              <input
+                type="checkbox"
+                id="digest-enabled"
+                name="enabled"
+                class="sr-only peer"
+                checked={digestPrefs.enabled === true}
+              />
+              <div class="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-violet-600"></div>
+            </label>
+          </div>
+
+          <!-- Frequency selector -->
+          <div class="px-6 py-5 border-b border-gray-800">
+            <label class="block text-sm font-medium text-gray-300 mb-3">Frequency</label>
+            <div class="flex flex-wrap gap-3">
+              {[
+                { value: "daily",  label: "☀️ Daily",  desc: "Every morning at your chosen time" },
+                { value: "weekly", label: "📅 Weekly", desc: "Every Monday morning" },
+              ].map(opt => (
+                <label class="flex-1 min-w-[140px] cursor-pointer">
+                  <input
+                    type="radio"
+                    name="frequency"
+                    value={opt.value}
+                    class="sr-only peer"
+                    checked={digestPrefs.frequency === opt.value || (!digestPrefs.frequency && opt.value === "daily")}
+                  />
+                  <div class="border-2 border-gray-700 peer-checked:border-violet-500 rounded-xl px-4 py-3 transition-colors peer-checked:bg-violet-950/30">
+                    <div class="text-sm font-semibold text-gray-200">{opt.label}</div>
+                    <div class="text-xs text-gray-500 mt-0.5">{opt.desc}</div>
+                  </div>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <!-- Send time picker -->
+          <div class="px-6 py-5 border-b border-gray-800">
+            <label class="block text-sm font-medium text-gray-300 mb-2">
+              Send at (hour, UTC)
+            </label>
+            <select
+              name="send_at_hour"
+              class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-violet-500"
+            >
+              {Array.from({ length: 24 }, (_, i) => (
+                <option value={i} selected={digestPrefs.send_at_hour === i}>
+                  {String(i).padStart(2, "0")}:00 UTC
+                </option>
+              ))}
+            </select>
+            <p class="text-xs text-gray-500 mt-1">Digests are delivered at the top of the selected hour.</p>
+          </div>
+
+          <!-- Content toggles -->
+          <div class="divide-y divide-gray-800">
+            {[
+              { key: "include_task_updates",     label: "Task updates",      desc: "Completions, failures, and status changes in last 7 days" },
+              { key: "include_worker_activity",  label: "Worker activity",   desc: "Worker task completions and earnings (if you're a worker)" },
+              { key: "include_credit_changes",   label: "Credit changes",    desc: "Credits spent and current balance" },
+            ].map(({ key, label, desc }) => (
+              <div class="px-6 py-4 flex items-center justify-between gap-4">
+                <div>
+                  <div class="text-sm font-medium text-gray-200">{label}</div>
+                  <div class="text-xs text-gray-500 mt-0.5">{desc}</div>
+                </div>
+                <label class="relative inline-flex items-center cursor-pointer flex-shrink-0">
+                  <input
+                    type="checkbox"
+                    name={key}
+                    class="sr-only peer digest-content-toggle"
+                    checked={digestPrefs[key] === true}
+                    data-key={key}
+                  />
+                  <div class="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-violet-600"></div>
+                </label>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="flex items-center gap-4 mt-6">
+          <button
+            type="submit"
+            id="digest-save-btn"
+            class="px-6 py-2.5 bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium rounded-lg transition-colors"
+          >
+            Save digest preferences
+          </button>
+          <button
+            type="button"
+            id="digest-test-btn"
+            class="px-6 py-2.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 text-sm font-medium rounded-lg transition-colors"
+          >
+            Send test email
+          </button>
+        </div>
+
+        <!-- Test result -->
+        <div id="digest-test-result" class="hidden mt-4 rounded-xl bg-emerald-900/30 border border-emerald-700 p-4 text-emerald-300 text-sm"></div>
+      </form>
+    </div>
+
+    <div class="mt-8">
+      <a href="/dashboard/notifications" class="text-sm text-gray-500 hover:text-gray-300 transition-colors">
+        ← Back to notifications
+      </a>
+    </div>
   </div>
 
   <script>
-    const form = document.getElementById("prefs-form") as HTMLFormElement;
-    const saveBtn = document.getElementById("save-btn") as HTMLButtonElement;
     const toast = document.getElementById("saved-toast") as HTMLElement;
-
     let toastTimer: number | null = null;
-    function showToast() {
+    function showToast(msg?: string) {
+      toast.textContent = msg ?? "✓ Preferences saved";
       toast.classList.remove("hidden");
       if (toastTimer) clearTimeout(toastTimer);
       toastTimer = setTimeout(() => toast.classList.add("hidden"), 3000) as unknown as number;
     }
 
-    form.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      saveBtn.disabled = true;
-      saveBtn.textContent = "Saving…";
-
-      const updates: Record<string, boolean | string> = {};
-      form.querySelectorAll<HTMLInputElement>(".pref-toggle").forEach((input) => {
-        const key = input.dataset.key;
-        if (key) updates[key] = input.checked;
-      });
-      // Digest frequency radio
-      const digestRadio = form.querySelector<HTMLInputElement>('input[name="digest_frequency"]:checked');
-      if (digestRadio) updates["digest_frequency"] = digestRadio.value;
-
-      try {
-        const res = await fetch("/api/notifications/preferences", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(updates),
+    // ── Tab switching ──────────────────────────────────────────────────────
+    document.querySelectorAll<HTMLButtonElement>(".tab-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const tabId = btn.dataset.tab!;
+        document.querySelectorAll(".tab-panel").forEach((p) => p.classList.add("hidden"));
+        document.querySelectorAll(".tab-btn").forEach((b) => {
+          b.classList.remove("border-gray-800", "border-b-gray-950", "bg-gray-950", "text-white");
+          b.classList.add("text-gray-500");
         });
-        if (res.ok) {
-          showToast();
-        } else {
-          alert("Failed to save preferences. Please try again.");
-        }
-      } catch {
-        alert("Network error. Please try again.");
-      } finally {
-        saveBtn.disabled = false;
-        saveBtn.textContent = "Save preferences";
-      }
+        const panel = document.getElementById(`tab-${tabId}`);
+        if (panel) panel.classList.remove("hidden");
+        btn.classList.remove("text-gray-500");
+        btn.classList.add("border-gray-800", "border-b-gray-950", "bg-gray-950", "text-white");
+        // Update URL without reload
+        const url = new URL(window.location.href);
+        url.searchParams.set("tab", tabId);
+        window.history.replaceState(null, "", url.toString());
+      });
     });
+
+    // ── Email / In-app form ────────────────────────────────────────────────
+    function bindPrefsForm(formId: string, saveBtnId: string) {
+      const form = document.getElementById(formId) as HTMLFormElement | null;
+      const saveBtn = document.getElementById(saveBtnId) as HTMLButtonElement | null;
+      if (!form || !saveBtn) return;
+
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        saveBtn.disabled = true;
+        saveBtn.textContent = "Saving…";
+        const updates: Record<string, boolean | string> = {};
+        form.querySelectorAll<HTMLInputElement>(".pref-toggle").forEach((input) => {
+          const key = input.dataset.key;
+          if (key) updates[key] = input.checked;
+        });
+        const digestRadio = form.querySelector<HTMLInputElement>('input[name="digest_frequency"]:checked');
+        if (digestRadio) updates["digest_frequency"] = digestRadio.value;
+
+        try {
+          const res = await fetch("/api/notifications/preferences", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(updates),
+          });
+          if (res.ok) showToast();
+          else alert("Failed to save preferences.");
+        } catch {
+          alert("Network error.");
+        } finally {
+          saveBtn.disabled = false;
+          saveBtn.textContent = formId === "email-form" ? "Save email preferences" : "Save in-app preferences";
+        }
+      });
+    }
+
+    bindPrefsForm("email-form", "email-save-btn");
+    bindPrefsForm("inapp-form", "inapp-save-btn");
+
+    // ── Digest form ────────────────────────────────────────────────────────
+    const digestForm = document.getElementById("digest-form") as HTMLFormElement | null;
+    const digestSaveBtn = document.getElementById("digest-save-btn") as HTMLButtonElement | null;
+    const digestTestBtn = document.getElementById("digest-test-btn") as HTMLButtonElement | null;
+    const digestTestResult = document.getElementById("digest-test-result") as HTMLElement | null;
+
+    if (digestForm && digestSaveBtn) {
+      digestForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        digestSaveBtn.disabled = true;
+        digestSaveBtn.textContent = "Saving…";
+
+        const enabled = (digestForm.querySelector<HTMLInputElement>('[name="enabled"]'))?.checked ?? true;
+        const frequencyEl = digestForm.querySelector<HTMLInputElement>('input[name="frequency"]:checked');
+        const frequency = frequencyEl?.value ?? "daily";
+        const sendAtHourEl = digestForm.querySelector<HTMLSelectElement>('select[name="send_at_hour"]');
+        const send_at_hour = parseInt(sendAtHourEl?.value ?? "8", 10);
+        const contentUpdates: Record<string, boolean> = {};
+        digestForm.querySelectorAll<HTMLInputElement>(".digest-content-toggle").forEach((inp) => {
+          const key = inp.dataset.key;
+          if (key) contentUpdates[key] = inp.checked;
+        });
+
+        const body = { enabled, frequency, send_at_hour, ...contentUpdates };
+        try {
+          const res = await fetch("/api/notifications/digest-prefs", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+          if (res.ok) showToast("✓ Digest preferences saved");
+          else alert("Failed to save digest preferences.");
+        } catch {
+          alert("Network error.");
+        } finally {
+          digestSaveBtn.disabled = false;
+          digestSaveBtn.textContent = "Save digest preferences";
+        }
+      });
+    }
+
+    if (digestTestBtn && digestTestResult) {
+      digestTestBtn.addEventListener("click", async () => {
+        digestTestBtn.disabled = true;
+        digestTestBtn.textContent = "Sending…";
+        try {
+          const res = await fetch("/api/notifications/digest-send-test", { method: "POST" });
+          const data = await res.json().catch(() => ({}));
+          if (res.ok) {
+            digestTestResult.classList.remove("hidden", "bg-red-900/30", "border-red-700", "text-red-300");
+            digestTestResult.classList.add("bg-emerald-900/30", "border-emerald-700", "text-emerald-300");
+            digestTestResult.textContent = data.message ?? "Test digest sent!";
+          } else {
+            digestTestResult.classList.remove("hidden", "bg-emerald-900/30", "border-emerald-700", "text-emerald-300");
+            digestTestResult.classList.add("bg-red-900/30", "border-red-700", "text-red-300");
+            digestTestResult.textContent = data.detail ?? "Failed to send test digest.";
+          }
+          digestTestResult.classList.remove("hidden");
+        } catch {
+          digestTestResult.textContent = "Network error.";
+          digestTestResult.classList.remove("hidden");
+        } finally {
+          digestTestBtn.disabled = false;
+          digestTestBtn.textContent = "Send test email";
+        }
+      });
+    }
   </script>
 </Layout>

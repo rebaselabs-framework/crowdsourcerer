@@ -12,11 +12,8 @@ let tasks: any = { items: [], total: 0, has_next: false };
 let error: string | null = null;
 
 try {
-  // All pending tasks that have a scheduled_at set
-  tasks = await apiFetch<any>("/v1/tasks?status=pending&page_size=50", { token });
-  // Filter locally for scheduled_at tasks (API does not have a dedicated filter yet)
-  tasks.items = tasks.items.filter((t: any) => t.scheduled_at);
-  tasks.total = tasks.items.length;
+  // Use the dedicated scheduled tasks endpoint (returns future-scheduled pending tasks)
+  tasks = await apiFetch<any>("/v1/tasks/scheduled?limit=100", { token });
 } catch (e: any) {
   if (e.message?.includes("401")) return Astro.redirect("/login");
   error = e.message ?? "Failed to load scheduled tasks.";

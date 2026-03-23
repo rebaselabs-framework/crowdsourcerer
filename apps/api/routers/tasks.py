@@ -612,6 +612,41 @@ async def public_task_feed(
     return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
+@router.get("/scheduled")
+async def list_scheduled_tasks(
+    limit: int = Query(50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(require_scope(SCOPE_TASKS_READ)),
+):
+    """Return tasks with a scheduled_at in the future, ordered by schedule time ascending."""
+    now_utc = datetime.now(timezone.utc)
+    result = await db.execute(
+        select(TaskDB).where(
+            TaskDB.user_id == user_id,
+            TaskDB.scheduled_at.isnot(None),
+            TaskDB.scheduled_at > now_utc,
+            TaskDB.status == "pending",
+        ).order_by(TaskDB.scheduled_at.asc()).limit(limit)
+    )
+    tasks = result.scalars().all()
+    return {
+        "items": [
+            {
+                "id": str(t.id),
+                "type": t.type,
+                "status": t.status,
+                "execution_mode": t.execution_mode,
+                "priority": t.priority,
+                "scheduled_at": t.scheduled_at.isoformat() if t.scheduled_at else None,
+                "created_at": t.created_at.isoformat(),
+                "tags": t.tags or [],
+            }
+            for t in tasks
+        ],
+        "total": len(tasks),
+    }
+
+
 @router.get("/tags", response_model=list[TagStats])
 async def list_task_tags(
     db: AsyncSession = Depends(get_db),
