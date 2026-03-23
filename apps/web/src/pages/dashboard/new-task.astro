@@ -12,16 +12,16 @@ let error = "";
 let submittedTaskId = "";
 
 const TASK_TYPES = [
-  { type: "web_research", label: "Web Research", icon: "🌐", placeholder: '{"query": "latest AI research 2025", "max_results": 5}' },
-  { type: "entity_lookup", label: "Entity Lookup", icon: "🏢", placeholder: '{"entity_type": "company", "name": "OpenAI"}' },
-  { type: "document_parse", label: "Doc Parse", icon: "📄", placeholder: '{"url": "https://example.com/doc.pdf", "extract": ["text", "tables"]}' },
-  { type: "data_transform", label: "Data Transform", icon: "🔄", placeholder: '{"input": {"key": "value"}, "instructions": "convert to CSV"}' },
-  { type: "llm_generate", label: "LLM Generate", icon: "🤖", placeholder: '{"messages": [{"role": "user", "content": "Hello!"}]}' },
-  { type: "screenshot", label: "Screenshot", icon: "📸", placeholder: '{"url": "https://example.com", "full_page": true}' },
-  { type: "audio_transcribe", label: "Transcribe", icon: "🎙️", placeholder: '{"url": "https://example.com/audio.mp3"}' },
-  { type: "pii_detect", label: "PII Detect", icon: "🔒", placeholder: '{"text": "My name is John Doe, email: john@example.com"}' },
-  { type: "code_execute", label: "Code Execute", icon: "⚡", placeholder: '{"language": "python", "code": "print(\"Hello, World!\")"}' },
-  { type: "web_intel", label: "Web Intel", icon: "🕵️", placeholder: '{"target": "openai.com", "types": ["whois", "headers"]}' },
+  { type: "web_research", label: "Web Research", icon: "🌐", placeholder: '{\n  "url": "https://example.com/article",\n  "instruction": "Extract the main content and key points"\n}' },
+  { type: "entity_lookup", label: "Entity Lookup", icon: "🏢", placeholder: '{\n  "entity_type": "company",\n  "name": "OpenAI",\n  "domain": "openai.com"\n}' },
+  { type: "document_parse", label: "Doc Parse", icon: "📄", placeholder: '{\n  "url": "https://example.com/doc.pdf",\n  "extract_tables": true\n}' },
+  { type: "data_transform", label: "Data Transform", icon: "🔄", placeholder: '{\n  "data": {"name": "Alice", "age": 30},\n  "transform": "Convert to CSV format",\n  "output_format": "csv"\n}' },
+  { type: "llm_generate", label: "LLM Generate", icon: "🤖", placeholder: '{\n  "messages": [{"role": "user", "content": "Write a haiku about AI"}],\n  "model": "claude-3-5-haiku-20241022"\n}' },
+  { type: "screenshot", label: "Screenshot", icon: "📸", placeholder: '{\n  "url": "https://example.com",\n  "full_page": true,\n  "format": "png"\n}' },
+  { type: "audio_transcribe", label: "Transcribe", icon: "🎙️", placeholder: '{\n  "url": "https://example.com/audio.mp3",\n  "language": "en",\n  "diarize": false\n}' },
+  { type: "pii_detect", label: "PII Detect", icon: "🔒", placeholder: '{\n  "text": "My name is John Doe, email: john@example.com",\n  "mask": true\n}' },
+  { type: "code_execute", label: "Code Execute", icon: "⚡", placeholder: '{\n  "language": "python",\n  "code": "print(sum(range(100)))"\n}' },
+  { type: "web_intel", label: "Web Intel", icon: "🕵️", placeholder: '{\n  "query": "OpenAI funding history",\n  "max_results": 10\n}' },
 ];
 
 if (Astro.request.method === "POST") {
