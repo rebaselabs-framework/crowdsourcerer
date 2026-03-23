@@ -1,0 +1,199 @@
+---
+/**
+ * Worker Leaderboard — top workers ranked by XP, tasks, or weekly earnings.
+ */
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Object.fromEntries(
+  Astro.cookies.getAll().map((c) => [c.name, c.value])
+));
+
+if (!token) {
+  return Astro.redirect("/login?next=/worker/leaderboard");
+}
+
+// Params from URL
+const category = (Astro.url.searchParams.get("category") ?? "xp") as string;
+const period = (Astro.url.searchParams.get("period") ?? "all_time") as string;
+
+let leaderboard: any = null;
+let currentUser: any = null;
+let error: string | null = null;
+
+try {
+  [leaderboard, currentUser] = await Promise.all([
+    apiFetch(`/v1/leaderboard?category=${category}&period=${period}`, { token }),
+    apiFetch("/v1/users/me", { token }),
+  ]);
+} catch (e: any) {
+  error = e.message ?? "Failed to load leaderboard";
+}
+
+const LEVEL_NAMES: Record<number, string> = {
+  1: "Apprentice", 2: "Novice", 3: "Learner", 4: "Explorer", 5: "Contributor",
+  6: "Analyst", 7: "Specialist", 8: "Expert", 9: "Veteran", 10: "Elite",
+  11: "Master", 12: "Grand Master", 13: "Champion", 14: "Legend", 15: "Mythic",
+  16: "Transcendent", 17: "Ascendant", 18: "Radiant", 19: "Immortal", 20: "Divine",
+};
+
+const categoryLabels: Record<string, string> = {
+  xp: "XP",
+  tasks: "Tasks Completed",
+  earnings: "Credits Earned",
+};
+const periodLabels: Record<string, string> = {
+  all_time: "All Time",
+  weekly: "This Week",
+};
+
+function rankMedal(rank: number): string {
+  if (rank === 1) return "🥇";
+  if (rank === 2) return "🥈";
+  if (rank === 3) return "🥉";
+  return `#${rank}`;
+}
+
+function primaryStat(entry: any): string {
+  if (category === "xp") return `${entry.worker_xp.toLocaleString()} XP`;
+  if (category === "tasks") return `${entry.worker_tasks_completed.toLocaleString()} tasks`;
+  return `${entry.worker_tasks_completed.toLocaleString()} tasks`;
+}
+---
+
+<Layout title="Leaderboard — CrowdSorcerer">
+  <div class="max-w-4xl mx-auto px-6 py-10">
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-8">
+      <div>
+        <h1 class="text-2xl font-bold">🏆 Leaderboard</h1>
+        <p class="text-gray-400 text-sm mt-0.5">Top workers on CrowdSorcerer</p>
+      </div>
+      <a
+        href="/worker"
+        class="text-sm text-gray-400 hover:text-white transition-colors"
+      >
+        ← Back to Earn
+      </a>
+    </div>
+
+    <!-- Filter bar -->
+    <div class="flex flex-wrap gap-3 mb-8">
+      <!-- Period -->
+      <div class="flex bg-gray-900 border border-gray-800 rounded-lg overflow-hidden">
+        {["all_time", "weekly"].map((p) => (
+          <a
+            href={`/worker/leaderboard?category=${category}&period=${p}`}
+            class={`px-4 py-2 text-sm font-medium transition-colors ${
+              period === p
+                ? "bg-emerald-700 text-white"
+                : "text-gray-400 hover:text-white hover:bg-gray-800"
+            }`}
+          >
+            {periodLabels[p]}
+          </a>
+        ))}
+      </div>
+
+      <!-- Category -->
+      <div class="flex bg-gray-900 border border-gray-800 rounded-lg overflow-hidden">
+        {["xp", "tasks"].map((c) => (
+          <a
+            href={`/worker/leaderboard?category=${c}&period=${period}`}
+            class={`px-4 py-2 text-sm font-medium transition-colors ${
+              category === c
+                ? "bg-indigo-700 text-white"
+                : "text-gray-400 hover:text-white hover:bg-gray-800"
+            }`}
+          >
+            {categoryLabels[c]}
+          </a>
+        ))}
+      </div>
+    </div>
+
+    {error ? (
+      <div class="text-red-400 bg-red-900/20 border border-red-800/40 rounded-xl p-6 text-center">
+        {error}
+      </div>
+    ) : !leaderboard?.entries?.length ? (
+      <div class="text-center py-20 text-gray-500">
+        <div class="text-4xl mb-3">🏆</div>
+        <p>No workers on the leaderboard yet. Be the first!</p>
+        <a href="/worker/marketplace" class="mt-4 inline-block text-emerald-400 hover:text-emerald-300 text-sm">
+          Browse tasks →
+        </a>
+      </div>
+    ) : (
+      <div>
+        <!-- Top 3 podium -->
+        {leaderboard.entries.length >= 3 && (
+          <div class="grid grid-cols-3 gap-4 mb-8">
+            {/* 2nd place */}
+            <div class="bg-gray-900 border border-gray-700 rounded-2xl p-5 text-center mt-6">
+              <div class="text-3xl mb-2">🥈</div>
+              <div class="font-bold truncate">{leaderboard.entries[1]?.name ?? "Worker"}</div>
+              <div class="text-xs text-gray-400 mt-1">Lv.{leaderboard.entries[1]?.worker_level} {LEVEL_NAMES[leaderboard.entries[1]?.worker_level] ?? ""}</div>
+              <div class="text-lg font-bold text-gray-300 mt-2">{primaryStat(leaderboard.entries[1])}</div>
+            </div>
+            {/* 1st place */}
+            <div class="bg-gradient-to-b from-amber-900/40 to-gray-900 border border-amber-700/60 rounded-2xl p-5 text-center ring-2 ring-amber-600/30">
+              <div class="text-4xl mb-2">🥇</div>
+              <div class="font-bold text-amber-200 truncate">{leaderboard.entries[0]?.name ?? "Worker"}</div>
+              <div class="text-xs text-amber-400/70 mt-1">Lv.{leaderboard.entries[0]?.worker_level} {LEVEL_NAMES[leaderboard.entries[0]?.worker_level] ?? ""}</div>
+              <div class="text-xl font-bold text-amber-300 mt-2">{primaryStat(leaderboard.entries[0])}</div>
+            </div>
+            {/* 3rd place */}
+            <div class="bg-gray-900 border border-gray-700 rounded-2xl p-5 text-center mt-10">
+              <div class="text-3xl mb-2">🥉</div>
+              <div class="font-bold truncate">{leaderboard.entries[2]?.name ?? "Worker"}</div>
+              <div class="text-xs text-gray-400 mt-1">Lv.{leaderboard.entries[2]?.worker_level} {LEVEL_NAMES[leaderboard.entries[2]?.worker_level] ?? ""}</div>
+              <div class="text-lg font-bold text-gray-300 mt-2">{primaryStat(leaderboard.entries[2])}</div>
+            </div>
+          </div>
+        )}
+
+        <!-- Full list -->
+        <div class="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
+          <div class="grid grid-cols-[3rem_1fr_auto_auto] gap-4 px-5 py-3 text-xs text-gray-500 uppercase tracking-wider border-b border-gray-800">
+            <div>Rank</div>
+            <div>Worker</div>
+            <div class="text-right">Level</div>
+            <div class="text-right">{categoryLabels[category]}</div>
+          </div>
+          {leaderboard.entries.map((entry: any) => {
+            const isMe = entry.user_id === currentUser?.id;
+            return (
+              <div class={`grid grid-cols-[3rem_1fr_auto_auto] gap-4 items-center px-5 py-4 border-b border-gray-800/50 last:border-0 ${isMe ? "bg-emerald-900/10" : "hover:bg-gray-800/40"} transition-colors`}>
+                <div class={`font-bold text-sm ${entry.rank <= 3 ? "text-xl" : "text-gray-400"}`}>
+                  {rankMedal(entry.rank)}
+                </div>
+                <div>
+                  <div class={`font-medium ${isMe ? "text-emerald-400" : ""}`}>
+                    {entry.name ?? "Anonymous Worker"}
+                    {isMe && <span class="ml-2 text-xs bg-emerald-800/40 text-emerald-400 px-2 py-0.5 rounded">You</span>}
+                  </div>
+                  <div class="text-xs text-gray-500 mt-0.5">
+                    {entry.worker_streak_days > 0 && `🔥 ${entry.worker_streak_days} day streak`}
+                    {entry.worker_accuracy != null && ` · ${(entry.worker_accuracy * 100).toFixed(0)}% accuracy`}
+                  </div>
+                </div>
+                <div class="text-right text-sm text-gray-400">
+                  Lv.{entry.worker_level}
+                  <div class="text-xs text-gray-600">{LEVEL_NAMES[entry.worker_level] ?? ""}</div>
+                </div>
+                <div class="text-right font-bold tabular-nums">
+                  {primaryStat(entry)}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <p class="text-xs text-gray-600 text-center mt-4">
+          Updated · {new Date(leaderboard.generated_at).toLocaleString()}
+        </p>
+      </div>
+    )}
+  </div>
+</Layout>

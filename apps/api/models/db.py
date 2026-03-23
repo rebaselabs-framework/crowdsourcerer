@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import (
     Column, String, Integer, BigInteger, Boolean, DateTime, Float,
-    Text, ForeignKey, Enum as SAEnum, JSON
+    Text, ForeignKey, Enum as SAEnum, JSON, Date, UniqueConstraint
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
@@ -55,6 +55,7 @@ class UserDB(Base):
     transactions = relationship("CreditTransactionDB", back_populates="user", lazy="dynamic")
     assignments = relationship("TaskAssignmentDB", back_populates="worker", lazy="dynamic",
                                foreign_keys="TaskAssignmentDB.worker_id")
+    badges = relationship("WorkerBadgeDB", back_populates="user", lazy="dynamic")
 
 
 class ApiKeyDB(Base):
@@ -129,6 +130,10 @@ class TaskDB(Base):
     claim_timeout_minutes = Column(Integer, default=30, nullable=False)
     task_instructions = Column(Text, nullable=True)             # Extra guidance for workers
 
+    # Quality control fields
+    is_gold_standard = Column(Boolean, default=False, nullable=False)  # Hidden QC task
+    gold_answer = Column(JSON, nullable=True)                          # Expected answer for QC
+
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     started_at = Column(DateTime(timezone=True), nullable=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)
@@ -181,3 +186,53 @@ class CreditTransactionDB(Base):
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
 
     user = relationship("UserDB", back_populates="transactions")
+
+
+class WorkerBadgeDB(Base):
+    """Badges/achievements earned by workers."""
+    __tablename__ = "worker_badges"
+    __table_args__ = (
+        UniqueConstraint("user_id", "badge_id", name="uq_worker_badge"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    badge_id = Column(String(64), nullable=False)   # e.g. "first_task", "streak_7"
+    earned_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    user = relationship("UserDB", back_populates="badges")
+
+
+class DailyChallengeDB(Base):
+    """One challenge per day — a special task type with bonus rewards."""
+    __tablename__ = "daily_challenges"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    challenge_date = Column(Date, unique=True, nullable=False, index=True)
+    task_type = Column(String(64), nullable=False)       # The required human task type
+    title = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    bonus_xp = Column(Integer, default=25, nullable=False)
+    bonus_credits = Column(Integer, default=5, nullable=False)
+    target_count = Column(Integer, default=3, nullable=False)  # Tasks needed to claim reward
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+class DailyChallengeProgressDB(Base):
+    """Tracks a worker's progress on today's daily challenge."""
+    __tablename__ = "daily_challenge_progress"
+    __table_args__ = (
+        UniqueConstraint("user_id", "challenge_id", name="uq_challenge_progress"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    challenge_id = Column(UUID(as_uuid=True), ForeignKey("daily_challenges.id", ondelete="CASCADE"),
+                          nullable=False, index=True)
+    tasks_completed = Column(Integer, default=0, nullable=False)
+    bonus_claimed = Column(Boolean, default=False, nullable=False)
+    bonus_claimed_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)

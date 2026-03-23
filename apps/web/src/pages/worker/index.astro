@@ -18,15 +18,17 @@ let user: any = null;
 let stats: any = null;
 let assignments: any[] = [];
 let isWorker = false;
+let dailyChallenge: any = null;
 
 try {
   user = await apiFetch("/v1/users/me", { token });
   isWorker = user?.role === "worker" || user?.role === "both";
 
   if (isWorker) {
-    [stats, assignments] = await Promise.all([
+    [stats, assignments, dailyChallenge] = await Promise.all([
       apiFetch("/v1/worker/stats", { token }),
       apiFetch("/v1/worker/assignments?status=active&page_size=5", { token }),
+      apiFetch("/v1/challenges/today", { token }).catch(() => null),
     ]);
   }
 } catch (e) {
@@ -205,26 +207,71 @@ const TASK_TYPE_LABELS: Record<string, string> = {
           </div>
         )}
 
+        <!-- Daily challenge teaser -->
+        {dailyChallenge && !dailyChallenge.bonus_claimed && (
+          <a
+            href="/worker/challenges"
+            class={`flex items-center justify-between rounded-xl px-5 py-4 mb-6 border transition-colors ${
+              dailyChallenge.is_complete
+                ? "bg-amber-900/20 border-amber-700/60 hover:border-amber-500"
+                : "bg-indigo-900/20 border-indigo-700/40 hover:border-indigo-500"
+            }`}
+          >
+            <div class="flex items-center gap-3">
+              <span class="text-2xl">📅</span>
+              <div>
+                <div class="text-sm font-semibold">
+                  {dailyChallenge.is_complete ? "🎁 Claim your daily bonus!" : `Daily Challenge: ${dailyChallenge.challenge?.title}`}
+                </div>
+                <div class="text-xs text-gray-400 mt-0.5">
+                  {dailyChallenge.tasks_completed}/{dailyChallenge.challenge?.target_count} tasks · +{dailyChallenge.challenge?.bonus_xp} XP + {dailyChallenge.challenge?.bonus_credits} credits
+                </div>
+              </div>
+            </div>
+            <span class="text-sm text-gray-400">→</span>
+          </a>
+        )}
+
         <!-- Quick links -->
-        <div class="grid sm:grid-cols-2 gap-4">
+        <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <a
             href="/worker/marketplace"
             class="flex items-center gap-4 bg-gray-900 border border-gray-800 hover:border-emerald-700 rounded-xl p-5 transition-colors group"
           >
             <span class="text-3xl">🛒</span>
             <div>
-              <div class="font-semibold group-hover:text-emerald-300 transition-colors">Task Marketplace</div>
-              <div class="text-sm text-gray-400">Browse and claim open tasks</div>
+              <div class="font-semibold group-hover:text-emerald-300 transition-colors">Marketplace</div>
+              <div class="text-sm text-gray-400">Browse and claim tasks</div>
             </div>
           </a>
           <a
-            href="/worker/earnings"
+            href="/worker/challenges"
+            class="flex items-center gap-4 bg-gray-900 border border-indigo-800/40 hover:border-indigo-600 rounded-xl p-5 transition-colors group"
+          >
+            <span class="text-3xl">📅</span>
+            <div>
+              <div class="font-semibold group-hover:text-indigo-300 transition-colors">Daily Challenge</div>
+              <div class="text-sm text-gray-400">Earn bonus XP &amp; credits</div>
+            </div>
+          </a>
+          <a
+            href="/worker/leaderboard"
             class="flex items-center gap-4 bg-gray-900 border border-gray-800 hover:border-amber-700 rounded-xl p-5 transition-colors group"
           >
-            <span class="text-3xl">💰</span>
+            <span class="text-3xl">🏆</span>
             <div>
-              <div class="font-semibold group-hover:text-amber-300 transition-colors">Earnings History</div>
-              <div class="text-sm text-gray-400">View your completed tasks and credits earned</div>
+              <div class="font-semibold group-hover:text-amber-300 transition-colors">Leaderboard</div>
+              <div class="text-sm text-gray-400">Top workers ranking</div>
+            </div>
+          </a>
+          <a
+            href="/worker/achievements"
+            class="flex items-center gap-4 bg-gray-900 border border-gray-800 hover:border-amber-700 rounded-xl p-5 transition-colors group"
+          >
+            <span class="text-3xl">🏅</span>
+            <div>
+              <div class="font-semibold group-hover:text-amber-300 transition-colors">Achievements</div>
+              <div class="text-sm text-gray-400">Badges &amp; milestones</div>
             </div>
           </a>
         </div>

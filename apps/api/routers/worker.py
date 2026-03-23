@@ -11,7 +11,10 @@ from sqlalchemy import select, func, and_, or_
 
 from core.auth import get_current_user_id
 from core.database import get_db
-from models.db import TaskDB, UserDB, TaskAssignmentDB, CreditTransactionDB
+from models.db import (
+    TaskDB, UserDB, TaskAssignmentDB, CreditTransactionDB,
+    DailyChallengeDB, DailyChallengeProgressDB,
+)
 from models.schemas import (
     BecomeWorkerRequest,
     WorkerProfileOut,
@@ -502,7 +505,54 @@ async def submit_task(
     )
     db.add(txn)
 
+    # ── Daily challenge progress ───────────────────────────────────────────
+    if task and worker:
+        today = now.date()
+        challenge_result = await db.execute(
+            select(DailyChallengeDB).where(DailyChallengeDB.challenge_date == today)
+        )
+        daily = challenge_result.scalar_one_or_none()
+        if daily and task.type == daily.task_type:
+            # Find or create progress record
+            prog_result = await db.execute(
+                select(DailyChallengeProgressDB).where(
+                    DailyChallengeProgressDB.user_id == user_id,
+                    DailyChallengeProgressDB.challenge_id == daily.id,
+                )
+            )
+            progress = prog_result.scalar_one_or_none()
+            if progress is None:
+                from uuid import uuid4 as _uuid4
+                progress = DailyChallengeProgressDB(
+                    id=_uuid4(),
+                    user_id=user_id,
+                    challenge_id=daily.id,
+                    tasks_completed=0,
+                    bonus_claimed=False,
+                )
+                db.add(progress)
+            progress.tasks_completed += 1
+
     await db.commit()
+
+    # ── Award badges (after commit so stats are accurate) ─────────────────
+    new_badge_ids: list[str] = []
+    if worker:
+        try:
+            from routers.badges import award_new_badges
+            # Count challenge completions for badge check
+            chall_count_result = await db.execute(
+                select(DailyChallengeProgressDB).where(
+                    DailyChallengeProgressDB.user_id == user_id,
+                    DailyChallengeProgressDB.bonus_claimed == True,
+                )
+            )
+            chall_count = len(chall_count_result.scalars().all())
+            new_badge_ids = await award_new_badges(worker, db, challenge_completions=chall_count)
+            if new_badge_ids:
+                await db.commit()
+        except Exception:
+            pass  # Badge errors never block task submission
 
     logger.info(
         "task_submitted",
@@ -510,14 +560,19 @@ async def submit_task(
         worker_id=user_id,
         xp=xp,
         earnings=earnings,
+        new_badges=new_badge_ids,
     )
+
+    msg = f"Submitted! You earned {earnings} credits and {xp} XP."
+    if new_badge_ids:
+        msg += f" 🏆 New badge(s) earned: {', '.join(new_badge_ids)}"
 
     return WorkerTaskSubmitResponse(
         assignment_id=assignment.id,
         status="submitted",
         earnings_credits=earnings,
         xp_earned=xp,
-        message=f"Submitted! You earned {earnings} credits and {xp} XP.",
+        message=msg,
     )
 
 

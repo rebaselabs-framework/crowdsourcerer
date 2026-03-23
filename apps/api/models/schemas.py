@@ -1,6 +1,6 @@
 """Pydantic request/response schemas."""
 from __future__ import annotations
-from datetime import datetime
+from datetime import datetime, date
 from typing import Any, Literal, Optional, Union
 from uuid import UUID
 
@@ -273,6 +273,86 @@ class PaginatedMarketplaceTasks(BaseModel):
     page: int
     page_size: int
     has_next: bool
+
+
+# ─── Leaderboard ──────────────────────────────────────────────────────────
+
+class LeaderboardEntryOut(BaseModel):
+    rank: int
+    user_id: UUID
+    name: Optional[str]
+    worker_level: int
+    worker_xp: int
+    worker_tasks_completed: int
+    worker_accuracy: Optional[float]
+    worker_reliability: Optional[float]
+    worker_streak_days: int
+
+
+class LeaderboardOut(BaseModel):
+    period: str   # "all_time" | "weekly"
+    category: str # "xp" | "tasks" | "earnings"
+    entries: list[LeaderboardEntryOut]
+    generated_at: datetime
+
+
+# ─── Badges ───────────────────────────────────────────────────────────────
+
+class BadgeOut(BaseModel):
+    badge_id: str
+    name: str
+    description: str
+    icon: str        # emoji
+    earned_at: Optional[datetime] = None
+    earned: bool = False
+
+
+class WorkerBadgesOut(BaseModel):
+    earned: list[BadgeOut]
+    locked: list[BadgeOut]
+    total_earned: int
+
+
+# ─── Daily Challenges ─────────────────────────────────────────────────────
+
+class DailyChallengeOut(BaseModel):
+    id: UUID
+    challenge_date: date
+    task_type: str
+    title: str
+    description: Optional[str]
+    bonus_xp: int
+    bonus_credits: int
+    target_count: int
+
+    model_config = {"from_attributes": True}
+
+
+class DailyChallengeProgressOut(BaseModel):
+    challenge: DailyChallengeOut
+    tasks_completed: int
+    bonus_claimed: bool
+    is_complete: bool      # tasks_completed >= target_count
+    tasks_remaining: int
+
+
+# ─── Quality Control ──────────────────────────────────────────────────────
+
+class GoldStandardCreateRequest(BaseModel):
+    """Mark a task as gold standard by providing the expected answer."""
+    task_id: UUID
+    gold_answer: dict[str, Any]
+
+
+class QualityReportOut(BaseModel):
+    worker_id: UUID
+    name: Optional[str]
+    tasks_evaluated: int
+    tasks_correct: int
+    accuracy: float
+    reliability: Optional[float]
+    worker_level: int
+    worker_xp: int
 
 
 # ─── Health ───────────────────────────────────────────────────────────────

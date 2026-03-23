@@ -432,3 +432,75 @@ export const HUMAN_TASK_TYPES = new Set<HumanTaskType>([
 ]);
 
 export const CREDITS_PER_USD = 100; // 1 USD = 100 credits ($0.01/credit)
+
+// ─── Leaderboard ───────────────────────────────────────────────────────────
+
+export interface LeaderboardEntry {
+  rank: number;
+  user_id: string;
+  name: string | null;
+  worker_level: number;
+  worker_xp: number;
+  worker_tasks_completed: number;
+  worker_accuracy: number | null;
+  worker_reliability: number | null;
+  worker_streak_days: number;
+}
+
+export interface Leaderboard {
+  period: "all_time" | "weekly";
+  category: "xp" | "tasks" | "earnings";
+  entries: LeaderboardEntry[];
+  generated_at: string;
+}
+
+// ─── Badges ────────────────────────────────────────────────────────────────
+
+export interface Badge {
+  badge_id: string;
+  name: string;
+  description: string;
+  icon: string;
+  earned_at: string | null;
+  earned: boolean;
+}
+
+export interface WorkerBadges {
+  earned: Badge[];
+  locked: Badge[];
+  total_earned: number;
+}
+
+// ─── Daily Challenges ──────────────────────────────────────────────────────
+
+export interface DailyChallenge {
+  id: string;
+  challenge_date: string;
+  task_type: HumanTaskType;
+  title: string;
+  description: string | null;
+  bonus_xp: number;
+  bonus_credits: number;
+  target_count: number;
+}
+
+export interface DailyChallengeProgress {
+  challenge: DailyChallenge;
+  tasks_completed: number;
+  bonus_claimed: boolean;
+  is_complete: boolean;
+  tasks_remaining: number;
+}
+
+// ─── Quality Control ──────────────────────────────────────────────────────
+
+export interface QualityReport {
+  worker_id: string;
+  name: string | null;
+  tasks_evaluated: number;
+  tasks_correct: number;
+  accuracy: number;
+  reliability: number | null;
+  worker_level: number;
+  worker_xp: number;
+}
