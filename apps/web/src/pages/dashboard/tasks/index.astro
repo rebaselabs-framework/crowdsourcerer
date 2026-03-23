@@ -11,7 +11,7 @@ const page = Number(Astro.url.searchParams.get("page") ?? 1);
 const status = Astro.url.searchParams.get("status") ?? "";
 const type = Astro.url.searchParams.get("type") ?? "";
 
-let tasks: any = { items: [], total: 0, page: 1, page_size: 20, total_pages: 1 };
+let tasks: any = { items: [], total: 0, page: 1, page_size: 20, has_next: false };
 
 try {
   const qs = new URLSearchParams({ page: String(page), page_size: "20" });
@@ -128,7 +128,7 @@ const STATUS_COLORS: Record<string, string> = {
     </div>
 
     <!-- Pagination -->
-    {tasks.total_pages > 1 && (
+    {(page > 1 || tasks.has_next) && (
       <div class="flex items-center justify-between mt-6">
         <div class="text-sm text-gray-500">
           {tasks.total} tasks total
@@ -143,9 +143,9 @@ const STATUS_COLORS: Record<string, string> = {
             </a>
           )}
           <span class="px-3 py-1.5 text-sm text-gray-500">
-            {page} / {tasks.total_pages}
+            Page {page}
           </span>
-          {page < tasks.total_pages && (
+          {tasks.has_next && (
             <a
               href={`?page=${page + 1}${status ? `&status=${status}` : ""}${type ? `&type=${type}` : ""}`}
               class="px-3 py-1.5 bg-gray-900 border border-gray-700 rounded-lg text-sm text-gray-300 hover:border-gray-500 transition-colors"
