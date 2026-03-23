@@ -1,0 +1,128 @@
+---
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Object.fromEntries(
+  Astro.cookies.getAll().map((c) => [c.name, c.value])
+));
+
+if (!token) {
+  return Astro.redirect("/login");
+}
+
+let user: any = null;
+let credits: any = null;
+let tasks: any = null;
+let apiKeys: any[] = [];
+
+try {
+  [user, credits, tasks, apiKeys] = await Promise.all([
+    apiFetch("/v1/users/me", { token }),
+    apiFetch("/v1/credits", { token }),
+    apiFetch("/v1/tasks?page_size=5", { token }),
+    apiFetch("/v1/api-keys", { token }),
+  ]);
+} catch (e) {
+  return Astro.redirect("/login");
+}
+---
+
+<Layout title="Dashboard — CrowdSorcerer">
+  <div class="max-w-5xl mx-auto px-6 py-10">
+    <div class="flex items-center justify-between mb-8">
+      <div>
+        <h1 class="text-2xl font-bold">Dashboard</h1>
+        <p class="text-gray-400 text-sm mt-0.5">{user?.email}</p>
+      </div>
+      <a
+        href="/dashboard/new-task"
+        class="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium rounded-lg transition-colors"
+      >
+        + New task
+      </a>
+    </div>
+
+    <!-- Stats -->
+    <div class="grid grid-cols-3 gap-4 mb-8">
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+        <div class="text-sm text-gray-400 mb-1">Credits available</div>
+        <div class="text-3xl font-bold text-violet-300">{credits?.available?.toLocaleString() ?? 0}</div>
+      </div>
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+        <div class="text-sm text-gray-400 mb-1">Credits used</div>
+        <div class="text-3xl font-bold">{credits?.total_used?.toLocaleString() ?? 0}</div>
+      </div>
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+        <div class="text-sm text-gray-400 mb-1">Total tasks</div>
+        <div class="text-3xl font-bold">{tasks?.total ?? 0}</div>
+      </div>
+    </div>
+
+    <!-- Recent tasks -->
+    <div class="bg-gray-900 border border-gray-800 rounded-xl mb-6">
+      <div class="flex items-center justify-between px-6 py-4 border-b border-gray-800">
+        <h2 class="font-semibold">Recent tasks</h2>
+        <a href="/dashboard/tasks" class="text-sm text-violet-400 hover:text-violet-300">View all →</a>
+      </div>
+      {tasks?.items?.length === 0 ? (
+        <div class="px-6 py-12 text-center text-gray-500">
+          No tasks yet.
+          <a href="/dashboard/new-task" class="text-violet-400 ml-1">Submit your first task →</a>
+        </div>
+      ) : (
+        <div class="divide-y divide-gray-800">
+          {tasks?.items?.map((t: any) => (
+            <a href={`/dashboard/tasks/${t.id}`} class="flex items-center justify-between px-6 py-4 hover:bg-gray-800/50 transition-colors">
+              <div class="flex items-center gap-3">
+                <span class="font-mono text-sm text-violet-300">{t.type}</span>
+                <span class:list={[
+                  "text-xs px-2 py-0.5 rounded-full",
+                  t.status === "completed" ? "bg-green-950 text-green-400" :
+                  t.status === "failed" ? "bg-red-950 text-red-400" :
+                  t.status === "running" ? "bg-yellow-950 text-yellow-400" :
+                  "bg-gray-800 text-gray-400"
+                ]}>
+                  {t.status}
+                </span>
+              </div>
+              <div class="flex items-center gap-4 text-sm text-gray-500">
+                {t.credits_used && <span>{t.credits_used} credits</span>}
+                <span>{new Date(t.created_at).toLocaleDateString()}</span>
+              </div>
+            </a>
+          ))}
+        </div>
+      )}
+    </div>
+
+    <!-- API Keys -->
+    <div class="bg-gray-900 border border-gray-800 rounded-xl">
+      <div class="flex items-center justify-between px-6 py-4 border-b border-gray-800">
+        <h2 class="font-semibold">API Keys</h2>
+        <a href="/dashboard/api-keys" class="text-sm text-violet-400 hover:text-violet-300">Manage →</a>
+      </div>
+      {apiKeys.length === 0 ? (
+        <div class="px-6 py-8 text-center text-gray-500 text-sm">
+          No API keys yet.
+          <a href="/dashboard/api-keys" class="text-violet-400 ml-1">Create one →</a>
+        </div>
+      ) : (
+        <div class="divide-y divide-gray-800">
+          {apiKeys.map((k: any) => (
+            <div class="flex items-center justify-between px-6 py-4">
+              <div>
+                <div class="font-medium text-sm">{k.name}</div>
+                <div class="font-mono text-xs text-gray-500">{k.prefix}...</div>
+              </div>
+              <div class="text-xs text-gray-500">
+                {k.last_used_at
+                  ? `Last used ${new Date(k.last_used_at).toLocaleDateString()}`
+                  : "Never used"}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  </div>
+</Layout>

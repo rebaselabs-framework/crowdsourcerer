@@ -1,0 +1,123 @@
+---
+import Layout from "@/layouts/Layout.astro";
+---
+
+<Layout title="Docs — CrowdSorcerer">
+  <div class="max-w-4xl mx-auto px-6 py-20">
+    <h1 class="text-4xl font-bold mb-3">Documentation</h1>
+    <p class="text-gray-400 mb-12">Everything you need to integrate CrowdSorcerer.</p>
+
+    <div class="grid md:grid-cols-4 gap-8">
+      <!-- Sidebar -->
+      <nav class="text-sm space-y-1">
+        <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Get started</div>
+        <a href="#quickstart" class="block py-1 text-gray-400 hover:text-gray-200">Quickstart</a>
+        <a href="#authentication" class="block py-1 text-gray-400 hover:text-gray-200">Authentication</a>
+        <a href="#tasks" class="block py-1 text-gray-400 hover:text-gray-200">Tasks</a>
+        <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mt-4 mb-2">Task types</div>
+        <a href="#web-research" class="block py-1 text-gray-400 hover:text-gray-200">Web Research</a>
+        <a href="#entity-lookup" class="block py-1 text-gray-400 hover:text-gray-200">Entity Lookup</a>
+        <a href="#llm-generate" class="block py-1 text-gray-400 hover:text-gray-200">LLM Generate</a>
+        <a href="#more" class="block py-1 text-gray-400 hover:text-gray-200">+ 7 more</a>
+        <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mt-4 mb-2">Reference</div>
+        <a href="/docs/api" class="block py-1 text-gray-400 hover:text-gray-200">API Reference</a>
+        <a href="#sdk" class="block py-1 text-gray-400 hover:text-gray-200">SDK</a>
+        <a href="#webhooks" class="block py-1 text-gray-400 hover:text-gray-200">Webhooks</a>
+      </nav>
+
+      <!-- Content -->
+      <div class="md:col-span-3 space-y-16 text-gray-300">
+        <!-- Quickstart -->
+        <section id="quickstart">
+          <h2 class="text-2xl font-bold text-gray-100 mb-4">Quickstart</h2>
+          <p class="mb-4">Get your first task result in under 2 minutes.</p>
+          <ol class="list-decimal list-inside space-y-2 text-sm mb-6">
+            <li><a href="/register" class="text-violet-400">Create an account</a> — get 100 free credits</li>
+            <li>Generate an API key from the dashboard</li>
+            <li>Submit your first task</li>
+          </ol>
+          <pre class="bg-gray-900 border border-gray-800 rounded-lg p-4 text-sm font-mono overflow-x-auto"><code class="text-gray-300"># Install the SDK
+npm install @crowdsourcerer/sdk
+
+# Or call the REST API directly
+curl -X POST https://crowdsourcerer.rebaselabs.online/v1/tasks \
+  -H "Authorization: Bearer csk_YOUR_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"{"}
+    "type": "web_research",
+    "input": {"{"}
+      "url": "https://example.com",
+      "instruction": "Extract the main heading and description"
+    {"}"}
+  {"}"}'</code></pre>
+        </section>
+
+        <!-- Authentication -->
+        <section id="authentication">
+          <h2 class="text-2xl font-bold text-gray-100 mb-4">Authentication</h2>
+          <p class="mb-4">
+            All API requests require a Bearer token in the <code class="text-violet-300">Authorization</code> header.
+            Two token types are accepted:
+          </p>
+          <ul class="list-disc list-inside space-y-2 text-sm mb-4">
+            <li><strong class="text-gray-200">API Keys</strong> (<code class="text-violet-300">csk_...</code>) — recommended for production. Create in the dashboard.</li>
+            <li><strong class="text-gray-200">JWT tokens</strong> — returned from <code class="text-violet-300">POST /v1/auth/login</code>. Use for user sessions.</li>
+          </ul>
+        </section>
+
+        <!-- Tasks -->
+        <section id="tasks">
+          <h2 class="text-2xl font-bold text-gray-100 mb-4">Task lifecycle</h2>
+          <p class="mb-4 text-sm">Tasks go through these states:</p>
+          <div class="flex items-center gap-2 text-sm mb-6 flex-wrap">
+            {["pending", "queued", "running", "completed", "failed"].map((s, i) => (
+              <>
+                <span class="px-2 py-1 rounded-full bg-gray-800 text-gray-300 font-mono text-xs">{s}</span>
+                {i < 4 && <span class="text-gray-600">→</span>}
+              </>
+            ))}
+          </div>
+          <p class="text-sm mb-4">
+            Tasks are executed asynchronously. Submit a task, get a <code class="text-violet-300">task_id</code>,
+            then poll <code class="text-violet-300">GET /v1/tasks/{"{task_id}"}</code> for the result.
+            Or use webhooks for push notifications.
+          </p>
+        </section>
+
+        <!-- SDK -->
+        <section id="sdk">
+          <h2 class="text-2xl font-bold text-gray-100 mb-4">TypeScript SDK</h2>
+          <pre class="bg-gray-900 border border-gray-800 rounded-lg p-4 text-sm font-mono overflow-x-auto mb-4"><code class="text-gray-300">import {"{ CrowdSorcerer }"} from "@crowdsourcerer/sdk";
+
+const crowd = new CrowdSorcerer({"{ apiKey: process.env.CROWDSOURCERER_API_KEY! }"});
+
+// Typed helpers for each task type
+const result = await crowd.webResearch({"{"} url: "https://news.ycombinator.com" {"}"});
+const entity = await crowd.entityLookup({"{"} entity_type: "company", name: "Stripe" {"}"});
+const transcript = await crowd.audioTranscribe({"{"} url: "https://..." {"}"});
+const llm = await crowd.llmGenerate({"{"} messages: [{"{"} role: "user", content: "Explain monads" {"}"}] {"}"});
+
+// Or submit async + poll manually
+const {"{ task_id }"} = await crowd.submitTask({"{"} type: "screenshot", input: {"{"} url: "https://example.com" {"}"} {"}"});
+const task = await crowd.getTask(task_id);
+</code></pre>
+        </section>
+
+        <!-- Webhooks -->
+        <section id="webhooks">
+          <h2 class="text-2xl font-bold text-gray-100 mb-4">Webhooks</h2>
+          <p class="text-sm mb-4">
+            Set <code class="text-violet-300">webhook_url</code> on a task to receive a POST notification when it completes:
+          </p>
+          <pre class="bg-gray-900 border border-gray-800 rounded-lg p-4 text-sm font-mono overflow-x-auto"><code class="text-gray-300">{`{
+  "task_id": "uuid-here",
+  "event": "task.completed"
+}`}</code></pre>
+          <p class="text-sm mt-4 text-gray-500">
+            Then fetch the task details from <code class="text-violet-300">/v1/tasks/{"{task_id}"}</code> to get the full output.
+          </p>
+        </section>
+      </div>
+    </div>
+  </div>
+</Layout>

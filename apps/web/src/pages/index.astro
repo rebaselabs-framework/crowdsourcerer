@@ -1,0 +1,136 @@
+---
+import Layout from "@/layouts/Layout.astro";
+import { TASK_CREDITS } from "@crowdsourcerer/types";
+
+function taskIcon(type: string): string {
+  const icons: Record<string, string> = {
+    web_research: "🌐",
+    entity_lookup: "🏢",
+    document_parse: "📄",
+    data_transform: "🔄",
+    llm_generate: "🤖",
+    screenshot: "📸",
+    audio_transcribe: "🎙️",
+    pii_detect: "🔒",
+    code_execute: "⚡",
+    web_intel: "🕵️",
+  };
+  return icons[type] ?? "🔮";
+}
+
+function taskLabel(type: string): string {
+  const labels: Record<string, string> = {
+    web_research: "Web Research",
+    entity_lookup: "Entity Lookup",
+    document_parse: "Doc Parse",
+    data_transform: "Data Transform",
+    llm_generate: "LLM Generate",
+    screenshot: "Screenshot",
+    audio_transcribe: "Transcribe",
+    pii_detect: "PII Detect",
+    code_execute: "Code Execute",
+    web_intel: "Web Intel",
+  };
+  return labels[type] ?? type;
+}
+---
+
+<Layout title="CrowdSorcerer — AI Task Platform">
+  <!-- Hero -->
+  <section class="max-w-5xl mx-auto px-6 py-24 text-center">
+    <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-violet-800 bg-violet-950/50 text-violet-300 text-sm mb-8">
+      <span class="w-2 h-2 rounded-full bg-violet-400 animate-pulse"></span>
+      Powered by RebaseKit · 10 AI worker types
+    </div>
+
+    <h1 class="text-5xl sm:text-6xl font-bold tracking-tight mb-6">
+      Submit any task.<br />
+      <span class="text-violet-400">We conjure the result.</span>
+    </h1>
+
+    <p class="text-xl text-gray-400 max-w-2xl mx-auto mb-10">
+      CrowdSorcerer routes your tasks to the right AI workers — web research,
+      entity lookups, document parsing, code execution, and more.
+      No API juggling. Just results.
+    </p>
+
+    <div class="flex items-center justify-center gap-4">
+      <a
+        href="/register"
+        class="px-6 py-3 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-semibold transition-colors"
+      >
+        Start free — 100 credits
+      </a>
+      <a
+        href="/docs"
+        class="px-6 py-3 rounded-xl border border-gray-700 hover:border-gray-500 text-gray-300 font-semibold transition-colors"
+      >
+        View docs →
+      </a>
+    </div>
+  </section>
+
+  <!-- Task types grid -->
+  <section class="max-w-5xl mx-auto px-6 pb-20">
+    <h2 class="text-2xl font-bold text-center mb-10 text-gray-300">10 task types. One API.</h2>
+    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+      {Object.entries(TASK_CREDITS).map(([type, credits]) => (
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 hover:border-violet-800 transition-colors">
+          <div class="text-2xl mb-2">{taskIcon(type)}</div>
+          <div class="text-sm font-medium text-gray-200">{taskLabel(type)}</div>
+          <div class="text-xs text-gray-500 mt-1">{credits} credits</div>
+        </div>
+      ))}
+    </div>
+  </section>
+
+  <!-- Code example -->
+  <section class="max-w-5xl mx-auto px-6 pb-20">
+    <div class="grid md:grid-cols-2 gap-8 items-center">
+      <div>
+        <h2 class="text-3xl font-bold mb-4">Simple API. Powerful results.</h2>
+        <p class="text-gray-400 mb-6">
+          Submit a task with a single POST request. Poll for the result, or use webhooks.
+          Our TypeScript SDK makes it even easier.
+        </p>
+        <a href="/docs" class="text-violet-400 hover:text-violet-300 font-medium">
+          Read the full docs →
+        </a>
+      </div>
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 font-mono text-sm overflow-x-auto">
+        <pre class="text-gray-300"><span class="text-violet-400">import</span> {"{ CrowdSorcerer }"} <span class="text-violet-400">from</span> <span class="text-green-400">"@crowdsourcerer/sdk"</span>;
+
+<span class="text-violet-400">const</span> crowd = <span class="text-violet-400">new</span> <span class="text-yellow-400">CrowdSorcerer</span>({"{"}<span class="text-orange-400"> apiKey</span>: <span class="text-green-400">"csk_..."</span> {"}"});
+
+<span class="text-gray-500">// Research a company</span>
+<span class="text-violet-400">const</span> task = <span class="text-violet-400">await</span> crowd.<span class="text-yellow-400">entityLookup</span>({"{"}<span class="text-orange-400">
+  entity_type</span>: <span class="text-green-400">"company"</span>,<span class="text-orange-400">
+  name</span>: <span class="text-green-400">"OpenAI"</span>,
+{"}"});
+
+console.<span class="text-yellow-400">log</span>(task.output.summary);
+<span class="text-gray-500">// → "OpenAI: AI safety company..."</span></pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- Pricing preview -->
+  <section class="max-w-5xl mx-auto px-6 pb-20 text-center">
+    <h2 class="text-3xl font-bold mb-3">Pay as you go</h2>
+    <p class="text-gray-400 mb-10">100 credits free on signup. $1 = 100 credits.</p>
+    <div class="grid md:grid-cols-3 gap-6">
+      {[
+        { plan: "Free", credits: 100, price: "$0", note: "On signup, no card required" },
+        { plan: "Starter", credits: 1000, price: "$10", note: "Best for prototypes" },
+        { plan: "Pro", credits: 10000, price: "$90", note: "10% volume discount" },
+      ].map(({ plan, credits, price, note }) => (
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 text-left">
+          <div class="text-sm text-gray-500 mb-1">{plan}</div>
+          <div class="text-3xl font-bold mb-1">{price}</div>
+          <div class="text-violet-300 font-medium mb-3">{credits.toLocaleString()} credits</div>
+          <div class="text-sm text-gray-500">{note}</div>
+        </div>
+      ))}
+    </div>
+  </section>
+</Layout>

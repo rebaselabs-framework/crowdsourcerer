@@ -1,0 +1,294 @@
+import type {
+  Task,
+  TaskCreateRequest,
+  TaskCreateResponse,
+  TaskType,
+  TaskInput,
+  TaskPriority,
+  CreditBalance,
+  CreditTransaction,
+  ApiKey,
+  ApiKeyCreateRequest,
+  ApiKeyCreateResponse,
+  User,
+  PaginatedResponse,
+  WebResearchInput,
+  EntityLookupInput,
+  DocumentParseInput,
+  DataTransformInput,
+  LLMGenerateInput,
+  ScreenshotInput,
+  AudioTranscribeInput,
+  PiiDetectInput,
+  CodeExecuteInput,
+  WebIntelInput,
+} from "@crowdsourcerer/types";
+import {
+  CrowdSorcererError,
+  AuthError,
+  RateLimitError,
+  InsufficientCreditsError,
+} from "./errors";
+
+export interface CrowdSorcererOptions {
+  apiKey: string;
+  baseUrl?: string;
+  timeout?: number;
+  maxRetries?: number;
+}
+
+const DEFAULT_BASE_URL = "https://crowdsourcerer.rebaselabs.online";
+const DEFAULT_TIMEOUT = 30_000;
+const DEFAULT_MAX_RETRIES = 3;
+
+export class CrowdSorcerer {
+  private readonly apiKey: string;
+  private readonly baseUrl: string;
+  private readonly timeout: number;
+  private readonly maxRetries: number;
+
+  constructor(options: CrowdSorcererOptions) {
+    if (!options.apiKey) throw new AuthError("apiKey is required");
+    this.apiKey = options.apiKey;
+    this.baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/$/, "");
+    this.timeout = options.timeout ?? DEFAULT_TIMEOUT;
+    this.maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES;
+  }
+
+  // ─── Internal fetch ─────────────────────────────────────────────────────
+
+  private async fetch<T>(
+    path: string,
+    init: RequestInit = {}
+  ): Promise<T> {
+    const url = `${this.baseUrl}${path}`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeout);
+
+    const response = await globalThis.fetch(url, {
+      ...init,
+      signal: controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${this.apiKey}`,
+        "X-Client": "crowdsourcerer-sdk/0.1.0",
+        ...(init.headers ?? {}),
+      },
+    }).finally(() => clearTimeout(timer));
+
+    const requestId = response.headers.get("x-request-id") ?? undefined;
+
+    if (response.status === 401) throw new AuthError(undefined, requestId);
+    if (response.status === 429) {
+      const retryAfter = Number(response.headers.get("retry-after") ?? 60);
+      throw new RateLimitError(retryAfter, requestId);
+    }
+    if (response.status === 402) {
+      const body = await response.json().catch(() => ({}));
+      throw new InsufficientCreditsError(
+        body.required ?? 0,
+        body.available ?? 0,
+        requestId
+      );
+    }
+
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({
+        error: "unknown_error",
+        message: `HTTP ${response.status}`,
+      }));
+      throw new CrowdSorcererError(
+        body.message ?? "Request failed",
+        response.status,
+        body.error ?? "unknown_error",
+        requestId
+      );
+    }
+
+    if (response.status === 204) return undefined as unknown as T;
+    return response.json() as Promise<T>;
+  }
+
+  // ─── Tasks ───────────────────────────────────────────────────────────────
+
+  /** Submit a task and return immediately with the task ID */
+  async submitTask(req: TaskCreateRequest): Promise<TaskCreateResponse> {
+    return this.fetch<TaskCreateResponse>("/v1/tasks", {
+      method: "POST",
+      body: JSON.stringify(req),
+    });
+  }
+
+  /** Get a task by ID */
+  async getTask(taskId: string): Promise<Task> {
+    return this.fetch<Task>(`/v1/tasks/${taskId}`);
+  }
+
+  /** List tasks with optional filters */
+  async listTasks(params?: {
+    status?: Task["status"];
+    type?: TaskType;
+    page?: number;
+    page_size?: number;
+  }): Promise<PaginatedResponse<Task>> {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set("status", params.status);
+    if (params?.type) qs.set("type", params.type);
+    if (params?.page) qs.set("page", String(params.page));
+    if (params?.page_size) qs.set("page_size", String(params.page_size));
+    return this.fetch<PaginatedResponse<Task>>(
+      `/v1/tasks${qs.size ? `?${qs}` : ""}`
+    );
+  }
+
+  /** Cancel a pending/queued task */
+  async cancelTask(taskId: string): Promise<void> {
+    return this.fetch<void>(`/v1/tasks/${taskId}/cancel`, { method: "POST" });
+  }
+
+  /**
+   * Submit a task and wait for completion (polls).
+   * Max wait: 5 minutes.
+   */
+  async runTask(
+    req: TaskCreateRequest,
+    opts: { pollIntervalMs?: number; timeoutMs?: number } = {}
+  ): Promise<Task> {
+    const { task_id } = await this.submitTask(req);
+    const interval = opts.pollIntervalMs ?? 1_500;
+    const deadline = Date.now() + (opts.timeoutMs ?? 5 * 60_000);
+
+    while (Date.now() < deadline) {
+      await sleep(interval);
+      const task = await this.getTask(task_id);
+      if (task.status === "completed" || task.status === "failed") {
+        return task;
+      }
+    }
+
+    throw new CrowdSorcererError(
+      `Task ${task_id} did not complete within timeout`,
+      408,
+      "timeout"
+    );
+  }
+
+  // ─── Typed task helpers ──────────────────────────────────────────────────
+
+  async webResearch(
+    input: WebResearchInput,
+    opts?: { priority?: TaskPriority; webhook_url?: string }
+  ) {
+    return this.runTask({ type: "web_research", input, ...opts });
+  }
+
+  async entityLookup(
+    input: EntityLookupInput,
+    opts?: { priority?: TaskPriority; webhook_url?: string }
+  ) {
+    return this.runTask({ type: "entity_lookup", input, ...opts });
+  }
+
+  async documentParse(
+    input: DocumentParseInput,
+    opts?: { priority?: TaskPriority; webhook_url?: string }
+  ) {
+    return this.runTask({ type: "document_parse", input, ...opts });
+  }
+
+  async dataTransform(
+    input: DataTransformInput,
+    opts?: { priority?: TaskPriority; webhook_url?: string }
+  ) {
+    return this.runTask({ type: "data_transform", input, ...opts });
+  }
+
+  async llmGenerate(
+    input: LLMGenerateInput,
+    opts?: { priority?: TaskPriority; webhook_url?: string }
+  ) {
+    return this.runTask({ type: "llm_generate", input, ...opts });
+  }
+
+  async screenshot(
+    input: ScreenshotInput,
+    opts?: { priority?: TaskPriority; webhook_url?: string }
+  ) {
+    return this.runTask({ type: "screenshot", input, ...opts });
+  }
+
+  async audioTranscribe(
+    input: AudioTranscribeInput,
+    opts?: { priority?: TaskPriority; webhook_url?: string }
+  ) {
+    return this.runTask({ type: "audio_transcribe", input, ...opts });
+  }
+
+  async piiDetect(
+    input: PiiDetectInput,
+    opts?: { priority?: TaskPriority; webhook_url?: string }
+  ) {
+    return this.runTask({ type: "pii_detect", input, ...opts });
+  }
+
+  async codeExecute(
+    input: CodeExecuteInput,
+    opts?: { priority?: TaskPriority; webhook_url?: string }
+  ) {
+    return this.runTask({ type: "code_execute", input, ...opts });
+  }
+
+  async webIntel(
+    input: WebIntelInput,
+    opts?: { priority?: TaskPriority; webhook_url?: string }
+  ) {
+    return this.runTask({ type: "web_intel", input, ...opts });
+  }
+
+  // ─── Credits ─────────────────────────────────────────────────────────────
+
+  async getCredits(): Promise<CreditBalance> {
+    return this.fetch<CreditBalance>("/v1/credits");
+  }
+
+  async listTransactions(params?: {
+    page?: number;
+    page_size?: number;
+  }): Promise<PaginatedResponse<CreditTransaction>> {
+    const qs = new URLSearchParams();
+    if (params?.page) qs.set("page", String(params.page));
+    if (params?.page_size) qs.set("page_size", String(params.page_size));
+    return this.fetch<PaginatedResponse<CreditTransaction>>(
+      `/v1/credits/transactions${qs.size ? `?${qs}` : ""}`
+    );
+  }
+
+  // ─── API Keys ────────────────────────────────────────────────────────────
+
+  async listApiKeys(): Promise<ApiKey[]> {
+    return this.fetch<ApiKey[]>("/v1/api-keys");
+  }
+
+  async createApiKey(
+    req: ApiKeyCreateRequest
+  ): Promise<ApiKeyCreateResponse> {
+    return this.fetch<ApiKeyCreateResponse>("/v1/api-keys", {
+      method: "POST",
+      body: JSON.stringify(req),
+    });
+  }
+
+  async deleteApiKey(keyId: string): Promise<void> {
+    return this.fetch<void>(`/v1/api-keys/${keyId}`, { method: "DELETE" });
+  }
+
+  // ─── User ────────────────────────────────────────────────────────────────
+
+  async getMe(): Promise<User> {
+    return this.fetch<User>("/v1/users/me");
+  }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}

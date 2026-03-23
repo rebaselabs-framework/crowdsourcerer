@@ -1,0 +1,94 @@
+---
+import Layout from "@/layouts/Layout.astro";
+import { TASK_CREDITS, CREDITS_PER_USD } from "@crowdsourcerer/types";
+---
+
+<Layout title="Pricing — CrowdSorcerer">
+  <div class="max-w-4xl mx-auto px-6 py-20">
+    <h1 class="text-4xl font-bold text-center mb-3">Simple, transparent pricing</h1>
+    <p class="text-gray-400 text-center mb-16">
+      Credits never expire. Buy what you need, when you need it.
+    </p>
+
+    <!-- Plans -->
+    <div class="grid md:grid-cols-3 gap-6 mb-20">
+      {[
+        { plan: "Free", credits: 100, price: 0, note: "Perfect for trying it out. No card required." },
+        { plan: "Starter", credits: 1_000, price: 10, note: "For developers and side projects.", popular: false },
+        { plan: "Pro", credits: 10_000, price: 90, note: "10% volume discount. For teams.", popular: true },
+      ].map(({ plan, credits, price, note, popular }) => (
+        <div class:list={[
+          "bg-gray-900 border rounded-xl p-6",
+          popular ? "border-violet-600" : "border-gray-800"
+        ]}>
+          {popular && (
+            <div class="text-xs font-medium text-violet-400 mb-3 uppercase tracking-wide">Most popular</div>
+          )}
+          <div class="text-lg font-semibold mb-1">{plan}</div>
+          <div class="text-4xl font-bold mb-1">{price === 0 ? "Free" : `$${price}`}</div>
+          <div class="text-violet-300 mb-4">{credits.toLocaleString()} credits</div>
+          <p class="text-sm text-gray-500 mb-6">{note}</p>
+          <a
+            href="/register"
+            class:list={[
+              "block text-center px-4 py-2 rounded-lg text-sm font-medium transition-colors",
+              popular
+                ? "bg-violet-600 hover:bg-violet-500 text-white"
+                : "border border-gray-700 hover:border-gray-500 text-gray-300"
+            ]}
+          >
+            {price === 0 ? "Start for free" : `Buy ${plan}`}
+          </a>
+        </div>
+      ))}
+    </div>
+
+    <!-- Per-task pricing -->
+    <h2 class="text-2xl font-bold mb-6">Per-task credit cost</h2>
+    <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="border-b border-gray-800">
+            <th class="text-left px-6 py-3 text-gray-400 font-medium">Task type</th>
+            <th class="text-right px-6 py-3 text-gray-400 font-medium">Credits</th>
+            <th class="text-right px-6 py-3 text-gray-400 font-medium">USD cost</th>
+          </tr>
+        </thead>
+        <tbody>
+          {Object.entries(TASK_CREDITS).map(([type, credits], i) => (
+            <tr class:list={["border-b border-gray-800/50", i % 2 === 0 ? "" : "bg-gray-900/50"]}>
+              <td class="px-6 py-3 font-mono text-violet-300">{type}</td>
+              <td class="px-6 py-3 text-right text-gray-300">{credits}</td>
+              <td class="px-6 py-3 text-right text-gray-400">
+                ${(credits / CREDITS_PER_USD).toFixed(2)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Crypto payment note -->
+    <div class="mt-12 bg-gray-900/50 border border-gray-800 rounded-xl p-6">
+      <h3 class="font-semibold mb-3">💎 Pay with crypto</h3>
+      <p class="text-sm text-gray-400 mb-4">
+        Prefer crypto? Send directly to our wallets — we'll credit your account manually.
+        Email <a href="mailto:crowdsource@rebaselabs.online" class="text-violet-400">crowdsource@rebaselabs.online</a> with your transaction hash.
+      </p>
+      <div class="grid sm:grid-cols-3 gap-4 text-xs font-mono">
+        <div>
+          <div class="text-gray-500 mb-1">Bitcoin</div>
+          <div class="text-gray-300 break-all">bc1qvzvwjcvpcztwcuv5ef42frzlq2xn46g7usxfcm</div>
+        </div>
+        <div>
+          <div class="text-gray-500 mb-1">Solana</div>
+          <div class="text-gray-300 break-all">8tGVz7wUr89bVQVR4MbiUQPfnEHeGPzSgjWqjorsZ91o</div>
+        </div>
+        <div>
+          <div class="text-gray-500 mb-1">EVM (ETH/Base)</div>
+          <div class="text-gray-300 break-all">0x16F086e2292eA895B0eC3a4DeBb255e3d6fD9E01</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</Layout>

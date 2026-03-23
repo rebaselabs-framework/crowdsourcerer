@@ -1,0 +1,104 @@
+---
+import Layout from "@/layouts/Layout.astro";
+
+let error = "";
+let success = false;
+
+if (Astro.request.method === "POST") {
+  const form = await Astro.request.formData();
+  const email = form.get("email") as string;
+  const password = form.get("password") as string;
+  const name = form.get("name") as string;
+
+  try {
+    const res = await fetch(
+      `${import.meta.env.PUBLIC_API_URL ?? "http://api:8100"}/v1/auth/register`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password, name }),
+      }
+    );
+
+    if (!res.ok) {
+      const data = await res.json();
+      error = data.detail ?? "Registration failed";
+    } else {
+      const { access_token } = await res.json();
+      Astro.cookies.set("cs_token", access_token, {
+        httpOnly: true,
+        secure: true,
+        sameSite: "lax",
+        maxAge: 60 * 60 * 24 * 7,
+        path: "/",
+      });
+      return Astro.redirect("/dashboard");
+    }
+  } catch (e) {
+    error = "Network error — please try again";
+  }
+}
+---
+
+<Layout title="Register — CrowdSorcerer">
+  <div class="min-h-screen flex items-center justify-center px-6">
+    <div class="w-full max-w-md">
+      <div class="text-center mb-8">
+        <div class="text-4xl mb-3">🔮</div>
+        <h1 class="text-2xl font-bold">Create your account</h1>
+        <p class="text-gray-400 mt-1 text-sm">Start with 100 free credits</p>
+      </div>
+
+      {error && (
+        <div class="bg-red-950/50 border border-red-800 rounded-lg px-4 py-3 text-sm text-red-300 mb-6">
+          {error}
+        </div>
+      )}
+
+      <form method="POST" class="space-y-4">
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">Name (optional)</label>
+          <input
+            name="name"
+            type="text"
+            class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-gray-100 focus:outline-none focus:border-violet-500 transition-colors"
+            placeholder="Your name"
+          />
+        </div>
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">Email</label>
+          <input
+            name="email"
+            type="email"
+            required
+            class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-gray-100 focus:outline-none focus:border-violet-500 transition-colors"
+            placeholder="you@example.com"
+          />
+        </div>
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">Password</label>
+          <input
+            name="password"
+            type="password"
+            required
+            minlength="8"
+            class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-gray-100 focus:outline-none focus:border-violet-500 transition-colors"
+            placeholder="8+ characters"
+          />
+        </div>
+
+        <button
+          type="submit"
+          class="w-full bg-violet-600 hover:bg-violet-500 text-white font-semibold py-3 rounded-lg transition-colors"
+        >
+          Create account
+        </button>
+      </form>
+
+      <p class="text-center text-sm text-gray-500 mt-6">
+        Already have an account?
+        <a href="/login" class="text-violet-400 hover:text-violet-300 ml-1">Sign in</a>
+      </p>
+    </div>
+  </div>
+</Layout>

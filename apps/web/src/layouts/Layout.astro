@@ -1,0 +1,60 @@
+---
+export interface Props {
+  title?: string;
+  description?: string;
+}
+
+const {
+  title = "CrowdSorcerer — AI Task Platform",
+  description = "Submit any task. CrowdSorcerer routes it to the right AI worker and delivers results.",
+} = Astro.props;
+---
+
+<!doctype html>
+<html lang="en" class="h-full">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content={description} />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>{title}</title>
+  </head>
+  <body class="h-full bg-gray-950 text-gray-100 font-sans antialiased">
+    <!-- Nav -->
+    <nav class="border-b border-gray-800 px-6 py-3 flex items-center justify-between">
+      <a href="/" class="flex items-center gap-2 font-bold text-lg text-violet-400">
+        <span class="text-2xl">🔮</span>
+        CrowdSorcerer
+      </a>
+      <div class="flex items-center gap-6 text-sm">
+        <a href="/docs" class="text-gray-400 hover:text-gray-100 transition-colors">Docs</a>
+        <a href="/pricing" class="text-gray-400 hover:text-gray-100 transition-colors">Pricing</a>
+        <a href="/dashboard" class="text-gray-400 hover:text-gray-100 transition-colors">Dashboard</a>
+        <a href="/login" class="px-3 py-1.5 rounded-lg border border-gray-700 text-sm hover:border-gray-500 transition-colors">
+          Sign in
+        </a>
+        <a href="/register" class="px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-sm transition-colors">
+          Get started
+        </a>
+      </div>
+    </nav>
+
+    <!-- Content -->
+    <slot />
+
+    <!-- Footer -->
+    <footer class="border-t border-gray-800 px-6 py-8 mt-20">
+      <div class="max-w-5xl mx-auto flex items-center justify-between text-sm text-gray-500">
+        <div class="flex items-center gap-2">
+          <span>🔮</span>
+          <span>CrowdSorcerer by <a href="https://rebaselabs.online" class="text-violet-400 hover:text-violet-300">RebaseLabs</a></span>
+        </div>
+        <div class="flex gap-6">
+          <a href="/docs" class="hover:text-gray-300 transition-colors">Docs</a>
+          <a href="/pricing" class="hover:text-gray-300 transition-colors">Pricing</a>
+          <a href="https://github.com/rebaselabs-framework" class="hover:text-gray-300 transition-colors">GitHub</a>
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>
