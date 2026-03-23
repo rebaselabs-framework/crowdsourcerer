@@ -29,6 +29,7 @@ const STATUS_COLORS: Record<string, string> = {
   queued:    "bg-blue-950 text-blue-400",
   pending:   "bg-gray-800 text-gray-400",
   cancelled: "bg-gray-800 text-gray-500",
+  open:      "bg-emerald-950 text-emerald-400",
 };
 ---
 
@@ -64,13 +65,13 @@ const STATUS_COLORS: Record<string, string> = {
     <form class="flex gap-3 mb-6">
       <select name="status" class="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-violet-500">
         <option value="" selected={!status}>All statuses</option>
-        {["pending","queued","running","completed","failed","cancelled"].map(s => (
+        {["pending","queued","running","completed","failed","cancelled","open"].map(s => (
           <option value={s} selected={status === s}>{s}</option>
         ))}
       </select>
       <select name="type" class="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-violet-500">
         <option value="" selected={!type}>All types</option>
-        {["web_research","entity_lookup","document_parse","data_transform","llm_generate","screenshot","audio_transcribe","pii_detect","code_execute","web_intel"].map(t => (
+        {["web_research","entity_lookup","document_parse","data_transform","llm_generate","screenshot","audio_transcribe","pii_detect","code_execute","web_intel","label_image","label_text","rate_quality","verify_fact","moderate_content","compare_rank","answer_question","transcription_review"].map(t => (
           <option value={t} selected={type === t}>{t}</option>
         ))}
       </select>
@@ -83,6 +84,45 @@ const STATUS_COLORS: Record<string, string> = {
         </a>
       )}
     </form>
+
+    <!-- Bulk action toolbar (hidden until tasks are selected) -->
+    <div
+      id="bulk-toolbar"
+      class="hidden sticky top-4 z-20 bg-gray-900 border border-violet-700 rounded-xl px-5 py-3 mb-4 flex items-center justify-between shadow-lg shadow-violet-900/20"
+    >
+      <div class="text-sm text-gray-300">
+        <span id="bulk-count" class="font-semibold text-violet-300">0</span> tasks selected
+      </div>
+      <div class="flex items-center gap-2">
+        <button
+          id="bulk-export-btn"
+          class="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 text-sm rounded-lg transition-colors"
+        >
+          ⬇️ Export selected
+        </button>
+        <button
+          id="bulk-retry-btn"
+          class="px-3 py-1.5 bg-blue-800 hover:bg-blue-700 text-blue-200 text-sm rounded-lg transition-colors"
+        >
+          ↻ Retry failed
+        </button>
+        <button
+          id="bulk-cancel-btn"
+          class="px-3 py-1.5 bg-red-900 hover:bg-red-800 text-red-300 text-sm rounded-lg transition-colors"
+        >
+          ✕ Cancel
+        </button>
+        <button
+          id="bulk-clear-btn"
+          class="px-3 py-1.5 text-gray-500 hover:text-gray-300 text-sm transition-colors"
+        >
+          Clear
+        </button>
+      </div>
+    </div>
+
+    <!-- Bulk feedback toast -->
+    <div id="bulk-toast" class="hidden mb-4 px-4 py-3 rounded-lg text-sm border"></div>
 
     <!-- Task list -->
     <div class="bg-gray-900 border border-gray-800 rounded-xl">
@@ -97,10 +137,17 @@ const STATUS_COLORS: Record<string, string> = {
       ) : (
         <div class="divide-y divide-gray-800">
           <div class="grid grid-cols-12 gap-4 px-6 py-3 text-xs text-gray-500 font-medium border-b border-gray-800">
+            <div class="col-span-1 flex items-center">
+              <input
+                type="checkbox"
+                id="select-all"
+                class="w-4 h-4 rounded border-gray-600 bg-gray-800 text-violet-500 focus:ring-violet-500 cursor-pointer"
+              />
+            </div>
             <div class="col-span-3">Type</div>
             <div class="col-span-2">Status</div>
             <div class="col-span-2">Credits</div>
-            <div class="col-span-3">Submitted</div>
+            <div class="col-span-2">Submitted</div>
             <div class="col-span-2">Duration</div>
           </div>
           {tasks.items.map((t: any) => {
@@ -108,28 +155,35 @@ const STATUS_COLORS: Record<string, string> = {
               ? Math.round((new Date(t.completed_at).getTime() - new Date(t.created_at).getTime()) / 1000)
               : null;
             return (
-              <a
-                href={`/dashboard/tasks/${t.id}`}
-                class="grid grid-cols-12 gap-4 px-6 py-4 hover:bg-gray-800/50 transition-colors items-center"
-              >
-                <div class="col-span-3">
-                  <span class="font-mono text-sm text-violet-300">{t.type}</span>
+              <div class="grid grid-cols-12 gap-4 px-6 py-4 hover:bg-gray-800/50 transition-colors items-center task-row" data-id={t.id} data-status={t.status}>
+                <div class="col-span-1" onclick="event.stopPropagation()">
+                  <input
+                    type="checkbox"
+                    class="task-checkbox w-4 h-4 rounded border-gray-600 bg-gray-800 text-violet-500 focus:ring-violet-500 cursor-pointer"
+                    data-id={t.id}
+                    data-status={t.status}
+                  />
                 </div>
-                <div class="col-span-2">
-                  <span class:list={["text-xs px-2 py-0.5 rounded-full", STATUS_COLORS[t.status] ?? "bg-gray-800 text-gray-400"]}>
-                    {t.status}
-                  </span>
-                </div>
-                <div class="col-span-2 text-sm text-gray-400">
-                  {t.credits_used != null ? `${t.credits_used} cr` : "—"}
-                </div>
-                <div class="col-span-3 text-sm text-gray-500">
-                  {new Date(t.created_at).toLocaleString()}
-                </div>
-                <div class="col-span-2 text-sm text-gray-500">
-                  {duration != null ? `${duration}s` : "—"}
-                </div>
-              </a>
+                <a href={`/dashboard/tasks/${t.id}`} class="col-span-11 grid grid-cols-11 gap-4 items-center">
+                  <div class="col-span-3">
+                    <span class="font-mono text-sm text-violet-300">{t.type}</span>
+                  </div>
+                  <div class="col-span-2">
+                    <span class:list={["text-xs px-2 py-0.5 rounded-full", STATUS_COLORS[t.status] ?? "bg-gray-800 text-gray-400"]}>
+                      {t.status}
+                    </span>
+                  </div>
+                  <div class="col-span-2 text-sm text-gray-400">
+                    {t.credits_used != null ? `${t.credits_used} cr` : "—"}
+                  </div>
+                  <div class="col-span-2 text-sm text-gray-500">
+                    {new Date(t.created_at).toLocaleString()}
+                  </div>
+                  <div class="col-span-2 text-sm text-gray-500">
+                    {duration != null ? `${duration}s` : "—"}
+                  </div>
+                </a>
+              </div>
             );
           })}
         </div>
@@ -167,3 +221,114 @@ const STATUS_COLORS: Record<string, string> = {
     )}
   </div>
 </Layout>
+
+<script>
+  // ── Selection state ──────────────────────────────────────────────────────
+  const selected = new Set<string>();
+  const toolbar = document.getElementById("bulk-toolbar") as HTMLDivElement;
+  const countEl = document.getElementById("bulk-count") as HTMLSpanElement;
+  const selectAll = document.getElementById("select-all") as HTMLInputElement;
+  const toast = document.getElementById("bulk-toast") as HTMLDivElement;
+
+  function updateToolbar() {
+    countEl.textContent = String(selected.size);
+    if (selected.size > 0) {
+      toolbar.classList.remove("hidden");
+      toolbar.classList.add("flex");
+    } else {
+      toolbar.classList.add("hidden");
+      toolbar.classList.remove("flex");
+    }
+  }
+
+  function showToast(msg: string, ok: boolean) {
+    toast.textContent = msg;
+    toast.className = ok
+      ? "mb-4 px-4 py-3 rounded-lg text-sm border bg-green-950 border-green-700 text-green-300"
+      : "mb-4 px-4 py-3 rounded-lg text-sm border bg-red-950 border-red-700 text-red-300";
+    setTimeout(() => { toast.className = "hidden mb-4 px-4 py-3 rounded-lg text-sm border"; }, 4000);
+  }
+
+  // Individual checkboxes
+  document.querySelectorAll<HTMLInputElement>(".task-checkbox").forEach(cb => {
+    cb.addEventListener("change", () => {
+      const id = cb.dataset.id!;
+      if (cb.checked) selected.add(id);
+      else selected.delete(id);
+      // Update select-all indeterminate state
+      const all = document.querySelectorAll<HTMLInputElement>(".task-checkbox");
+      const checkedCount = document.querySelectorAll<HTMLInputElement>(".task-checkbox:checked").length;
+      selectAll.indeterminate = checkedCount > 0 && checkedCount < all.length;
+      selectAll.checked = checkedCount === all.length;
+      updateToolbar();
+    });
+  });
+
+  // Select all
+  selectAll?.addEventListener("change", () => {
+    document.querySelectorAll<HTMLInputElement>(".task-checkbox").forEach(cb => {
+      cb.checked = selectAll.checked;
+      const id = cb.dataset.id!;
+      if (selectAll.checked) selected.add(id);
+      else selected.delete(id);
+    });
+    updateToolbar();
+  });
+
+  // Clear selection
+  document.getElementById("bulk-clear-btn")?.addEventListener("click", () => {
+    selected.clear();
+    document.querySelectorAll<HTMLInputElement>(".task-checkbox").forEach(cb => { cb.checked = false; });
+    if (selectAll) { selectAll.checked = false; selectAll.indeterminate = false; }
+    updateToolbar();
+  });
+
+  // ── Bulk API call ────────────────────────────────────────────────────────
+  async function bulkAction(action: "cancel" | "retry") {
+    if (selected.size === 0) return;
+    const btn = action === "cancel"
+      ? document.getElementById("bulk-cancel-btn")!
+      : document.getElementById("bulk-retry-btn")!;
+    const origText = btn.textContent;
+    btn.textContent = "Working…";
+    (btn as HTMLButtonElement).disabled = true;
+
+    try {
+      const res = await fetch("/api/tasks/bulk-action", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ task_ids: [...selected], action }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        const s = data.succeeded?.length ?? 0;
+        const f = data.failed?.length ?? 0;
+        showToast(
+          `✓ ${action === "cancel" ? "Cancelled" : "Retried"} ${s} task${s !== 1 ? "s" : ""}${f > 0 ? ` (${f} skipped)` : ""}`,
+          true
+        );
+        setTimeout(() => window.location.reload(), 1200);
+      } else {
+        showToast(`Error: ${data.detail ?? "Unknown error"}`, false);
+        btn.textContent = origText;
+        (btn as HTMLButtonElement).disabled = false;
+      }
+    } catch {
+      showToast("Network error. Please try again.", false);
+      btn.textContent = origText;
+      (btn as HTMLButtonElement).disabled = false;
+    }
+  }
+
+  document.getElementById("bulk-cancel-btn")?.addEventListener("click", () => bulkAction("cancel"));
+  document.getElementById("bulk-retry-btn")?.addEventListener("click", () => bulkAction("retry"));
+
+  // ── Export selected ──────────────────────────────────────────────────────
+  document.getElementById("bulk-export-btn")?.addEventListener("click", async () => {
+    if (selected.size === 0) return;
+    // Build URL with task_ids as repeated query params for the existing export endpoint
+    const ids = [...selected];
+    const qs = ids.map(id => `task_ids=${id}`).join("&");
+    window.open(`/v1/tasks/export?format=csv&${qs}`, "_blank");
+  });
+</script>

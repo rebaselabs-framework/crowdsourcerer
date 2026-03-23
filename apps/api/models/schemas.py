@@ -120,6 +120,18 @@ class BatchTaskCreateResponse(BaseModel):
     failed: list[dict]  # [{index, error}] for any that failed
 
 
+class BulkActionRequest(BaseModel):
+    """Perform a bulk action on multiple tasks."""
+    task_ids: list[UUID] = Field(min_length=1, max_length=100)
+    action: Literal["cancel", "retry"]
+
+
+class BulkActionResult(BaseModel):
+    succeeded: list[str]
+    failed: list[dict]  # [{task_id, reason}]
+    action: str
+
+
 class TaskOut(BaseModel):
     id: UUID
     type: str

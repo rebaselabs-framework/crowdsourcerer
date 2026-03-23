@@ -20,6 +20,7 @@ from models.db import TaskDB, UserDB, CreditTransactionDB, TaskAssignmentDB, Web
 from models.schemas import (
     TaskCreateRequest, TaskCreateResponse, TaskOut, PaginatedTasks,
     BatchTaskCreateRequest, BatchTaskCreateResponse,
+    BulkActionRequest, BulkActionResult,
     HUMAN_TASK_TYPES,
     SubmissionOut, SubmissionWorkerOut, SubmissionReviewRequest, SubmissionReviewResponse,
     TaskAnalyticsOut, AssignmentAnalyticsRow,
@@ -613,6 +614,65 @@ async def list_tasks(
         page_size=page_size,
         has_next=(page * page_size) < total,
     )
+
+
+@router.post("/bulk-action", response_model=BulkActionResult)
+async def bulk_task_action(
+    req: BulkActionRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Perform a bulk action (cancel or retry) on multiple tasks at once.
+
+    - cancel: sets cancellable tasks (pending/queued/open) to 'cancelled'
+    - retry: re-queues failed AI tasks back to 'queued' status
+    """
+    succeeded: list[str] = []
+    failed: list[dict] = []
+
+    for task_id in req.task_ids:
+        result = await db.execute(
+            select(TaskDB).where(TaskDB.id == task_id, TaskDB.user_id == user_id)
+        )
+        task = result.scalar_one_or_none()
+        if not task:
+            failed.append({"task_id": str(task_id), "reason": "not found or not owned"})
+            continue
+
+        if req.action == "cancel":
+            if task.status not in ("pending", "queued", "open"):
+                failed.append({"task_id": str(task_id), "reason": f"cannot cancel task with status '{task.status}'"})
+                continue
+            task.status = "cancelled"
+            succeeded.append(str(task_id))
+
+        elif req.action == "retry":
+            if task.status != "failed":
+                failed.append({"task_id": str(task_id), "reason": f"cannot retry task with status '{task.status}'"})
+                continue
+            if task.execution_mode != "ai":
+                failed.append({"task_id": str(task_id), "reason": "retry is only supported for AI tasks"})
+                continue
+            task.status = "queued"
+            task.error = None
+            succeeded.append(str(task_id))
+
+    await db.commit()
+
+    # For retried tasks, kick off background execution
+    if req.action == "retry" and succeeded:
+        for task_id_str in succeeded:
+            background_tasks.add_task(_run_task, task_id_str, user_id)
+
+    logger.info(
+        "bulk_task_action",
+        action=req.action,
+        succeeded=len(succeeded),
+        failed=len(failed),
+        user_id=user_id,
+    )
+    return BulkActionResult(succeeded=succeeded, failed=failed, action=req.action)
 
 
 @router.get("/{task_id}", response_model=TaskOut)

@@ -19,16 +19,20 @@ let stats: any = null;
 let assignments: any[] = [];
 let isWorker = false;
 let dailyChallenge: any = null;
+let reputation: any = null;
+let notifications: any = null;
 
 try {
   user = await apiFetch("/v1/users/me", { token });
   isWorker = user?.role === "worker" || user?.role === "both";
 
   if (isWorker) {
-    [stats, assignments, dailyChallenge] = await Promise.all([
+    [stats, assignments, dailyChallenge, reputation, notifications] = await Promise.all([
       apiFetch("/v1/worker/stats", { token }),
       apiFetch("/v1/worker/assignments?status=active&page_size=5", { token }),
       apiFetch("/v1/challenges/today", { token }).catch(() => null),
+      apiFetch("/v1/reputation/me", { token }).catch(() => null),
+      apiFetch("/v1/notifications?unread_only=true&page_size=3", { token }).catch(() => null),
     ]);
   }
 } catch (e) {
@@ -167,6 +171,70 @@ const TASK_TYPE_LABELS: Record<string, string> = {
           </div>
         </div>
 
+        <!-- Reputation panel -->
+        {reputation && (
+          <a
+            href="/worker/reputation"
+            class="flex items-center justify-between bg-gray-900 border border-gray-800 hover:border-violet-700 rounded-xl px-5 py-4 mb-6 transition-colors"
+          >
+            <div class="flex items-center gap-4">
+              <div class="text-2xl">⭐</div>
+              <div>
+                <div class="text-xs text-gray-500 uppercase tracking-wider mb-0.5">Reputation</div>
+                <div class="text-lg font-bold">{reputation.score ?? 0}<span class="text-sm font-normal text-gray-400 ml-1">/ 100</span></div>
+              </div>
+              <div class="h-8 w-px bg-gray-700 mx-2"></div>
+              <div>
+                <div class="text-xs text-gray-500 mb-0.5">Tier</div>
+                <div class:list={["text-sm font-semibold",
+                  reputation.tier === "Elite" || reputation.tier === "Expert" ? "text-amber-400" :
+                  reputation.tier === "Reliable" ? "text-green-400" : "text-gray-300"
+                ]}>{reputation.tier ?? "New"}</div>
+              </div>
+            </div>
+            <div class="flex items-center gap-2">
+              <div class="w-24 h-2 bg-gray-800 rounded-full overflow-hidden">
+                <div
+                  class="h-full bg-gradient-to-r from-violet-600 to-violet-400 rounded-full"
+                  style={`width: ${Math.min(100, reputation.score ?? 0)}%`}
+                ></div>
+              </div>
+              <span class="text-sm text-gray-400">→</span>
+            </div>
+          </a>
+        )}
+
+        <!-- Unread notifications strip -->
+        {notifications?.items?.length > 0 && (
+          <div class="bg-gray-900 border border-gray-800 rounded-xl mb-6 overflow-hidden">
+            <div class="flex items-center justify-between px-5 py-3 border-b border-gray-800">
+              <div class="text-sm font-semibold flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-violet-400 animate-pulse"></span>
+                Unread notifications
+              </div>
+              <a href="/dashboard/notifications" class="text-xs text-violet-400 hover:text-violet-300">View all →</a>
+            </div>
+            {notifications.items.map((n: any) => (
+              <a
+                href={n.link ?? "/dashboard/notifications"}
+                class="flex items-start gap-3 px-5 py-3 hover:bg-gray-800/50 transition-colors border-b border-gray-800/50 last:border-b-0"
+              >
+                <div class="text-base mt-0.5 flex-shrink-0">
+                  {n.type === "task_completed" ? "✅" :
+                   n.type === "submission_approved" ? "🎉" :
+                   n.type === "badge_earned" ? "🏅" :
+                   n.type === "payout_update" ? "💰" :
+                   n.type === "referral_bonus" ? "🎁" : "🔔"}
+                </div>
+                <div class="min-w-0">
+                  <div class="text-sm font-medium text-gray-200 truncate">{n.title}</div>
+                  <div class="text-xs text-gray-500 truncate">{n.body}</div>
+                </div>
+              </a>
+            ))}
+          </div>
+        )}
+
         <!-- Active assignments -->
         {assignments.length > 0 ? (
           <div class="mb-8">
@@ -302,6 +370,26 @@ const TASK_TYPE_LABELS: Record<string, string> = {
             <div>
               <div class="font-semibold group-hover:text-violet-300 transition-colors">Onboarding</div>
               <div class="text-sm text-gray-400">Get started &amp; earn bonus</div>
+            </div>
+          </a>
+          <a
+            href="/worker/earnings"
+            class="flex items-center gap-4 bg-gray-900 border border-gray-800 hover:border-amber-700 rounded-xl p-5 transition-colors group"
+          >
+            <span class="text-3xl">💰</span>
+            <div>
+              <div class="font-semibold group-hover:text-amber-300 transition-colors">Earnings</div>
+              <div class="text-sm text-gray-400">Payouts &amp; history</div>
+            </div>
+          </a>
+          <a
+            href="/worker/reputation"
+            class="flex items-center gap-4 bg-gray-900 border border-violet-800/40 hover:border-violet-600 rounded-xl p-5 transition-colors group"
+          >
+            <span class="text-3xl">⭐</span>
+            <div>
+              <div class="font-semibold group-hover:text-violet-300 transition-colors">Reputation</div>
+              <div class="text-sm text-gray-400">Score &amp; moderation</div>
             </div>
           </a>
         </div>
