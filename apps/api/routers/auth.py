@@ -1,8 +1,9 @@
 """Auth endpoints: register, login."""
 from datetime import timedelta
-from typing import Optional
+from typing import Optional, Union
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.responses import JSONResponse
 from passlib.context import CryptContext
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -13,7 +14,10 @@ from core.auth import create_access_token
 from core.config import get_settings
 from core.database import get_db
 from models.db import UserDB
-from models.schemas import LoginRequest, RegisterRequest, TokenResponse
+from models.schemas import (
+    LoginRequest, RegisterRequest, TokenResponse,
+    LoginWith2FAResponse,
+)
 
 router = APIRouter(prefix="/v1/auth", tags=["auth"])
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -58,9 +62,20 @@ async def register(
     )
 
 
-@router.post("/login", response_model=TokenResponse)
+@router.post("/login")
 @limiter.limit("10/minute")
-async def login(request: Request, req: LoginRequest, db: AsyncSession = Depends(get_db)):
+async def login(
+    request: Request,
+    req: LoginRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Authenticate with email + password.
+
+    If 2FA is enabled for the account, returns a ``LoginWith2FAResponse``
+    (HTTP 200 with ``requires_2fa: true``) instead of a full token.
+    The client should then call ``POST /v1/auth/2fa/verify`` with the
+    ``pending_token`` and a TOTP code.
+    """
     result = await db.execute(select(UserDB).where(UserDB.email == req.email))
     user = result.scalar_one_or_none()
 
@@ -71,6 +86,13 @@ async def login(request: Request, req: LoginRequest, db: AsyncSession = Depends(
         )
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Account disabled")
+
+    # ── 2FA gate ───────────────────────────────────────────────────────────────
+    if user.totp_enabled:
+        # Issue short-lived pending token
+        from routers.two_factor import _create_pending_token
+        pending = _create_pending_token(str(user.id))
+        return LoginWith2FAResponse(pending_token=pending)
 
     token = create_access_token(str(user.id))
     return TokenResponse(

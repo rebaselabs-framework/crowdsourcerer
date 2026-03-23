@@ -184,11 +184,34 @@ async def create_task(
             extra={"type": task.type, "status": task.status, "priority": task.priority},
         ))
 
+    # Notify workers whose saved-search alerts match this new task
+    if is_human:
+        asyncio.create_task(_trigger_saved_search_alerts(
+            task_type=task.type,
+            priority=task.priority,
+            reward_credits=task.worker_reward_credits,
+        ))
+
     return TaskCreateResponse(
         task_id=task.id,
         status=task.status,
         estimated_credits=estimated_credits,
     )
+
+
+async def _trigger_saved_search_alerts(
+    task_type: str,
+    priority: str,
+    reward_credits,
+) -> None:
+    """Background task: notify workers whose saved searches match a new human task."""
+    from core.database import AsyncSessionLocal
+    from routers.saved_searches import notify_matching_saved_searches
+    async with AsyncSessionLocal() as db:
+        try:
+            await notify_matching_saved_searches(task_type, priority, reward_credits, db)
+        except Exception:
+            pass  # Never crash task creation
 
 
 def _calc_credits(req: TaskCreateRequest) -> int:

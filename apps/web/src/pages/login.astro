@@ -21,7 +21,12 @@ if (Astro.request.method === "POST") {
     if (!res.ok) {
       error = "Invalid email or password";
     } else {
-      const { access_token } = await res.json();
+      const data = await res.json();
+      // 2FA required — redirect to TOTP verification page
+      if (data.requires_2fa && data.pending_token) {
+        return Astro.redirect(`/login-2fa?pt=${encodeURIComponent(data.pending_token)}`);
+      }
+      const access_token = data.access_token;
       Astro.cookies.set("cs_token", access_token, {
         httpOnly: true,
         secure: true,

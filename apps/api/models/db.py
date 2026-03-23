@@ -65,6 +65,17 @@ class UserDB(Base):
     ban_reason = Column(Text, nullable=True)
     ban_expires_at = Column(DateTime(timezone=True), nullable=True)  # None = permanent ban
 
+    # Public profile fields
+    bio = Column(Text, nullable=True)
+    avatar_url = Column(String(512), nullable=True)
+    profile_public = Column(Boolean, default=True, nullable=False)
+
+    # TOTP 2FA
+    totp_secret = Column(String(64), nullable=True)
+    totp_enabled = Column(Boolean, default=False, nullable=False)
+    totp_backup_codes = Column(JSON, nullable=True)          # list[str] hashed codes
+    totp_pending_token = Column(String(512), nullable=True)  # short-lived pre-2FA JWT
+
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
@@ -74,6 +85,7 @@ class UserDB(Base):
     assignments = relationship("TaskAssignmentDB", back_populates="worker", lazy="dynamic",
                                foreign_keys="TaskAssignmentDB.worker_id")
     badges = relationship("WorkerBadgeDB", back_populates="user", lazy="dynamic")
+    saved_searches = relationship("SavedSearchDB", back_populates="user", lazy="dynamic")
 
 
 class ApiKeyDB(Base):
@@ -929,3 +941,24 @@ class StripeEventLogDB(Base):
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
 
     user = relationship("UserDB", backref="stripe_events")
+
+
+class SavedSearchDB(Base):
+    """Worker's saved search filters with optional task-alert notifications."""
+    __tablename__ = "saved_searches"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    name = Column(String(120), nullable=False)
+    # e.g. {"task_type": "label_image", "priority": "high", "q": "dog"}
+    filters = Column(JSON, default=dict, nullable=False)
+    alert_enabled = Column(Boolean, default=True, nullable=False)
+    # instant | daily | weekly
+    alert_frequency = Column(String(16), default="instant", nullable=False)
+    last_notified_at = Column(DateTime(timezone=True), nullable=True)
+    match_count = Column(Integer, default=0, nullable=False)  # lifetime matches
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    user = relationship("UserDB", back_populates="saved_searches")

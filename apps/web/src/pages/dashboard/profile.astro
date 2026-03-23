@@ -1,0 +1,209 @@
+---
+/**
+ * My Profile — /dashboard/profile
+ * Workers can edit their public profile (name, bio, avatar, visibility).
+ */
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Object.fromEntries(
+  Astro.cookies.getAll().map((c) => [c.name, c.value])
+));
+if (!token) return Astro.redirect("/login");
+
+let me: any = null;
+let status: any = null;
+let error = "";
+
+try {
+  [me, status] = await Promise.all([
+    apiFetch<any>("/v1/users/me", { token }),
+    apiFetch<any>("/v1/users/me/profile-status", { token }),
+  ]);
+} catch (e: any) {
+  error = e.message ?? "Failed to load profile";
+}
+
+const isWorker = me?.role === "worker" || me?.role === "both";
+---
+
+<Layout title="My Profile — CrowdSorcerer">
+  <div class="max-w-2xl mx-auto px-6 py-10">
+    <h1 class="text-2xl font-bold text-white mb-2">My Profile</h1>
+    <p class="text-gray-400 text-sm mb-8">
+      Manage your public profile visible to requesters and other workers.
+    </p>
+
+    {error && (
+      <div class="bg-red-900/30 border border-red-700 text-red-300 rounded-lg p-4 mb-6 text-sm">{error}</div>
+    )}
+
+    {me && (
+      <div class="space-y-6">
+
+        {/* ── Completeness bar ─────────────────────────── */}
+        <div class="bg-gray-800 border border-gray-700 rounded-xl p-5">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-sm font-medium text-gray-300">Profile completeness</span>
+            <span class="text-sm font-bold text-white">{status?.completeness_pct ?? 0}%</span>
+          </div>
+          <div class="w-full bg-gray-700 rounded-full h-2">
+            <div
+              class="bg-indigo-500 h-2 rounded-full transition-all"
+              style={`width: ${status?.completeness_pct ?? 0}%`}
+            />
+          </div>
+          <div class="mt-3 flex flex-wrap gap-2 text-xs">
+            {[
+              { key: "has_name",   label: "Name",   done: status?.has_name },
+              { key: "has_bio",    label: "Bio",    done: status?.has_bio },
+              { key: "has_avatar", label: "Avatar", done: status?.has_avatar },
+            ].map(f => (
+              <span class={`px-2 py-0.5 rounded-full border ${f.done ? "border-green-700 bg-green-900/30 text-green-400" : "border-gray-600 bg-gray-700/30 text-gray-400"}`}>
+                {f.done ? "✓" : "○"} {f.label}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        {/* ── Edit form ─────────────────────────────────── */}
+        <div class="bg-gray-800 border border-gray-700 rounded-xl p-6">
+          <h2 class="text-base font-semibold text-white mb-5">Edit Profile</h2>
+
+          <div id="save-result" class="hidden mb-4 p-3 rounded-lg text-sm"></div>
+
+          <form id="profile-form" class="space-y-5">
+            <div>
+              <label class="block text-sm font-medium text-gray-300 mb-1">Display Name</label>
+              <input
+                type="text"
+                name="name"
+                value={me.name ?? ""}
+                maxlength="255"
+                class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                placeholder="Your name"
+              />
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-300 mb-1">Bio</label>
+              <textarea
+                name="bio"
+                maxlength="500"
+                rows="3"
+                class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none resize-none"
+                placeholder="A short intro about yourself (max 500 chars)"
+              >{me.bio ?? ""}</textarea>
+              <p class="text-xs text-gray-500 mt-1">Max 500 characters</p>
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-300 mb-1">Avatar URL</label>
+              <input
+                type="url"
+                name="avatar_url"
+                value={me.avatar_url ?? ""}
+                maxlength="512"
+                class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                placeholder="https://example.com/avatar.jpg"
+              />
+              <p class="text-xs text-gray-500 mt-1">Link to a publicly accessible image</p>
+            </div>
+
+            <div class="flex items-center justify-between p-4 bg-gray-700/50 rounded-lg border border-gray-600">
+              <div>
+                <p class="text-sm font-medium text-gray-200">Public profile</p>
+                <p class="text-xs text-gray-400 mt-0.5">Allow others to view your profile page</p>
+              </div>
+              <label class="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  name="profile_public"
+                  id="profile_public_toggle"
+                  class="sr-only peer"
+                  checked={me.profile_public !== false}
+                />
+                <div class="w-11 h-6 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600" />
+              </label>
+            </div>
+
+            <div class="flex gap-3">
+              <button
+                type="submit"
+                class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors"
+              >
+                Save Profile
+              </button>
+              {isWorker && (
+                <a
+                  href={`/workers/${me.id}`}
+                  target="_blank"
+                  class="bg-gray-700 hover:bg-gray-600 text-gray-200 px-5 py-2 rounded-lg text-sm font-medium transition-colors"
+                >
+                  View Public Profile ↗
+                </a>
+              )}
+            </div>
+          </form>
+        </div>
+
+        {/* ── Security shortcuts ─────────────────────────── */}
+        <div class="bg-gray-800 border border-gray-700 rounded-xl p-6">
+          <h2 class="text-base font-semibold text-white mb-4">Security</h2>
+          <div class="space-y-3">
+            <div class="flex items-center justify-between p-3 bg-gray-700/30 rounded-lg border border-gray-600">
+              <div>
+                <p class="text-sm font-medium text-gray-200">Two-Factor Authentication</p>
+                <p class="text-xs text-gray-400 mt-0.5">
+                  {status?.totp_enabled ? "✅ Enabled — your account is protected" : "⚠️ Not enabled"}
+                </p>
+              </div>
+              <a
+                href="/dashboard/security"
+                class="text-sm text-indigo-400 hover:underline"
+              >
+                {status?.totp_enabled ? "Manage" : "Enable"} →
+              </a>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    )}
+  </div>
+</Layout>
+
+<script>
+  const form = document.getElementById("profile-form") as HTMLFormElement;
+  const result = document.getElementById("save-result") as HTMLElement;
+
+  form?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const fd = new FormData(form);
+
+    const payload: Record<string, any> = {
+      name: (fd.get("name") as string).trim() || null,
+      bio: (fd.get("bio") as string).trim() || null,
+      avatar_url: (fd.get("avatar_url") as string).trim() || null,
+      profile_public: (document.getElementById("profile_public_toggle") as HTMLInputElement)?.checked ?? true,
+    };
+
+    try {
+      const res = await fetch("/api/users/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail ?? `HTTP ${res.status}`);
+      }
+      result.className = "mb-4 p-3 rounded-lg text-sm bg-green-900/30 border border-green-700 text-green-300";
+      result.textContent = "✓ Profile saved";
+      setTimeout(() => { result.className = "hidden mb-4 p-3 rounded-lg text-sm"; }, 3000);
+    } catch (err: any) {
+      result.className = "mb-4 p-3 rounded-lg text-sm bg-red-900/30 border border-red-700 text-red-300";
+      result.textContent = err.message ?? "Failed to save";
+    }
+  });
+</script>

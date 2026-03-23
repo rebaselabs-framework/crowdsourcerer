@@ -1,0 +1,347 @@
+---
+/**
+ * Saved Searches / Task Alerts — /dashboard/saved-searches
+ * Workers can save search filters and get notified when matching tasks appear.
+ */
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Object.fromEntries(
+  Astro.cookies.getAll().map((c) => [c.name, c.value])
+));
+if (!token) return Astro.redirect("/login");
+
+let searches: any[] = [];
+let error = "";
+
+try {
+  searches = await apiFetch<any[]>("/v1/worker/saved-searches", { token });
+} catch (e: any) {
+  error = e.message ?? "Failed to load saved searches";
+}
+
+const TASK_TYPES = [
+  "label_image", "label_text", "rate_quality", "verify_fact",
+  "moderate_content", "compare_rank", "answer_question", "transcription_review",
+];
+
+const PRIORITIES = ["low", "normal", "high", "urgent"];
+
+function relativeTime(ts: string | null): string {
+  if (!ts) return "never";
+  const d = new Date(ts);
+  const diff = Date.now() - d.getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+---
+
+<Layout title="Saved Searches — CrowdSorcerer">
+  <div class="max-w-3xl mx-auto px-6 py-10">
+    <div class="flex items-center justify-between mb-8">
+      <div>
+        <h1 class="text-2xl font-bold text-white">Saved Searches</h1>
+        <p class="text-gray-400 text-sm mt-1">
+          Save search filters and get instant alerts when matching tasks appear.
+        </p>
+      </div>
+      <button
+        id="btn-new"
+        class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+      >
+        <span>+</span> New Alert
+      </button>
+    </div>
+
+    {error && (
+      <div class="bg-red-900/30 border border-red-700 text-red-300 rounded-lg p-4 mb-6 text-sm">{error}</div>
+    )}
+
+    {/* ── Create form (hidden by default) ─────────────── */}
+    <div id="create-form" class="hidden bg-gray-800 border border-indigo-600/50 rounded-xl p-6 mb-6">
+      <h2 class="text-base font-semibold text-white mb-4">New Task Alert</h2>
+      <div id="create-error" class="hidden mb-3 p-2 rounded bg-red-900/30 border border-red-700 text-red-300 text-xs" />
+
+      <div class="space-y-4">
+        <div>
+          <label class="block text-xs font-medium text-gray-400 mb-1">Alert Name *</label>
+          <input
+            id="new-name"
+            type="text"
+            maxlength="120"
+            placeholder="e.g. High-reward image tasks"
+            class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+          />
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-medium text-gray-400 mb-1">Task Type</label>
+            <select id="new-task-type" class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+              <option value="">Any type</option>
+              {TASK_TYPES.map(t => (
+                <option value={t}>{t.replace(/_/g, " ")}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-400 mb-1">Priority</label>
+            <select id="new-priority" class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+              <option value="">Any priority</option>
+              {PRIORITIES.map(p => (
+                <option value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-medium text-gray-400 mb-1">Min Reward (credits)</label>
+            <input
+              id="new-min-reward"
+              type="number"
+              min="1"
+              placeholder="e.g. 5"
+              class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+            />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-400 mb-1">Max Reward (credits)</label>
+            <input
+              id="new-max-reward"
+              type="number"
+              min="1"
+              placeholder="e.g. 100"
+              class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+            />
+          </div>
+        </div>
+
+        <div class="flex items-center justify-between p-3 bg-gray-700/50 rounded-lg border border-gray-600">
+          <div>
+            <p class="text-sm font-medium text-gray-200">Instant alerts</p>
+            <p class="text-xs text-gray-400">Get notified the moment a matching task appears</p>
+          </div>
+          <label class="relative inline-flex items-center cursor-pointer">
+            <input type="checkbox" id="new-alert-enabled" class="sr-only peer" checked />
+            <div class="w-11 h-6 bg-gray-600 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600" />
+          </label>
+        </div>
+
+        <div class="flex gap-3">
+          <button
+            id="btn-create"
+            class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors"
+          >
+            Create Alert
+          </button>
+          <button
+            id="btn-cancel"
+            class="bg-gray-700 hover:bg-gray-600 text-gray-200 px-5 py-2 rounded-lg text-sm font-medium transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+
+    {/* ── Searches list ────────────────────────────────── */}
+    <div id="searches-list" class="space-y-3">
+      {searches.length === 0 && (
+        <div class="bg-gray-800 border border-gray-700 rounded-xl p-10 text-center">
+          <p class="text-4xl mb-3">🔍</p>
+          <p class="text-gray-300 font-medium">No saved searches yet</p>
+          <p class="text-gray-500 text-sm mt-1">
+            Create an alert to be notified when matching tasks appear on the marketplace.
+          </p>
+          <button
+            class="mt-4 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors"
+            onclick="document.getElementById('btn-new')?.click()"
+          >
+            Create your first alert
+          </button>
+        </div>
+      )}
+
+      {searches.map(s => (
+        <div
+          class="bg-gray-800 border border-gray-700 rounded-xl p-5 flex items-start justify-between gap-4"
+          data-id={s.id}
+        >
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="font-medium text-white text-sm">{s.name}</span>
+              {s.alert_enabled ? (
+                <span class="text-xs bg-green-900/40 text-green-400 border border-green-700/40 px-2 py-0.5 rounded-full">
+                  🔔 Alerts on
+                </span>
+              ) : (
+                <span class="text-xs bg-gray-700 text-gray-400 border border-gray-600 px-2 py-0.5 rounded-full">
+                  🔕 Muted
+                </span>
+              )}
+            </div>
+
+            {/* Filters */}
+            <div class="mt-2 flex flex-wrap gap-1.5">
+              {s.filters?.task_type && (
+                <span class="text-xs bg-blue-900/30 text-blue-300 border border-blue-700/40 px-2 py-0.5 rounded">
+                  type: {s.filters.task_type.replace(/_/g, " ")}
+                </span>
+              )}
+              {s.filters?.priority && (
+                <span class="text-xs bg-purple-900/30 text-purple-300 border border-purple-700/40 px-2 py-0.5 rounded">
+                  priority: {s.filters.priority}
+                </span>
+              )}
+              {s.filters?.min_reward && (
+                <span class="text-xs bg-yellow-900/30 text-yellow-300 border border-yellow-700/40 px-2 py-0.5 rounded">
+                  ≥ {s.filters.min_reward} credits
+                </span>
+              )}
+              {s.filters?.max_reward && (
+                <span class="text-xs bg-yellow-900/30 text-yellow-300 border border-yellow-700/40 px-2 py-0.5 rounded">
+                  ≤ {s.filters.max_reward} credits
+                </span>
+              )}
+              {Object.keys(s.filters ?? {}).length === 0 && (
+                <span class="text-xs text-gray-500 italic">All tasks</span>
+              )}
+            </div>
+
+            <p class="text-xs text-gray-500 mt-2">
+              {s.match_count} match{s.match_count !== 1 ? "es" : ""} ·
+              Last alert: {relativeTime(s.last_notified_at)} ·
+              Created {relativeTime(s.created_at)}
+            </p>
+          </div>
+
+          <div class="flex items-center gap-2 flex-shrink-0">
+            {/* Toggle alert */}
+            <button
+              class="btn-toggle text-xs px-3 py-1.5 rounded-lg border transition-colors"
+              class:list={[
+                s.alert_enabled
+                  ? "bg-gray-700 border-gray-600 text-gray-300 hover:bg-gray-600"
+                  : "bg-indigo-900/40 border-indigo-700/50 text-indigo-300 hover:bg-indigo-900/60"
+              ]}
+              data-id={s.id}
+              data-current={String(s.alert_enabled)}
+            >
+              {s.alert_enabled ? "Mute" : "Unmute"}
+            </button>
+            {/* Delete */}
+            <button
+              class="btn-delete text-xs px-3 py-1.5 rounded-lg bg-red-900/30 border border-red-700/40 text-red-400 hover:bg-red-900/60 transition-colors"
+              data-id={s.id}
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+
+    <div class="mt-6">
+      <a href="/dashboard/marketplace" class="text-sm text-indigo-400 hover:underline">← Browse tasks</a>
+    </div>
+  </div>
+</Layout>
+
+<script>
+  // ── New alert form toggle ───────────────────────────────────────────────────
+  const btnNew    = document.getElementById("btn-new");
+  const createForm = document.getElementById("create-form");
+  const btnCancel = document.getElementById("btn-cancel");
+
+  btnNew?.addEventListener("click", () => createForm?.classList.remove("hidden"));
+  btnCancel?.addEventListener("click", () => createForm?.classList.add("hidden"));
+
+  // ── Create ──────────────────────────────────────────────────────────────────
+  const btnCreate   = document.getElementById("btn-create");
+  const createError = document.getElementById("create-error");
+
+  btnCreate?.addEventListener("click", async () => {
+    const name = (document.getElementById("new-name") as HTMLInputElement).value.trim();
+    if (!name) {
+      showError(createError, "Alert name is required");
+      return;
+    }
+
+    const taskType  = (document.getElementById("new-task-type") as HTMLSelectElement).value;
+    const priority  = (document.getElementById("new-priority") as HTMLSelectElement).value;
+    const minReward = (document.getElementById("new-min-reward") as HTMLInputElement).value;
+    const maxReward = (document.getElementById("new-max-reward") as HTMLInputElement).value;
+    const alertEnabled = (document.getElementById("new-alert-enabled") as HTMLInputElement).checked;
+
+    const filters: Record<string, any> = {};
+    if (taskType) filters.task_type = taskType;
+    if (priority) filters.priority  = priority;
+    if (minReward) filters.min_reward = parseInt(minReward);
+    if (maxReward) filters.max_reward = parseInt(maxReward);
+
+    btnCreate.setAttribute("disabled", "true");
+    createError?.classList.add("hidden");
+
+    try {
+      const res = await fetch("/api/worker/saved-searches", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, filters, alert_enabled: alertEnabled, alert_frequency: "instant" }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail ?? "Failed to create");
+      }
+      window.location.reload();
+    } catch (e: any) {
+      showError(createError, e.message);
+      btnCreate.removeAttribute("disabled");
+    }
+  });
+
+  // ── Toggle & Delete ─────────────────────────────────────────────────────────
+  document.querySelectorAll(".btn-toggle").forEach(btn => {
+    btn.addEventListener("click", async (e) => {
+      const el = e.currentTarget as HTMLElement;
+      const id = el.dataset.id!;
+      const current = el.dataset.current === "true";
+      try {
+        const res = await fetch(`/api/worker/saved-searches/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ alert_enabled: !current }),
+        });
+        if (!res.ok) throw new Error("Failed");
+        window.location.reload();
+      } catch {
+        alert("Failed to update alert");
+      }
+    });
+  });
+
+  document.querySelectorAll(".btn-delete").forEach(btn => {
+    btn.addEventListener("click", async (e) => {
+      const el = e.currentTarget as HTMLElement;
+      const id = el.dataset.id!;
+      if (!confirm("Delete this saved search?")) return;
+      try {
+        const res = await fetch(`/api/worker/saved-searches/${id}`, { method: "DELETE" });
+        if (!res.ok && res.status !== 204) throw new Error("Failed");
+        window.location.reload();
+      } catch {
+        alert("Failed to delete");
+      }
+    });
+  });
+
+  function showError(el: HTMLElement | null, msg: string) {
+    if (!el) return;
+    el.textContent = msg;
+    el.classList.remove("hidden");
+  }
+</script>

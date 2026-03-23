@@ -1,0 +1,308 @@
+---
+/**
+ * Security settings — /dashboard/security
+ * TOTP 2FA setup and management.
+ */
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Object.fromEntries(
+  Astro.cookies.getAll().map((c) => [c.name, c.value])
+));
+if (!token) return Astro.redirect("/login");
+
+let twoFAStatus: any = null;
+let error = "";
+
+try {
+  twoFAStatus = await apiFetch<any>("/v1/auth/2fa/status", { token });
+} catch (e: any) {
+  error = e.message ?? "Failed to load security settings";
+}
+---
+
+<Layout title="Security — CrowdSorcerer">
+  <div class="max-w-2xl mx-auto px-6 py-10">
+    <h1 class="text-2xl font-bold text-white mb-2">Security</h1>
+    <p class="text-gray-400 text-sm mb-8">
+      Protect your account with two-factor authentication.
+    </p>
+
+    {error && (
+      <div class="bg-red-900/30 border border-red-700 text-red-300 rounded-lg p-4 mb-6 text-sm">{error}</div>
+    )}
+
+    {/* ── 2FA Status card ───────────────────────────── */}
+    <div class="bg-gray-800 border border-gray-700 rounded-xl p-6 space-y-6">
+      <div class="flex items-start justify-between gap-4">
+        <div>
+          <h2 class="text-base font-semibold text-white">Two-Factor Authentication (TOTP)</h2>
+          <p class="text-sm text-gray-400 mt-1">
+            Use an authenticator app (Google Authenticator, Authy, 1Password, etc.) to generate
+            time-based one-time codes when you sign in.
+          </p>
+        </div>
+        <span id="status-badge" class={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-semibold ${twoFAStatus?.enabled ? "bg-green-900/40 text-green-400 border border-green-700/50" : "bg-gray-700 text-gray-400 border border-gray-600"}`}>
+          {twoFAStatus?.enabled ? "✓ Enabled" : "Not enabled"}
+        </span>
+      </div>
+
+      {/* ── NOT ENABLED — setup flow ─────────────────── */}
+      {!twoFAStatus?.enabled && (
+        <div id="setup-section">
+          <button
+            id="btn-setup"
+            class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors"
+          >
+            Set up 2FA
+          </button>
+
+          {/* Step 1: QR code (hidden until setup clicked) */}
+          <div id="step-qr" class="hidden mt-6 space-y-4">
+            <div class="bg-gray-700/50 border border-gray-600 rounded-lg p-5">
+              <p class="text-sm font-medium text-gray-200 mb-3">
+                Step 1 — Scan this QR code with your authenticator app
+              </p>
+              <div id="qr-container" class="flex flex-col items-center gap-4">
+                <div id="qr-spinner" class="text-gray-400 text-sm">Generating QR code…</div>
+                <canvas id="qr-canvas" class="hidden rounded-lg" />
+                <div class="text-center">
+                  <p class="text-xs text-gray-500 mb-1">Or enter this secret manually:</p>
+                  <code id="totp-secret" class="text-xs bg-gray-900 px-3 py-1.5 rounded font-mono text-indigo-300" />
+                </div>
+              </div>
+            </div>
+
+            <div class="bg-gray-700/50 border border-gray-600 rounded-lg p-5">
+              <p class="text-sm font-medium text-gray-200 mb-3">
+                Step 2 — Enter the 6-digit code from your app to confirm
+              </p>
+              <div id="enable-error" class="hidden mb-3 p-2 rounded bg-red-900/30 border border-red-700 text-red-300 text-xs" />
+              <div class="flex gap-3">
+                <input
+                  id="totp-code-input"
+                  type="text"
+                  inputmode="numeric"
+                  maxlength="6"
+                  placeholder="000000"
+                  class="w-32 bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm font-mono text-center focus:ring-2 focus:ring-indigo-500 focus:outline-none tracking-widest"
+                />
+                <button
+                  id="btn-enable"
+                  class="bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors"
+                >
+                  Confirm &amp; Enable
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Backup codes display (shown after enable) */}
+          <div id="backup-codes-section" class="hidden mt-6">
+            <div class="bg-yellow-900/20 border border-yellow-700/50 rounded-lg p-5">
+              <h3 class="text-sm font-semibold text-yellow-300 mb-1">
+                ⚠️ Save your backup codes
+              </h3>
+              <p class="text-xs text-yellow-200/80 mb-4">
+                These one-time codes let you access your account if you lose your authenticator.
+                Store them somewhere safe — they won't be shown again.
+              </p>
+              <div id="backup-codes-grid" class="grid grid-cols-2 gap-2 mb-4" />
+              <button
+                id="btn-copy-backup"
+                class="text-xs bg-gray-700 hover:bg-gray-600 text-gray-200 px-3 py-1.5 rounded transition-colors"
+              >
+                Copy all codes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── ENABLED — management ──────────────────────── */}
+      {twoFAStatus?.enabled && (
+        <div id="enabled-section" class="space-y-4">
+          <div class="p-4 bg-green-900/20 border border-green-700/40 rounded-lg">
+            <p class="text-sm text-green-300">
+              ✓ 2FA is active. You'll be asked for a code on each sign-in.
+            </p>
+            {twoFAStatus?.backup_codes_remaining > 0 && (
+              <p class="text-xs text-gray-400 mt-1">
+                {twoFAStatus.backup_codes_remaining} backup code{twoFAStatus.backup_codes_remaining !== 1 ? "s" : ""} remaining.
+              </p>
+            )}
+          </div>
+
+          <div class="border-t border-gray-700 pt-4">
+            <p class="text-sm text-gray-400 mb-3">
+              To disable 2FA, enter your current authenticator code:
+            </p>
+            <div id="disable-error" class="hidden mb-3 p-2 rounded bg-red-900/30 border border-red-700 text-red-300 text-xs" />
+            <div class="flex gap-3">
+              <input
+                id="disable-code-input"
+                type="text"
+                inputmode="numeric"
+                maxlength="8"
+                placeholder="000000"
+                class="w-32 bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm font-mono text-center focus:ring-2 focus:ring-red-500 focus:outline-none tracking-widest"
+              />
+              <button
+                id="btn-disable"
+                class="bg-red-700 hover:bg-red-600 text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors"
+              >
+                Disable 2FA
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+    </div>
+
+    {/* ── Back link ─────────────────────────────────── */}
+    <div class="mt-6">
+      <a href="/dashboard/profile" class="text-sm text-indigo-400 hover:underline">← Back to Profile</a>
+    </div>
+  </div>
+</Layout>
+
+<script>
+  // ── QR code renderer (tiny pure-JS, no npm needed) ──────────────────────────
+  // We use the qrcode.js CDN for rendering
+  const qrScript = document.createElement("script");
+  qrScript.src = "https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js";
+  document.head.appendChild(qrScript);
+
+  let totpUri = "";
+  let backupCodes: string[] = [];
+
+  // ── Setup button ────────────────────────────────────────────────────────────
+  const btnSetup = document.getElementById("btn-setup");
+  const stepQr   = document.getElementById("step-qr");
+  const spinner  = document.getElementById("qr-spinner");
+  const canvas   = document.getElementById("qr-canvas") as HTMLCanvasElement;
+  const secretEl = document.getElementById("totp-secret");
+
+  btnSetup?.addEventListener("click", async () => {
+    btnSetup.setAttribute("disabled", "true");
+    btnSetup.textContent = "Generating…";
+    stepQr?.classList.remove("hidden");
+
+    try {
+      const res = await fetch("/api/auth/2fa/setup", { method: "POST" });
+      if (!res.ok) throw new Error("Setup failed");
+      const data = await res.json();
+      totpUri = data.totp_uri;
+      if (secretEl) secretEl.textContent = data.secret;
+
+      // Wait for QR lib
+      await new Promise<void>((resolve) => {
+        const check = setInterval(() => {
+          if ((window as any).QRCode) { clearInterval(check); resolve(); }
+        }, 100);
+      });
+
+      spinner?.classList.add("hidden");
+      canvas?.classList.remove("hidden");
+      (window as any).QRCode.toCanvas(canvas, totpUri, { width: 200, margin: 1 });
+      btnSetup.classList.add("hidden");
+    } catch (e: any) {
+      spinner!.textContent = e.message ?? "Error generating QR code";
+      btnSetup.removeAttribute("disabled");
+      btnSetup.textContent = "Try again";
+    }
+  });
+
+  // ── Enable button ───────────────────────────────────────────────────────────
+  const btnEnable  = document.getElementById("btn-enable");
+  const codeInput  = document.getElementById("totp-code-input") as HTMLInputElement;
+  const enableErr  = document.getElementById("enable-error");
+  const backupSec  = document.getElementById("backup-codes-section");
+  const backupGrid = document.getElementById("backup-codes-grid");
+  const btnCopy    = document.getElementById("btn-copy-backup");
+  const stepQrEl   = document.getElementById("step-qr");
+
+  btnEnable?.addEventListener("click", async () => {
+    const code = codeInput?.value.trim();
+    if (!code || code.length < 6) return;
+    btnEnable.setAttribute("disabled", "true");
+    enableErr?.classList.add("hidden");
+
+    try {
+      const res = await fetch("/api/auth/2fa/enable", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail ?? "Invalid code");
+      }
+      const data = await res.json();
+      backupCodes = data.backup_codes ?? [];
+
+      // Show backup codes
+      stepQrEl?.classList.add("hidden");
+      backupSec?.classList.remove("hidden");
+      if (backupGrid) {
+        backupGrid.innerHTML = backupCodes.map(c =>
+          `<code class="bg-gray-900 text-indigo-300 font-mono text-sm px-3 py-1.5 rounded text-center">${c}</code>`
+        ).join("");
+      }
+
+      // Update status badge
+      const badge = document.getElementById("status-badge");
+      if (badge) {
+        badge.textContent = "✓ Enabled";
+        badge.className = "flex-shrink-0 px-3 py-1 rounded-full text-xs font-semibold bg-green-900/40 text-green-400 border border-green-700/50";
+      }
+    } catch (e: any) {
+      if (enableErr) {
+        enableErr.textContent = e.message;
+        enableErr.classList.remove("hidden");
+      }
+      btnEnable.removeAttribute("disabled");
+    }
+  });
+
+  // Copy backup codes
+  btnCopy?.addEventListener("click", () => {
+    navigator.clipboard.writeText(backupCodes.join("\n"));
+    (btnCopy as HTMLElement).textContent = "✓ Copied!";
+    setTimeout(() => { (btnCopy as HTMLElement).textContent = "Copy all codes"; }, 2000);
+  });
+
+  // ── Disable button ──────────────────────────────────────────────────────────
+  const btnDisable    = document.getElementById("btn-disable");
+  const disableInput  = document.getElementById("disable-code-input") as HTMLInputElement;
+  const disableErr    = document.getElementById("disable-error");
+
+  btnDisable?.addEventListener("click", async () => {
+    const code = disableInput?.value.trim();
+    if (!code) return;
+    if (!confirm("Are you sure you want to disable 2FA? Your account will be less secure.")) return;
+    btnDisable.setAttribute("disabled", "true");
+    disableErr?.classList.add("hidden");
+
+    try {
+      const res = await fetch("/api/auth/2fa/disable", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail ?? "Invalid code");
+      }
+      // Reload to reflect new state
+      window.location.reload();
+    } catch (e: any) {
+      if (disableErr) {
+        disableErr.textContent = e.message;
+        disableErr.classList.remove("hidden");
+      }
+      btnDisable.removeAttribute("disabled");
+    }
+  });
+</script>

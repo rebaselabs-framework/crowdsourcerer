@@ -944,3 +944,130 @@ class TemplateRateResponse(BaseModel):
     your_rating: int
     new_avg: Optional[float]
     total_ratings: int
+
+
+# ─── Public Worker Profiles ────────────────────────────────────────────────
+
+class PublicProfileSkill(BaseModel):
+    task_type: str
+    proficiency_level: int  # 1–5
+    tasks_completed: int
+    avg_accuracy: Optional[float]
+    certified: bool
+
+    model_config = {"from_attributes": True}
+
+
+class PublicProfileBadge(BaseModel):
+    badge_slug: str
+    badge_name: str
+    badge_description: Optional[str]
+    earned_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class PublicWorkerProfileOut(BaseModel):
+    """Publicly visible worker profile data."""
+    id: UUID
+    name: Optional[str]
+    bio: Optional[str]
+    avatar_url: Optional[str]
+    role: str
+    worker_level: int
+    worker_xp: int
+    worker_tasks_completed: int
+    worker_accuracy: Optional[float]
+    worker_reliability: Optional[float]
+    reputation_score: float
+    worker_streak_days: int
+    skills: list[PublicProfileSkill]
+    badges: list[PublicProfileBadge]
+    member_since: datetime   # created_at
+
+    model_config = {"from_attributes": True}
+
+
+class ProfileUpdateRequest(BaseModel):
+    name: Optional[str] = Field(None, max_length=255)
+    bio: Optional[str] = Field(None, max_length=500)
+    avatar_url: Optional[str] = Field(None, max_length=512)
+    profile_public: Optional[bool] = None
+
+
+# ─── Two-Factor Authentication ────────────────────────────────────────────
+
+class TwoFASetupResponse(BaseModel):
+    """TOTP setup — contains the provisioning URI for a QR code."""
+    totp_uri: str       # otpauth:// URI for QR rendering
+    secret: str         # raw base32 secret (show to user as backup)
+    issuer: str
+
+
+class TwoFAEnableRequest(BaseModel):
+    """Verify a TOTP code and enable 2FA, receiving backup codes."""
+    code: str = Field(min_length=6, max_length=6)
+
+
+class TwoFAEnableResponse(BaseModel):
+    backup_codes: list[str]   # 8 one-time backup codes (plaintext, store once)
+
+
+class TwoFAVerifyRequest(BaseModel):
+    """Provide TOTP code (or backup code) after password login."""
+    pending_token: str
+    code: str = Field(min_length=6, max_length=10)   # 6 TOTP or 8-char backup
+
+
+class TwoFADisableRequest(BaseModel):
+    code: str = Field(min_length=6, max_length=10)
+
+
+class TwoFAStatusResponse(BaseModel):
+    enabled: bool
+    backup_codes_remaining: int
+
+
+class LoginWith2FAResponse(BaseModel):
+    """Returned when 2FA is required during login."""
+    requires_2fa: bool = True
+    pending_token: str   # short-lived JWT to exchange after TOTP verify
+    expires_in: int = 300   # seconds
+
+
+# ─── Saved Searches ────────────────────────────────────────────────────────
+
+class SavedSearchFilters(BaseModel):
+    """Filters a worker can save for re-use or task alerts."""
+    q: Optional[str] = None
+    task_type: Optional[str] = None
+    priority: Optional[str] = None
+    min_reward: Optional[int] = None
+    max_reward: Optional[int] = None
+
+
+class SavedSearchCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    filters: SavedSearchFilters
+    alert_enabled: bool = True
+    alert_frequency: Literal["instant", "daily", "weekly"] = "instant"
+
+
+class SavedSearchUpdateRequest(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=120)
+    filters: Optional[SavedSearchFilters] = None
+    alert_enabled: Optional[bool] = None
+    alert_frequency: Optional[Literal["instant", "daily", "weekly"]] = None
+
+
+class SavedSearchOut(BaseModel):
+    id: UUID
+    name: str
+    filters: dict
+    alert_enabled: bool
+    alert_frequency: str
+    last_notified_at: Optional[datetime]
+    match_count: int
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
