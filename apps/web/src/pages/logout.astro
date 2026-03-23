@@ -1,0 +1,5 @@
+---
+// Clear auth cookie and redirect to login
+Astro.cookies.delete("cs_token", { path: "/" });
+return Astro.redirect("/login");
+---

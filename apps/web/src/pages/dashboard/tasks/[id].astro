@@ -1,0 +1,145 @@
+---
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Object.fromEntries(
+  Astro.cookies.getAll().map((c) => [c.name, c.value])
+));
+if (!token) return Astro.redirect("/login");
+
+const { id } = Astro.params;
+
+let task: any = null;
+let notFound = false;
+
+try {
+  task = await apiFetch<any>(`/v1/tasks/${id}`, { token });
+} catch (e: any) {
+  if (e.message?.includes("404") || e.message?.includes("not found")) {
+    notFound = true;
+  } else {
+    return Astro.redirect("/login");
+  }
+}
+
+const STATUS_COLORS: Record<string, string> = {
+  completed: "bg-green-950/50 border-green-800 text-green-300",
+  failed:    "bg-red-950/50 border-red-800 text-red-300",
+  running:   "bg-yellow-950/50 border-yellow-800 text-yellow-300",
+  queued:    "bg-blue-950/50 border-blue-800 text-blue-300",
+  pending:   "bg-gray-800/50 border-gray-700 text-gray-300",
+  cancelled: "bg-gray-800/50 border-gray-700 text-gray-500",
+};
+
+const duration = task?.completed_at && task?.created_at
+  ? Math.round((new Date(task.completed_at).getTime() - new Date(task.created_at).getTime()) / 1000)
+  : null;
+---
+
+<Layout title={task ? `Task ${task.id.slice(0,8)}… — CrowdSorcerer` : "Task Not Found"}>
+  <div class="max-w-4xl mx-auto px-6 py-10">
+    <div class="text-sm text-gray-500 mb-6">
+      <a href="/dashboard" class="hover:text-gray-300 transition-colors">Dashboard</a>
+      <span class="mx-2">›</span>
+      <a href="/dashboard/tasks" class="hover:text-gray-300 transition-colors">Tasks</a>
+      <span class="mx-2">›</span>
+      <span class="font-mono">{id?.slice(0, 8)}…</span>
+    </div>
+
+    {notFound ? (
+      <div class="text-center py-20">
+        <div class="text-4xl mb-4">🔍</div>
+        <h1 class="text-xl font-bold mb-2">Task not found</h1>
+        <p class="text-gray-400 text-sm mb-6">This task doesn't exist or doesn't belong to you.</p>
+        <a href="/dashboard/tasks" class="text-violet-400 hover:text-violet-300">← Back to tasks</a>
+      </div>
+    ) : task ? (
+      <div>
+        <div class="flex items-start justify-between mb-8">
+          <div>
+            <h1 class="text-2xl font-bold font-mono text-violet-300">{task.type}</h1>
+            <p class="text-gray-500 text-sm mt-1 font-mono">{task.id}</p>
+          </div>
+          <div class:list={[
+            "px-4 py-1.5 rounded-full border text-sm font-medium",
+            STATUS_COLORS[task.status] ?? "bg-gray-800 border-gray-700 text-gray-300"
+          ]}>
+            {task.status}
+          </div>
+        </div>
+
+        <!-- Metadata grid -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
+          {[
+            { label: "Credits used", value: task.credits_used != null ? `${task.credits_used} cr` : "—" },
+            { label: "Priority", value: task.priority ?? "normal" },
+            { label: "Duration", value: duration != null ? `${duration}s` : "—" },
+            { label: "Submitted", value: new Date(task.created_at).toLocaleString() },
+          ].map(({ label, value }) => (
+            <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
+              <div class="text-xs text-gray-500 mb-1">{label}</div>
+              <div class="font-medium text-sm">{value}</div>
+            </div>
+          ))}
+        </div>
+
+        <!-- Input -->
+        <div class="bg-gray-900 border border-gray-800 rounded-xl mb-4">
+          <div class="px-5 py-3 border-b border-gray-800 flex items-center justify-between">
+            <h2 class="text-sm font-semibold text-gray-300">Input</h2>
+          </div>
+          <pre class="px-5 py-4 font-mono text-sm text-gray-300 overflow-x-auto whitespace-pre-wrap">
+{JSON.stringify(task.input, null, 2)}
+          </pre>
+        </div>
+
+        <!-- Output -->
+        {task.output && (
+          <div class="bg-gray-900 border border-gray-800 rounded-xl mb-4">
+            <div class="px-5 py-3 border-b border-gray-800">
+              <h2 class="text-sm font-semibold text-green-300">Output</h2>
+            </div>
+            <pre class="px-5 py-4 font-mono text-sm text-gray-300 overflow-x-auto whitespace-pre-wrap">
+{JSON.stringify(task.output, null, 2)}
+            </pre>
+          </div>
+        )}
+
+        <!-- Error -->
+        {task.error && (
+          <div class="bg-red-950/30 border border-red-800 rounded-xl mb-4">
+            <div class="px-5 py-3 border-b border-red-800">
+              <h2 class="text-sm font-semibold text-red-300">Error</h2>
+            </div>
+            <pre class="px-5 py-4 font-mono text-sm text-red-300 overflow-x-auto whitespace-pre-wrap">
+{task.error}
+            </pre>
+          </div>
+        )}
+
+        <!-- Retry if failed -->
+        {task.status === "failed" && (
+          <div class="mt-6">
+            <a
+              href={`/dashboard/new-task`}
+              class="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              Submit another task →
+            </a>
+          </div>
+        )}
+
+        <!-- Auto-refresh if running -->
+        {(task.status === "running" || task.status === "queued" || task.status === "pending") && (
+          <div class="mt-6 text-center">
+            <div class="inline-flex items-center gap-2 text-sm text-gray-400">
+              <span class="w-2 h-2 rounded-full bg-yellow-400 animate-pulse"></span>
+              Task is {task.status}. Page auto-refreshes every 3s.
+            </div>
+            <script>setTimeout(() => location.reload(), 3000);</script>
+          </div>
+        )}
+      </div>
+    ) : null}
+  </div>
+</Layout>

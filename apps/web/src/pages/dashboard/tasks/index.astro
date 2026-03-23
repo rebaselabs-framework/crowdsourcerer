@@ -1,0 +1,160 @@
+---
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Object.fromEntries(
+  Astro.cookies.getAll().map((c) => [c.name, c.value])
+));
+if (!token) return Astro.redirect("/login");
+
+const page = Number(Astro.url.searchParams.get("page") ?? 1);
+const status = Astro.url.searchParams.get("status") ?? "";
+const type = Astro.url.searchParams.get("type") ?? "";
+
+let tasks: any = { items: [], total: 0, page: 1, page_size: 20, total_pages: 1 };
+
+try {
+  const qs = new URLSearchParams({ page: String(page), page_size: "20" });
+  if (status) qs.set("status", status);
+  if (type) qs.set("type", type);
+  tasks = await apiFetch<any>(`/v1/tasks?${qs}`, { token });
+} catch (e) {
+  return Astro.redirect("/login");
+}
+
+const STATUS_COLORS: Record<string, string> = {
+  completed: "bg-green-950 text-green-400",
+  failed:    "bg-red-950 text-red-400",
+  running:   "bg-yellow-950 text-yellow-400",
+  queued:    "bg-blue-950 text-blue-400",
+  pending:   "bg-gray-800 text-gray-400",
+  cancelled: "bg-gray-800 text-gray-500",
+};
+---
+
+<Layout title="Tasks — CrowdSorcerer">
+  <div class="max-w-5xl mx-auto px-6 py-10">
+    <div class="flex items-center justify-between mb-8">
+      <div>
+        <div class="text-sm text-gray-500 mb-1">
+          <a href="/dashboard" class="hover:text-gray-300 transition-colors">Dashboard</a>
+          <span class="mx-2">›</span>
+          <span>Tasks</span>
+        </div>
+        <h1 class="text-2xl font-bold">All tasks</h1>
+      </div>
+      <a
+        href="/dashboard/new-task"
+        class="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium rounded-lg transition-colors"
+      >
+        + New task
+      </a>
+    </div>
+
+    <!-- Filters -->
+    <form class="flex gap-3 mb-6">
+      <select name="status" class="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-violet-500">
+        <option value="" selected={!status}>All statuses</option>
+        {["pending","queued","running","completed","failed","cancelled"].map(s => (
+          <option value={s} selected={status === s}>{s}</option>
+        ))}
+      </select>
+      <select name="type" class="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-violet-500">
+        <option value="" selected={!type}>All types</option>
+        {["web_research","entity_lookup","document_parse","data_transform","llm_generate","screenshot","audio_transcribe","pii_detect","code_execute","web_intel"].map(t => (
+          <option value={t} selected={type === t}>{t}</option>
+        ))}
+      </select>
+      <button type="submit" class="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-sm text-gray-300 rounded-lg transition-colors">
+        Filter
+      </button>
+      {(status || type) && (
+        <a href="/dashboard/tasks" class="px-4 py-2 text-sm text-gray-500 hover:text-gray-300 transition-colors self-center">
+          Clear
+        </a>
+      )}
+    </form>
+
+    <!-- Task list -->
+    <div class="bg-gray-900 border border-gray-800 rounded-xl">
+      {tasks.items.length === 0 ? (
+        <div class="px-6 py-16 text-center">
+          <div class="text-4xl mb-3">🔮</div>
+          <div class="text-gray-400">No tasks found.</div>
+          <a href="/dashboard/new-task" class="text-violet-400 text-sm mt-2 inline-block hover:text-violet-300">
+            Submit your first task →
+          </a>
+        </div>
+      ) : (
+        <div class="divide-y divide-gray-800">
+          <div class="grid grid-cols-12 gap-4 px-6 py-3 text-xs text-gray-500 font-medium border-b border-gray-800">
+            <div class="col-span-3">Type</div>
+            <div class="col-span-2">Status</div>
+            <div class="col-span-2">Credits</div>
+            <div class="col-span-3">Submitted</div>
+            <div class="col-span-2">Duration</div>
+          </div>
+          {tasks.items.map((t: any) => {
+            const duration = t.completed_at && t.created_at
+              ? Math.round((new Date(t.completed_at).getTime() - new Date(t.created_at).getTime()) / 1000)
+              : null;
+            return (
+              <a
+                href={`/dashboard/tasks/${t.id}`}
+                class="grid grid-cols-12 gap-4 px-6 py-4 hover:bg-gray-800/50 transition-colors items-center"
+              >
+                <div class="col-span-3">
+                  <span class="font-mono text-sm text-violet-300">{t.type}</span>
+                </div>
+                <div class="col-span-2">
+                  <span class:list={["text-xs px-2 py-0.5 rounded-full", STATUS_COLORS[t.status] ?? "bg-gray-800 text-gray-400"]}>
+                    {t.status}
+                  </span>
+                </div>
+                <div class="col-span-2 text-sm text-gray-400">
+                  {t.credits_used != null ? `${t.credits_used} cr` : "—"}
+                </div>
+                <div class="col-span-3 text-sm text-gray-500">
+                  {new Date(t.created_at).toLocaleString()}
+                </div>
+                <div class="col-span-2 text-sm text-gray-500">
+                  {duration != null ? `${duration}s` : "—"}
+                </div>
+              </a>
+            );
+          })}
+        </div>
+      )}
+    </div>
+
+    <!-- Pagination -->
+    {tasks.total_pages > 1 && (
+      <div class="flex items-center justify-between mt-6">
+        <div class="text-sm text-gray-500">
+          {tasks.total} tasks total
+        </div>
+        <div class="flex gap-2">
+          {page > 1 && (
+            <a
+              href={`?page=${page - 1}${status ? `&status=${status}` : ""}${type ? `&type=${type}` : ""}`}
+              class="px-3 py-1.5 bg-gray-900 border border-gray-700 rounded-lg text-sm text-gray-300 hover:border-gray-500 transition-colors"
+            >
+              ← Prev
+            </a>
+          )}
+          <span class="px-3 py-1.5 text-sm text-gray-500">
+            {page} / {tasks.total_pages}
+          </span>
+          {page < tasks.total_pages && (
+            <a
+              href={`?page=${page + 1}${status ? `&status=${status}` : ""}${type ? `&type=${type}` : ""}`}
+              class="px-3 py-1.5 bg-gray-900 border border-gray-700 rounded-lg text-sm text-gray-300 hover:border-gray-500 transition-colors"
+            >
+              Next →
+            </a>
+          )}
+        </div>
+      </div>
+    )}
+  </div>
+</Layout>

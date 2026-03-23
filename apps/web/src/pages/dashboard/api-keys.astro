@@ -1,0 +1,148 @@
+---
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Object.fromEntries(
+  Astro.cookies.getAll().map((c) => [c.name, c.value])
+));
+if (!token) return Astro.redirect("/login");
+
+let apiKeys: any[] = [];
+let error = "";
+let newKey: string | null = null;
+
+// Handle POST (create) and DELETE (revoke)
+if (Astro.request.method === "POST") {
+  const form = await Astro.request.formData();
+  const action = form.get("action") as string;
+
+  if (action === "create") {
+    const name = form.get("name") as string;
+    try {
+      const result = await apiFetch<any>("/v1/api-keys", {
+        method: "POST",
+        body: JSON.stringify({ name }),
+        token,
+      });
+      newKey = result.key; // only shown once
+    } catch (e: any) {
+      error = e.message ?? "Failed to create API key";
+    }
+  } else if (action === "delete") {
+    const keyId = form.get("key_id") as string;
+    try {
+      await apiFetch<any>(`/v1/api-keys/${keyId}`, { method: "DELETE", token });
+    } catch (e: any) {
+      error = e.message ?? "Failed to revoke key";
+    }
+  }
+}
+
+// Load keys
+try {
+  apiKeys = await apiFetch<any[]>("/v1/api-keys", { token });
+} catch (e) {
+  return Astro.redirect("/login");
+}
+---
+
+<Layout title="API Keys — CrowdSorcerer">
+  <div class="max-w-3xl mx-auto px-6 py-10">
+    <div class="text-sm text-gray-500 mb-6">
+      <a href="/dashboard" class="hover:text-gray-300 transition-colors">Dashboard</a>
+      <span class="mx-2">›</span>
+      <span>API Keys</span>
+    </div>
+
+    <h1 class="text-2xl font-bold mb-1">API Keys</h1>
+    <p class="text-gray-400 text-sm mb-8">
+      Use these keys to authenticate with the CrowdSorcerer API or SDK.
+      Keys start with <code class="text-violet-300 bg-gray-900 px-1 rounded">csk_</code>.
+    </p>
+
+    {error && (
+      <div class="bg-red-950/50 border border-red-800 rounded-lg px-4 py-3 text-sm text-red-300 mb-6">
+        {error}
+      </div>
+    )}
+
+    {newKey && (
+      <div class="bg-green-950/30 border border-green-800 rounded-xl p-5 mb-6">
+        <div class="text-sm font-medium text-green-300 mb-2">
+          🔑 New API key created — copy it now, it won't be shown again
+        </div>
+        <code class="block font-mono text-sm text-green-200 bg-green-950/50 rounded-lg px-4 py-3 select-all break-all">
+          {newKey}
+        </code>
+      </div>
+    )}
+
+    <!-- Create form -->
+    <form method="POST" class="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-6">
+      <input type="hidden" name="action" value="create" />
+      <h2 class="text-sm font-semibold mb-3">Create new key</h2>
+      <div class="flex gap-3">
+        <input
+          type="text"
+          name="name"
+          required
+          maxlength="64"
+          class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-violet-500 transition-colors"
+          placeholder="e.g. Production, CI/CD, My App"
+        />
+        <button
+          type="submit"
+          class="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium rounded-lg transition-colors whitespace-nowrap"
+        >
+          Create key
+        </button>
+      </div>
+    </form>
+
+    <!-- Keys list -->
+    <div class="bg-gray-900 border border-gray-800 rounded-xl">
+      {apiKeys.length === 0 ? (
+        <div class="px-6 py-12 text-center text-gray-500 text-sm">
+          No API keys yet. Create one above.
+        </div>
+      ) : (
+        <div class="divide-y divide-gray-800">
+          {apiKeys.map((k: any) => (
+            <div class="flex items-center justify-between px-5 py-4">
+              <div>
+                <div class="font-medium text-sm">{k.name}</div>
+                <div class="font-mono text-xs text-gray-500 mt-0.5">{k.prefix}••••••••</div>
+                {k.last_used_at ? (
+                  <div class="text-xs text-gray-600 mt-1">
+                    Last used {new Date(k.last_used_at).toLocaleDateString()}
+                  </div>
+                ) : (
+                  <div class="text-xs text-gray-600 mt-1">Never used</div>
+                )}
+              </div>
+              <form method="POST" onsubmit="return confirm('Revoke this key? This cannot be undone.')">
+                <input type="hidden" name="action" value="delete" />
+                <input type="hidden" name="key_id" value={k.id} />
+                <button
+                  type="submit"
+                  class="px-3 py-1.5 border border-red-900 text-red-400 hover:bg-red-950/30 text-xs rounded-lg transition-colors"
+                >
+                  Revoke
+                </button>
+              </form>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+
+    <!-- Usage example -->
+    <div class="mt-8 bg-gray-900 border border-gray-800 rounded-xl p-5">
+      <h2 class="text-sm font-semibold mb-3">Quick start</h2>
+      <pre class="font-mono text-xs text-gray-400 overflow-x-auto"><span class="text-violet-400">import</span> {"{ CrowdSorcerer }"} <span class="text-violet-400">from</span> <span class="text-green-400">"@crowdsourcerer/sdk"</span>;
+
+<span class="text-violet-400">const</span> crowd = <span class="text-violet-400">new</span> CrowdSorcerer({"{ apiKey: "}}<span class="text-green-400">"csk_your_key_here"</span> {"}"});
+<span class="text-violet-400">const</span> result = <span class="text-violet-400">await</span> crowd.webResearch({"{ query: "}<span class="text-green-400">"AI news this week"</span> {"}"});</pre>
+    </div>
+  </div>
+</Layout>
