@@ -702,6 +702,10 @@ class PipelineStepCreate(BaseModel):
     execution_mode: Literal["ai", "human"] = "ai"
     task_config: dict = Field(default_factory=dict)
     input_mapping: Optional[dict] = None
+    # Condition branches
+    condition: Optional[str] = None          # JSONPath expression — step runs only if truthy
+    next_on_pass: Optional[int] = None       # step_order to jump to on success (None = next)
+    next_on_fail: Optional[int] = None       # step_order to jump to on failure (-1 = fail pipeline)
 
 
 class PipelineCreateRequest(BaseModel):
@@ -720,6 +724,9 @@ class PipelineStepOut(BaseModel):
     execution_mode: str
     task_config: dict
     input_mapping: Optional[dict]
+    condition: Optional[str] = None
+    next_on_pass: Optional[int] = None
+    next_on_fail: Optional[int] = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -1156,5 +1163,37 @@ class SkillQuizAttemptOut(BaseModel):
     passed: bool
     proficiency_level: int
     created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+# ─── Webhook Endpoint schemas ──────────────────────────────────────────────
+
+class WebhookEndpointCreate(BaseModel):
+    url: str
+    description: Optional[str] = None
+    events: Optional[list[str]] = None  # None = all events
+
+
+class WebhookEndpointUpdate(BaseModel):
+    url: Optional[str] = None
+    description: Optional[str] = None
+    events: Optional[list[str]] = None
+    is_active: Optional[bool] = None
+
+
+class WebhookEndpointOut(BaseModel):
+    id: UUID
+    url: str
+    description: Optional[str]
+    events: Optional[list[str]]
+    is_active: bool
+    delivery_count: int
+    failure_count: int
+    last_triggered_at: Optional[datetime]
+    last_failure_at: Optional[datetime]
+    created_at: datetime
+    # Secret is only returned on creation (not subsequent fetches)
+    secret: Optional[str] = None
 
     model_config = {"from_attributes": True}

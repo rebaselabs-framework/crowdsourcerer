@@ -103,6 +103,90 @@ def _extract_path(path: str, pipeline_input: dict, step_outputs: list) -> Any:
     return obj
 
 
+# ── Condition Evaluation ───────────────────────────────────────────────────────
+
+_CONDITION_RE = re.compile(
+    r"^(.+?)\s*(==|!=|>=|<=|>|<)\s*(.+)$"
+)
+
+
+def _evaluate_condition(
+    condition: Optional[str],
+    pipeline_input: dict,
+    step_outputs: list[Optional[dict]],
+) -> bool:
+    """Evaluate a condition expression against the pipeline state.
+
+    Supported forms:
+        $.steps.0.output.score > 0.8        — compare extracted value
+        $.input.type == "web_research"      — string comparison
+        $.steps.1.output.is_flagged         — truthy check (no operator)
+        true / false                        — literals
+
+    Returns True if the condition passes (step should run), False to skip.
+    A None/empty condition always passes.
+    """
+    if not condition or not condition.strip():
+        return True
+
+    expr = condition.strip()
+
+    # Check for binary operator
+    m = _CONDITION_RE.match(expr)
+    if m:
+        left_path, op, right_raw = m.group(1).strip(), m.group(2), m.group(3).strip()
+
+        left_val = _extract_path(left_path, pipeline_input, step_outputs) if left_path.startswith("$") else left_path
+
+        # Parse right side
+        right_val: Any
+        if right_raw.startswith('"') or right_raw.startswith("'"):
+            right_val = right_raw.strip("\"'")
+        elif right_raw.lower() in ("true", "false"):
+            right_val = right_raw.lower() == "true"
+        elif right_raw.lower() in ("null", "none"):
+            right_val = None
+        else:
+            try:
+                right_val = float(right_raw)
+            except ValueError:
+                right_val = right_raw
+
+        # Coerce left to same type as right if possible
+        if isinstance(right_val, float) and left_val is not None:
+            try:
+                left_val = float(str(left_val))
+            except (ValueError, TypeError):
+                pass
+
+        try:
+            if op == "==":
+                return left_val == right_val
+            if op == "!=":
+                return left_val != right_val
+            if op == ">":
+                return float(left_val) > float(right_val)  # type: ignore[arg-type]
+            if op == ">=":
+                return float(left_val) >= float(right_val)  # type: ignore[arg-type]
+            if op == "<":
+                return float(left_val) < float(right_val)  # type: ignore[arg-type]
+            if op == "<=":
+                return float(left_val) <= float(right_val)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return False
+
+    # Simple truthy path check
+    if expr.lower() == "true":
+        return True
+    if expr.lower() == "false":
+        return False
+    if expr.startswith("$"):
+        val = _extract_path(expr, pipeline_input, step_outputs)
+        return bool(val)
+
+    return True  # Unknown expression — pass through
+
+
 # ── Pipeline CRUD ─────────────────────────────────────────────────────────────
 
 @router.post("", response_model=PipelineDetailOut, status_code=201)
@@ -139,6 +223,9 @@ async def create_pipeline(
             execution_mode=step_data.execution_mode,
             task_config=step_data.task_config,
             input_mapping=step_data.input_mapping,
+            condition=step_data.condition,
+            next_on_pass=step_data.next_on_pass,
+            next_on_fail=step_data.next_on_fail,
             created_at=utcnow(),
         )
         db.add(step)
@@ -473,19 +560,56 @@ async def _execute_pipeline_run(
                 if sr.step_order < resume_from_step and sr.output is not None:
                     step_outputs[sr.step_order] = sr.output
 
-            for i, (step, sr) in enumerate(zip(steps, step_runs)):
-                if i < resume_from_step:
-                    continue  # Already done
+            # Use an index-based cursor for branching support
+            current_idx = resume_from_step
+            step_map = {s.step_order: s for s in steps}
+            sr_map = {sr.step_order: sr for sr in step_runs}
+            max_steps = len(steps)
+            visited: set[int] = set()  # guard against infinite loops
+
+            while current_idx < max_steps:
+                if current_idx in visited:
+                    # Loop detected
+                    run.status = "failed"
+                    run.error = f"Infinite loop detected at step {current_idx}"
+                    run.completed_at = utcnow()
+                    await db.commit()
+                    return
+                visited.add(current_idx)
+
+                step = step_map.get(current_idx)
+                sr = sr_map.get(current_idx)
+                if step is None or sr is None:
+                    break  # No more steps
 
                 # Check if cancelled
                 await db.refresh(run)
                 if run.status == "cancelled":
                     return
 
+                # ── Evaluate condition ────────────────────────────────────────
+                condition_passes = _evaluate_condition(
+                    step.condition,
+                    run.input,
+                    step_outputs,
+                )
+                if not condition_passes:
+                    # Skip this step — mark skipped and advance
+                    sr.status = "skipped"
+                    sr.completed_at = utcnow()
+                    await db.commit()
+                    logger.info(
+                        "pipeline_step_skipped_condition",
+                        run_id=str(run_id), step=current_idx, condition=step.condition,
+                    )
+                    # Honor next_on_pass for the "skip" path (treat skip as pass-through)
+                    current_idx = step.next_on_pass if step.next_on_pass is not None else current_idx + 1
+                    continue
+
                 # Mark step running
                 sr.status = "running"
                 sr.started_at = utcnow()
-                run.current_step = i
+                run.current_step = current_idx
                 await db.commit()
 
                 # Resolve input
@@ -497,12 +621,10 @@ async def _execute_pipeline_run(
                 )
 
                 if step.execution_mode == "ai":
-                    # Execute AI task directly
                     try:
                         client = get_rebasekit_client()
                         output = await execute_task(step.task_type, task_input, client)
 
-                        # Create a task record for traceability
                         task = TaskDB(
                             user_id=UUID(user_id),
                             type=step.task_type,
@@ -518,7 +640,6 @@ async def _execute_pipeline_run(
                         db.add(task)
                         await db.flush()
 
-                        # Deduct credits
                         cost = TASK_CREDITS.get(step.task_type, 1)
                         user_result = await db.execute(select(UserDB).where(UserDB.id == UUID(user_id)))
                         user = user_result.scalar_one()
@@ -537,22 +658,37 @@ async def _execute_pipeline_run(
                         sr.output = output
                         sr.status = "completed"
                         sr.completed_at = utcnow()
-                        step_outputs[i] = output
+                        step_outputs[current_idx] = output
                         await db.commit()
+
+                        # Determine next step (branch on success)
+                        current_idx = step.next_on_pass if step.next_on_pass is not None else current_idx + 1
 
                     except (WorkerError, Exception) as e:
                         sr.status = "failed"
                         sr.completed_at = utcnow()
-                        run.status = "failed"
-                        run.error = str(e)
-                        run.completed_at = utcnow()
-                        await db.commit()
-                        return
+
+                        # Check if there's an on-failure branch
+                        next_fail = step.next_on_fail
+                        if next_fail is not None and next_fail >= 0:
+                            # Branch to failure recovery step
+                            step_outputs[current_idx] = {"error": str(e), "step": current_idx}
+                            await db.commit()
+                            logger.info(
+                                "pipeline_step_failed_branching",
+                                run_id=str(run_id), step=current_idx, next=next_fail,
+                            )
+                            current_idx = next_fail
+                        else:
+                            # Default: fail the pipeline
+                            run.status = "failed"
+                            run.error = str(e)
+                            run.completed_at = utcnow()
+                            await db.commit()
+                            return
 
                 else:
-                    # Human step — create an open task on the marketplace.
-                    # The step remains "running" until a worker completes it.
-                    # resume_pipeline_after_human_step() will be called automatically.
+                    # Human step — pause and wait
                     task = TaskDB(
                         user_id=UUID(user_id),
                         type=step.task_type,
@@ -573,10 +709,10 @@ async def _execute_pipeline_run(
                     await db.commit()
 
                     logger.info("pipeline_waiting_for_human_step",
-                                run_id=str(run_id), step=i, task_id=str(task.id))
-                    return  # Pause — pipeline stays "running" until human work done
+                                run_id=str(run_id), step=current_idx, task_id=str(task.id))
+                    return  # Pause — resume via resume_pipeline_after_human_step()
 
-            # All steps completed
+            # All steps processed
             last_output = next((o for o in reversed(step_outputs) if o is not None), None)
             run.status = "completed"
             run.output = last_output
@@ -689,6 +825,9 @@ def _step_out(step: TaskPipelineStepDB):
         execution_mode=step.execution_mode,
         task_config=step.task_config or {},
         input_mapping=step.input_mapping,
+        condition=step.condition,
+        next_on_pass=step.next_on_pass,
+        next_on_fail=step.next_on_fail,
         created_at=step.created_at,
     )
 

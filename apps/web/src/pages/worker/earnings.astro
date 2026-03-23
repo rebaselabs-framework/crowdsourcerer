@@ -14,9 +14,11 @@ if (!token) return Astro.redirect("/login");
 const url = new URL(Astro.request.url);
 const page = parseInt(url.searchParams.get("page") ?? "1");
 const activeTab = url.searchParams.get("tab") ?? "history";
+const payoutStatusFilter = url.searchParams.get("payout_status") ?? "";
 
 let user: any = null, stats: any = null, assignments: any[] = [];
 let payouts: any[] = [], payoutsTotal = 0, analytics: any = null, error = "";
+let payoutSummary: any = null;
 const PAGE_SIZE = 20, MIN_PAYOUT = 1000;
 
 try {
@@ -26,8 +28,14 @@ try {
   ]);
   if (!user || (user.role !== "worker" && user.role !== "both")) return Astro.redirect("/worker");
   if (activeTab === "payouts") {
-    const r = await apiFetch<any>(`/v1/payouts?page=${page}&page_size=${PAGE_SIZE}`, { token });
+    const qs = new URLSearchParams({ page: String(page), page_size: String(PAGE_SIZE) });
+    if (payoutStatusFilter) qs.set("status", payoutStatusFilter);
+    const [r, s] = await Promise.all([
+      apiFetch<any>(`/v1/payouts?${qs}`, { token }),
+      apiFetch<any>("/v1/payouts/summary", { token }).catch(() => null),
+    ]);
     payouts = r?.items ?? []; payoutsTotal = r?.total ?? 0;
+    payoutSummary = s;
   } else if (activeTab === "analytics") {
     analytics = await apiFetch<any>("/v1/worker/earnings/analytics", { token }).catch(() => null);
   } else {
@@ -256,14 +264,77 @@ const clientApiUrl = import.meta.env.PUBLIC_API_URL ?? "";
   <!-- ── PAYOUTS ────────────────────────────────────────────────────────────── -->
   {activeTab==="payouts" && (
     <div>
+      <!-- Payout summary stats -->
+      {payoutSummary && (
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+          <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
+            <div class="text-xs text-gray-500 mb-1 uppercase tracking-wider">Total paid out</div>
+            <div class="text-2xl font-bold text-emerald-400">${payoutSummary.total_paid_usd.toFixed(2)}</div>
+            <div class="text-xs text-gray-500">{payoutSummary.by_status?.paid?.count ?? 0} payouts</div>
+          </div>
+          <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
+            <div class="text-xs text-gray-500 mb-1 uppercase tracking-wider">In progress</div>
+            <div class="text-2xl font-bold text-blue-400">${payoutSummary.total_pending_usd.toFixed(2)}</div>
+            <div class="text-xs text-gray-500">
+              {((payoutSummary.by_status?.pending?.count??0)+(payoutSummary.by_status?.processing?.count??0))} pending
+            </div>
+          </div>
+          <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
+            <div class="text-xs text-gray-500 mb-1 uppercase tracking-wider">Total requests</div>
+            <div class="text-2xl font-bold">{payoutSummary.total_payouts}</div>
+          </div>
+          <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
+            <div class="text-xs text-gray-500 mb-1 uppercase tracking-wider">Success rate</div>
+            <div class="text-2xl font-bold text-emerald-400">
+              {payoutSummary.total_payouts > 0
+                ? `${Math.round((payoutSummary.by_status?.paid?.count??0) / payoutSummary.total_payouts * 100)}%`
+                : "—"}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <!-- Filter + Export row -->
+      <div class="flex items-center gap-3 mb-4 flex-wrap">
+        <form method="GET" class="flex items-center gap-2">
+          <input type="hidden" name="tab" value="payouts" />
+          <select name="payout_status" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none">
+            <option value="" selected={payoutStatusFilter === ""}>All statuses</option>
+            <option value="pending" selected={payoutStatusFilter === "pending"}>Pending</option>
+            <option value="processing" selected={payoutStatusFilter === "processing"}>Processing</option>
+            <option value="paid" selected={payoutStatusFilter === "paid"}>Paid</option>
+            <option value="rejected" selected={payoutStatusFilter === "rejected"}>Rejected</option>
+          </select>
+          <button type="submit" class="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-sm text-gray-300 rounded-lg transition-colors">Filter</button>
+          {payoutStatusFilter && (
+            <a href="?tab=payouts" class="text-xs text-gray-500 hover:text-gray-300">Clear</a>
+          )}
+        </form>
+        <div class="ml-auto flex gap-2">
+          <button
+            id="export-csv-btn"
+            class="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-sm text-gray-300 rounded-lg transition-colors border border-gray-700"
+            title="Download payout history as CSV"
+          >
+            ⬇ Export CSV
+          </button>
+          {canPayout && (
+            <a href="#request-payout" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium rounded-lg transition-colors">
+              + Request payout
+            </a>
+          )}
+        </div>
+      </div>
+
       {payouts.length>0&&(
         <div class="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden mb-8">
-          <table class="w-full text-sm">
+          <table class="w-full text-sm" id="payouts-table">
             <thead class="border-b border-gray-800">
               <tr class="text-gray-500 text-xs uppercase tracking-wider">
                 <th class="text-left px-5 py-3">Amount</th>
                 <th class="text-left px-5 py-3">Method</th>
                 <th class="text-left px-5 py-3">Requested</th>
+                <th class="text-left px-5 py-3">Processed</th>
                 <th class="text-left px-5 py-3">Status</th>
                 <th class="text-left px-5 py-3">Note</th>
                 <th></th>
@@ -271,17 +342,26 @@ const clientApiUrl = import.meta.env.PUBLIC_API_URL ?? "";
             </thead>
             <tbody class="divide-y divide-gray-800">
               {payouts.map((p:any)=>(
-                <tr class="hover:bg-gray-800/40">
+                <tr class="hover:bg-gray-800/40" data-payout-id={p.id}>
                   <td class="px-5 py-3">
                     <div class="font-semibold text-emerald-400">${p.usd_amount.toFixed(2)}</div>
                     <div class="text-xs text-gray-500">{p.credits_requested.toLocaleString()} cr</div>
                   </td>
-                  <td class="px-5 py-3 text-gray-300 capitalize text-xs">{p.payout_method.replace(/_/g," ")}</td>
-                  <td class="px-5 py-3 text-gray-400 text-xs">{fmt(p.created_at)}</td>
-                  <td class="px-5 py-3">
-                    <span class={`text-xs px-2 py-0.5 rounded capitalize ${PAYOUT_STYLES[p.status]??"bg-gray-800 text-gray-400"}`}>{p.status}</span>
+                  <td class="px-5 py-3 text-gray-300 capitalize text-xs">
+                    {p.payout_method === "paypal" ? "💙 PayPal" :
+                     p.payout_method === "bank_transfer" ? "🏦 Bank transfer" :
+                     "🔷 Crypto"}
                   </td>
-                  <td class="px-5 py-3 text-xs text-gray-400">{p.admin_note??"—"}</td>
+                  <td class="px-5 py-3 text-gray-400 text-xs">{fmt(p.created_at)}</td>
+                  <td class="px-5 py-3 text-gray-400 text-xs">{p.processed_at ? fmt(p.processed_at) : "—"}</td>
+                  <td class="px-5 py-3">
+                    <span class={`text-xs px-2 py-0.5 rounded-full capitalize ${PAYOUT_STYLES[p.status]??"bg-gray-800 text-gray-400"}`}>{p.status}</span>
+                  </td>
+                  <td class="px-5 py-3 text-xs text-gray-400 max-w-xs truncate" title={p.admin_note??""}>
+                    {p.admin_note ? (
+                      <span class:list={[p.status === "rejected" ? "text-red-300" : "text-gray-400"]}>{p.admin_note}</span>
+                    ) : "—"}
+                  </td>
                   <td class="px-4 py-3 text-right">
                     {p.status==="pending"&&(
                       <button class="text-xs text-red-400 hover:text-red-300 cancel-payout" data-id={p.id}>Cancel</button>
@@ -291,6 +371,39 @@ const clientApiUrl = import.meta.env.PUBLIC_API_URL ?? "";
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {payouts.length === 0 && (
+        <div class="bg-gray-900 border border-gray-800 rounded-2xl p-12 text-center mb-8">
+          <div class="text-4xl mb-3">💸</div>
+          <p class="text-gray-300 font-medium mb-1">
+            {payoutStatusFilter ? `No ${payoutStatusFilter} payouts` : "No payout requests yet"}
+          </p>
+          <p class="text-gray-500 text-sm">
+            {payoutStatusFilter ? "Try a different filter." : "Request your first payout once you reach 1,000 credits."}
+          </p>
+        </div>
+      )}
+
+      <!-- Pagination for payouts -->
+      {(payoutsTotal > PAGE_SIZE) && (
+        <div class="flex items-center justify-between mb-8">
+          <span class="text-sm text-gray-500">Page {page} · {payoutsTotal} total</span>
+          <div class="flex gap-2">
+            {page > 1 && (
+              <a href={`?tab=payouts&page=${page-1}${payoutStatusFilter ? `&payout_status=${payoutStatusFilter}` : ""}`}
+                class="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-sm text-gray-300 rounded-lg transition-colors">
+                ← Previous
+              </a>
+            )}
+            {page * PAGE_SIZE < payoutsTotal && (
+              <a href={`?tab=payouts&page=${page+1}${payoutStatusFilter ? `&payout_status=${payoutStatusFilter}` : ""}`}
+                class="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-sm text-gray-300 rounded-lg transition-colors">
+                Next →
+              </a>
+            )}
+          </div>
         </div>
       )}
 
@@ -462,5 +575,51 @@ document.querySelectorAll(".cancel-payout").forEach(btn=>{
     if(res.ok||res.status===204) window.location.reload();
     else{const d=await res.json().catch(()=>({}));alert(d.detail??"Failed to cancel");}
   });
+});
+
+// CSV export — fetch all payouts (up to 500) and download as CSV
+document.getElementById("export-csv-btn")?.addEventListener("click", async () => {
+  const btn = document.getElementById("export-csv-btn");
+  if (!btn) return;
+  const orig = btn.textContent;
+  btn.textContent = "Exporting…";
+  btn.setAttribute("disabled", "true");
+
+  try {
+    // Fetch up to 500 payouts for export
+    const res = await fetch(`${API}/v1/payouts?page=1&page_size=500`, {
+      headers: { Authorization: `Bearer ${TOKEN}` },
+    });
+    const data = await res.json();
+    const items = data?.items ?? [];
+
+    // Build CSV
+    const rows = [
+      ["ID", "Amount (USD)", "Credits", "Method", "Status", "Requested At", "Processed At", "Admin Note"],
+      ...items.map((p: any) => [
+        p.id,
+        p.usd_amount.toFixed(2),
+        p.credits_requested,
+        p.payout_method,
+        p.status,
+        p.created_at ? new Date(p.created_at).toISOString() : "",
+        p.processed_at ? new Date(p.processed_at).toISOString() : "",
+        (p.admin_note ?? "").replace(/"/g, '""'),
+      ]),
+    ];
+    const csv = rows.map(r => r.map((v: any) => `"${v}"`).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `payouts-${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch {
+    alert("Failed to export");
+  } finally {
+    btn.textContent = orig;
+    btn.removeAttribute("disabled");
+  }
 });
 </script>

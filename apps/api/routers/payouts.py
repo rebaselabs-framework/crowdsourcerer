@@ -121,12 +121,15 @@ async def create_payout_request(
 async def list_my_payouts(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    status: Optional[str] = Query(None, description="Filter by status: pending, processing, paid, rejected"),
     user_id: UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ) -> PayoutListOut:
     """List the current worker's payout requests."""
     offset = (page - 1) * page_size
     q = select(PayoutRequestDB).where(PayoutRequestDB.worker_id == user_id)
+    if status:
+        q = q.where(PayoutRequestDB.status == status)
     total_res = await db.execute(select(func.count()).select_from(q.subquery()))
     total = total_res.scalar_one()
 
@@ -138,6 +141,36 @@ async def list_my_payouts(
         items=[PayoutRequestOut.model_validate(p) for p in items],
         total=total,
     )
+
+
+@router.get("/summary")
+async def my_payout_summary(
+    user_id: UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return aggregate payout stats for the current worker (by status)."""
+    rows = (await db.execute(
+        select(
+            PayoutRequestDB.status,
+            func.count().label("cnt"),
+            func.sum(PayoutRequestDB.usd_amount).label("usd_total"),
+            func.sum(PayoutRequestDB.credits_requested).label("credits_total"),
+        )
+        .where(PayoutRequestDB.worker_id == user_id)
+        .group_by(PayoutRequestDB.status)
+    )).all()
+
+    by_status = {r.status: {"count": r.cnt, "usd_total": float(r.usd_total or 0), "credits_total": int(r.credits_total or 0)} for r in rows}
+    total_paid_usd = by_status.get("paid", {}).get("usd_total", 0.0)
+    total_pending_usd = sum(
+        v["usd_total"] for k, v in by_status.items() if k in ("pending", "processing")
+    )
+    return {
+        "by_status": by_status,
+        "total_paid_usd": total_paid_usd,
+        "total_pending_usd": total_pending_usd,
+        "total_payouts": sum(v["count"] for v in by_status.values()),
+    }
 
 
 @router.delete("/{payout_id}", status_code=204)

@@ -505,6 +505,15 @@ class TaskPipelineStepDB(Base):
     # Input mapping: how to pull fields from pipeline run input or prior step output
     # e.g. {"prompt": "$.input.text", "context": "$.steps.0.output.summary"}
     input_mapping = Column(JSON, nullable=True)
+    # Condition branches ─────────────────────────────────────────────────────
+    # Optional JSONPath expression; if it evaluates to falsy, step is skipped.
+    # e.g. "$.steps.0.output.score > 0.8" — runs only if prior step score > 0.8
+    # Supported operators: ==, !=, >, >=, <, <= and path existence check (no op)
+    condition = Column(Text, nullable=True)
+    # Step index to go to on success (None = next sequential step)
+    next_on_pass = Column(Integer, nullable=True)
+    # Step index to go to on failure: -1 = fail pipeline (default), >= 0 = branch
+    next_on_fail = Column(Integer, nullable=True)
 
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
 
@@ -555,7 +564,8 @@ class TaskPipelineStepRunDB(Base):
     task_id = Column(UUID(as_uuid=True), ForeignKey("tasks.id", ondelete="SET NULL"),
                      nullable=True)  # The actual Task created for this step
     status = Column(
-        SAEnum("pending", "running", "completed", "failed", name="step_run_status_enum"),
+        SAEnum("pending", "running", "completed", "failed", "skipped",
+               name="step_run_status_enum"),
         default="pending",
         nullable=False,
     )
@@ -1061,3 +1071,34 @@ class DisputeEventDB(Base):
     actor = relationship("UserDB", backref="dispute_actions")
 
     worker = relationship("UserDB", backref="quiz_attempts")
+
+
+class WebhookEndpointDB(Base):
+    """
+    Persistent webhook subscription — fires for all tasks owned by the user.
+
+    Unlike per-task webhook_url, these endpoints are registered once and
+    automatically receive events for every task this user creates.
+    """
+    __tablename__ = "webhook_endpoints"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    url = Column(String(2048), nullable=False)
+    description = Column(String(255), nullable=True)
+    # Which events to receive — NULL means ALL events
+    events = Column(JSON, nullable=True)
+    # HMAC-SHA256 signing secret — base64url random bytes
+    secret = Column(String(128), nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    # Stats (cached)
+    delivery_count = Column(Integer, default=0, nullable=False)
+    failure_count = Column(Integer, default=0, nullable=False)
+    last_triggered_at = Column(DateTime(timezone=True), nullable=True)
+    last_failure_at = Column(DateTime(timezone=True), nullable=True)
+
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+
+    user = relationship("UserDB", backref="webhook_endpoints")
