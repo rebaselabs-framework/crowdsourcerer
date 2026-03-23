@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.auth import get_current_user_id
+from core.auth import get_current_user_id, require_admin
 from core.database import get_db
 from core.notify import create_notification, NotifType
 from models.db import UserDB, PayoutRequestDB, CreditTransactionDB
@@ -28,18 +28,6 @@ router = APIRouter(prefix="/v1/payouts", tags=["payouts"])
 MIN_PAYOUT_CREDITS = 1000
 
 ALLOWED_METHODS = {"paypal", "bank_transfer", "crypto"}
-
-
-async def require_admin(
-    db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id),
-) -> str:
-    """Dependency: verify the caller is an admin."""
-    result = await db.execute(select(UserDB).where(UserDB.id == user_id))
-    user = result.scalar_one_or_none()
-    if not user or not user.is_admin:
-        raise HTTPException(403, "Admin access required")
-    return user_id
 
 
 # ─── Worker endpoints ──────────────────────────────────────────────────────

@@ -91,3 +91,19 @@ async def get_current_user_id(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
         )
     return user_id
+
+
+async def require_admin(
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+) -> str:
+    """Dependency: verify the caller is an admin (is_admin=True)."""
+    from models.db import UserDB  # avoid circular import at module level
+    result = await db.execute(select(UserDB).where(UserDB.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user or not user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
+        )
+    return user_id

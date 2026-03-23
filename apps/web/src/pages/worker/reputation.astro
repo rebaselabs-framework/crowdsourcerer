@@ -1,0 +1,205 @@
+---
+/**
+ * Worker Reputation — my trust score, tier, strikes, and ban status.
+ */
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Object.fromEntries(
+  Astro.cookies.getAll().map((c) => [c.name, c.value])
+));
+if (!token) return Astro.redirect("/login?next=/worker/reputation");
+
+let reputation: any = null;
+let error: string | null = null;
+
+try {
+  reputation = await apiFetch<any>("/v1/reputation/me", { token });
+} catch (e: any) {
+  error = e.message ?? "Failed to load reputation data.";
+}
+
+function tierColor(score: number) {
+  if (score >= 90) return "text-yellow-400";
+  if (score >= 75) return "text-green-400";
+  if (score >= 60) return "text-blue-400";
+  if (score >= 40) return "text-gray-300";
+  if (score >= 20) return "text-orange-400";
+  return "text-red-400";
+}
+
+function tierBg(score: number) {
+  if (score >= 90) return "from-yellow-900/30 to-yellow-950/50 border-yellow-800/50";
+  if (score >= 75) return "from-green-900/30 to-green-950/50 border-green-800/50";
+  if (score >= 60) return "from-blue-900/30 to-blue-950/50 border-blue-800/50";
+  if (score >= 40) return "from-gray-800/30 to-gray-900/50 border-gray-700/50";
+  if (score >= 20) return "from-orange-900/30 to-orange-950/50 border-orange-800/50";
+  return "from-red-900/30 to-red-950/50 border-red-800/50";
+}
+
+const score = reputation?.reputation_score ?? 0;
+const tier = reputation?.tier ?? "Novice";
+---
+
+<Layout title="My Reputation — CrowdSorcerer">
+  <div class="max-w-3xl mx-auto px-6 py-10">
+    <!-- Breadcrumb -->
+    <div class="text-sm text-gray-500 mb-6">
+      <a href="/worker" class="hover:text-gray-300 transition-colors">Worker Hub</a>
+      <span class="mx-2">›</span>
+      <span>My Reputation</span>
+    </div>
+
+    {error ? (
+      <div class="bg-red-950/30 border border-red-800 rounded-xl p-6 text-red-300">{error}</div>
+    ) : reputation ? (
+      <>
+        {/* Ban warning */}
+        {reputation.is_banned && (
+          <div class="bg-red-950/50 border border-red-700 rounded-xl p-5 mb-6">
+            <div class="flex items-start gap-3">
+              <span class="text-2xl">🚫</span>
+              <div>
+                <h2 class="font-bold text-red-400 mb-1">Account Suspended</h2>
+                <p class="text-sm text-red-300">{reputation.ban_reason}</p>
+                {reputation.ban_expires_at && (
+                  <p class="text-xs text-red-400 mt-1">
+                    Expires: {new Date(reputation.ban_expires_at).toLocaleDateString()}
+                  </p>
+                )}
+                {!reputation.ban_expires_at && (
+                  <p class="text-xs text-red-400 mt-1">This ban is permanent. Contact support to appeal.</p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Score card */}
+        <div class:list={["rounded-2xl p-8 mb-6 bg-gradient-to-br border", tierBg(score)]}>
+          <div class="flex items-center justify-between mb-6">
+            <div>
+              <h1 class="text-2xl font-bold mb-1">My Reputation</h1>
+              <p class="text-sm text-gray-400">Your trust score across the platform</p>
+            </div>
+            <div class="text-right">
+              <div class:list={["text-5xl font-black", tierColor(score)]}>{score.toFixed(1)}</div>
+              <div class:list={["text-sm font-semibold mt-1", tierColor(score)]}>{tier}</div>
+            </div>
+          </div>
+
+          {/* Progress bar */}
+          <div class="mb-6">
+            <div class="flex justify-between text-xs text-gray-500 mb-1">
+              <span>0 — Untrusted</span>
+              <span>100 — Elite</span>
+            </div>
+            <div class="h-3 bg-gray-800/60 rounded-full overflow-hidden">
+              <div
+                class:list={["h-full rounded-full transition-all duration-500", tierColor(score).replace("text-", "bg-")]}
+                style={`width: ${score}%`}
+              ></div>
+            </div>
+          </div>
+
+          {/* Score components */}
+          <div class="grid grid-cols-3 gap-4">
+            {[
+              { label: "Accuracy", value: reputation.accuracy != null ? `${(reputation.accuracy * 100).toFixed(0)}%` : "—", hint: "Approved / total" },
+              { label: "Tasks Done", value: reputation.tasks_completed.toLocaleString(), hint: "Completed tasks" },
+              { label: "Streak", value: `${reputation.streak_days}d`, hint: "Active days" },
+            ].map(({ label, value, hint }) => (
+              <div class="bg-black/20 rounded-xl p-3 text-center">
+                <div class="text-xs text-gray-500 mb-1">{label}</div>
+                <div class="text-lg font-bold text-white">{value}</div>
+                <div class="text-xs text-gray-600 mt-0.5">{hint}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Tier guide */}
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 mb-6">
+          <h2 class="font-semibold mb-4">Reputation Tiers</h2>
+          <div class="space-y-2">
+            {[
+              ["text-yellow-400", "⭐ Elite", "90–100", "Access to all tasks, highest-paying assignments"],
+              ["text-green-400", "🌟 Expert", "75–90", "Premium tasks unlocked, priority queue"],
+              ["text-blue-400", "💎 Proficient", "60–75", "Standard tasks + some premium access"],
+              ["text-gray-300", "📈 Developing", "40–60", "Normal marketplace access"],
+              ["text-orange-400", "🌱 Novice", "20–40", "Basic tasks only"],
+              ["text-red-400", "⚠️ Untrusted", "0–20", "Limited access, some tasks blocked"],
+            ].map(([color, label, range, desc]) => (
+              <div class:list={["flex items-center gap-4 p-3 rounded-lg", score >= parseInt(range) ? "bg-gray-800/50" : "opacity-50"]}>
+                <span class:list={["text-sm font-semibold w-24", color]}>{label}</span>
+                <span class="text-xs text-gray-500 w-16">{range}</span>
+                <span class="text-xs text-gray-400 flex-1">{desc}</span>
+                {score >= parseInt(range.split("–")[0]) && score < parseInt(range.split("–")[1] || "101") && (
+                  <span class="text-xs bg-violet-900/50 text-violet-300 px-2 py-0.5 rounded-full border border-violet-800/50">Current</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Active strikes */}
+        {reputation.active_strikes?.length > 0 && (
+          <div class="bg-gray-900 border border-orange-800/40 rounded-xl p-6 mb-6">
+            <h2 class="font-semibold mb-4 text-orange-400">⚡ Active Strikes ({reputation.active_strikes.length})</h2>
+            <div class="space-y-3">
+              {reputation.active_strikes.map((s: any) => (
+                <div class="bg-orange-950/20 border border-orange-800/30 rounded-lg p-4">
+                  <div class="flex items-start justify-between">
+                    <div>
+                      <span class:list={[
+                        "text-xs font-semibold px-2 py-0.5 rounded-full mr-2",
+                        s.severity === "critical" ? "bg-red-900/60 text-red-300" :
+                        s.severity === "major" ? "bg-orange-900/60 text-orange-300" :
+                        s.severity === "minor" ? "bg-yellow-900/60 text-yellow-300" :
+                        "bg-gray-800 text-gray-400"
+                      ]}>{s.severity.toUpperCase()}</span>
+                      <span class="text-sm text-white">{s.reason}</span>
+                    </div>
+                    <span class="text-xs text-gray-500 shrink-0 ml-4">
+                      {new Date(s.created_at).toLocaleDateString()}
+                    </span>
+                  </div>
+                  {s.expires_at && (
+                    <p class="text-xs text-gray-500 mt-1">
+                      Expires {new Date(s.expires_at).toLocaleDateString()}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+            <p class="text-xs text-gray-500 mt-4">
+              Strikes reduce your reputation score. Contact support if you believe a strike was issued in error.
+            </p>
+          </div>
+        )}
+
+        {/* How to improve */}
+        {!reputation.is_banned && (
+          <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
+            <h2 class="font-semibold mb-4">💡 Improve Your Score</h2>
+            <ul class="space-y-2 text-sm text-gray-400">
+              <li class="flex items-start gap-2"><span class="text-green-400 mt-0.5">✓</span> Submit high-quality responses to earn approvals</li>
+              <li class="flex items-start gap-2"><span class="text-green-400 mt-0.5">✓</span> Complete tasks before they time out</li>
+              <li class="flex items-start gap-2"><span class="text-green-400 mt-0.5">✓</span> Build daily streaks by staying active</li>
+              <li class="flex items-start gap-2"><span class="text-green-400 mt-0.5">✓</span> Earn certifications for task types you specialise in</li>
+              <li class="flex items-start gap-2"><span class="text-green-400 mt-0.5">✓</span> Level up through XP to boost your score</li>
+            </ul>
+            <div class="flex gap-3 mt-4">
+              <a href="/worker/certifications" class="flex-1 text-center py-2 bg-violet-900/30 hover:bg-violet-900/50 text-violet-300 text-sm rounded-lg border border-violet-800/30 transition-colors">
+                🎓 Certifications
+              </a>
+              <a href="/worker/marketplace" class="flex-1 text-center py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm rounded-lg transition-colors">
+                🛍️ Browse Tasks
+              </a>
+            </div>
+          </div>
+        )}
+      </>
+    ) : null}
+  </div>
+</Layout>

@@ -12,25 +12,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, cast, Date as SADate, and_
 
-from core.auth import get_current_user_id
+from core.auth import get_current_user_id, require_admin
 from core.database import get_db, AsyncSessionLocal
 from core.sweeper import sweep_once, get_sweeper_task
 from models.db import TaskDB, UserDB, CreditTransactionDB, TaskAssignmentDB, WebhookLogDB, PayoutRequestDB
 
 logger = structlog.get_logger()
 router = APIRouter(prefix="/v1/admin", tags=["admin"])
-
-
-async def require_admin(
-    db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id),
-) -> str:
-    """Dependency: verify the caller is an admin."""
-    result = await db.execute(select(UserDB).where(UserDB.id == user_id))
-    user = result.scalar_one_or_none()
-    if not user or not user.is_admin:
-        raise HTTPException(status_code=403, detail="Admin access required")
-    return user_id
 
 
 # ─── Platform Stats ────────────────────────────────────────────────────────

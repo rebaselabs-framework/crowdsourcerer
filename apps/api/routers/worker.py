@@ -12,6 +12,7 @@ from sqlalchemy import select, func, and_, or_
 
 from core.auth import get_current_user_id
 from core.database import get_db
+from core.reputation import refresh_worker_reputation
 from models.db import (
     TaskDB, UserDB, TaskAssignmentDB, CreditTransactionDB,
     DailyChallengeDB, DailyChallengeProgressDB,
@@ -230,6 +231,11 @@ async def list_marketplace_tasks(
     if not user or user.role not in ("worker", "both"):
         raise HTTPException(status_code=403, detail="Not enrolled as a worker.")
 
+    if user.is_banned:
+        raise HTTPException(status_code=403, detail="Your worker account has been suspended.")
+
+    worker_rep = user.reputation_score or 0.0
+
     # Base query: open human tasks where there are still slots available
     q = select(TaskDB).where(
         TaskDB.status == "open",
@@ -245,6 +251,8 @@ async def list_marketplace_tasks(
         ),
         # Don't show requester their own tasks
         TaskDB.user_id != user_id,
+        # Only show tasks worker has enough reputation to claim
+        (TaskDB.min_reputation_score == None) | (TaskDB.min_reputation_score <= worker_rep),  # noqa: E711
     )
 
     if type:
@@ -324,6 +332,10 @@ async def claim_task(
     if not user or user.role not in ("worker", "both"):
         raise HTTPException(status_code=403, detail="Not enrolled as a worker.")
 
+    # Ban check
+    if user.is_banned:
+        raise HTTPException(status_code=403, detail="Your worker account has been suspended.")
+
     result = await db.execute(
         select(TaskDB).where(
             TaskDB.id == task_id,
@@ -334,6 +346,15 @@ async def claim_task(
     task = result.scalar_one_or_none()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found or not available")
+
+    # Reputation gate check
+    if task.min_reputation_score is not None:
+        if (user.reputation_score or 0.0) < task.min_reputation_score:
+            raise HTTPException(
+                status_code=403,
+                detail=f"This task requires a reputation score of {task.min_reputation_score:.0f}+. "
+                       f"Your current score is {user.reputation_score:.0f}.",
+            )
 
     # Check worker hasn't already claimed this task
     existing = await db.scalar(
@@ -672,6 +693,14 @@ async def submit_task(
             await resume_pipeline_after_human_step(ptask_id, poutput, db)
         except Exception:
             logger.exception("pipeline_resume_failed", task_id=str(task_id))
+
+    # ── Refresh reputation score ──────────────────────────────────────────
+    try:
+        import uuid as _uuid_mod
+        await refresh_worker_reputation(_uuid_mod.UUID(user_id), db)
+        await db.commit()
+    except Exception:
+        pass  # Reputation errors never block submission
 
     msg = f"Submitted! You earned {earnings} credits and {xp} XP."
     if new_badge_ids:

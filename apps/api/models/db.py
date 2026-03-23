@@ -58,6 +58,13 @@ class UserDB(Base):
     worker_streak_days = Column(Integer, default=0, nullable=False)
     worker_last_active_date = Column(DateTime(timezone=True), nullable=True)
 
+    # Worker reputation & moderation
+    reputation_score = Column(Float, default=50.0, nullable=False)  # 0.0–100.0
+    strike_count = Column(Integer, default=0, nullable=False)
+    is_banned = Column(Boolean, default=False, nullable=False)
+    ban_reason = Column(Text, nullable=True)
+    ban_expires_at = Column(DateTime(timezone=True), nullable=True)  # None = permanent ban
+
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
@@ -144,6 +151,7 @@ class TaskDB(Base):
     # Quality control fields
     is_gold_standard = Column(Boolean, default=False, nullable=False)  # Hidden QC task
     gold_answer = Column(JSON, nullable=True)                          # Expected answer for QC
+    min_reputation_score = Column(Float, nullable=True)                # Only workers with rep >= this can claim
 
     # Dispute / consensus fields (for multi-worker human tasks)
     # Strategies: any_first | majority_vote | unanimous | requester_review
@@ -667,3 +675,57 @@ class RateLimitBucketDB(Base):
     reset_at = Column(DateTime(timezone=True), nullable=False)
 
     user = relationship("UserDB", backref="rate_limit_buckets")
+
+
+# ─── Worker Reputation & Moderation ──────────────────────────────────────────
+
+class WorkerStrikeDB(Base):
+    """Moderation strike issued to a worker by an admin."""
+    __tablename__ = "worker_strikes"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    worker_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
+                       nullable=False, index=True)
+    issued_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"),
+                       nullable=True)
+    # severity: warning | minor | major | critical
+    severity = Column(String(16), default="minor", nullable=False)
+    reason = Column(Text, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)  # False = pardoned
+    expires_at = Column(DateTime(timezone=True), nullable=True)  # None = permanent
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    worker = relationship("UserDB", backref="strikes_received", foreign_keys=[worker_id])
+    admin = relationship("UserDB", backref="strikes_issued", foreign_keys=[issued_by])
+
+
+# ─── Pipeline Triggers ────────────────────────────────────────────────────────
+
+class PipelineTriggerDB(Base):
+    """A trigger that automatically fires a pipeline run on a schedule or via webhook."""
+    __tablename__ = "pipeline_triggers"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    pipeline_id = Column(UUID(as_uuid=True), ForeignKey("task_pipelines.id", ondelete="CASCADE"),
+                         nullable=False, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    # type: schedule | webhook
+    trigger_type = Column(String(16), nullable=False)
+    name = Column(String(255), nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    # Schedule fields (type=schedule)
+    cron_expression = Column(String(64), nullable=True)   # e.g. "0 9 * * 1" = Mon 9am
+    # Webhook fields (type=webhook)
+    webhook_token = Column(String(64), unique=True, nullable=True, index=True)
+    # Default input to pass to the pipeline run when trigger fires
+    default_input = Column(JSON, nullable=True)
+    # Tracking
+    last_fired_at = Column(DateTime(timezone=True), nullable=True)
+    next_fire_at = Column(DateTime(timezone=True), nullable=True)  # computed from cron
+    run_count = Column(Integer, default=0, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+
+    pipeline = relationship("TaskPipelineDB", backref="triggers")
+    user = relationship("UserDB", backref="pipeline_triggers")

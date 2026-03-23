@@ -1,0 +1,200 @@
+---
+/**
+ * Unified Search — search across tasks, pipelines, and templates.
+ */
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Object.fromEntries(
+  Astro.cookies.getAll().map((c) => [c.name, c.value])
+));
+if (!token) return Astro.redirect("/login?next=/dashboard/search");
+
+const q = Astro.url.searchParams.get("q") ?? "";
+const entityTypes = Astro.url.searchParams.get("entity_types") ?? "";
+
+let results: any = null;
+let error: string | null = null;
+
+if (q.length >= 2) {
+  try {
+    const qs = new URLSearchParams({ q, limit: "10" });
+    if (entityTypes) qs.set("entity_types", entityTypes);
+    results = await apiFetch<any>(`/v1/search?${qs}`, { token });
+  } catch (e: any) {
+    if (e.message?.includes("401")) return Astro.redirect("/login");
+    error = e.message ?? "Search failed.";
+  }
+}
+
+const entityIcons: Record<string, string> = {
+  task: "📋",
+  pipeline: "⛓️",
+  template: "🏪",
+};
+
+const entityColors: Record<string, string> = {
+  task: "text-blue-400 bg-blue-900/20 border-blue-800/40",
+  pipeline: "text-violet-400 bg-violet-900/20 border-violet-800/40",
+  template: "text-green-400 bg-green-900/20 border-green-800/40",
+};
+---
+
+<Layout title="Search — CrowdSorcerer">
+  <div class="max-w-4xl mx-auto px-6 py-10">
+    <div class="mb-8">
+      <h1 class="text-2xl font-bold mb-2">🔍 Search</h1>
+      <p class="text-gray-400 text-sm">Find tasks, pipelines, and templates</p>
+    </div>
+
+    <!-- Search form -->
+    <form method="GET" class="mb-8">
+      <div class="flex gap-3">
+        <input
+          name="q"
+          value={q}
+          autofocus
+          placeholder="Search tasks, pipelines, templates…"
+          class="flex-1 bg-gray-900 border border-gray-700 rounded-xl px-5 py-3 text-base focus:outline-none focus:border-violet-600 transition-colors"
+        />
+        <select
+          name="entity_types"
+          class="bg-gray-900 border border-gray-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-violet-600"
+        >
+          <option value="">All types</option>
+          <option value="task" selected={entityTypes === "task"}>Tasks only</option>
+          <option value="pipeline" selected={entityTypes === "pipeline"}>Pipelines only</option>
+          <option value="template" selected={entityTypes === "template"}>Templates only</option>
+        </select>
+        <button
+          type="submit"
+          class="px-6 py-3 bg-violet-700 hover:bg-violet-600 text-white rounded-xl font-medium text-sm transition-colors"
+        >
+          Search
+        </button>
+      </div>
+    </form>
+
+    {error && (
+      <div class="bg-red-950/30 border border-red-800 rounded-xl p-4 text-red-300 text-sm mb-6">{error}</div>
+    )}
+
+    {q.length >= 2 && results ? (
+      <>
+        {results.total === 0 ? (
+          <div class="text-center py-16">
+            <div class="text-5xl mb-4">🔍</div>
+            <h2 class="text-lg font-semibold mb-2">No results for "{q}"</h2>
+            <p class="text-gray-400 text-sm">Try a different search term or change the type filter.</p>
+          </div>
+        ) : (
+          <div>
+            <p class="text-sm text-gray-400 mb-6">
+              Found <strong class="text-white">{results.total}</strong> result{results.total !== 1 ? "s" : ""} for "<strong class="text-white">{q}</strong>"
+            </p>
+
+            {/* Tasks */}
+            {results.tasks?.length > 0 && (
+              <div class="mb-8">
+                <h2 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+                  📋 Tasks
+                  <span class="bg-gray-800 text-gray-400 text-xs px-1.5 py-0.5 rounded-full">{results.tasks.length}</span>
+                </h2>
+                <div class="space-y-2">
+                  {results.tasks.map((item: any) => (
+                    <a
+                      href={item.url}
+                      class="flex items-center gap-4 p-4 bg-gray-900 border border-gray-800 hover:border-gray-600 rounded-xl transition-colors"
+                    >
+                      <div class="text-xl shrink-0">📋</div>
+                      <div class="flex-1 min-w-0">
+                        <div class="font-medium text-white truncate">{item.title}</div>
+                        <div class="text-xs text-gray-500 mt-0.5">{item.subtitle}</div>
+                      </div>
+                      <div class:list={[
+                        "text-xs px-2 py-0.5 rounded-full border shrink-0",
+                        item.status === "completed" ? "text-green-400 bg-green-900/20 border-green-800/40" :
+                        item.status === "failed" ? "text-red-400 bg-red-900/20 border-red-800/40" :
+                        "text-gray-400 bg-gray-800/50 border-gray-700/50"
+                      ]}>{item.status}</div>
+                      <div class="text-xs text-gray-600 shrink-0">
+                        {new Date(item.created_at).toLocaleDateString()}
+                      </div>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Pipelines */}
+            {results.pipelines?.length > 0 && (
+              <div class="mb-8">
+                <h2 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+                  ⛓️ Pipelines
+                  <span class="bg-gray-800 text-gray-400 text-xs px-1.5 py-0.5 rounded-full">{results.pipelines.length}</span>
+                </h2>
+                <div class="space-y-2">
+                  {results.pipelines.map((item: any) => (
+                    <a
+                      href={item.url}
+                      class="flex items-center gap-4 p-4 bg-gray-900 border border-gray-800 hover:border-gray-600 rounded-xl transition-colors"
+                    >
+                      <div class="text-xl shrink-0">⛓️</div>
+                      <div class="flex-1 min-w-0">
+                        <div class="font-medium text-white truncate">{item.title}</div>
+                        {item.subtitle && (
+                          <div class="text-xs text-gray-500 mt-0.5 truncate">{item.subtitle}</div>
+                        )}
+                      </div>
+                      <div class:list={[
+                        "text-xs px-2 py-0.5 rounded-full border shrink-0",
+                        item.status === "active" ? "text-green-400 bg-green-900/20 border-green-800/40" :
+                        "text-gray-400 bg-gray-800/50 border-gray-700/50"
+                      ]}>{item.status}</div>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Templates */}
+            {results.templates?.length > 0 && (
+              <div class="mb-8">
+                <h2 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+                  🏪 Templates
+                  <span class="bg-gray-800 text-gray-400 text-xs px-1.5 py-0.5 rounded-full">{results.templates.length}</span>
+                </h2>
+                <div class="space-y-2">
+                  {results.templates.map((item: any) => (
+                    <a
+                      href={item.url}
+                      class="flex items-center gap-4 p-4 bg-gray-900 border border-gray-800 hover:border-gray-600 rounded-xl transition-colors"
+                    >
+                      <div class="text-xl shrink-0">🏪</div>
+                      <div class="flex-1 min-w-0">
+                        <div class="font-medium text-white truncate">{item.title}</div>
+                        <div class="text-xs text-gray-500 mt-0.5">{item.subtitle}</div>
+                      </div>
+                      <div class:list={[
+                        "text-xs px-2 py-0.5 rounded-full border shrink-0",
+                        item.status === "featured" ? "text-yellow-400 bg-yellow-900/20 border-yellow-800/40" :
+                        "text-gray-400 bg-gray-800/50 border-gray-700/50"
+                      ]}>{item.status}</div>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </>
+    ) : q.length > 0 && q.length < 2 ? (
+      <p class="text-gray-500 text-sm">Type at least 2 characters to search.</p>
+    ) : !q ? (
+      <div class="text-center py-16 text-gray-500">
+        <div class="text-5xl mb-4">🔍</div>
+        <p class="text-sm">Search for tasks, pipelines, and templates</p>
+      </div>
+    ) : null}
+  </div>
+</Layout>

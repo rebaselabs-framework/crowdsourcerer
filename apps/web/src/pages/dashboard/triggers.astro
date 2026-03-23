@@ -1,0 +1,412 @@
+---
+/**
+ * Pipeline Triggers — manage schedule and webhook triggers for pipelines.
+ */
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Object.fromEntries(
+  Astro.cookies.getAll().map((c) => [c.name, c.value])
+));
+if (!token) return Astro.redirect("/login?next=/dashboard/triggers");
+
+// Load user's pipelines to populate the selector
+let pipelines: any[] = [];
+let error: string | null = null;
+
+try {
+  const res = await apiFetch<any>("/v1/pipelines?page_size=50", { token });
+  pipelines = res?.items ?? [];
+} catch (e: any) {
+  if (e.message?.includes("401")) return Astro.redirect("/login");
+  error = "Failed to load pipelines.";
+}
+
+// If a pipeline is selected, load its triggers
+const selectedPipelineId = Astro.url.searchParams.get("pipeline_id") ?? "";
+let triggers: any[] = [];
+
+if (selectedPipelineId) {
+  try {
+    triggers = await apiFetch<any[]>(`/v1/pipelines/${selectedPipelineId}/triggers`, { token });
+  } catch (e: any) {
+    error = "Failed to load triggers.";
+  }
+}
+
+const selectedPipeline = pipelines.find((p: any) => p.id === selectedPipelineId);
+
+const CRON_EXAMPLES = [
+  { label: "Every day at 9am UTC", cron: "0 9 * * *" },
+  { label: "Every Monday at 9am UTC", cron: "0 9 * * 1" },
+  { label: "Every hour", cron: "0 * * * *" },
+  { label: "Every 30 minutes", cron: "*/30 * * * *" },
+  { label: "First of every month", cron: "0 0 1 * *" },
+];
+---
+
+<Layout title="Pipeline Triggers — CrowdSorcerer">
+  <div class="max-w-5xl mx-auto px-6 py-10">
+    <!-- Breadcrumb -->
+    <div class="text-sm text-gray-500 mb-6">
+      <a href="/dashboard" class="hover:text-gray-300 transition-colors">Dashboard</a>
+      <span class="mx-2">›</span>
+      <a href="/dashboard/pipelines" class="hover:text-gray-300 transition-colors">Pipelines</a>
+      <span class="mx-2">›</span>
+      <span>Triggers</span>
+    </div>
+
+    <div class="flex items-start justify-between mb-8">
+      <div>
+        <h1 class="text-2xl font-bold">⚡ Pipeline Triggers</h1>
+        <p class="text-gray-400 text-sm mt-1">Automate pipeline runs on a schedule or via webhook</p>
+      </div>
+    </div>
+
+    {error && (
+      <div class="bg-red-950/30 border border-red-800 rounded-xl p-4 text-red-300 text-sm mb-6">{error}</div>
+    )}
+
+    {pipelines.length === 0 ? (
+      <div class="text-center py-16 bg-gray-900 border border-gray-800 rounded-2xl">
+        <div class="text-5xl mb-4">⛓️</div>
+        <h2 class="text-lg font-semibold mb-2">No pipelines yet</h2>
+        <p class="text-gray-400 text-sm mb-6">Create a pipeline first to add triggers.</p>
+        <a href="/dashboard/pipelines" class="px-6 py-3 bg-violet-700 hover:bg-violet-600 text-white text-sm rounded-xl transition-colors font-medium">
+          Build a Pipeline
+        </a>
+      </div>
+    ) : (
+      <div class="grid grid-cols-3 gap-8">
+        <!-- Left: pipeline selector + trigger list -->
+        <div class="col-span-2">
+          <!-- Pipeline selector -->
+          <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-6">
+            <form method="GET">
+              <label class="block text-sm font-medium mb-2">Select pipeline</label>
+              <div class="flex gap-3">
+                <select
+                  name="pipeline_id"
+                  class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-violet-600"
+                >
+                  <option value="">Choose a pipeline…</option>
+                  {pipelines.map((p: any) => (
+                    <option value={p.id} selected={p.id === selectedPipelineId}>{p.name}</option>
+                  ))}
+                </select>
+                <button type="submit" class="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-sm text-gray-300 rounded-lg">
+                  Load Triggers
+                </button>
+              </div>
+            </form>
+          </div>
+
+          {/* Trigger list */}
+          {selectedPipelineId && (
+            <>
+              <div class="flex items-center justify-between mb-4">
+                <h2 class="font-semibold">
+                  Triggers for: <span class="text-violet-400">{selectedPipeline?.name ?? selectedPipelineId}</span>
+                </h2>
+                <button
+                  id="newTriggerBtn"
+                  class="px-4 py-2 bg-violet-700 hover:bg-violet-600 text-white text-sm rounded-lg font-medium transition-colors"
+                >
+                  + New Trigger
+                </button>
+              </div>
+
+              {triggers.length === 0 ? (
+                <div class="text-center py-12 bg-gray-900 border border-gray-800 rounded-xl text-gray-400 text-sm">
+                  No triggers yet. Create a schedule or webhook trigger to automate this pipeline.
+                </div>
+              ) : (
+                <div class="space-y-3">
+                  {triggers.map((t: any) => (
+                    <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+                      <div class="flex items-start justify-between mb-3">
+                        <div class="flex items-center gap-3">
+                          <span class="text-lg">{t.trigger_type === "schedule" ? "🕐" : "🔗"}</span>
+                          <div>
+                            <div class="font-medium text-white">{t.name || (t.trigger_type === "schedule" ? "Schedule Trigger" : "Webhook Trigger")}</div>
+                            <div class="text-xs text-gray-500 mt-0.5">
+                              {t.trigger_type === "schedule" ? t.cron_expression : "HTTP POST to webhook URL"}
+                            </div>
+                          </div>
+                        </div>
+                        <div class="flex items-center gap-2">
+                          <span class:list={[
+                            "text-xs px-2 py-0.5 rounded-full border",
+                            t.is_active
+                              ? "text-green-400 bg-green-900/20 border-green-800/40"
+                              : "text-gray-400 bg-gray-800/50 border-gray-700/50"
+                          ]}>
+                            {t.is_active ? "Active" : "Paused"}
+                          </span>
+                          <button
+                            class="fire-btn text-xs text-violet-400 hover:text-violet-300 px-2 py-1 bg-violet-900/20 rounded"
+                            data-trigger-id={t.id}
+                            title="Fire now"
+                          >▶ Fire now</button>
+                          <button
+                            class="delete-trigger-btn text-xs text-red-400 hover:text-red-300"
+                            data-trigger-id={t.id}
+                            title="Delete"
+                          >🗑</button>
+                        </div>
+                      </div>
+
+                      <div class="grid grid-cols-3 gap-3 text-xs">
+                        <div>
+                          <span class="text-gray-500">Runs</span>
+                          <span class="ml-2 text-white font-medium">{t.run_count}</span>
+                        </div>
+                        <div>
+                          <span class="text-gray-500">Last fired</span>
+                          <span class="ml-2 text-white">
+                            {t.last_fired_at ? new Date(t.last_fired_at).toLocaleDateString() : "Never"}
+                          </span>
+                        </div>
+                        {t.trigger_type === "schedule" && t.next_fire_at && (
+                          <div>
+                            <span class="text-gray-500">Next run</span>
+                            <span class="ml-2 text-violet-400">
+                              {new Date(t.next_fire_at).toLocaleString()}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      {t.trigger_type === "webhook" && t.webhook_url && (
+                        <div class="mt-3 flex items-center gap-2">
+                          <code class="flex-1 text-xs bg-gray-800 px-3 py-1.5 rounded-lg text-green-400 truncate">
+                            {t.webhook_url}
+                          </code>
+                          <button
+                            class="copy-webhook text-xs text-gray-400 hover:text-white px-2 py-1 bg-gray-800 rounded"
+                            data-url={t.webhook_url}
+                          >Copy</button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        <!-- Right: create trigger form + info -->
+        <div class="col-span-1">
+          {/* New trigger panel */}
+          {selectedPipelineId && (
+            <div id="newTriggerPanel" class="hidden bg-gray-900 border border-gray-800 rounded-xl p-5 mb-6">
+              <h3 class="font-semibold mb-4">Create Trigger</h3>
+              <form id="createTriggerForm">
+                <div class="mb-4">
+                  <label class="block text-xs text-gray-400 mb-1">Type</label>
+                  <div class="flex gap-2">
+                    <button type="button" id="typeSchedule"
+                      class="flex-1 py-2 text-sm rounded-lg bg-violet-900/50 text-violet-300 border border-violet-700/50 font-medium"
+                      data-type="schedule">
+                      🕐 Schedule
+                    </button>
+                    <button type="button" id="typeWebhook"
+                      class="flex-1 py-2 text-sm rounded-lg bg-gray-800 text-gray-400 border border-gray-700"
+                      data-type="webhook">
+                      🔗 Webhook
+                    </button>
+                  </div>
+                  <input type="hidden" id="selectedType" value="schedule" />
+                </div>
+
+                <div class="mb-3">
+                  <label class="block text-xs text-gray-400 mb-1">Name (optional)</label>
+                  <input id="triggerName" type="text" placeholder="My daily run"
+                    class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-violet-600" />
+                </div>
+
+                <div id="cronFields" class="mb-3">
+                  <label class="block text-xs text-gray-400 mb-1">Cron expression</label>
+                  <input id="cronExpr" type="text" placeholder="0 9 * * *"
+                    class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:border-violet-600" />
+                  <div class="mt-2 space-y-1">
+                    {CRON_EXAMPLES.map((ex) => (
+                      <button
+                        type="button"
+                        class="cron-example text-xs text-violet-400 hover:text-violet-300 block"
+                        data-cron={ex.cron}
+                      >
+                        {ex.label} → <code>{ex.cron}</code>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div class="mb-3">
+                  <label class="block text-xs text-gray-400 mb-1">Default input (JSON, optional)</label>
+                  <textarea id="defaultInput" rows="3"
+                    class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:border-violet-600"
+                    placeholder='{"key": "value"}'></textarea>
+                </div>
+
+                <button type="submit"
+                  class="w-full py-2.5 bg-violet-700 hover:bg-violet-600 text-white text-sm rounded-lg font-medium transition-colors">
+                  Create Trigger
+                </button>
+                <p id="triggerMsg" class="mt-2 text-xs text-center hidden"></p>
+              </form>
+            </div>
+          )}
+
+          {/* Info box */}
+          <div class="bg-gray-900/50 border border-gray-800 rounded-xl p-5 text-sm text-gray-400 space-y-3">
+            <div>
+              <div class="font-medium text-white mb-1">🕐 Schedule Triggers</div>
+              <p class="text-xs">Fire a pipeline on a cron schedule. Uses standard 5-part cron syntax (minute hour day month weekday).</p>
+            </div>
+            <div>
+              <div class="font-medium text-white mb-1">🔗 Webhook Triggers</div>
+              <p class="text-xs">Get a secret URL. POST any JSON to it to fire the pipeline instantly. Body is merged with default input.</p>
+            </div>
+            <div>
+              <div class="font-medium text-white mb-1">▶ Fire Now</div>
+              <p class="text-xs">Manually fire any trigger to test it immediately.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
+  </div>
+</Layout>
+
+<script>
+const token = document.cookie.split(";").map(c => c.trim()).find(c => c.startsWith("cs_token="))?.split("=")[1] ?? "";
+const pipelineId = new URLSearchParams(location.search).get("pipeline_id") ?? "";
+
+// Show/hide new trigger panel
+document.getElementById("newTriggerBtn")?.addEventListener("click", () => {
+  const panel = document.getElementById("newTriggerPanel");
+  panel?.classList.toggle("hidden");
+});
+
+// Type toggle
+let selectedType = "schedule";
+document.getElementById("typeSchedule")?.addEventListener("click", () => {
+  selectedType = "schedule";
+  (document.getElementById("selectedType") as HTMLInputElement).value = "schedule";
+  document.getElementById("cronFields")!.classList.remove("hidden");
+  document.getElementById("typeSchedule")!.className = "flex-1 py-2 text-sm rounded-lg bg-violet-900/50 text-violet-300 border border-violet-700/50 font-medium";
+  document.getElementById("typeWebhook")!.className = "flex-1 py-2 text-sm rounded-lg bg-gray-800 text-gray-400 border border-gray-700";
+});
+document.getElementById("typeWebhook")?.addEventListener("click", () => {
+  selectedType = "webhook";
+  (document.getElementById("selectedType") as HTMLInputElement).value = "webhook";
+  document.getElementById("cronFields")?.classList.add("hidden");
+  document.getElementById("typeWebhook")!.className = "flex-1 py-2 text-sm rounded-lg bg-violet-900/50 text-violet-300 border border-violet-700/50 font-medium";
+  document.getElementById("typeSchedule")!.className = "flex-1 py-2 text-sm rounded-lg bg-gray-800 text-gray-400 border border-gray-700";
+});
+
+// Cron examples
+document.querySelectorAll(".cron-example").forEach(btn => {
+  btn.addEventListener("click", () => {
+    (document.getElementById("cronExpr") as HTMLInputElement).value = btn.getAttribute("data-cron")!;
+  });
+});
+
+// Create trigger form
+document.getElementById("createTriggerForm")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const msg = document.getElementById("triggerMsg")!;
+  const type = (document.getElementById("selectedType") as HTMLInputElement).value;
+  const name = (document.getElementById("triggerName") as HTMLInputElement).value.trim();
+  const cronExpr = (document.getElementById("cronExpr") as HTMLInputElement).value.trim();
+  const defaultInputRaw = (document.getElementById("defaultInput") as HTMLTextAreaElement).value.trim();
+
+  let defaultInput: any = undefined;
+  if (defaultInputRaw) {
+    try { defaultInput = JSON.parse(defaultInputRaw); } catch {
+      msg.textContent = "Invalid JSON in default input";
+      msg.className = "mt-2 text-xs text-center text-red-400";
+      msg.classList.remove("hidden");
+      return;
+    }
+  }
+
+  const payload: any = { trigger_type: type };
+  if (name) payload.name = name;
+  if (type === "schedule") payload.cron_expression = cronExpr;
+  if (defaultInput) payload.default_input = defaultInput;
+
+  try {
+    const res = await fetch(`/api/triggers/pipelines/${pipelineId}/create`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify(payload),
+    });
+    if (res.ok) {
+      msg.textContent = "✅ Trigger created!";
+      msg.className = "mt-2 text-xs text-center text-green-400";
+      msg.classList.remove("hidden");
+      setTimeout(() => location.reload(), 1000);
+    } else {
+      const data = await res.json();
+      msg.textContent = data.detail || "Failed to create trigger";
+      msg.className = "mt-2 text-xs text-center text-red-400";
+      msg.classList.remove("hidden");
+    }
+  } catch {
+    msg.textContent = "Network error";
+    msg.className = "mt-2 text-xs text-center text-red-400";
+    msg.classList.remove("hidden");
+  }
+});
+
+// Delete triggers
+document.querySelectorAll(".delete-trigger-btn").forEach(btn => {
+  btn.addEventListener("click", async () => {
+    if (!confirm("Delete this trigger?")) return;
+    const triggerId = btn.getAttribute("data-trigger-id")!;
+    await fetch(`/api/triggers/${triggerId}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    location.reload();
+  });
+});
+
+// Fire now
+document.querySelectorAll(".fire-btn").forEach(btn => {
+  btn.addEventListener("click", async () => {
+    const triggerId = btn.getAttribute("data-trigger-id")!;
+    btn.textContent = "⏳ Firing…";
+    (btn as HTMLButtonElement).disabled = true;
+    try {
+      const res = await fetch(`/api/triggers/${triggerId}/fire`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert(`✅ Pipeline run started! Run ID: ${data.run_id}`);
+      } else {
+        alert(data.detail || "Failed to fire trigger");
+      }
+    } catch {
+      alert("Network error");
+    }
+    location.reload();
+  });
+});
+
+// Copy webhook URL
+document.querySelectorAll(".copy-webhook").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const url = btn.getAttribute("data-url")!;
+    navigator.clipboard.writeText(url).then(() => {
+      btn.textContent = "Copied!";
+      setTimeout(() => { btn.textContent = "Copy"; }, 2000);
+    });
+  });
+});
+</script>

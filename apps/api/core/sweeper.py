@@ -127,12 +127,30 @@ async def sweep_once(session_factory: async_sessionmaker) -> dict:
 async def run_sweeper(session_factory: async_sessionmaker, interval: int = SWEEP_INTERVAL_SECONDS):
     """Infinite loop: sweep, sleep, repeat. Designed to run as an asyncio background task."""
     logger.info("sweeper.started", interval_seconds=interval)
+    # Track which cycle we're on so schedule triggers run more frequently (every 60s)
+    trigger_check_interval = 60  # seconds
+    last_trigger_check = 0.0
+
     while True:
         try:
             await sweep_once(session_factory)
         except Exception:  # noqa: BLE001
             logger.exception("sweeper.unhandled_error")
-        await asyncio.sleep(interval)
+
+        # Check schedule triggers every ~60 seconds (regardless of sweep interval)
+        import time
+        now_ts = time.monotonic()
+        if now_ts - last_trigger_check >= trigger_check_interval:
+            try:
+                from routers.triggers import run_due_schedule_triggers
+                fired = await run_due_schedule_triggers(session_factory)
+                if fired:
+                    logger.info("sweeper.triggers_fired", count=fired)
+            except Exception:  # noqa: BLE001
+                logger.exception("sweeper.trigger_check_error")
+            last_trigger_check = now_ts
+
+        await asyncio.sleep(min(interval, trigger_check_interval))
 
 
 # ── Module-level reference so we can cancel/inspect from outside ──────────
