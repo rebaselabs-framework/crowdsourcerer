@@ -13,6 +13,8 @@ let verifiedSkills: any[] = [];
 let endorsements: any[] = [];
 let endorsementCount = 0;
 let portfolioItems: any[] = [];
+let taskStats: any[] = [];
+let recentActivity: any[] = [];
 let error = "";
 
 try {
@@ -26,18 +28,24 @@ try {
 
 if (profile) {
   try {
-    const [endorsementsData, countData, portfolioData] = await Promise.all([
+    const [endorsementsData, countData, portfolioData, statsData, activityData] = await Promise.all([
       apiFetch<any>(`/v1/workers/${id}/endorsements?limit=20`).catch(() => ({ items: [], total: 0 })),
       apiFetch<any>(`/v1/workers/${id}/endorsements/count`).catch(() => ({ count: 0 })),
       apiFetch<any>(`/v1/workers/${id}/portfolio`).catch(() => ({ items: [] })),
+      apiFetch<any[]>(`/v1/workers/${id}/task-stats`).catch(() => []),
+      apiFetch<any[]>(`/v1/workers/${id}/recent-activity?limit=10`).catch(() => []),
     ]);
     endorsements = endorsementsData.items ?? [];
     endorsementCount = countData.count ?? 0;
     portfolioItems = portfolioData.items ?? [];
+    taskStats = Array.isArray(statsData) ? statsData : [];
+    recentActivity = Array.isArray(activityData) ? activityData : [];
   } catch (_) {
     endorsements = [];
     endorsementCount = 0;
     portfolioItems = [];
+    taskStats = [];
+    recentActivity = [];
   }
 }
 
@@ -77,6 +85,34 @@ function pct(v: number | null | undefined): string {
 function memberSince(ts: string): string {
   return new Date(ts).toLocaleDateString("en-US", { month: "long", year: "numeric" });
 }
+
+function relativeTime(ts: string): string {
+  const diff = Date.now() - new Date(ts).getTime();
+  const days = Math.floor(diff / 86400000);
+  if (days === 0) return "Today";
+  if (days === 1) return "Yesterday";
+  if (days < 7) return `${days}d ago`;
+  if (days < 30) return `${Math.floor(days / 7)}w ago`;
+  if (days < 365) return `${Math.floor(days / 30)}mo ago`;
+  return `${Math.floor(days / 365)}y ago`;
+}
+
+function profLabel(level: number): string {
+  const labels = ["", "Novice", "Beginner", "Competent", "Proficient", "Expert"];
+  return labels[level] ?? `L${level}`;
+}
+
+function taskTypeIcon(type: string): string {
+  const icons: Record<string, string> = {
+    label_image: "🖼️", label_text: "🏷️", rate_quality: "⭐",
+    verify_fact: "✅", moderate_content: "🛡️", compare_rank: "📊",
+    answer_question: "💬", transcription_review: "🎧",
+  };
+  return icons[type] ?? "📋";
+}
+
+// Compute max tasks_completed across all task types for bar scaling
+const maxTasksStat = taskStats.reduce((m, s) => Math.max(m, s.tasks_completed), 1);
 
 const title = profile ? `${profile.name ?? "Worker"} — CrowdSorcerer` : "Worker Profile — CrowdSorcerer";
 ---
@@ -241,6 +277,81 @@ const title = profile ? `${profile.name ?? "Worker"} — CrowdSorcerer` : "Worke
                   </div>
                 );
               })}
+            </div>
+          </div>
+        )}
+
+        {/* ── Task-type Performance Bars ───────────────────── */}
+        {taskStats.length > 0 && (
+          <div class="bg-gray-800 border border-gray-700 rounded-xl p-6">
+            <h2 class="text-lg font-semibold text-white mb-4">📊 Performance by Task Type</h2>
+            <div class="space-y-4">
+              {taskStats.slice(0, 8).map((stat: any) => {
+                const barPct = Math.round((stat.tasks_completed / maxTasksStat) * 100);
+                const accPct = stat.avg_accuracy != null ? Math.round(stat.avg_accuracy * 100) : null;
+                const isVerified = verifiedSkills.some((vs: any) => vs.task_type === stat.task_type);
+                return (
+                  <div>
+                    <div class="flex items-center justify-between mb-1.5">
+                      <div class="flex items-center gap-2">
+                        <span class="text-base">{taskTypeIcon(stat.task_type)}</span>
+                        <span class="text-sm font-medium text-gray-200">
+                          {stat.task_type.replace(/_/g, " ")}
+                        </span>
+                        {isVerified && (
+                          <span class="text-[10px] bg-amber-900/50 text-amber-400 border border-amber-700/50 px-1.5 py-0.5 rounded" title="Verified">
+                            🏅
+                          </span>
+                        )}
+                      </div>
+                      <div class="flex items-center gap-3 text-xs text-gray-400">
+                        <span>{stat.tasks_completed} tasks</span>
+                        {accPct != null && (
+                          <span class={accPct >= 90 ? "text-green-400" : accPct >= 70 ? "text-yellow-400" : "text-red-400"}>
+                            {accPct}% acc
+                          </span>
+                        )}
+                        <span class="text-gray-500">{profLabel(stat.proficiency_level)}</span>
+                      </div>
+                    </div>
+                    {/* Progress bar */}
+                    <div class="h-1.5 bg-gray-700 rounded-full overflow-hidden">
+                      <div
+                        class={`h-full rounded-full transition-all ${isVerified ? "bg-amber-500" : "bg-violet-600"}`}
+                        style={`width: ${barPct}%`}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* ── Recent Activity ───────────────────────────────── */}
+        {recentActivity.length > 0 && (
+          <div class="bg-gray-800 border border-gray-700 rounded-xl p-6">
+            <h2 class="text-lg font-semibold text-white mb-4">🕒 Recent Activity</h2>
+            <div class="space-y-2">
+              {recentActivity.map((act: any) => (
+                <div class="flex items-center justify-between py-2 border-b border-gray-700/60 last:border-0">
+                  <div class="flex items-center gap-2.5">
+                    <span class="text-lg">{taskTypeIcon(act.task_type)}</span>
+                    <div>
+                      <p class="text-sm text-gray-200 capitalize">{act.task_type.replace(/_/g, " ")}</p>
+                      <p class="text-xs text-gray-500">{act.submitted_at ? relativeTime(act.submitted_at) : "—"}</p>
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-3 text-xs">
+                    {act.earnings_credits > 0 && (
+                      <span class="text-emerald-400">+{act.earnings_credits} cr</span>
+                    )}
+                    {act.xp_earned > 0 && (
+                      <span class="text-violet-400">+{act.xp_earned} XP</span>
+                    )}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         )}

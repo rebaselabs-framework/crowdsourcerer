@@ -1777,6 +1777,64 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
               </div>
             )}
           </div>
+
+          <!-- ── Invite Worker Modal ────────────────────────────────────────────── -->
+          <div id="invite-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+            <!-- Backdrop -->
+            <div id="invite-modal-backdrop" class="absolute inset-0 bg-black/70 backdrop-blur-sm"></div>
+            <!-- Dialog -->
+            <div class="relative bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4">
+              <!-- Header -->
+              <div class="flex items-center justify-between">
+                <div>
+                  <h3 class="text-base font-semibold text-white">Invite Worker</h3>
+                  <p id="invite-modal-worker-name" class="text-sm text-gray-400 mt-0.5"></p>
+                </div>
+                <button id="invite-modal-close" class="text-gray-500 hover:text-gray-300 transition-colors p-1 rounded-lg hover:bg-gray-800">
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                  </svg>
+                </button>
+              </div>
+
+              <!-- Worker summary row -->
+              <div id="invite-modal-worker-summary" class="flex items-center gap-3 bg-gray-800/60 rounded-xl p-3"></div>
+
+              <!-- Optional message -->
+              <div>
+                <label for="invite-modal-msg" class="block text-xs font-medium text-gray-400 mb-1.5">
+                  Personal message <span class="text-gray-600">(optional)</span>
+                </label>
+                <textarea
+                  id="invite-modal-msg"
+                  rows="3"
+                  maxlength="500"
+                  placeholder="Hi! I think you'd be a great fit for this task because…"
+                  class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 resize-none focus:outline-none focus:ring-1 focus:ring-violet-600 focus:border-violet-600"
+                ></textarea>
+                <p class="text-[11px] text-gray-600 mt-1 text-right"><span id="invite-msg-len">0</span>/500</p>
+              </div>
+
+              <!-- Action row -->
+              <div class="flex items-center gap-3 pt-1">
+                <button id="invite-modal-cancel" class="flex-1 px-4 py-2 text-sm text-gray-400 hover:text-white border border-gray-700 rounded-lg hover:border-gray-600 transition-colors">
+                  Cancel
+                </button>
+                <button id="invite-modal-submit" class="flex-1 px-4 py-2 text-sm font-medium bg-violet-700 hover:bg-violet-600 text-white rounded-lg transition-colors disabled:opacity-50 disabled:pointer-events-none">
+                  Send Invite
+                </button>
+              </div>
+
+              <!-- Status messages -->
+              <div id="invite-modal-success" class="hidden text-center py-2">
+                <p class="text-green-400 text-sm font-medium">✅ Invite sent successfully!</p>
+                <p class="text-gray-500 text-xs mt-1">The worker has been notified.</p>
+              </div>
+              <div id="invite-modal-error" class="hidden bg-red-900/30 border border-red-800 rounded-lg px-3 py-2">
+                <p id="invite-modal-error-msg" class="text-red-400 text-sm"></p>
+              </div>
+            </div>
+          </div>
         )}
 
         <!-- Retry if failed -->
@@ -2446,12 +2504,122 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
         away:      "bg-gray-800 text-gray-500",
       };
 
+      // Track already-invited worker IDs so button shows "Invited ✓"
+      const invitedWorkerIds = new Set();
+
+      // ── Invite modal logic ────────────────────────────────────────────────
+      let currentInviteWorkerId = null;
+      let currentInviteWorkerName = "";
+
+      const inviteModal       = document.getElementById("invite-modal");
+      const inviteBackdrop    = document.getElementById("invite-modal-backdrop");
+      const inviteClose       = document.getElementById("invite-modal-close");
+      const inviteCancel      = document.getElementById("invite-modal-cancel");
+      const inviteSubmit      = document.getElementById("invite-modal-submit");
+      const inviteMsg         = document.getElementById("invite-modal-msg");
+      const inviteMsgLen      = document.getElementById("invite-msg-len");
+      const inviteSuccess     = document.getElementById("invite-modal-success");
+      const inviteError       = document.getElementById("invite-modal-error");
+      const inviteErrorMsg    = document.getElementById("invite-modal-error-msg");
+      const inviteWorkerName  = document.getElementById("invite-modal-worker-name");
+      const inviteSummary     = document.getElementById("invite-modal-worker-summary");
+
+      function openInviteModal(workerId, workerName, summaryHtml) {
+        currentInviteWorkerId = workerId;
+        currentInviteWorkerName = workerName;
+        if (inviteWorkerName) inviteWorkerName.textContent = workerName;
+        if (inviteSummary) inviteSummary.innerHTML = summaryHtml;
+        if (inviteMsg) inviteMsg.value = "";
+        if (inviteMsgLen) inviteMsgLen.textContent = "0";
+        if (inviteSuccess) inviteSuccess.classList.add("hidden");
+        if (inviteError) inviteError.classList.add("hidden");
+        if (inviteSubmit) {
+          inviteSubmit.textContent = "Send Invite";
+          inviteSubmit.removeAttribute("disabled");
+        }
+        inviteModal?.classList.remove("hidden");
+        inviteMsg?.focus();
+      }
+
+      function closeInviteModal() {
+        inviteModal?.classList.add("hidden");
+        currentInviteWorkerId = null;
+      }
+
+      inviteClose?.addEventListener("click", closeInviteModal);
+      inviteCancel?.addEventListener("click", closeInviteModal);
+      inviteBackdrop?.addEventListener("click", closeInviteModal);
+
+      inviteMsg?.addEventListener("input", () => {
+        if (inviteMsgLen) inviteMsgLen.textContent = String(inviteMsg.value.length);
+      });
+
+      inviteSubmit?.addEventListener("click", async () => {
+        if (!currentInviteWorkerId) return;
+        inviteSubmit.setAttribute("disabled", "true");
+        inviteSubmit.textContent = "Sending…";
+        inviteSuccess?.classList.add("hidden");
+        inviteError?.classList.add("hidden");
+
+        try {
+          const res = await fetch(`/api/tasks/${taskId}/invite`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              worker_id: currentInviteWorkerId,
+              message: inviteMsg?.value?.trim() || null,
+            }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (res.ok) {
+            inviteSuccess?.classList.remove("hidden");
+            inviteSubmit.textContent = "Sent!";
+            invitedWorkerIds.add(currentInviteWorkerId);
+            // Update the button in the list
+            const btn = document.querySelector(`[data-invite-worker="${currentInviteWorkerId}"]`);
+            if (btn) {
+              btn.textContent = "Invited ✓";
+              btn.classList.remove("bg-violet-900/30", "hover:bg-violet-800/50", "border-violet-800/50", "text-violet-300");
+              btn.classList.add("bg-green-900/30", "border-green-800/50", "text-green-400", "pointer-events-none");
+            }
+            setTimeout(closeInviteModal, 1500);
+          } else {
+            const msg = data?.detail ?? "Failed to send invite";
+            if (inviteErrorMsg) inviteErrorMsg.textContent = msg;
+            inviteError?.classList.remove("hidden");
+            inviteSubmit.textContent = "Send Invite";
+            inviteSubmit.removeAttribute("disabled");
+          }
+        } catch {
+          if (inviteErrorMsg) inviteErrorMsg.textContent = "Network error — please try again";
+          inviteError?.classList.remove("hidden");
+          inviteSubmit.textContent = "Send Invite";
+          inviteSubmit.removeAttribute("disabled");
+        }
+      });
+
+      // Close modal on Escape
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") closeInviteModal();
+      });
+
       async function loadSuggestedWorkers() {
         const container = document.getElementById("suggested-workers-list");
         if (!container) return;
         try {
-          const res = await fetch(`/api/tasks/${taskId}/suggested-workers?limit=8`);
-          const workers = res.ok ? await res.json() : [];
+          // Also load already-sent invites to show correct button state
+          const [swRes, invRes] = await Promise.all([
+            fetch(`/api/tasks/${taskId}/suggested-workers?limit=8`),
+            fetch(`/api/tasks/${taskId}/invite`).catch(() => null),
+          ]);
+          const workers = swRes.ok ? await swRes.json() : [];
+          if (invRes?.ok) {
+            const existingInvites = await invRes.json().catch(() => []);
+            (existingInvites || []).forEach(inv => {
+              if (inv.worker_id) invitedWorkerIds.add(inv.worker_id);
+            });
+          }
+
           if (!workers.length) {
             container.innerHTML = `<p class="px-5 py-4 text-sm text-gray-600 text-center">No experienced workers found for this task type yet.</p>`;
             return;
@@ -2464,10 +2632,24 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
             const prof = profLabels[w.proficiency_level] ?? `L${w.proficiency_level}`;
             const availBadge = AVAIL_BADGE[w.availability_status] ?? "bg-gray-800 text-gray-500";
             const verifiedBadge = w.verified ? `<span class="text-amber-400 text-xs" title="Verified skill">🏅</span>` : "";
+            const alreadyInvited = invitedWorkerIds.has(w.worker_id);
+            const btnClass = alreadyInvited
+              ? "shrink-0 px-2.5 py-1 bg-green-900/30 border border-green-800/50 text-green-400 text-xs rounded-lg pointer-events-none"
+              : "shrink-0 px-2.5 py-1 bg-violet-900/30 hover:bg-violet-800/50 border border-violet-800/50 text-violet-300 text-xs rounded-lg transition-colors cursor-pointer";
+            const btnLabel = alreadyInvited ? "Invited ✓" : "Invite";
+            // Build a summary HTML snippet for the modal
+            const avatarHtml = w.avatar_url
+              ? `<img src="${w.avatar_url}" class="w-8 h-8 rounded-full object-cover shrink-0" />`
+              : `<div class="w-8 h-8 rounded-full bg-violet-800/50 flex items-center justify-center text-violet-300 text-xs font-semibold shrink-0">${initials}</div>`;
+            const summaryHtml = `${avatarHtml}
+              <div>
+                <p class="text-sm font-medium text-gray-200">${w.display_name}</p>
+                <p class="text-xs text-gray-500">${prof} · ${w.tasks_completed} tasks · ${accuracy} acc · <span class="${repColor}">${w.reputation_score} rep</span></p>
+              </div>`;
             return `<div class="flex items-center gap-3 px-5 py-3 hover:bg-gray-800/50 transition-colors">
-              <div class="w-9 h-9 rounded-full bg-violet-800/50 flex items-center justify-center text-violet-300 text-sm font-semibold shrink-0">
+              <a href="/workers/${w.worker_id}" class="w-9 h-9 rounded-full bg-violet-800/50 flex items-center justify-center text-violet-300 text-sm font-semibold shrink-0 hover:ring-2 hover:ring-violet-600 transition-all">
                 ${w.avatar_url ? `<img src="${w.avatar_url}" class="w-9 h-9 rounded-full object-cover" />` : initials}
-              </div>
+              </a>
               <div class="min-w-0 flex-1">
                 <div class="flex items-center gap-1.5">
                   <a href="/workers/${w.worker_id}" class="text-sm text-gray-200 hover:text-white font-medium truncate">${w.display_name}</a>
@@ -2484,12 +2666,25 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
                   <span class="text-xs ${repColor}">${w.reputation_score} rep</span>
                 </div>
               </div>
-              <a href="/workers/browse?invite_task=${taskId}&worker=${w.worker_id}"
-                class="shrink-0 px-2.5 py-1 bg-violet-900/30 hover:bg-violet-800/50 border border-violet-800/50 text-violet-300 text-xs rounded-lg transition-colors">
-                Invite
-              </a>
+              <button
+                data-invite-worker="${w.worker_id}"
+                data-invite-name="${w.display_name}"
+                data-invite-summary="${encodeURIComponent(summaryHtml)}"
+                class="${btnClass}"
+                ${alreadyInvited ? "disabled" : ""}
+              >${btnLabel}</button>
             </div>`;
           }).join("");
+
+          // Wire up invite buttons
+          container.querySelectorAll("[data-invite-worker]").forEach(btn => {
+            btn.addEventListener("click", () => {
+              const wId = btn.getAttribute("data-invite-worker");
+              const wName = btn.getAttribute("data-invite-name") ?? "";
+              const wSummary = decodeURIComponent(btn.getAttribute("data-invite-summary") ?? "");
+              openInviteModal(wId, wName, wSummary);
+            });
+          });
         } catch {
           container.innerHTML = `<p class="px-5 py-4 text-sm text-gray-600 text-center">Could not load suggestions.</p>`;
         }

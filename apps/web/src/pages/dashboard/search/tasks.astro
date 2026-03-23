@@ -1,7 +1,7 @@
 ---
 /**
  * Advanced Task Search — full-text search across task type, instructions,
- * input JSON, and output JSON. Supports pagination + filters.
+ * input JSON, and output JSON. Supports tag filtering + saved filters.
  */
 import Layout from "@/layouts/Layout.astro";
 import { apiFetch, getToken } from "@/lib/api";
@@ -15,23 +15,32 @@ const taskType   = Astro.url.searchParams.get("task_type") ?? "";
 const execMode   = Astro.url.searchParams.get("execution_mode") ?? "";
 const fromDate   = Astro.url.searchParams.get("from_date") ?? "";
 const toDate     = Astro.url.searchParams.get("to_date") ?? "";
+const tagsParam  = Astro.url.searchParams.get("tags") ?? "";
 const page       = parseInt(Astro.url.searchParams.get("page") ?? "1", 10);
 const pageSize   = 20;
 
 let results: any = null;
 let error: string | null = null;
+let userTags: string[] = [];
 
-const shouldSearch = q.length >= 2 || status || taskType || execMode || fromDate || toDate;
+// Load user's tag list for suggestions
+try {
+  const tagData = await apiFetch<any[]>("/v1/tasks/tags", { token }).catch(() => []);
+  userTags = (tagData ?? []).map((t: any) => (typeof t === "string" ? t : t.tag ?? t.name ?? "")).filter(Boolean);
+} catch (_) {}
+
+const shouldSearch = q.length >= 2 || status || taskType || execMode || fromDate || toDate || tagsParam;
 
 if (shouldSearch) {
   try {
     const qs = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
-    if (q)        qs.set("q", q);
-    if (status)   qs.set("status", status);
-    if (taskType) qs.set("task_type", taskType);
-    if (execMode) qs.set("execution_mode", execMode);
-    if (fromDate) qs.set("from_date", fromDate);
-    if (toDate)   qs.set("to_date", toDate);
+    if (q)         qs.set("q", q);
+    if (status)    qs.set("status", status);
+    if (taskType)  qs.set("task_type", taskType);
+    if (execMode)  qs.set("execution_mode", execMode);
+    if (fromDate)  qs.set("from_date", fromDate);
+    if (toDate)    qs.set("to_date", toDate);
+    if (tagsParam) qs.set("tags", tagsParam);
     results = await apiFetch<any>(`/v1/search/tasks?${qs}`, { token });
   } catch (e: any) {
     if (e.message?.includes("401")) return Astro.redirect("/login");
@@ -52,6 +61,22 @@ const fieldColors: Record<string, string> = {
   instructions: "text-yellow-400",
   type: "text-gray-400",
 };
+
+// Active tags as array
+const activeTags = tagsParam ? tagsParam.split(",").map(t => t.trim()).filter(Boolean) : [];
+
+// Build current filter URL params (without page) for pagination
+function filterQs(extra: Record<string, string> = {}): string {
+  const p: Record<string, string> = {};
+  if (q)         p.q = q;
+  if (status)    p.status = status;
+  if (taskType)  p.task_type = taskType;
+  if (execMode)  p.execution_mode = execMode;
+  if (fromDate)  p.from_date = fromDate;
+  if (toDate)    p.to_date = toDate;
+  if (tagsParam) p.tags = tagsParam;
+  return new URLSearchParams({ ...p, ...extra }).toString();
+}
 ---
 
 <Layout title="Task Search — CrowdSorcerer">
@@ -68,7 +93,7 @@ const fieldColors: Record<string, string> = {
     </div>
 
     <!-- Search form -->
-    <form method="GET" class="mb-8 space-y-3">
+    <form method="GET" id="search-form" class="mb-8 space-y-3">
       <!-- Main query + submit -->
       <div class="flex gap-3">
         <input
@@ -99,6 +124,22 @@ const fieldColors: Record<string, string> = {
         </select>
 
         <select
+          name="task_type"
+          class="bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-violet-600"
+        >
+          <option value="">Any type</option>
+          {[
+            "web_research","entity_lookup","document_parse","data_transform",
+            "llm_generate","screenshot","audio_transcribe","pii_detect",
+            "code_execute","web_intel",
+            "label_image","label_text","rate_quality","verify_fact",
+            "moderate_content","compare_rank","answer_question","transcription_review",
+          ].map((t) => (
+            <option value={t} selected={taskType === t}>{t.replace(/_/g, " ")}</option>
+          ))}
+        </select>
+
+        <select
           name="execution_mode"
           class="bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-violet-600"
         >
@@ -122,7 +163,7 @@ const fieldColors: Record<string, string> = {
           class="bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-violet-600 text-gray-400"
         />
 
-        {(q || status || taskType || execMode || fromDate || toDate) && (
+        {(q || status || taskType || execMode || fromDate || toDate || tagsParam) && (
           <a
             href="/dashboard/search/tasks"
             class="px-4 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-gray-200 rounded-lg text-sm transition-colors"
@@ -131,7 +172,57 @@ const fieldColors: Record<string, string> = {
           </a>
         )}
       </div>
+
+      <!-- Tag filter row -->
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="text-xs text-gray-500 shrink-0">🏷️ Tags:</span>
+        <!-- Hidden input carries tag value -->
+        <input type="hidden" name="tags" id="tags-hidden" value={tagsParam} />
+
+        <!-- Active tags as removable chips -->
+        {activeTags.map(tag => (
+          <button
+            type="button"
+            data-tag={tag}
+            class="tag-chip-active inline-flex items-center gap-1 px-2.5 py-1 bg-violet-900/50 border border-violet-700 text-violet-300 text-xs rounded-full hover:bg-red-900/40 hover:border-red-700 hover:text-red-300 transition-colors"
+            title="Click to remove"
+          >
+            {tag}
+            <span class="text-[10px] opacity-60">✕</span>
+          </button>
+        ))}
+
+        <!-- Tag suggestion pills from user's tags -->
+        {userTags.filter(t => !activeTags.includes(t)).slice(0, 12).map(tag => (
+          <button
+            type="button"
+            data-tag={tag}
+            class="tag-chip-add inline-flex items-center gap-1 px-2.5 py-1 bg-gray-800 border border-gray-700 text-gray-400 text-xs rounded-full hover:bg-violet-900/40 hover:border-violet-700 hover:text-violet-300 transition-colors"
+            title="Click to filter by this tag"
+          >
+            + {tag}
+          </button>
+        ))}
+
+        {userTags.length === 0 && activeTags.length === 0 && (
+          <span class="text-xs text-gray-600 italic">No tags used yet</span>
+        )}
+      </div>
     </form>
+
+    <!-- Saved Filters bar -->
+    <div id="saved-filters-bar" class="mb-6 hidden">
+      <div class="flex items-center gap-3 flex-wrap">
+        <span class="text-xs text-gray-500 shrink-0">💾 Saved:</span>
+        <div id="saved-filter-chips" class="flex flex-wrap gap-2"></div>
+        <button
+          id="save-filter-btn"
+          class="text-xs px-3 py-1.5 bg-gray-800 border border-gray-700 text-gray-400 hover:text-white hover:border-gray-500 rounded-lg transition-colors"
+        >
+          + Save current filters
+        </button>
+      </div>
+    </div>
 
     {error && (
       <div class="bg-red-950/30 border border-red-800 rounded-xl p-4 text-red-300 text-sm mb-6">{error}</div>
@@ -144,8 +235,11 @@ const fieldColors: Record<string, string> = {
           <p class="text-sm text-gray-400">
             {results.total === 0
               ? "No tasks found"
-              : <>Found <strong class="text-white">{results.total}</strong> task{results.total !== 1 ? "s" : ""}{q ? <> matching <strong class="text-white">"{q}"</strong></> : ""}</>
+              : <><strong class="text-white">{results.total}</strong> task{results.total !== 1 ? "s" : ""} found{q ? <> matching <strong class="text-white">"{q}"</strong></> : ""}</>
             }
+            {activeTags.length > 0 && (
+              <> · tagged <strong class="text-violet-300">{activeTags.join(", ")}</strong></>
+            )}
           </p>
           {results.total > 0 && (
             <p class="text-xs text-gray-600">
@@ -189,6 +283,22 @@ const fieldColors: Record<string, string> = {
                       </span>
                     </div>
 
+                    <!-- Tag chips -->
+                    {task.tags?.length > 0 && (
+                      <div class="flex flex-wrap gap-1.5 mt-2">
+                        {task.tags.map((tag: string) => (
+                          <span class:list={[
+                            "inline-flex items-center px-2 py-0.5 text-[10px] rounded-full border",
+                            activeTags.includes(tag)
+                              ? "bg-violet-900/50 border-violet-700 text-violet-300"
+                              : "bg-gray-800/60 border-gray-700/60 text-gray-400"
+                          ]}>
+                            🏷️ {tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
                     <!-- Match context snippet -->
                     {task.match_context && task.match_context.field !== "type" && (
                       <div class="mt-2 text-xs bg-gray-800/60 border border-gray-700/40 rounded-lg px-3 py-2 font-mono leading-relaxed">
@@ -224,7 +334,7 @@ const fieldColors: Record<string, string> = {
           <div class="flex items-center justify-between mt-8">
             {page > 1 ? (
               <a
-                href={`?${new URLSearchParams({...(q && {q}), ...(status && {status}), ...(taskType && {task_type: taskType}), ...(execMode && {execution_mode: execMode}), ...(fromDate && {from_date: fromDate}), ...(toDate && {to_date: toDate}), page: String(page - 1)})}`}
+                href={`?${filterQs({ page: String(page - 1) })}`}
                 class="px-5 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg text-sm transition-colors"
               >
                 ← Previous
@@ -233,7 +343,7 @@ const fieldColors: Record<string, string> = {
 
             {results.has_next && (
               <a
-                href={`?${new URLSearchParams({...(q && {q}), ...(status && {status}), ...(taskType && {task_type: taskType}), ...(execMode && {execution_mode: execMode}), ...(fromDate && {from_date: fromDate}), ...(toDate && {to_date: toDate}), page: String(page + 1)})}`}
+                href={`?${filterQs({ page: String(page + 1) })}`}
                 class="px-5 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg text-sm transition-colors"
               >
                 Next →
@@ -254,7 +364,7 @@ const fieldColors: Record<string, string> = {
             { icon: "📥", label: "Input search", desc: "Find tasks by their input data" },
             { icon: "📤", label: "Output search", desc: "Search AI results and outputs" },
             { icon: "📝", label: "Instructions", desc: "Search task instructions text" },
-            { icon: "🎛️", label: "Filters", desc: "Filter by status, mode, date" },
+            { icon: "🏷️", label: "Tag filters", desc: "Filter by task tags instantly" },
           ].map(({ icon, label, desc }) => (
             <div class="p-3 bg-gray-900 border border-gray-800 rounded-xl">
               <div class="text-lg mb-1">{icon}</div>
@@ -266,4 +376,99 @@ const fieldColors: Record<string, string> = {
       </div>
     ) : null}
   </div>
+
+  <script>
+    // ── Tag chip interactions ──────────────────────────────────────────────────
+    const tagsHidden = document.getElementById("tags-hidden") as HTMLInputElement | null;
+    const searchForm = document.getElementById("search-form") as HTMLFormElement | null;
+
+    function getActiveTags(): string[] {
+      const v = tagsHidden?.value ?? "";
+      return v ? v.split(",").map(t => t.trim()).filter(Boolean) : [];
+    }
+
+    function setActiveTags(tags: string[]) {
+      if (tagsHidden) tagsHidden.value = tags.join(",");
+    }
+
+    // Remove active tag
+    document.querySelectorAll(".tag-chip-active").forEach(chip => {
+      chip.addEventListener("click", () => {
+        const tag = chip.getAttribute("data-tag") ?? "";
+        const tags = getActiveTags().filter(t => t !== tag);
+        setActiveTags(tags);
+        searchForm?.submit();
+      });
+    });
+
+    // Add inactive tag
+    document.querySelectorAll(".tag-chip-add").forEach(chip => {
+      chip.addEventListener("click", () => {
+        const tag = chip.getAttribute("data-tag") ?? "";
+        const tags = [...getActiveTags(), tag];
+        setActiveTags(tags);
+        searchForm?.submit();
+      });
+    });
+
+    // ── Saved filters (localStorage) ──────────────────────────────────────────
+    const STORAGE_KEY = "cs_saved_task_filters";
+    const savedBar = document.getElementById("saved-filters-bar");
+    const savedChips = document.getElementById("saved-filter-chips");
+    const saveBtn = document.getElementById("save-filter-btn");
+
+    function loadSavedFilters(): Array<{ name: string; qs: string }> {
+      try {
+        return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]");
+      } catch { return []; }
+    }
+
+    function saveSavedFilters(filters: Array<{ name: string; qs: string }>) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(filters.slice(0, 10)));
+    }
+
+    function renderSavedChips() {
+      const filters = loadSavedFilters();
+      if (!savedBar || !savedChips) return;
+      if (filters.length > 0) {
+        savedBar.classList.remove("hidden");
+      }
+      savedChips.innerHTML = filters.map((f, i) =>
+        `<span class="inline-flex items-center gap-0.5">
+          <a href="/dashboard/search/tasks?${f.qs}"
+            class="text-xs px-2.5 py-1 bg-gray-800 border border-gray-700 text-gray-300 hover:text-white hover:border-gray-500 rounded-l-lg transition-colors">
+            ${f.name}
+          </a>
+          <button data-idx="${i}" class="saved-del text-xs px-1.5 py-1 bg-gray-800 border border-gray-700 border-l-0 text-gray-600 hover:text-red-400 hover:border-red-800 rounded-r-lg transition-colors" title="Delete saved filter">✕</button>
+        </span>`
+      ).join("");
+
+      savedChips.querySelectorAll(".saved-del").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const idx = parseInt(btn.getAttribute("data-idx") ?? "0", 10);
+          const filters = loadSavedFilters();
+          filters.splice(idx, 1);
+          saveSavedFilters(filters);
+          renderSavedChips();
+        });
+      });
+    }
+
+    saveBtn?.addEventListener("click", () => {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("page");
+      const qs = url.searchParams.toString();
+      if (!qs) { alert("No active filters to save."); return; }
+      const name = prompt("Name this filter set:", "My filters");
+      if (!name) return;
+      const filters = loadSavedFilters();
+      filters.unshift({ name: name.slice(0, 30), qs });
+      saveSavedFilters(filters);
+      savedBar?.classList.remove("hidden");
+      renderSavedChips();
+    });
+
+    // Init
+    renderSavedChips();
+  </script>
 </Layout>

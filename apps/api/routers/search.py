@@ -176,6 +176,7 @@ async def search_tasks(
     execution_mode: Optional[str] = Query(None),
     from_date: Optional[datetime] = Query(None),
     to_date: Optional[datetime] = Query(None),
+    tags: Optional[str] = Query(None, description="Comma-separated list of tags to filter by (AND logic)"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     user_id: str = Depends(require_scope(SCOPE_TASKS_READ)),
@@ -205,6 +206,13 @@ async def search_tasks(
         query = query.where(TaskDB.created_at >= from_date)
     if to_date:
         query = query.where(TaskDB.created_at <= to_date)
+    if tags:
+        tag_list = [t.strip() for t in tags.split(",") if t.strip()]
+        for tag in tag_list:
+            # PostgreSQL: JSON array contains this string value
+            query = query.where(
+                cast(TaskDB.tags, String).ilike(f'%"{tag}"%')
+            )
 
     total = await db.scalar(select(func.count()).select_from(query.subquery())) or 0
     query = query.order_by(TaskDB.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
@@ -230,6 +238,7 @@ async def search_tasks(
                 "created_at": t.created_at.isoformat(),
                 "completed_at": t.completed_at.isoformat() if t.completed_at else None,
                 "has_output": t.output is not None,
+                "tags": t.tags or [],
                 # Highlight the matched field so UI can show context
                 "match_context": _extract_match_context(t, search_term_lower),
                 "title": _task_title(t),

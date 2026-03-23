@@ -1,15 +1,16 @@
 """Public worker profile endpoints."""
 from __future__ import annotations
 from uuid import UUID
+from datetime import datetime, timezone
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select, func
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import select, func, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth import get_current_user_id
 from core.database import get_db
-from models.db import UserDB, WorkerSkillDB, WorkerBadgeDB, WorkerCertificationDB
+from models.db import UserDB, WorkerSkillDB, WorkerBadgeDB, WorkerCertificationDB, TaskDB, TaskAssignmentDB
 from models.schemas import (
     PublicWorkerProfileOut, PublicProfileSkill, PublicProfileBadge,
     ProfileUpdateRequest, UserOut,
@@ -106,6 +107,81 @@ async def get_public_profile(
         badges=badges,
         member_since=user.created_at,
     )
+
+
+# ─── Per-task-type stats ──────────────────────────────────────────────────────
+
+@router.get("/workers/{worker_id}/task-stats")
+async def get_worker_task_stats(
+    worker_id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Return per-task-type stats for a worker.
+
+    Returns a list of objects with task_type, tasks_completed, avg_accuracy,
+    total_earnings_credits, and proficiency_level.  Sorted by tasks_completed desc.
+    """
+    result = await db.execute(select(UserDB).where(UserDB.id == worker_id))
+    user = result.scalar_one_or_none()
+    if not user or user.role not in ("worker", "both") or not user.profile_public:
+        raise HTTPException(status_code=404, detail="Worker not found")
+
+    skills_result = await db.execute(
+        select(WorkerSkillDB)
+        .where(WorkerSkillDB.worker_id == worker_id)
+        .order_by(desc(WorkerSkillDB.tasks_completed))
+    )
+    skills = skills_result.scalars().all()
+
+    return [
+        {
+            "task_type": s.task_type,
+            "tasks_completed": s.tasks_completed,
+            "avg_accuracy": round(s.avg_accuracy, 4) if s.avg_accuracy is not None else None,
+            "proficiency_level": s.proficiency_level,
+        }
+        for s in skills
+    ]
+
+
+# ─── Recent activity ──────────────────────────────────────────────────────────
+
+@router.get("/workers/{worker_id}/recent-activity")
+async def get_worker_recent_activity(
+    worker_id: UUID,
+    limit: int = Query(10, ge=1, le=30),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return recent approved/completed task assignments for a worker (public).
+
+    Returns task type, status, submitted_at and earnings for each.
+    """
+    result = await db.execute(select(UserDB).where(UserDB.id == worker_id))
+    user = result.scalar_one_or_none()
+    if not user or user.role not in ("worker", "both") or not user.profile_public:
+        raise HTTPException(status_code=404, detail="Worker not found")
+
+    assignments_result = await db.execute(
+        select(TaskAssignmentDB, TaskDB)
+        .join(TaskDB, TaskDB.id == TaskAssignmentDB.task_id)
+        .where(
+            TaskAssignmentDB.worker_id == worker_id,
+            TaskAssignmentDB.status == "approved",
+        )
+        .order_by(desc(TaskAssignmentDB.submitted_at))
+        .limit(limit)
+    )
+    rows = assignments_result.all()
+
+    return [
+        {
+            "task_type": task.type,
+            "submitted_at": assignment.submitted_at.isoformat() if assignment.submitted_at else None,
+            "earnings_credits": assignment.earnings_credits,
+            "xp_earned": assignment.xp_earned,
+        }
+        for assignment, task in rows
+    ]
 
 
 # ─── Own profile management ────────────────────────────────────────────────────
