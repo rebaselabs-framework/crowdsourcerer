@@ -18,6 +18,7 @@ from core.database import get_db
 from models.db import TaskDB, UserDB, CreditTransactionDB, TaskAssignmentDB, WebhookLogDB
 from models.schemas import (
     TaskCreateRequest, TaskCreateResponse, TaskOut, PaginatedTasks,
+    BatchTaskCreateRequest, BatchTaskCreateResponse,
     HUMAN_TASK_TYPES,
     SubmissionOut, SubmissionWorkerOut, SubmissionReviewRequest, SubmissionReviewResponse,
 )
@@ -130,6 +131,305 @@ async def create_task(
         status=task.status,
         estimated_credits=estimated_credits,
     )
+
+
+def _calc_credits(req: TaskCreateRequest) -> int:
+    """Calculate estimated credits for a task request."""
+    if req.type in HUMAN_TASK_TYPES:
+        worker_reward = req.worker_reward_credits or HUMAN_TASK_BASE_CREDITS.get(req.type, 2)
+        platform_fee = max(1, int(worker_reward * req.assignments_required * 0.2))
+        return worker_reward * req.assignments_required + platform_fee
+    return TASK_CREDITS.get(req.type, 5)
+
+
+@router.post("/batch", status_code=201)
+async def create_tasks_batch(
+    req: BatchTaskCreateRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Create up to 50 tasks in a single API call.
+
+    All credits are reserved atomically. Partial failures are reported in
+    the `failed` array without rolling back successful tasks.
+    """
+    # Pre-flight: calculate total cost
+    total_credits = sum(_calc_credits(t) for t in req.tasks)
+
+    result = await db.execute(select(UserDB).where(UserDB.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if user.credits < total_credits:
+        raise HTTPException(
+            status_code=402,
+            detail={
+                "error": "insufficient_credits",
+                "required": total_credits,
+                "available": user.credits,
+                "task_count": len(req.tasks),
+            },
+        )
+
+    # Deduct all credits upfront
+    user.credits -= total_credits
+
+    created = []
+    failed = []
+    ai_task_ids: list[str] = []
+
+    for i, task_req in enumerate(req.tasks):
+        try:
+            is_human = task_req.type in HUMAN_TASK_TYPES
+            est = _calc_credits(task_req)
+
+            if is_human:
+                worker_reward = task_req.worker_reward_credits or HUMAN_TASK_BASE_CREDITS.get(task_req.type, 2)
+                task = TaskDB(
+                    user_id=user_id,
+                    type=task_req.type,
+                    status="open",
+                    execution_mode="human",
+                    priority=task_req.priority,
+                    input=task_req.input,
+                    metadata=task_req.metadata,
+                    webhook_url=task_req.webhook_url,
+                    worker_reward_credits=worker_reward,
+                    assignments_required=task_req.assignments_required,
+                    claim_timeout_minutes=task_req.claim_timeout_minutes,
+                    task_instructions=task_req.task_instructions,
+                    credits_used=est,
+                )
+            else:
+                task = TaskDB(
+                    user_id=user_id,
+                    type=task_req.type,
+                    status="queued",
+                    execution_mode="ai",
+                    priority=task_req.priority,
+                    input=task_req.input,
+                    metadata=task_req.metadata,
+                    webhook_url=task_req.webhook_url,
+                    credits_used=est,
+                )
+
+            db.add(task)
+            txn = CreditTransactionDB(
+                user_id=user_id,
+                task_id=task.id,
+                amount=-est,
+                type="charge",
+                description=f"Batch task: {task_req.type}",
+            )
+            db.add(txn)
+            created.append((task, est, is_human))
+        except Exception as e:
+            failed.append({"index": i, "type": task_req.type, "error": str(e)})
+
+    await db.commit()
+
+    # Refresh and schedule AI tasks
+    results = []
+    for task, est, is_human in created:
+        await db.refresh(task)
+        if not is_human:
+            background_tasks.add_task(_run_task, str(task.id), str(user_id))
+        results.append(TaskCreateResponse(
+            task_id=task.id,
+            status=task.status,
+            estimated_credits=est,
+        ))
+
+    logger.info("batch_tasks_created", count=len(results), failed=len(failed), user_id=user_id)
+    return BatchTaskCreateResponse(
+        created=results,
+        total_credits=total_credits,
+        failed=failed,
+    )
+
+
+@router.get("/templates")
+async def get_task_templates():
+    """Return curated task templates with pre-filled inputs.
+
+    Templates help users quickly create tasks without filling in every field.
+    """
+    return {
+        "templates": [
+            # ── Human task templates ──────────────────────────────────────
+            {
+                "id": "image_classification",
+                "name": "Image Classification",
+                "description": "Workers label images into your custom categories",
+                "type": "label_image",
+                "icon": "🖼️",
+                "category": "human",
+                "estimated_credits": 4,
+                "default_input": {
+                    "image_url": "",
+                    "labels": ["Category A", "Category B", "Category C"],
+                    "description": "Please classify this image.",
+                },
+                "default_settings": {
+                    "assignments_required": 3,
+                    "worker_reward_credits": 2,
+                    "priority": "normal",
+                    "task_instructions": "Select all labels that apply to this image.",
+                },
+            },
+            {
+                "id": "text_classification",
+                "name": "Text Classification",
+                "description": "Classify text into predefined categories",
+                "type": "label_text",
+                "icon": "📝",
+                "category": "human",
+                "estimated_credits": 3,
+                "default_input": {
+                    "text": "",
+                    "categories": ["Positive", "Negative", "Neutral"],
+                },
+                "default_settings": {
+                    "assignments_required": 3,
+                    "worker_reward_credits": 1,
+                    "priority": "normal",
+                    "task_instructions": "Classify the sentiment of the text above.",
+                },
+            },
+            {
+                "id": "fact_verification",
+                "name": "Fact Verification",
+                "description": "Have workers verify whether a claim is true or false",
+                "type": "verify_fact",
+                "icon": "✅",
+                "category": "human",
+                "estimated_credits": 4,
+                "default_input": {
+                    "claim": "",
+                    "context": "",
+                },
+                "default_settings": {
+                    "assignments_required": 3,
+                    "worker_reward_credits": 2,
+                    "priority": "normal",
+                    "task_instructions": "Research this claim and determine if it is true, false, or unverifiable. Provide a citation if possible.",
+                },
+            },
+            {
+                "id": "content_moderation",
+                "name": "Content Moderation",
+                "description": "Review content for policy compliance",
+                "type": "moderate_content",
+                "icon": "🛡️",
+                "category": "human",
+                "estimated_credits": 3,
+                "default_input": {
+                    "content": "",
+                    "content_type": "text",
+                    "policy_context": "Flag content that is harmful, offensive, or violates community guidelines.",
+                },
+                "default_settings": {
+                    "assignments_required": 1,
+                    "worker_reward_credits": 2,
+                    "priority": "normal",
+                },
+            },
+            {
+                "id": "ab_comparison",
+                "name": "A/B Content Comparison",
+                "description": "Workers pick the better of two options",
+                "type": "compare_rank",
+                "icon": "⚖️",
+                "category": "human",
+                "estimated_credits": 3,
+                "default_input": {
+                    "option_a": "",
+                    "option_b": "",
+                    "comparison_criteria": "Which option is higher quality?",
+                },
+                "default_settings": {
+                    "assignments_required": 3,
+                    "worker_reward_credits": 1,
+                    "priority": "normal",
+                    "task_instructions": "Read both options carefully and select the one that better meets the comparison criteria.",
+                },
+            },
+            {
+                "id": "transcript_correction",
+                "name": "Transcript Review",
+                "description": "Workers correct AI-generated transcripts",
+                "type": "transcription_review",
+                "icon": "🎙️",
+                "category": "human",
+                "estimated_credits": 7,
+                "default_input": {
+                    "audio_url": "",
+                    "ai_transcript": "",
+                },
+                "default_settings": {
+                    "assignments_required": 1,
+                    "worker_reward_credits": 5,
+                    "priority": "normal",
+                    "task_instructions": "Listen to the audio and correct any errors in the AI-generated transcript.",
+                },
+            },
+            # ── AI task templates ─────────────────────────────────────────
+            {
+                "id": "web_research",
+                "name": "Web Research",
+                "description": "AI researches a topic and returns a summary",
+                "type": "web_research",
+                "icon": "🔍",
+                "category": "ai",
+                "estimated_credits": 10,
+                "default_input": {
+                    "query": "",
+                    "max_sources": 5,
+                },
+            },
+            {
+                "id": "llm_generate",
+                "name": "LLM Text Generation",
+                "description": "Generate text using Claude or other LLMs",
+                "type": "llm_generate",
+                "icon": "✨",
+                "category": "ai",
+                "estimated_credits": 1,
+                "default_input": {
+                    "prompt": "",
+                    "model": "claude-3-haiku-20240307",
+                    "max_tokens": 1024,
+                },
+            },
+            {
+                "id": "entity_lookup",
+                "name": "Entity Enrichment",
+                "description": "Look up company or person information",
+                "type": "entity_lookup",
+                "icon": "🏢",
+                "category": "ai",
+                "estimated_credits": 5,
+                "default_input": {
+                    "name": "",
+                    "type": "company",
+                },
+            },
+            {
+                "id": "pii_detection",
+                "name": "PII Detection",
+                "description": "Detect and mask personal information in text",
+                "type": "pii_detect",
+                "icon": "🔒",
+                "category": "ai",
+                "estimated_credits": 2,
+                "default_input": {
+                    "text": "",
+                    "mask": True,
+                },
+            },
+        ]
+    }
 
 
 @router.get("/public")

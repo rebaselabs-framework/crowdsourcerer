@@ -3,19 +3,19 @@
 Only accessible by users with is_admin=True.
 """
 from __future__ import annotations
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, date
 from typing import Optional
 from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, cast, Date as SADate, and_
 
 from core.auth import get_current_user_id
 from core.database import get_db, AsyncSessionLocal
 from core.sweeper import sweep_once, get_sweeper_task
-from models.db import TaskDB, UserDB, CreditTransactionDB, TaskAssignmentDB, WebhookLogDB
+from models.db import TaskDB, UserDB, CreditTransactionDB, TaskAssignmentDB, WebhookLogDB, PayoutRequestDB
 
 logger = structlog.get_logger()
 router = APIRouter(prefix="/v1/admin", tags=["admin"])
@@ -336,6 +336,178 @@ async def trigger_sweep(
     return {
         "ok": True,
         "summary": result,
+    }
+
+
+@router.get("/analytics")
+async def get_analytics(
+    days: int = Query(30, ge=7, le=90),
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(require_admin),
+):
+    """Time-series analytics: task throughput, signups, revenue, worker activity."""
+    now = datetime.now(timezone.utc)
+    start = now - timedelta(days=days)
+
+    # ── Daily task counts ────────────────────────────────────────────────────
+    daily_tasks_result = await db.execute(
+        select(
+            cast(TaskDB.created_at, SADate).label("day"),
+            func.count().label("total"),
+            func.count().filter(TaskDB.status == "completed").label("completed"),
+            func.count().filter(TaskDB.status == "failed").label("failed"),
+            func.count().filter(TaskDB.execution_mode == "human").label("human"),
+            func.count().filter(TaskDB.execution_mode == "ai").label("ai"),
+        )
+        .where(TaskDB.created_at >= start)
+        .group_by(cast(TaskDB.created_at, SADate))
+        .order_by(cast(TaskDB.created_at, SADate))
+    )
+    daily_tasks_raw = {
+        str(row.day): {
+            "total": row.total,
+            "completed": row.completed,
+            "failed": row.failed,
+            "human": row.human,
+            "ai": row.ai,
+        }
+        for row in daily_tasks_result.all()
+    }
+
+    # ── Daily user signups ───────────────────────────────────────────────────
+    daily_signups_result = await db.execute(
+        select(
+            cast(UserDB.created_at, SADate).label("day"),
+            func.count().label("total"),
+            func.count().filter(UserDB.role.in_(["worker", "both"])).label("workers"),
+        )
+        .where(UserDB.created_at >= start)
+        .group_by(cast(UserDB.created_at, SADate))
+        .order_by(cast(UserDB.created_at, SADate))
+    )
+    daily_signups_raw = {
+        str(row.day): {"total": row.total, "workers": row.workers}
+        for row in daily_signups_result.all()
+    }
+
+    # ── Daily credits consumed (task charges) ───────────────────────────────
+    daily_credits_result = await db.execute(
+        select(
+            cast(CreditTransactionDB.created_at, SADate).label("day"),
+            func.sum(func.abs(CreditTransactionDB.amount)).label("consumed"),
+        )
+        .where(
+            CreditTransactionDB.created_at >= start,
+            CreditTransactionDB.type == "charge",
+        )
+        .group_by(cast(CreditTransactionDB.created_at, SADate))
+        .order_by(cast(CreditTransactionDB.created_at, SADate))
+    )
+    daily_credits_raw = {
+        str(row.day): int(row.consumed or 0)
+        for row in daily_credits_result.all()
+    }
+
+    # ── Daily worker assignments completed ───────────────────────────────────
+    daily_completions_result = await db.execute(
+        select(
+            cast(TaskAssignmentDB.submitted_at, SADate).label("day"),
+            func.count().label("total"),
+            func.sum(TaskAssignmentDB.earnings_credits).label("credits_earned"),
+        )
+        .where(
+            TaskAssignmentDB.submitted_at >= start,
+            TaskAssignmentDB.status.in_(["submitted", "approved"]),
+        )
+        .group_by(cast(TaskAssignmentDB.submitted_at, SADate))
+        .order_by(cast(TaskAssignmentDB.submitted_at, SADate))
+    )
+    daily_completions_raw = {
+        str(row.day): {"total": row.total, "credits_earned": int(row.credits_earned or 0)}
+        for row in daily_completions_result.all()
+    }
+
+    # ── Fill in all days in range ────────────────────────────────────────────
+    all_days = []
+    daily_tasks = []
+    daily_signups = []
+    daily_credits = []
+    daily_completions = []
+
+    for i in range(days):
+        d = (now - timedelta(days=days - 1 - i)).date()
+        d_str = str(d)
+        all_days.append(d_str)
+        t = daily_tasks_raw.get(d_str, {"total": 0, "completed": 0, "failed": 0, "human": 0, "ai": 0})
+        daily_tasks.append(t)
+        s = daily_signups_raw.get(d_str, {"total": 0, "workers": 0})
+        daily_signups.append(s)
+        daily_credits.append(daily_credits_raw.get(d_str, 0))
+        c = daily_completions_raw.get(d_str, {"total": 0, "credits_earned": 0})
+        daily_completions.append(c)
+
+    # ── Top workers ──────────────────────────────────────────────────────────
+    top_workers_result = await db.execute(
+        select(UserDB)
+        .where(
+            UserDB.role.in_(["worker", "both"]),
+            UserDB.worker_tasks_completed > 0,
+        )
+        .order_by(UserDB.worker_xp.desc())
+        .limit(10)
+    )
+    top_workers = [
+        {
+            "id": str(u.id),
+            "name": u.name or u.email.split("@")[0],
+            "xp": u.worker_xp,
+            "level": u.worker_level,
+            "tasks_completed": u.worker_tasks_completed,
+            "accuracy": round(u.worker_accuracy * 100, 1) if u.worker_accuracy else None,
+            "streak_days": u.worker_streak_days,
+        }
+        for u in top_workers_result.scalars().all()
+    ]
+
+    # ── Hourly breakdown today ───────────────────────────────────────────────
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    hourly_result = await db.execute(
+        select(
+            func.date_part("hour", TaskDB.created_at).label("hour"),
+            func.count().label("total"),
+        )
+        .where(TaskDB.created_at >= today_start)
+        .group_by(func.date_part("hour", TaskDB.created_at))
+        .order_by(func.date_part("hour", TaskDB.created_at))
+    )
+    hourly_raw = {int(row.hour): row.total for row in hourly_result.all()}
+    hourly_tasks = [hourly_raw.get(h, 0) for h in range(24)]
+
+    # ── Payout totals ────────────────────────────────────────────────────────
+    payouts_result = await db.execute(
+        select(
+            PayoutRequestDB.status,
+            func.count().label("cnt"),
+            func.sum(PayoutRequestDB.usd_amount).label("total_usd"),
+        )
+        .group_by(PayoutRequestDB.status)
+    )
+    payout_summary = {
+        row.status: {"count": row.cnt, "usd": round(float(row.total_usd or 0), 2)}
+        for row in payouts_result.all()
+    }
+
+    return {
+        "days": days,
+        "all_days": all_days,
+        "daily_tasks": daily_tasks,
+        "daily_signups": daily_signups,
+        "daily_credits_consumed": daily_credits,
+        "daily_worker_completions": daily_completions,
+        "hourly_tasks_today": hourly_tasks,
+        "top_workers": top_workers,
+        "payout_summary": payout_summary,
+        "generated_at": now.isoformat(),
     }
 
 

@@ -99,6 +99,17 @@ class TaskCreateResponse(BaseModel):
     estimated_duration_ms: Optional[int] = None
 
 
+class BatchTaskCreateRequest(BaseModel):
+    """Create up to 50 tasks in a single API call."""
+    tasks: list[TaskCreateRequest] = Field(min_length=1, max_length=50)
+
+
+class BatchTaskCreateResponse(BaseModel):
+    created: list[TaskCreateResponse]
+    total_credits: int
+    failed: list[dict]  # [{index, error}] for any that failed
+
+
 class TaskOut(BaseModel):
     id: UUID
     type: str

@@ -10,6 +10,14 @@ if (!token) return Astro.redirect("/login");
 
 let error = "";
 let submittedTaskId = "";
+let templates: any[] = [];
+
+try {
+  const tplRes = await apiFetch<any>("/v1/tasks/templates", { token });
+  templates = tplRes?.templates ?? [];
+} catch {
+  // non-fatal
+}
 
 const TASK_TYPES = [
   { type: "web_research", label: "Web Research", icon: "🌐", placeholder: '{\n  "url": "https://example.com/article",\n  "instruction": "Extract the main content and key points"\n}' },
@@ -55,7 +63,38 @@ if (Astro.request.method === "POST") {
     </div>
 
     <h1 class="text-2xl font-bold mb-1">Submit a new task</h1>
-    <p class="text-gray-400 text-sm mb-8">Select a task type, provide JSON input, and get results.</p>
+    <p class="text-gray-400 text-sm mb-6">Select a task type, provide JSON input, and get results.</p>
+
+    <!-- Templates quick-start -->
+    {templates.length > 0 && (
+      <div class="mb-8">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-sm font-medium text-gray-400">🚀 Quick start with a template</h2>
+          <span class="text-xs text-gray-600">Click to pre-fill the form</span>
+        </div>
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          {templates.slice(0, 6).map((tpl: any) => (
+            <button
+              type="button"
+              class="template-btn text-left bg-gray-900 border border-gray-800 hover:border-violet-600/60 rounded-xl p-4 transition-colors group"
+              data-type={tpl.type}
+              data-input={JSON.stringify(tpl.default_input, null, 2)}
+              data-settings={JSON.stringify(tpl.default_settings ?? {})}
+            >
+              <div class="text-xl mb-2">{tpl.icon}</div>
+              <div class="font-medium text-sm group-hover:text-violet-300 transition-colors">{tpl.name}</div>
+              <div class="text-xs text-gray-500 mt-1 line-clamp-2">{tpl.description}</div>
+              <div class="mt-2 flex items-center gap-1.5">
+                <span class:list={["text-[10px] px-1.5 py-0.5 rounded font-medium", tpl.category === "ai" ? "bg-cyan-900/40 text-cyan-400" : "bg-violet-900/40 text-violet-400"]}>
+                  {tpl.category === "ai" ? "AI" : "Human"}
+                </span>
+                <span class="text-[10px] text-gray-600">~{tpl.estimated_credits} cr</span>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+    )}
 
     {error && (
       <div class="bg-red-950/50 border border-red-800 rounded-lg px-4 py-3 text-sm text-red-300 mb-6">
@@ -131,3 +170,35 @@ if (Astro.request.method === "POST") {
     </form>
   </div>
 </Layout>
+
+<script>
+  // Template pre-fill
+  document.querySelectorAll<HTMLButtonElement>(".template-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const type = btn.dataset.type!;
+      const input = btn.dataset.input!;
+
+      // Select radio
+      const radio = document.querySelector<HTMLInputElement>(`input[name="type"][value="${type}"]`);
+      if (radio) {
+        radio.checked = true;
+        radio.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+
+      // Fill input textarea
+      const textarea = document.getElementById("input") as HTMLTextAreaElement;
+      if (textarea) textarea.value = input;
+
+      // Highlight selected template
+      document.querySelectorAll(".template-btn").forEach((b) => {
+        b.classList.remove("border-violet-500", "bg-violet-950/20");
+        b.classList.add("border-gray-800");
+      });
+      btn.classList.add("border-violet-500", "bg-violet-950/20");
+      btn.classList.remove("border-gray-800");
+
+      // Scroll to form
+      document.querySelector("form")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  });
+</script>
