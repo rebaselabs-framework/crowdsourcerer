@@ -1,0 +1,271 @@
+---
+/**
+ * Advanced Task Search — full-text search across task type, instructions,
+ * input JSON, and output JSON. Supports pagination + filters.
+ */
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Object.fromEntries(
+  Astro.cookies.getAll().map((c) => [c.name, c.value])
+));
+if (!token) return Astro.redirect("/login?next=/dashboard/search/tasks");
+
+const q          = Astro.url.searchParams.get("q") ?? "";
+const status     = Astro.url.searchParams.get("status") ?? "";
+const taskType   = Astro.url.searchParams.get("task_type") ?? "";
+const execMode   = Astro.url.searchParams.get("execution_mode") ?? "";
+const fromDate   = Astro.url.searchParams.get("from_date") ?? "";
+const toDate     = Astro.url.searchParams.get("to_date") ?? "";
+const page       = parseInt(Astro.url.searchParams.get("page") ?? "1", 10);
+const pageSize   = 20;
+
+let results: any = null;
+let error: string | null = null;
+
+const shouldSearch = q.length >= 2 || status || taskType || execMode || fromDate || toDate;
+
+if (shouldSearch) {
+  try {
+    const qs = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+    if (q)        qs.set("q", q);
+    if (status)   qs.set("status", status);
+    if (taskType) qs.set("task_type", taskType);
+    if (execMode) qs.set("execution_mode", execMode);
+    if (fromDate) qs.set("from_date", fromDate);
+    if (toDate)   qs.set("to_date", toDate);
+    results = await apiFetch<any>(`/v1/search/tasks?${qs}`, { token });
+  } catch (e: any) {
+    if (e.message?.includes("401")) return Astro.redirect("/login");
+    error = e.message ?? "Search failed.";
+  }
+}
+
+const fieldLabels: Record<string, string> = {
+  output: "📤 output",
+  input: "📥 input",
+  instructions: "📝 instructions",
+  type: "🏷️ type",
+};
+
+const fieldColors: Record<string, string> = {
+  output: "text-green-400",
+  input: "text-blue-400",
+  instructions: "text-yellow-400",
+  type: "text-gray-400",
+};
+---
+
+<Layout title="Task Search — CrowdSorcerer">
+  <div class="max-w-5xl mx-auto px-6 py-10">
+    <!-- Header -->
+    <div class="mb-6">
+      <div class="flex items-center gap-3 mb-1">
+        <a href="/dashboard/search" class="text-gray-500 hover:text-gray-300 text-sm transition-colors">← Search</a>
+      </div>
+      <h1 class="text-2xl font-bold">🔍 Task Search</h1>
+      <p class="text-gray-400 text-sm mt-1">
+        Full-text search across task type, instructions, and JSON input/output content.
+      </p>
+    </div>
+
+    <!-- Search form -->
+    <form method="GET" class="mb-8 space-y-3">
+      <!-- Main query + submit -->
+      <div class="flex gap-3">
+        <input
+          name="q"
+          value={q}
+          autofocus
+          placeholder="Search inside tasks… (e.g. Paris, sentiment, true)"
+          class="flex-1 bg-gray-900 border border-gray-700 rounded-xl px-5 py-3 text-base focus:outline-none focus:border-violet-600 transition-colors"
+        />
+        <button
+          type="submit"
+          class="px-6 py-3 bg-violet-700 hover:bg-violet-600 text-white rounded-xl font-medium text-sm transition-colors"
+        >
+          Search
+        </button>
+      </div>
+
+      <!-- Filters row -->
+      <div class="flex flex-wrap gap-3">
+        <select
+          name="status"
+          class="bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-violet-600"
+        >
+          <option value="">Any status</option>
+          {["pending","running","completed","failed","cancelled","open","assigned","submitted","approved","rejected"].map((s) => (
+            <option value={s} selected={status === s}>{s}</option>
+          ))}
+        </select>
+
+        <select
+          name="execution_mode"
+          class="bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-violet-600"
+        >
+          <option value="">Any mode</option>
+          <option value="ai" selected={execMode === "ai"}>AI</option>
+          <option value="human" selected={execMode === "human"}>Human</option>
+        </select>
+
+        <input
+          type="date"
+          name="from_date"
+          value={fromDate}
+          title="From date"
+          class="bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-violet-600 text-gray-400"
+        />
+        <input
+          type="date"
+          name="to_date"
+          value={toDate}
+          title="To date"
+          class="bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-violet-600 text-gray-400"
+        />
+
+        {(q || status || taskType || execMode || fromDate || toDate) && (
+          <a
+            href="/dashboard/search/tasks"
+            class="px-4 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-gray-200 rounded-lg text-sm transition-colors"
+          >
+            Clear
+          </a>
+        )}
+      </div>
+    </form>
+
+    {error && (
+      <div class="bg-red-950/30 border border-red-800 rounded-xl p-4 text-red-300 text-sm mb-6">{error}</div>
+    )}
+
+    {results ? (
+      <div>
+        <!-- Result count -->
+        <div class="flex items-center justify-between mb-4">
+          <p class="text-sm text-gray-400">
+            {results.total === 0
+              ? "No tasks found"
+              : <>Found <strong class="text-white">{results.total}</strong> task{results.total !== 1 ? "s" : ""}{q ? <> matching <strong class="text-white">"{q}"</strong></> : ""}</>
+            }
+          </p>
+          {results.total > 0 && (
+            <p class="text-xs text-gray-600">
+              Page {page} of {Math.ceil(results.total / pageSize)}
+            </p>
+          )}
+        </div>
+
+        {results.items?.length === 0 ? (
+          <div class="text-center py-16">
+            <div class="text-5xl mb-4">🔍</div>
+            <h2 class="text-lg font-semibold mb-2">No matching tasks</h2>
+            <p class="text-gray-400 text-sm">Try changing your query or removing filters.</p>
+          </div>
+        ) : (
+          <div class="space-y-3">
+            {results.items?.map((task: any) => (
+              <a
+                href={task.url ?? `/dashboard/tasks/${task.id}`}
+                class="block p-5 bg-gray-900 border border-gray-800 hover:border-gray-600 rounded-xl transition-colors group"
+              >
+                <div class="flex items-start gap-4">
+                  <!-- Icon -->
+                  <div class="text-2xl shrink-0 mt-0.5">📋</div>
+
+                  <!-- Main content -->
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-3 flex-wrap">
+                      <span class="font-medium text-white group-hover:text-violet-300 transition-colors truncate">
+                        {task.title ?? task.type?.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase()) + " Task"}
+                      </span>
+                      <span class:list={[
+                        "text-xs px-2 py-0.5 rounded-full border shrink-0",
+                        task.status === "completed" ? "text-green-400 bg-green-900/20 border-green-800/40" :
+                        task.status === "failed" ? "text-red-400 bg-red-900/20 border-red-800/40" :
+                        task.status === "running" ? "text-blue-400 bg-blue-900/20 border-blue-800/40" :
+                        "text-gray-400 bg-gray-800/50 border-gray-700/50"
+                      ]}>{task.status}</span>
+                      <span class="text-xs text-gray-500 shrink-0">
+                        {task.execution_mode === "ai" ? "🤖 AI" : "👤 Human"}
+                      </span>
+                    </div>
+
+                    <!-- Match context snippet -->
+                    {task.match_context && task.match_context.field !== "type" && (
+                      <div class="mt-2 text-xs bg-gray-800/60 border border-gray-700/40 rounded-lg px-3 py-2 font-mono leading-relaxed">
+                        <span class:list={["font-sans font-semibold mr-2 not-italic", fieldColors[task.match_context.field] ?? "text-gray-400"]}>
+                          {fieldLabels[task.match_context.field] ?? task.match_context.field}
+                        </span>
+                        <span class="text-gray-400">{task.match_context.snippet}</span>
+                      </div>
+                    )}
+
+                    <!-- Meta -->
+                    <div class="flex items-center gap-3 mt-2 text-xs text-gray-600">
+                      <span>{new Date(task.created_at).toLocaleDateString()}</span>
+                      {task.completed_at && (
+                        <span>Completed {new Date(task.completed_at).toLocaleDateString()}</span>
+                      )}
+                      {task.credits_used > 0 && (
+                        <span>{task.credits_used} cr</span>
+                      )}
+                      {task.has_output && (
+                        <span class="text-green-600">Has output</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </a>
+            ))}
+          </div>
+        )}
+
+        <!-- Pagination -->
+        {results.total > pageSize && (
+          <div class="flex items-center justify-between mt-8">
+            {page > 1 ? (
+              <a
+                href={`?${new URLSearchParams({...(q && {q}), ...(status && {status}), ...(taskType && {task_type: taskType}), ...(execMode && {execution_mode: execMode}), ...(fromDate && {from_date: fromDate}), ...(toDate && {to_date: toDate}), page: String(page - 1)})}`}
+                class="px-5 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg text-sm transition-colors"
+              >
+                ← Previous
+              </a>
+            ) : <div />}
+
+            {results.has_next && (
+              <a
+                href={`?${new URLSearchParams({...(q && {q}), ...(status && {status}), ...(taskType && {task_type: taskType}), ...(execMode && {execution_mode: execMode}), ...(fromDate && {from_date: fromDate}), ...(toDate && {to_date: toDate}), page: String(page + 1)})}`}
+                class="px-5 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg text-sm transition-colors"
+              >
+                Next →
+              </a>
+            )}
+          </div>
+        )}
+      </div>
+    ) : !shouldSearch ? (
+      <div class="text-center py-16 text-gray-500">
+        <div class="text-5xl mb-4">🔍</div>
+        <p class="text-base font-medium mb-2">Search inside your tasks</p>
+        <p class="text-sm max-w-sm mx-auto">
+          Find tasks by content — search through task types, instructions, input data, and AI output results.
+        </p>
+        <div class="mt-8 grid grid-cols-2 gap-3 max-w-sm mx-auto text-left">
+          {[
+            { icon: "📥", label: "Input search", desc: "Find tasks by their input data" },
+            { icon: "📤", label: "Output search", desc: "Search AI results and outputs" },
+            { icon: "📝", label: "Instructions", desc: "Search task instructions text" },
+            { icon: "🎛️", label: "Filters", desc: "Filter by status, mode, date" },
+          ].map(({ icon, label, desc }) => (
+            <div class="p-3 bg-gray-900 border border-gray-800 rounded-xl">
+              <div class="text-lg mb-1">{icon}</div>
+              <div class="text-xs font-medium text-gray-300">{label}</div>
+              <div class="text-xs text-gray-600 mt-0.5">{desc}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    ) : null}
+  </div>
+</Layout>

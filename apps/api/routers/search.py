@@ -1,21 +1,24 @@
 """Unified full-text search across tasks, pipelines, and templates.
 
 Uses PostgreSQL ILIKE for simplicity (no tsvector needed at this scale).
+JSON/JSONB columns are cast to text before matching so input/output blobs
+are fully searchable.
 Returns a ranked result set with entity type labels.
 """
 from __future__ import annotations
+import json as _json
 from typing import Optional
 from uuid import UUID
 from datetime import datetime
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
-from sqlalchemy import select, or_, func
+from sqlalchemy import select, or_, func, cast, String
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.auth import get_current_user_id
 from core.database import get_db
+from core.scopes import require_scope, SCOPE_TASKS_READ, SCOPE_ANALYTICS_READ
 from models.db import TaskDB, TaskPipelineDB, TaskTemplateDB
 
 logger = structlog.get_logger()
@@ -32,6 +35,7 @@ class SearchResultItem(BaseModel):
     status: Optional[str]
     created_at: datetime
     url: str                  # Relative URL to navigate to
+    match_context: Optional[dict] = None  # {"field": "output", "snippet": "..."}
 
 
 class SearchResults(BaseModel):
@@ -52,12 +56,13 @@ async def unified_search(
         description="Comma-separated entity types to search: task,pipeline,template. Default: all.",
     ),
     limit: int = Query(10, ge=1, le=50),
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_scope(SCOPE_TASKS_READ)),
     db: AsyncSession = Depends(get_db),
 ):
     """Search across tasks, pipelines, and task templates.
 
     Results are scoped to the authenticated user's owned resources plus public templates.
+    Searches task type, instructions, and full input/output JSON content.
     """
     search_term = f"%{q}%"
     types_filter = set(entity_types.split(",")) if entity_types else {"task", "pipeline", "template"}
@@ -66,19 +71,21 @@ async def unified_search(
     pipeline_results: list[SearchResultItem] = []
     template_results: list[SearchResultItem] = []
 
-    # ── Tasks ────────────────────────────────────────────────────────────────
+    # ── Tasks (search type, instructions, input JSON, output JSON) ────────────
     if "task" in types_filter:
         task_q = select(TaskDB).where(
             TaskDB.user_id == user_id,
             or_(
                 TaskDB.type.ilike(search_term),
                 TaskDB.task_instructions.ilike(search_term),
-                func.cast(TaskDB.input, type_=None).ilike(search_term),
+                cast(TaskDB.input, String).ilike(search_term),
+                cast(TaskDB.output, String).ilike(search_term),
             ),
         ).order_by(TaskDB.created_at.desc()).limit(limit)
 
         result = await db.execute(task_q)
         tasks = result.scalars().all()
+        term_lower = q.lower()
         task_results = [
             SearchResultItem(
                 entity_type="task",
@@ -88,6 +95,7 @@ async def unified_search(
                 status=t.status,
                 created_at=t.created_at,
                 url=f"/dashboard/tasks/{t.id}",
+                match_context=_extract_match_context(t, term_lower),
             )
             for t in tasks
         ]
@@ -170,10 +178,11 @@ async def search_tasks(
     to_date: Optional[datetime] = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_scope(SCOPE_TASKS_READ)),
     db: AsyncSession = Depends(get_db),
 ):
-    """Advanced task search with filtering. Returns paginated results."""
+    """Advanced task search with full-text filtering across type, instructions,
+    and input/output JSON content. Returns paginated results."""
     query = select(TaskDB).where(TaskDB.user_id == user_id)
 
     if q:
@@ -182,7 +191,8 @@ async def search_tasks(
             or_(
                 TaskDB.type.ilike(search_term),
                 TaskDB.task_instructions.ilike(search_term),
-                func.cast(TaskDB.input, type_=None).ilike(search_term),
+                cast(TaskDB.input, String).ilike(search_term),
+                cast(TaskDB.output, String).ilike(search_term),
             )
         )
     if status:
@@ -202,6 +212,8 @@ async def search_tasks(
     result = await db.execute(query)
     tasks = result.scalars().all()
 
+    search_term_lower = q.lower() if q else None
+
     return {
         "total": total,
         "page": page,
@@ -218,6 +230,10 @@ async def search_tasks(
                 "created_at": t.created_at.isoformat(),
                 "completed_at": t.completed_at.isoformat() if t.completed_at else None,
                 "has_output": t.output is not None,
+                # Highlight the matched field so UI can show context
+                "match_context": _extract_match_context(t, search_term_lower),
+                "title": _task_title(t),
+                "url": f"/dashboard/tasks/{t.id}",
             }
             for t in tasks
         ],
@@ -244,3 +260,37 @@ def _task_title(task: TaskDB) -> str:
                 snippet += "…"
             return f"{type_label}: {snippet}"
     return f"{type_label} Task"
+
+
+def _extract_match_context(task: TaskDB, term: Optional[str]) -> Optional[dict]:
+    """Find which field matched and return a short text snippet for display."""
+    if not term:
+        return None
+
+    def _snip(text: str, window: int = 120) -> str:
+        lo = text.lower()
+        idx = lo.find(term)
+        if idx == -1:
+            return text[:window] + ("…" if len(text) > window else "")
+        start = max(0, idx - 40)
+        end = min(len(text), idx + len(term) + 80)
+        snippet = ("…" if start > 0 else "") + text[start:end] + ("…" if end < len(text) else "")
+        return snippet
+
+    # Check instructions first
+    if task.task_instructions and term in task.task_instructions.lower():
+        return {"field": "instructions", "snippet": _snip(task.task_instructions)}
+
+    # Check input JSON blob
+    input_text = _json.dumps(task.input or {})
+    if term in input_text.lower():
+        return {"field": "input", "snippet": _snip(input_text)}
+
+    # Check output JSON blob
+    if task.output:
+        output_text = _json.dumps(task.output)
+        if term in output_text.lower():
+            return {"field": "output", "snippet": _snip(output_text)}
+
+    # Fallback: type matched
+    return {"field": "type", "snippet": task.type.replace("_", " ").title()}

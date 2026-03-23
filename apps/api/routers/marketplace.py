@@ -9,8 +9,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_, and_
 
-from core.auth import get_current_user_id
 from core.database import get_db
+from core.scopes import (
+    require_scope,
+    SCOPE_MARKETPLACE_READ,
+    SCOPE_MARKETPLACE_WRITE,
+    SCOPE_TASKS_WRITE,
+)
 from models.db import TaskTemplateDB, TaskTemplateRatingDB, UserDB
 from models.schemas import (
     TemplateCreateRequest, TemplateOut, PaginatedTemplates,
@@ -178,7 +183,7 @@ async def list_templates(
     sort: str = Query("featured", enum=["featured", "popular", "newest", "top_rated"]),
     my_own: bool = False,
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_scope(SCOPE_MARKETPLACE_READ)),
 ):
     """Browse the template marketplace. Returns public templates + your own private ones."""
     await _ensure_system_templates(db)
@@ -237,7 +242,7 @@ async def list_templates(
 async def get_template(
     template_id: UUID,
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_scope(SCOPE_MARKETPLACE_READ)),
 ):
     """Get a single template's details."""
     t = await _get_template(template_id, user_id, db)
@@ -248,7 +253,7 @@ async def get_template(
 async def create_template(
     req: TemplateCreateRequest,
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_scope(SCOPE_MARKETPLACE_WRITE)),
 ):
     """Save a task configuration as a reusable template."""
     template = TaskTemplateDB(
@@ -277,7 +282,7 @@ async def update_template(
     template_id: UUID,
     req: TemplateCreateRequest,
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_scope(SCOPE_MARKETPLACE_WRITE)),
 ):
     """Update your own template."""
     result = await db.execute(
@@ -309,7 +314,7 @@ async def update_template(
 async def delete_template(
     template_id: UUID,
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_scope(SCOPE_MARKETPLACE_WRITE)),
 ):
     """Delete your own template."""
     result = await db.execute(
@@ -330,7 +335,7 @@ async def rate_template(
     template_id: UUID,
     req: TemplateRateRequest,
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_scope(SCOPE_MARKETPLACE_WRITE)),
 ):
     """Rate a template 1–5 stars. Updates your existing rating if already rated."""
     if not (1 <= req.rating <= 5):
@@ -380,7 +385,7 @@ async def rate_template(
 async def use_template(
     template_id: UUID,
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_scope(SCOPE_MARKETPLACE_READ)),
 ):
     """Mark a template as used (increment use_count) and return its task_config for pre-filling."""
     t = await _get_template(template_id, user_id, db)
@@ -401,7 +406,7 @@ async def clone_template_as_task(
     template_id: UUID,
     title: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_scope(SCOPE_TASKS_WRITE)),
 ) -> dict:
     """
     One-click: create a task directly from a template's config.
@@ -490,7 +495,7 @@ async def clone_template_as_task(
 @router.get("/categories", response_model=list[dict])
 async def list_categories(
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_scope(SCOPE_MARKETPLACE_READ)),
 ):
     """Return all distinct template categories with counts."""
     await _ensure_system_templates(db)

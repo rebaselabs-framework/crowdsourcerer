@@ -45,6 +45,14 @@ const entityColors: Record<string, string> = {
     <div class="mb-8">
       <h1 class="text-2xl font-bold mb-2">🔍 Search</h1>
       <p class="text-gray-400 text-sm">Find tasks, pipelines, and templates</p>
+      <div class="mt-3">
+        <a
+          href="/dashboard/search/tasks"
+          class="inline-flex items-center gap-2 text-xs text-violet-400 hover:text-violet-300 transition-colors"
+        >
+          📋 Advanced task search (search inside input/output content) →
+        </a>
+      </div>
     </div>
 
     <!-- Search form -->
@@ -110,6 +118,13 @@ const entityColors: Record<string, string> = {
                       <div class="flex-1 min-w-0">
                         <div class="font-medium text-white truncate">{item.title}</div>
                         <div class="text-xs text-gray-500 mt-0.5">{item.subtitle}</div>
+                        {item.match_context && item.match_context.field !== "type" && (
+                          <div class="text-xs text-gray-600 mt-1.5 font-mono bg-gray-800/50 rounded px-2 py-1 truncate">
+                            <span class="text-violet-500 mr-1.5">
+                              {item.match_context.field === "output" ? "output:" : item.match_context.field === "input" ? "input:" : ""}
+                            </span>{item.match_context.snippet}
+                          </div>
+                        )}
                       </div>
                       <div class:list={[
                         "text-xs px-2 py-0.5 rounded-full border shrink-0",

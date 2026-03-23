@@ -16,8 +16,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
-from core.auth import get_current_user_id
 from core.database import get_db
+from core.scopes import (
+    require_scope,
+    SCOPE_WEBHOOKS_READ,
+    SCOPE_WEBHOOKS_WRITE,
+)
 from core.webhooks import ALL_EVENTS, DEFAULT_EVENTS, retry_webhook_log
 from models.db import WebhookLogDB, WebhookEndpointDB
 from models.schemas import (
@@ -65,7 +69,7 @@ async def list_event_types():
 @router.get("/endpoints")
 async def list_endpoints(
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_scope(SCOPE_WEBHOOKS_READ)),
 ):
     """List all persistent webhook endpoints registered by the current user."""
     result = await db.execute(
@@ -99,7 +103,7 @@ async def list_endpoints(
 async def create_endpoint(
     body: WebhookEndpointCreate,
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_scope(SCOPE_WEBHOOKS_WRITE)),
 ):
     """
     Register a new persistent webhook endpoint.
@@ -160,7 +164,7 @@ async def update_endpoint(
     endpoint_id: UUID,
     body: WebhookEndpointUpdate,
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_scope(SCOPE_WEBHOOKS_WRITE)),
 ):
     """Update URL, description, subscribed events, or active state."""
     ep = await _get_owned_endpoint(endpoint_id, user_id, db)
@@ -198,7 +202,7 @@ async def update_endpoint(
 async def delete_endpoint(
     endpoint_id: UUID,
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_scope(SCOPE_WEBHOOKS_WRITE)),
 ):
     """Delete a webhook endpoint."""
     ep = await _get_owned_endpoint(endpoint_id, user_id, db)
@@ -211,7 +215,7 @@ async def delete_endpoint(
 async def rotate_secret(
     endpoint_id: UUID,
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_scope(SCOPE_WEBHOOKS_WRITE)),
 ):
     """
     Rotate the signing secret for an endpoint.
@@ -229,7 +233,7 @@ async def rotate_secret(
 async def test_endpoint(
     endpoint_id: UUID,
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_scope(SCOPE_WEBHOOKS_WRITE)),
 ):
     """
     Send a test ping to the endpoint URL and return the delivery result.
@@ -294,7 +298,7 @@ async def list_webhook_logs(
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_scope(SCOPE_WEBHOOKS_READ)),
 ):
     """List webhook delivery logs for tasks owned by the current user."""
     q = select(WebhookLogDB).where(WebhookLogDB.user_id == user_id)
@@ -340,7 +344,7 @@ async def list_webhook_logs(
 async def retry_webhook(
     log_id: UUID,
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_scope(SCOPE_WEBHOOKS_WRITE)),
 ):
     """
     Manually retry a single webhook delivery.
@@ -358,7 +362,7 @@ async def retry_webhook(
 @router.get("/stats")
 async def webhook_stats(
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_scope(SCOPE_WEBHOOKS_READ)),
 ):
     """Summary stats for the user's webhook deliveries."""
     total = (await db.execute(
