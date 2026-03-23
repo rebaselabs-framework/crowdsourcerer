@@ -1,0 +1,355 @@
+---
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Astro.cookies);
+if (!token) return Astro.redirect("/login");
+
+// Handle POST actions (create team, accept/decline invite)
+let actionError: string | null = null;
+let actionSuccess: string | null = null;
+
+if (Astro.request.method === "POST") {
+  const form = await Astro.request.formData();
+  const action = form.get("action") as string;
+
+  try {
+    if (action === "create_team") {
+      const name = (form.get("name") as string)?.trim();
+      const description = (form.get("description") as string)?.trim() || undefined;
+      const avatar_emoji = (form.get("avatar_emoji") as string)?.trim() || "👥";
+      if (!name) throw new Error("Team name is required");
+      await apiFetch<any>("/v1/worker-teams", {
+        token,
+        method: "POST",
+        body: JSON.stringify({ name, description, avatar_emoji }),
+      });
+      actionSuccess = `Team "${name}" created!`;
+    } else if (action === "accept_invite") {
+      const inviteId = form.get("invite_id") as string;
+      await apiFetch<any>(`/v1/worker-teams/invites/${inviteId}/accept`, {
+        token, method: "POST",
+      });
+      actionSuccess = "Invite accepted! You've joined the team.";
+    } else if (action === "decline_invite") {
+      const inviteId = form.get("invite_id") as string;
+      await apiFetch<any>(`/v1/worker-teams/invites/${inviteId}/decline`, {
+        token, method: "POST",
+      });
+      actionSuccess = "Invite declined.";
+    } else if (action === "leave_team") {
+      const teamId = form.get("team_id") as string;
+      const userId = form.get("user_id") as string;
+      await apiFetch<any>(`/v1/worker-teams/${teamId}/members/${userId}`, {
+        token, method: "DELETE",
+      });
+      actionSuccess = "You have left the team.";
+    } else if (action === "delete_team") {
+      const teamId = form.get("team_id") as string;
+      await apiFetch<any>(`/v1/worker-teams/${teamId}`, {
+        token, method: "DELETE",
+      });
+      actionSuccess = "Team deleted.";
+    }
+  } catch (e: any) {
+    actionError = e.message || "Action failed";
+  }
+}
+
+let teamsData: any = null;
+let pendingInvites: any[] = [];
+let error: string | null = null;
+
+// Get current user id for leave/delete operations
+let me: any = null;
+try {
+  me = await apiFetch<any>("/v1/users/me", { token });
+  [teamsData, pendingInvites] = await Promise.all([
+    apiFetch<any>("/v1/worker-teams?page_size=50", { token }),
+    apiFetch<any>("/v1/worker-teams/invites/pending", { token }),
+  ]);
+} catch (e: any) {
+  if (e.message?.includes("401")) return Astro.redirect("/login");
+  if (e.message?.includes("403")) error = "Worker account required to use teams";
+  else error = "Failed to load teams";
+}
+
+const teams: any[] = teamsData?.items ?? [];
+const EMOJI_OPTIONS = ["👥", "🚀", "⚡", "🔥", "💡", "🎯", "🛠️", "🌟", "🤝", "🏆"];
+---
+
+<Layout title="My Teams — CrowdSorcerer">
+  <div class="max-w-5xl mx-auto px-6 py-10">
+    <!-- Header -->
+    <div class="flex items-start justify-between mb-8">
+      <div>
+        <div class="flex items-center gap-2 mb-1">
+          <a href="/worker" class="text-gray-500 hover:text-gray-300 text-sm transition-colors">Worker</a>
+          <span class="text-gray-600">/</span>
+          <span class="text-sm text-gray-300">Teams</span>
+        </div>
+        <h1 class="text-2xl font-bold">Worker Teams</h1>
+        <p class="text-gray-400 text-sm mt-1">Collaborate with other workers on tasks</p>
+      </div>
+      <button
+        id="createTeamBtn"
+        class="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-sm text-white rounded-lg transition-colors flex items-center gap-2"
+      >
+        <span>+ New Team</span>
+      </button>
+    </div>
+
+    <!-- Action feedback -->
+    {actionSuccess && (
+      <div class="mb-6 bg-green-950/30 border border-green-800 rounded-lg px-4 py-3 text-green-300 text-sm">
+        ✓ {actionSuccess}
+      </div>
+    )}
+    {actionError && (
+      <div class="mb-6 bg-red-950/30 border border-red-800 rounded-lg px-4 py-3 text-red-300 text-sm">
+        ✗ {actionError}
+      </div>
+    )}
+    {error && (
+      <div class="bg-red-950/30 border border-red-800 rounded-xl p-8 text-center">
+        <div class="text-4xl mb-4">⚠️</div>
+        <p class="text-gray-400">{error}</p>
+        <a href="/worker" class="inline-block mt-4 text-violet-400 hover:text-violet-300 text-sm">← Worker dashboard</a>
+      </div>
+    )}
+
+    {!error && (
+      <>
+        <!-- Pending invites -->
+        {pendingInvites.length > 0 && (
+          <div class="mb-8">
+            <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">
+              📬 Pending Invitations ({pendingInvites.length})
+            </h2>
+            <div class="space-y-3">
+              {pendingInvites.map((invite: any) => (
+                <div class="bg-violet-950/20 border border-violet-800/40 rounded-xl p-4 flex items-center justify-between gap-4">
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2 mb-1">
+                      <span class="text-lg">👥</span>
+                      <span class="font-semibold text-violet-300">{invite.team_name}</span>
+                    </div>
+                    <p class="text-gray-400 text-sm">
+                      Invited by <span class="text-gray-300">{invite.inviter_name}</span>
+                      {invite.message && (
+                        <> · "<em class="text-gray-400">{invite.message}</em>"</>
+                      )}
+                    </p>
+                    {invite.expires_at && (
+                      <p class="text-xs text-gray-600 mt-1">
+                        Expires {new Date(invite.expires_at).toLocaleDateString()}
+                      </p>
+                    )}
+                  </div>
+                  <div class="flex gap-2 flex-shrink-0">
+                    <form method="POST" class="inline">
+                      <input type="hidden" name="action" value="accept_invite" />
+                      <input type="hidden" name="invite_id" value={invite.id} />
+                      <button
+                        type="submit"
+                        class="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm rounded-lg transition-colors"
+                      >
+                        Accept
+                      </button>
+                    </form>
+                    <form method="POST" class="inline">
+                      <input type="hidden" name="action" value="decline_invite" />
+                      <input type="hidden" name="invite_id" value={invite.id} />
+                      <button
+                        type="submit"
+                        class="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm rounded-lg transition-colors"
+                      >
+                        Decline
+                      </button>
+                    </form>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <!-- My Teams -->
+        <div>
+          <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">
+            My Teams ({teams.length})
+          </h2>
+          {teams.length === 0 ? (
+            <div class="bg-gray-900 border border-gray-800 rounded-xl p-12 text-center">
+              <div class="text-5xl mb-4">👥</div>
+              <h3 class="text-lg font-semibold mb-2">No teams yet</h3>
+              <p class="text-gray-400 text-sm mb-6">
+                Create a team to collaborate with other workers on tasks.
+              </p>
+              <button
+                id="createTeamBtn2"
+                class="px-5 py-2.5 bg-violet-600 hover:bg-violet-700 text-sm text-white rounded-lg transition-colors"
+              >
+                + Create your first team
+              </button>
+            </div>
+          ) : (
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {teams.map((team: any) => (
+                <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 hover:border-gray-700 transition-colors">
+                  <div class="flex items-start justify-between mb-3">
+                    <div class="flex items-center gap-3">
+                      <div class="w-10 h-10 rounded-lg bg-violet-900/40 flex items-center justify-center text-xl">
+                        {team.avatar_emoji || "👥"}
+                      </div>
+                      <div>
+                        <h3 class="font-semibold">{team.name}</h3>
+                        <div class="flex items-center gap-2 mt-0.5">
+                          {team.my_role === "owner" ? (
+                            <span class="text-xs bg-yellow-900/40 text-yellow-300 px-2 py-0.5 rounded-full">Owner</span>
+                          ) : (
+                            <span class="text-xs bg-gray-800 text-gray-400 px-2 py-0.5 rounded-full">Member</span>
+                          )}
+                          <span class="text-xs text-gray-500">{team.member_count} member{team.member_count !== 1 ? "s" : ""}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <a
+                      href={`/worker/teams/${team.id}`}
+                      class="text-xs text-violet-400 hover:text-violet-300 transition-colors"
+                    >
+                      View →
+                    </a>
+                  </div>
+
+                  {team.description && (
+                    <p class="text-gray-400 text-sm mb-3 line-clamp-2">{team.description}</p>
+                  )}
+
+                  <div class="flex items-center justify-between pt-3 border-t border-gray-800">
+                    <span class="text-xs text-gray-600">
+                      Created {new Date(team.created_at).toLocaleDateString()}
+                    </span>
+                    <div class="flex gap-2">
+                      {team.my_role === "owner" ? (
+                        <form method="POST" class="inline" onsubmit="return confirm('Delete this team? This cannot be undone.')">
+                          <input type="hidden" name="action" value="delete_team" />
+                          <input type="hidden" name="team_id" value={team.id} />
+                          <button type="submit" class="text-xs text-red-400 hover:text-red-300 transition-colors">
+                            Delete
+                          </button>
+                        </form>
+                      ) : (
+                        <form method="POST" class="inline" onsubmit="return confirm('Leave this team?')">
+                          <input type="hidden" name="action" value="leave_team" />
+                          <input type="hidden" name="team_id" value={team.id} />
+                          <input type="hidden" name="user_id" value={me?.id || ""} />
+                          <button type="submit" class="text-xs text-gray-500 hover:text-gray-400 transition-colors">
+                            Leave
+                          </button>
+                        </form>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </>
+    )}
+  </div>
+
+  <!-- Create Team Modal -->
+  <div id="createTeamModal" class="hidden fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+    <div class="bg-gray-900 border border-gray-800 rounded-2xl p-6 w-full max-w-md">
+      <div class="flex items-center justify-between mb-6">
+        <h2 class="text-lg font-bold">Create New Team</h2>
+        <button id="closeModalBtn" class="text-gray-500 hover:text-gray-300 text-xl leading-none">×</button>
+      </div>
+
+      <form method="POST">
+        <input type="hidden" name="action" value="create_team" />
+
+        <!-- Emoji picker -->
+        <div class="mb-4">
+          <label class="text-sm text-gray-400 block mb-2">Team Icon</label>
+          <div class="flex gap-2 flex-wrap">
+            {EMOJI_OPTIONS.map((emoji) => (
+              <label class="cursor-pointer">
+                <input type="radio" name="avatar_emoji" value={emoji} class="sr-only" checked={emoji === "👥"} />
+                <span class="emoji-opt w-10 h-10 rounded-lg border border-gray-700 flex items-center justify-center text-xl hover:border-violet-500 transition-colors cursor-pointer">
+                  {emoji}
+                </span>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div class="mb-4">
+          <label class="text-sm text-gray-400 block mb-1">Team Name <span class="text-red-400">*</span></label>
+          <input
+            type="text"
+            name="name"
+            placeholder="e.g. The Research Squad"
+            required
+            maxlength="120"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-violet-500"
+          />
+        </div>
+
+        <div class="mb-6">
+          <label class="text-sm text-gray-400 block mb-1">Description</label>
+          <textarea
+            name="description"
+            placeholder="What's this team about?"
+            maxlength="500"
+            rows="3"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-violet-500 resize-none"
+          ></textarea>
+        </div>
+
+        <div class="flex gap-3">
+          <button
+            type="submit"
+            class="flex-1 py-2.5 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg transition-colors"
+          >
+            Create Team
+          </button>
+          <button
+            type="button"
+            id="closeModalBtn2"
+            class="px-4 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm rounded-lg transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script is:inline>
+    // Modal logic
+    const modal = document.getElementById("createTeamModal");
+    const openBtns = [document.getElementById("createTeamBtn"), document.getElementById("createTeamBtn2")].filter(Boolean);
+    const closeBtns = [document.getElementById("closeModalBtn"), document.getElementById("closeModalBtn2")].filter(Boolean);
+
+    openBtns.forEach(btn => btn?.addEventListener("click", () => modal?.classList.remove("hidden")));
+    closeBtns.forEach(btn => btn?.addEventListener("click", () => modal?.classList.add("hidden")));
+    modal?.addEventListener("click", (e) => { if (e.target === modal) modal.classList.add("hidden"); });
+
+    // Emoji radio highlight
+    document.querySelectorAll("input[name='avatar_emoji']").forEach(input => {
+      input.addEventListener("change", () => {
+        document.querySelectorAll(".emoji-opt").forEach(el => el.classList.remove("border-violet-500", "bg-violet-900/30"));
+        const label = input.closest("label");
+        label?.querySelector(".emoji-opt")?.classList.add("border-violet-500", "bg-violet-900/30");
+      });
+    });
+    // Init checked state
+    const checkedInput = document.querySelector("input[name='avatar_emoji']:checked");
+    if (checkedInput) {
+      checkedInput.closest("label")?.querySelector(".emoji-opt")?.classList.add("border-violet-500", "bg-violet-900/30");
+    }
+  </script>
+</Layout>

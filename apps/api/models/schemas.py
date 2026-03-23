@@ -1484,3 +1484,67 @@ class BulkInviteResult(BaseModel):
     invite_ids: list[str]
 
 
+# ── Worker Teams (migration 0033) ─────────────────────────────────────────────
+
+class WorkerTeamMemberOut(BaseModel):
+    user_id: str
+    name: str
+    role: str        # owner | member
+    joined_at: str
+    tasks_completed: int = 0
+    xp: int = 0
+    level: int = 1
+
+    model_config = {"from_attributes": True}
+
+
+class WorkerTeamInviteOut(BaseModel):
+    id: str
+    team_id: str
+    team_name: str
+    invitee_id: str
+    invited_by: str
+    inviter_name: str
+    status: str
+    message: Optional[str] = None
+    created_at: str
+    expires_at: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
+class WorkerTeamOut(BaseModel):
+    id: str
+    name: str
+    description: Optional[str] = None
+    avatar_emoji: str = "👥"
+    created_by: str
+    member_count: int = 0
+    created_at: str
+    updated_at: str
+    my_role: Optional[str] = None   # owner | member | None (not a member)
+
+    model_config = {"from_attributes": True}
+
+
+class WorkerTeamDetailOut(WorkerTeamOut):
+    members: list[WorkerTeamMemberOut] = []
+    pending_invites: list[WorkerTeamInviteOut] = []
+
+
+class WorkerTeamCreateRequest(BaseModel):
+    name: str = Field(..., min_length=2, max_length=120)
+    description: Optional[str] = Field(None, max_length=500)
+    avatar_emoji: Optional[str] = Field(None, max_length=8)
+
+
+class WorkerTeamInviteRequest(BaseModel):
+    username: str = Field(..., description="Username or email of the worker to invite")
+    message: Optional[str] = Field(None, max_length=500)
+
+
+class PaginatedWorkerTeams(BaseModel):
+    items: list[WorkerTeamOut]
+    total: int
+    page: int
+    page_size: int

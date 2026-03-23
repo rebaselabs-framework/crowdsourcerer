@@ -1,0 +1,270 @@
+---
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Astro.cookies);
+if (!token) return Astro.redirect("/login");
+
+const { teamId } = Astro.params;
+
+let actionError: string | null = null;
+let actionSuccess: string | null = null;
+
+// Handle POST actions
+if (Astro.request.method === "POST") {
+  const form = await Astro.request.formData();
+  const action = form.get("action") as string;
+
+  try {
+    if (action === "invite_member") {
+      const username = (form.get("username") as string)?.trim();
+      const message = (form.get("message") as string)?.trim() || undefined;
+      if (!username) throw new Error("Username is required");
+      await apiFetch<any>(`/v1/worker-teams/${teamId}/invite`, {
+        token,
+        method: "POST",
+        body: JSON.stringify({ username, message }),
+      });
+      actionSuccess = `Invite sent to "${username}"`;
+    } else if (action === "remove_member") {
+      const userId = form.get("user_id") as string;
+      const memberName = form.get("member_name") as string;
+      await apiFetch<any>(`/v1/worker-teams/${teamId}/members/${userId}`, {
+        token, method: "DELETE",
+      });
+      actionSuccess = `${memberName || "Member"} removed from team`;
+    } else if (action === "leave_team") {
+      const userId = form.get("user_id") as string;
+      await apiFetch<any>(`/v1/worker-teams/${teamId}/members/${userId}`, {
+        token, method: "DELETE",
+      });
+      return Astro.redirect("/worker/teams");
+    }
+  } catch (e: any) {
+    actionError = e.message || "Action failed";
+  }
+}
+
+let team: any = null;
+let me: any = null;
+let error: string | null = null;
+
+try {
+  [team, me] = await Promise.all([
+    apiFetch<any>(`/v1/worker-teams/${teamId}`, { token }),
+    apiFetch<any>("/v1/users/me", { token }),
+  ]);
+} catch (e: any) {
+  if (e.message?.includes("401")) return Astro.redirect("/login");
+  if (e.message?.includes("403")) error = "You are not a member of this team";
+  else if (e.message?.includes("404")) error = "Team not found";
+  else error = "Failed to load team";
+}
+
+const isOwner = team?.my_role === "owner";
+const members: any[] = team?.members ?? [];
+const pendingInvites: any[] = team?.pending_invites ?? [];
+---
+
+<Layout title={team ? `${team.name} — Team` : "Team — CrowdSorcerer"}>
+  <div class="max-w-4xl mx-auto px-6 py-10">
+    <!-- Breadcrumb + header -->
+    <div class="flex items-start justify-between mb-8">
+      <div>
+        <div class="flex items-center gap-2 mb-1">
+          <a href="/worker" class="text-gray-500 hover:text-gray-300 text-sm transition-colors">Worker</a>
+          <span class="text-gray-600">/</span>
+          <a href="/worker/teams" class="text-gray-500 hover:text-gray-300 text-sm transition-colors">Teams</a>
+          <span class="text-gray-600">/</span>
+          <span class="text-sm text-gray-300">{team?.name ?? "Team"}</span>
+        </div>
+        {team && (
+          <div class="flex items-center gap-3 mt-2">
+            <div class="w-12 h-12 rounded-xl bg-violet-900/40 flex items-center justify-center text-2xl">
+              {team.avatar_emoji || "👥"}
+            </div>
+            <div>
+              <h1 class="text-2xl font-bold">{team.name}</h1>
+              <div class="flex items-center gap-2 mt-0.5">
+                {isOwner ? (
+                  <span class="text-xs bg-yellow-900/40 text-yellow-300 px-2 py-0.5 rounded-full">Owner</span>
+                ) : (
+                  <span class="text-xs bg-gray-800 text-gray-400 px-2 py-0.5 rounded-full">Member</span>
+                )}
+                <span class="text-xs text-gray-500">{team.member_count} member{team.member_count !== 1 ? "s" : ""}</span>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+      <a href="/worker/teams" class="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-sm text-gray-300 rounded-lg transition-colors">
+        ← All Teams
+      </a>
+    </div>
+
+    <!-- Feedback -->
+    {actionSuccess && (
+      <div class="mb-6 bg-green-950/30 border border-green-800 rounded-lg px-4 py-3 text-green-300 text-sm">
+        ✓ {actionSuccess}
+      </div>
+    )}
+    {actionError && (
+      <div class="mb-6 bg-red-950/30 border border-red-800 rounded-lg px-4 py-3 text-red-300 text-sm">
+        ✗ {actionError}
+      </div>
+    )}
+
+    {error ? (
+      <div class="bg-red-950/30 border border-red-800 rounded-xl p-8 text-center">
+        <div class="text-4xl mb-4">⚠️</div>
+        <p class="text-gray-400">{error}</p>
+        <a href="/worker/teams" class="inline-block mt-4 text-violet-400 hover:text-violet-300 text-sm">← Back to teams</a>
+      </div>
+    ) : team && (
+      <div class="space-y-6">
+        {/* Description */}
+        {team.description && (
+          <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+            <p class="text-gray-300 text-sm leading-relaxed">{team.description}</p>
+          </div>
+        )}
+
+        {/* Invite a member (any member can invite) */}
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+          <h2 class="font-semibold text-sm mb-4">✉️ Invite a Worker</h2>
+          <form method="POST" class="flex gap-3 items-end">
+            <input type="hidden" name="action" value="invite_member" />
+            <div class="flex-1">
+              <label class="text-xs text-gray-500 block mb-1">Username or email</label>
+              <input
+                type="text"
+                name="username"
+                placeholder="e.g. worker_jane"
+                required
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-violet-500"
+              />
+            </div>
+            <div class="w-48">
+              <label class="text-xs text-gray-500 block mb-1">Message (optional)</label>
+              <input
+                type="text"
+                name="message"
+                placeholder="Hey, join us!"
+                maxlength="500"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-violet-500"
+              />
+            </div>
+            <button
+              type="submit"
+              class="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm rounded-lg transition-colors whitespace-nowrap"
+            >
+              Send Invite
+            </button>
+          </form>
+        </div>
+
+        {/* Pending invites (owner only) */}
+        {isOwner && pendingInvites.length > 0 && (
+          <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+            <div class="px-5 py-4 border-b border-gray-800">
+              <h2 class="font-semibold text-sm">📬 Pending Invitations ({pendingInvites.length})</h2>
+            </div>
+            <div class="divide-y divide-gray-800">
+              {pendingInvites.map((invite: any) => (
+                <div class="px-5 py-3 flex items-center justify-between">
+                  <div>
+                    <span class="text-sm text-white">{invite.invitee_id}</span>
+                    {invite.message && (
+                      <p class="text-xs text-gray-500 mt-0.5">"{invite.message}"</p>
+                    )}
+                  </div>
+                  <div class="flex items-center gap-4 text-xs text-gray-500">
+                    <span>by {invite.inviter_name}</span>
+                    <span class="bg-yellow-900/30 text-yellow-400 px-2 py-0.5 rounded-full">pending</span>
+                    {invite.expires_at && (
+                      <span>exp. {new Date(invite.expires_at).toLocaleDateString()}</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Members list */}
+        <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+          <div class="px-5 py-4 border-b border-gray-800">
+            <h2 class="font-semibold text-sm">👤 Members ({members.length})</h2>
+          </div>
+          <div class="divide-y divide-gray-800">
+            {members.map((member: any) => (
+              <div class="px-5 py-4 flex items-center justify-between gap-4">
+                <div class="flex items-center gap-3">
+                  <div class="w-9 h-9 rounded-full bg-violet-900/60 flex items-center justify-center text-sm font-bold text-violet-300">
+                    {member.name.charAt(0).toUpperCase()}
+                  </div>
+                  <div>
+                    <div class="flex items-center gap-2">
+                      <span class="font-medium text-sm">{member.name}</span>
+                      {member.role === "owner" && (
+                        <span class="text-xs bg-yellow-900/40 text-yellow-300 px-1.5 py-0.5 rounded-full">Owner</span>
+                      )}
+                    </div>
+                    <div class="flex items-center gap-3 text-xs text-gray-500 mt-0.5">
+                      <span>Lv {member.level}</span>
+                      <span>{member.xp.toLocaleString()} XP</span>
+                      <span>{member.tasks_completed} tasks</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="flex items-center gap-3 text-xs text-gray-600">
+                  <span>Joined {new Date(member.joined_at).toLocaleDateString()}</span>
+                  {/* Owner can remove others; anyone can leave (self) */}
+                  {member.user_id !== me?.id && isOwner && member.role !== "owner" && (
+                    <form method="POST" class="inline" onsubmit={`return confirm('Remove ${member.name} from the team?')`}>
+                      <input type="hidden" name="action" value="remove_member" />
+                      <input type="hidden" name="user_id" value={member.user_id} />
+                      <input type="hidden" name="member_name" value={member.name} />
+                      <button type="submit" class="text-red-500 hover:text-red-400 transition-colors text-xs">
+                        Remove
+                      </button>
+                    </form>
+                  )}
+                  {member.user_id === me?.id && member.role !== "owner" && (
+                    <form method="POST" class="inline" onsubmit="return confirm('Leave this team?')">
+                      <input type="hidden" name="action" value="leave_team" />
+                      <input type="hidden" name="user_id" value={member.user_id} />
+                      <button type="submit" class="text-gray-500 hover:text-gray-400 transition-colors text-xs">
+                        Leave
+                      </button>
+                    </form>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Danger zone (owner only) */}
+        {isOwner && (
+          <div class="bg-red-950/10 border border-red-900/30 rounded-xl p-5">
+            <h2 class="font-semibold text-sm text-red-400 mb-3">⚠️ Danger Zone</h2>
+            <div class="flex items-center justify-between">
+              <div>
+                <p class="text-sm text-gray-300">Delete this team</p>
+                <p class="text-xs text-gray-500 mt-0.5">Permanently removes the team and all membership records.</p>
+              </div>
+              <form method="POST" action="/worker/teams" onsubmit="return confirm('Permanently delete this team? This cannot be undone.')">
+                <input type="hidden" name="action" value="delete_team" />
+                <input type="hidden" name="team_id" value={team.id} />
+                <button type="submit" class="px-4 py-2 bg-red-900/40 hover:bg-red-900/70 border border-red-800 text-red-300 text-sm rounded-lg transition-colors">
+                  Delete Team
+                </button>
+              </form>
+            </div>
+          </div>
+        )}
+      </div>
+    )}
+  </div>
+</Layout>

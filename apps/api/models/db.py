@@ -1429,3 +1429,64 @@ class RequesterSavedTemplateDB(Base):
     published_at = Column(DateTime(timezone=True), nullable=True)   # when made public
 
     user = relationship("UserDB", backref="saved_task_templates")
+
+
+# ── Worker Teams (migration 0033) ────────────────────────────────────────────
+
+class WorkerTeamDB(Base):
+    """A worker-side collaboration group.
+
+    Workers can form teams to collaborate on tasks.  Distinct from
+    requester orgs — these are purely worker-to-worker associations.
+    """
+    __tablename__ = "worker_teams"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String(120), nullable=False)
+    description = Column(Text, nullable=True)
+    avatar_emoji = Column(String(8), nullable=True, default="👥")
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
+                        nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+
+    creator = relationship("UserDB", foreign_keys=[created_by], backref="owned_worker_teams")
+    members = relationship("WorkerTeamMemberDB", back_populates="team", cascade="all, delete-orphan")
+    invites = relationship("WorkerTeamInviteDB", foreign_keys="WorkerTeamInviteDB.team_id",
+                           back_populates="team", cascade="all, delete-orphan")
+
+
+class WorkerTeamMemberDB(Base):
+    """Membership record linking a worker to a team."""
+    __tablename__ = "worker_team_members"
+
+    team_id = Column(UUID(as_uuid=True), ForeignKey("worker_teams.id", ondelete="CASCADE"),
+                     primary_key=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
+                     primary_key=True, index=True)
+    role = Column(String(20), nullable=False, default="member")   # owner | member
+    joined_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    team = relationship("WorkerTeamDB", back_populates="members")
+    user = relationship("UserDB", backref="worker_team_memberships")
+
+
+class WorkerTeamInviteDB(Base):
+    """An invitation for a worker to join a team."""
+    __tablename__ = "worker_team_invites"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    team_id = Column(UUID(as_uuid=True), ForeignKey("worker_teams.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    invitee_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
+                        nullable=False, index=True)
+    invited_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
+                        nullable=False)
+    status = Column(String(20), nullable=False, default="pending")  # pending | accepted | declined
+    message = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+
+    team = relationship("WorkerTeamDB", foreign_keys=[team_id], back_populates="invites")
+    invitee = relationship("UserDB", foreign_keys=[invitee_id], backref="worker_team_invites_received")
+    inviter = relationship("UserDB", foreign_keys=[invited_by], backref="worker_team_invites_sent")
