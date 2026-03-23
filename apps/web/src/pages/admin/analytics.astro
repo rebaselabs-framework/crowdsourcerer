@@ -291,7 +291,7 @@ const chartData = analytics ? {
             <div class="grid grid-cols-4 gap-4">
               {(["pending", "processing", "paid", "rejected"] as const).map((status) => {
                 const info = analytics.payout_summary[status] || { count: 0, usd: 0 };
-                const colors: Record<string, string> = {
+                const colors: {[key: string]: string} = {
                   pending: "text-yellow-400",
                   processing: "text-blue-400",
                   paid: "text-green-400",

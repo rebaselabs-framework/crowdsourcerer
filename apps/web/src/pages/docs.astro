@@ -252,20 +252,20 @@ const taskTypes = [
             <li>Generate an API key from the <a href="/dashboard/api-keys" class="text-violet-400 hover:text-violet-300">API Keys page</a></li>
             <li>Submit your first task via the REST API or SDK</li>
           </ol>
-          <pre class="bg-gray-900 border border-gray-800 rounded-lg p-4 text-sm font-mono overflow-x-auto"><code class="text-gray-300"># Install the SDK
+          <pre class="bg-gray-900 border border-gray-800 rounded-lg p-4 text-sm font-mono overflow-x-auto"><code class="text-gray-300">{`# Install the SDK
 npm install @crowdsourcerer/sdk
 
 # Or call the REST API directly
-curl -X POST https://crowdsourcerer.rebaselabs.online/v1/tasks \
-  -H "Authorization: Bearer csk_YOUR_KEY" \
-  -H "Content-Type: application/json" \
+curl -X POST https://crowdsourcerer.rebaselabs.online/v1/tasks \\
+  -H "Authorization: Bearer csk_YOUR_KEY" \\
+  -H "Content-Type: application/json" \\
   -d '{
     "type": "web_research",
     "input": {
       "url": "https://example.com",
       "instruction": "Extract the main heading and description"
     }
-  }'</code></pre>
+  }'`}</code></pre>
         </section>
 
         <!-- Authentication -->

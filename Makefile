@@ -31,7 +31,9 @@ lint:
 	pnpm lint
 
 # Deploy (push triggers Coolify webhook)
+# Always verify the Astro build passes BEFORE pushing to prevent syntax errors from reaching prod
 deploy:
+	cd apps/web && pnpm build
 	git push origin main
 
 # DB migrations
