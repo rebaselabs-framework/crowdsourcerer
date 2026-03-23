@@ -51,6 +51,7 @@ class NotifType:
     APPLICATION_REJECTED     = "application_rejected"   # Worker's application was rejected
     TEAM_TASK_ASSIGNED       = "team_task_assigned"     # A task was assigned to a worker team
     TASK_MESSAGE             = "task_message"           # A direct message about a task
+    TASK_TIMED_OUT           = "task_timed_out"         # A worker's assignment timed out; task reopened
 
 
 async def create_notification(

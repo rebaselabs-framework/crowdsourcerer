@@ -138,6 +138,29 @@ def _worker_approved_html(task_type: str, earnings: int, xp: int) -> str:
 """
 
 
+def _task_timeout_html(task_id: str, task_type: str, worker_name: str) -> str:
+    return f"""
+<html><body style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px">
+<h2 style="color:#f59e0b">⏱️ Worker Assignment Timed Out</h2>
+<p>A worker's assignment on your <strong>{task_type}</strong> task timed out before they could submit.</p>
+<table style="width:100%;border-collapse:collapse;margin:16px 0">
+  <tr><td style="padding:8px;background:#f8f9fa;font-weight:bold;width:120px">Task ID</td>
+      <td style="padding:8px">{task_id}</td></tr>
+  <tr><td style="padding:8px;font-weight:bold">Task Type</td>
+      <td style="padding:8px">{task_type}</td></tr>
+  <tr><td style="padding:8px;background:#f8f9fa;font-weight:bold">Worker</td>
+      <td style="padding:8px">{worker_name}</td></tr>
+</table>
+<p style="color:#6b7280">Your task has been automatically reopened and is now available in the marketplace for another worker to claim.</p>
+<p><a href="https://crowdsourcerer.rebaselabs.online/dashboard/tasks/{task_id}"
+   style="background:#6366f1;color:white;padding:10px 20px;border-radius:6px;text-decoration:none">
+   View Task →</a></p>
+<hr style="margin:24px 0;border:none;border-top:1px solid #e5e7eb">
+<p style="color:#9ca3af;font-size:12px">CrowdSorcerer · <a href="https://crowdsourcerer.rebaselabs.online">crowdsourcerer.rebaselabs.online</a></p>
+</body></html>
+"""
+
+
 # ─── Core send function ────────────────────────────────────────────────────
 
 def _send_email_sync(to_email: str, subject: str, html_body: str) -> bool:
@@ -377,6 +400,22 @@ async def notify_payout_update_gated(
 </body></html>
 """
     await send_email(to_email, f"{emoji} Payout {status}: ${amount_usd:.2f}", html)
+
+
+async def notify_task_timeout_gated(
+    to_email: str, user_id: str, task_id: str, task_type: str,
+    worker_name: str = "a worker",
+) -> None:
+    """Send task-timeout email to requester if they have task_failed emails enabled."""
+    prefs = await _get_prefs(user_id)
+    # Gate on email_task_failed preference (timeout = task interrupted, semantically similar)
+    if prefs and not prefs.email_task_failed:
+        return
+    await send_email(
+        to_email=to_email,
+        subject=f"⏱️ Worker timed out on your {task_type} task — reopened",
+        html_body=_task_timeout_html(task_id, task_type, worker_name),
+    )
 
 
 # ─── Weekly Analytics Digest ─────────────────────────────────────────────────

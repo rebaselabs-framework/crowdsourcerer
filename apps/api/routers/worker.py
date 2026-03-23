@@ -1082,6 +1082,33 @@ async def get_earnings_analytics(
 
     best_month_credits = max((m["credits"] for m in monthly_earnings), default=0)
 
+    # ── 5. Projected earnings (linear trend of last 3 months) ─────────────────
+    # Uses the last 3 calendar months to compute a simple slope, then extrapolates
+    # next month's expected credits. Weekly = monthly / 4.33.
+    recent = [m["credits"] for m in monthly_earnings[-3:]]  # last 3 months
+    if len(recent) >= 2 and any(c > 0 for c in recent):
+        # Simple least-squares slope over the window [0, 1, ..., n-1]
+        n = len(recent)
+        xs = list(range(n))
+        mean_x = sum(xs) / n
+        mean_y = sum(recent) / n
+        num = sum((xs[i] - mean_x) * (recent[i] - mean_y) for i in range(n))
+        den = sum((xs[i] - mean_x) ** 2 for i in range(n))
+        slope = num / den if den != 0 else 0
+        projected_next_month_credits = max(0, int(recent[-1] + slope))
+    else:
+        projected_next_month_credits = 0
+
+    projected_next_week_credits = int(projected_next_month_credits / 4.33)
+    projected_next_month_usd = round(projected_next_month_credits / 100, 2)
+    projected_next_week_usd = round(projected_next_week_credits / 100, 2)
+    # Trend direction: "up", "down", or "flat"
+    if len(recent) >= 3 and recent[-1] > 0 and recent[0] > 0:
+        pct_change = (recent[-1] - recent[0]) / max(recent[0], 1) * 100
+        trend_direction = "up" if pct_change > 5 else ("down" if pct_change < -5 else "flat")
+    else:
+        trend_direction = "flat"
+
     return {
         "by_task_type": by_task_type,
         "monthly_earnings": monthly_earnings,
@@ -1093,6 +1120,12 @@ async def get_earnings_analytics(
         "total_tasks_completed": lifetime_tasks,
         "avg_credits_per_task": avg_credits_per_task,
         "best_month_credits": best_month_credits,
+        # Projection fields
+        "projected_next_month_credits": projected_next_month_credits,
+        "projected_next_month_usd": projected_next_month_usd,
+        "projected_next_week_credits": projected_next_week_credits,
+        "projected_next_week_usd": projected_next_week_usd,
+        "earnings_trend": trend_direction,  # "up" | "down" | "flat"
     }
 
 

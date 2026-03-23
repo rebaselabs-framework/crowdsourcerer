@@ -195,6 +195,51 @@ const clientApiUrl = import.meta.env.PUBLIC_API_URL ?? "";
         </div>
       </div>
 
+      <!-- Projected Earnings Banner -->
+      {analytics && (analytics.projected_next_month_credits > 0 || analytics.projected_next_week_credits > 0) && (
+        <div class={`rounded-2xl p-5 mb-6 border ${
+          analytics.earnings_trend === 'up'
+            ? 'bg-emerald-900/30 border-emerald-700/50'
+            : analytics.earnings_trend === 'down'
+            ? 'bg-amber-900/30 border-amber-700/50'
+            : 'bg-gray-900 border-gray-700/50'
+        }`}>
+          <div class="flex items-start justify-between gap-4 flex-wrap">
+            <div>
+              <div class="flex items-center gap-2 mb-1">
+                <span class="text-sm font-semibold text-gray-200">📈 Projected Earnings</span>
+                <span class={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                  analytics.earnings_trend === 'up'
+                    ? 'bg-emerald-700/60 text-emerald-300'
+                    : analytics.earnings_trend === 'down'
+                    ? 'bg-amber-700/60 text-amber-300'
+                    : 'bg-gray-700 text-gray-300'
+                }`}>
+                  {analytics.earnings_trend === 'up' ? '↑ Trending up' : analytics.earnings_trend === 'down' ? '↓ Trending down' : '→ Stable'}
+                </span>
+              </div>
+              <p class="text-xs text-gray-400">Based on your last 3 months of activity</p>
+            </div>
+            <div class="flex gap-6">
+              <div class="text-center">
+                <div class="text-xs text-gray-400 mb-0.5 uppercase tracking-wider">Next week</div>
+                <div class={`text-xl font-bold ${analytics.earnings_trend === 'up' ? 'text-emerald-400' : analytics.earnings_trend === 'down' ? 'text-amber-400' : 'text-gray-300'}`}>
+                  ${analytics.projected_next_week_usd.toFixed(2)}
+                </div>
+                <div class="text-xs text-gray-500">{analytics.projected_next_week_credits.toLocaleString()} cr</div>
+              </div>
+              <div class="text-center">
+                <div class="text-xs text-gray-400 mb-0.5 uppercase tracking-wider">Next month</div>
+                <div class={`text-xl font-bold ${analytics.earnings_trend === 'up' ? 'text-emerald-400' : analytics.earnings_trend === 'down' ? 'text-amber-400' : 'text-gray-300'}`}>
+                  ${analytics.projected_next_month_usd.toFixed(2)}
+                </div>
+                <div class="text-xs text-gray-500">{analytics.projected_next_month_credits.toLocaleString()} cr</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <!-- Charts row -->
       <div class="grid lg:grid-cols-2 gap-6 mb-6">
         <div class="bg-gray-900 border border-gray-800 rounded-2xl p-6">

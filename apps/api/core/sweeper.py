@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from models.db import TaskDB, TaskAssignmentDB, UserDB, SLABreachDB, TaskDependencyDB, NotificationDB, TaskWatchlistDB, NotificationPreferencesDB
 from core.webhooks import fire_webhook_for_task
+from core.notify import create_notification, NotifType
 
 logger = structlog.get_logger()
 
@@ -102,6 +103,35 @@ async def sweep_once(session_factory: async_sessionmaker) -> dict:
                                 required=task.assignments_required,
                             )
 
+                            # Notify the requester in-app
+                            worker_name = (worker.name or "a worker") if worker else "a worker"
+                            task_label = task.type.replace("_", " ")
+                            await create_notification(
+                                db,
+                                task.user_id,
+                                NotifType.TASK_TIMED_OUT,
+                                f"Worker timed out — task reopened ⏱️",
+                                f"{worker_name.capitalize()} didn't complete your {task_label} task in time. "
+                                "It's been reopened and is back in the marketplace.",
+                                link=f"/dashboard/tasks/{task.id}",
+                            )
+
+                            # Fire email to requester (fire-and-forget)
+                            requester_result = await db.execute(
+                                select(UserDB).where(UserDB.id == task.user_id)
+                            )
+                            requester = requester_result.scalar_one_or_none()
+                            if requester and requester.email:
+                                asyncio.create_task(
+                                    _notify_timeout_email(
+                                        to_email=requester.email,
+                                        user_id=str(requester.id),
+                                        task_id=str(task.id),
+                                        task_type=task.type,
+                                        worker_name=worker_name,
+                                    )
+                                )
+
                 except Exception as exc:  # noqa: BLE001
                     errors.append(f"assignment:{assignment.id}: {exc}")
                     logger.exception("sweeper.assignment_error", assignment_id=str(assignment.id))
@@ -131,6 +161,23 @@ async def sweep_once(session_factory: async_sessionmaker) -> dict:
         )
 
     return summary
+
+
+async def _notify_timeout_email(
+    to_email: str, user_id: str, task_id: str, task_type: str, worker_name: str
+) -> None:
+    """Fire-and-forget: send task timeout email to requester."""
+    try:
+        from core.email import notify_task_timeout_gated
+        await notify_task_timeout_gated(
+            to_email=to_email,
+            user_id=user_id,
+            task_id=task_id,
+            task_type=task_type,
+            worker_name=worker_name,
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("sweeper.timeout_email_failed", task_id=task_id)
 
 
 async def _sweep_sla_breaches(session_factory: async_sessionmaker) -> int:
