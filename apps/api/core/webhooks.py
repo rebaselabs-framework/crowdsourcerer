@@ -178,6 +178,89 @@ async def _deliver(
     logger.error("webhook_exhausted_retries", url=url, task_id=task_id, event=event_type)
 
 
+async def retry_webhook_log(*, log_id: str, user_id: str) -> dict:
+    """
+    Manually retry a previously failed (or any) webhook delivery.
+
+    Looks up the original log record, re-delivers the stored payload, and
+    creates a new log entry marked as a manual retry.
+
+    Returns a dict with the new log's result fields.
+    Raises ValueError if the log is not found or does not belong to user_id.
+    """
+    from sqlalchemy import select as sa_select
+
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            sa_select(WebhookLogDB).where(
+                WebhookLogDB.id == log_id,
+                WebhookLogDB.user_id == user_id,
+            )
+        )
+        original: Optional[WebhookLogDB] = result.scalar_one_or_none()
+        if original is None:
+            raise ValueError("Webhook log not found or access denied")
+
+    # Re-fire with the same URL and event_type
+    event_type = original.event_type or "task.completed"
+    payload: dict = {
+        "event": event_type,
+        "task_id": str(original.task_id),
+        "occurred_at": _utcnow_iso(),
+        "is_manual_retry": True,
+        "original_log_id": str(original.id),
+    }
+
+    t0 = _time.perf_counter()
+    status_code: Optional[int] = None
+    error_msg: Optional[str] = None
+    success = False
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(original.url, json=payload)
+            status_code = resp.status_code
+            success = resp.status_code < 400
+            if not success:
+                error_msg = f"HTTP {resp.status_code}"
+    except Exception as exc:
+        error_msg = str(exc)
+
+    duration_ms = int((_time.perf_counter() - t0) * 1000)
+
+    # Persist new log row
+    try:
+        async with AsyncSessionLocal() as db:
+            new_log = WebhookLogDB(
+                task_id=original.task_id,
+                user_id=original.user_id,
+                url=original.url,
+                event_type=event_type,
+                attempt=1,
+                status_code=status_code,
+                success=success,
+                error=error_msg,
+                duration_ms=duration_ms,
+                retry_of=original.id,
+                is_manual_retry=True,
+            )
+            db.add(new_log)
+            await db.commit()
+            await db.refresh(new_log)
+            new_id = str(new_log.id)
+    except Exception:
+        logger.warning("webhook_retry_log_failed", original_id=log_id)
+        new_id = None
+
+    return {
+        "new_log_id": new_id,
+        "success": success,
+        "status_code": status_code,
+        "duration_ms": duration_ms,
+        "error": error_msg,
+    }
+
+
 async def _log(
     task_id: str,
     user_id: str,

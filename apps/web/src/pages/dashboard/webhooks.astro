@@ -175,6 +175,7 @@ const EVENT_COLORS: Record<string, string> = {
               <th class="px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Attempt</th>
               <th class="px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Duration</th>
               <th class="px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Date</th>
+              <th class="px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Retry</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-gray-800">
@@ -233,6 +234,15 @@ const EVENT_COLORS: Record<string, string> = {
                 <td class="px-4 py-4 text-gray-500 text-xs">
                   {new Date(log.created_at).toLocaleString()}
                 </td>
+                <td class="px-4 py-4">
+                  <button
+                    class="retry-btn text-xs px-2.5 py-1 rounded border border-gray-700 text-gray-400 hover:border-violet-500 hover:text-violet-300 transition-colors"
+                    data-log-id={log.id}
+                    title="Manually retry this webhook delivery"
+                  >
+                    ↻ Retry
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -264,6 +274,13 @@ const EVENT_COLORS: Record<string, string> = {
         </div>
       </div>
     )}
+
+    <!-- Preferences Link -->
+    <div class="mt-6 flex justify-end">
+      <a href="/dashboard/notification-preferences" class="text-sm text-gray-500 hover:text-violet-300 transition-colors">
+        ⚙️ Notification preferences →
+      </a>
+    </div>
 
     <!-- Event Types Reference -->
     <div class="mt-10">
@@ -307,4 +324,40 @@ const EVENT_COLORS: Record<string, string> = {
       </p>
     </div>
   </div>
+
+  <script>
+    // Retry handler — fires for all retry buttons
+    document.querySelectorAll<HTMLButtonElement>(".retry-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const logId = btn.dataset.logId;
+        if (!logId) return;
+
+        const originalText = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = "…";
+
+        try {
+          const res = await fetch(`/api/webhooks/${logId}/retry`, { method: "POST" });
+          const data = await res.json();
+          if (res.ok) {
+            if (data.success) {
+              btn.textContent = "✓ OK";
+              btn.classList.remove("border-gray-700", "text-gray-400");
+              btn.classList.add("border-green-700", "text-green-400");
+            } else {
+              btn.textContent = "✗ Fail";
+              btn.classList.remove("border-gray-700", "text-gray-400");
+              btn.classList.add("border-red-700", "text-red-400");
+            }
+          } else {
+            btn.textContent = originalText ?? "↻ Retry";
+            alert(data.detail ?? "Retry failed");
+          }
+        } catch {
+          btn.disabled = false;
+          btn.textContent = originalText ?? "↻ Retry";
+        }
+      });
+    });
+  </script>
 </Layout>

@@ -4,13 +4,13 @@ from typing import Optional
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
 from core.auth import get_current_user_id
 from core.database import get_db
-from core.webhooks import ALL_EVENTS, DEFAULT_EVENTS
+from core.webhooks import ALL_EVENTS, DEFAULT_EVENTS, retry_webhook_log
 from models.db import WebhookLogDB, TaskDB
 
 logger = structlog.get_logger()
@@ -91,6 +91,25 @@ async def list_webhook_logs(
         "page_size": page_size,
         "has_next": (page * page_size) < total,
     }
+
+
+@router.post("/logs/{log_id}/retry")
+async def retry_webhook(
+    log_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """
+    Manually retry a single webhook delivery.
+
+    Creates a new log entry with `is_manual_retry=true` linked to the original.
+    Returns the result of the retry attempt.
+    """
+    try:
+        result = await retry_webhook_log(log_id=str(log_id), user_id=str(user_id))
+    except ValueError as exc:
+        raise HTTPException(404, str(exc))
+    return result
 
 
 @router.get("/stats")

@@ -289,6 +289,8 @@ class WebhookLogDB(Base):
     success = Column(Boolean, default=False, nullable=False)
     error = Column(Text, nullable=True)                   # Error message if failed
     duration_ms = Column(Integer, nullable=True)
+    retry_of = Column(UUID(as_uuid=True), nullable=True)  # original log ID if this is a manual retry
+    is_manual_retry = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
 
 
@@ -840,6 +842,37 @@ class OnboardingProgressDB(Base):
 
 
 # ─── SLA Breaches ─────────────────────────────────────────────────────────────
+
+class NotificationPreferencesDB(Base):
+    """Per-user preferences for email and in-app notification delivery."""
+    __tablename__ = "notification_preferences"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, unique=True, index=True)
+
+    # ── Email notification toggles ──────────────────────────────────────────
+    email_task_completed = Column(Boolean, default=True, nullable=False)
+    email_task_failed = Column(Boolean, default=True, nullable=False)
+    email_submission_received = Column(Boolean, default=True, nullable=False)
+    email_worker_approved = Column(Boolean, default=True, nullable=False)
+    email_payout_update = Column(Boolean, default=True, nullable=False)
+    email_daily_challenge = Column(Boolean, default=False, nullable=False)  # opt-in only
+    email_referral_bonus = Column(Boolean, default=True, nullable=False)
+    email_sla_breach = Column(Boolean, default=True, nullable=False)
+
+    # ── In-app notification toggles ─────────────────────────────────────────
+    notif_task_events = Column(Boolean, default=True, nullable=False)   # completed, failed
+    notif_submissions = Column(Boolean, default=True, nullable=False)   # received, approved, rejected
+    notif_payouts = Column(Boolean, default=True, nullable=False)
+    notif_gamification = Column(Boolean, default=True, nullable=False)  # badges, challenges, streaks
+    notif_system = Column(Boolean, default=True, nullable=False)        # announcements, referrals
+
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    user = relationship("UserDB", backref="notification_preferences", uselist=False)
+
 
 class SLABreachDB(Base):
     """Logs tasks that exceeded their SLA (time-to-complete guarantee)."""

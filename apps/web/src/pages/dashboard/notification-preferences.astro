@@ -1,0 +1,201 @@
+---
+/**
+ * Notification Preferences — opt in/out of email and in-app notification types.
+ */
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Object.fromEntries(
+  Astro.cookies.getAll().map((c) => [c.name, c.value])
+));
+if (!token) return Astro.redirect("/login");
+
+let prefs: any = null;
+let error = "";
+
+try {
+  prefs = await apiFetch<any>("/v1/notifications/preferences", { token });
+} catch (e: any) {
+  error = e.message ?? "Failed to load preferences";
+}
+
+// Default prefs if none loaded
+prefs ??= {
+  email_task_completed: true,
+  email_task_failed: true,
+  email_submission_received: true,
+  email_worker_approved: true,
+  email_payout_update: true,
+  email_daily_challenge: false,
+  email_referral_bonus: true,
+  email_sla_breach: true,
+  notif_task_events: true,
+  notif_submissions: true,
+  notif_payouts: true,
+  notif_gamification: true,
+  notif_system: true,
+};
+
+const EMAIL_PREFS = [
+  { key: "email_task_completed",       label: "Task completed",       desc: "When your AI task finishes successfully" },
+  { key: "email_task_failed",          label: "Task failed",          desc: "When your AI task encounters an error" },
+  { key: "email_submission_received",  label: "Submission received",  desc: "When a worker submits work on your human task" },
+  { key: "email_worker_approved",      label: "Submission approved",  desc: "When a requester approves your worker submission" },
+  { key: "email_payout_update",        label: "Payout updates",       desc: "When your payout request status changes" },
+  { key: "email_referral_bonus",       label: "Referral bonus",       desc: "When someone you invited earns their first reward" },
+  { key: "email_sla_breach",           label: "SLA breach",           desc: "When a task exceeds its service-level target" },
+  { key: "email_daily_challenge",      label: "Daily challenges",     desc: "Opt-in daily digest of active challenges (off by default)" },
+];
+
+const NOTIF_PREFS = [
+  { key: "notif_task_events",   label: "Task events",    desc: "Completed, failed, and status changes" },
+  { key: "notif_submissions",   label: "Submissions",    desc: "Received, approved, and rejected submissions" },
+  { key: "notif_payouts",       label: "Payouts",        desc: "Payout request progress and confirmations" },
+  { key: "notif_gamification",  label: "Gamification",   desc: "Badges earned, challenges, XP milestones, streaks" },
+  { key: "notif_system",        label: "System",         desc: "Platform news, referral bonuses, announcements" },
+];
+---
+
+<Layout title="Notification Preferences — CrowdSorcerer">
+  <div class="max-w-2xl mx-auto px-6 py-10">
+    <!-- Breadcrumb -->
+    <div class="text-sm text-gray-500 mb-6">
+      <a href="/dashboard" class="hover:text-gray-300 transition-colors">Dashboard</a>
+      <span class="mx-2">›</span>
+      <a href="/dashboard/notifications" class="hover:text-gray-300 transition-colors">Notifications</a>
+      <span class="mx-2">›</span>
+      <span>Preferences</span>
+    </div>
+
+    <div class="mb-8">
+      <h1 class="text-2xl font-bold">Notification Preferences</h1>
+      <p class="text-gray-400 text-sm mt-1">
+        Control which emails and in-app notifications you receive.
+      </p>
+    </div>
+
+    {error && (
+      <div class="rounded-xl bg-red-900/30 border border-red-700 p-4 text-red-300 text-sm mb-6">{error}</div>
+    )}
+
+    <!-- Saved toast -->
+    <div id="saved-toast" class="hidden fixed bottom-6 right-6 z-50 rounded-xl bg-emerald-900/90 border border-emerald-700 text-emerald-300 text-sm px-5 py-3 shadow-xl">
+      ✓ Preferences saved
+    </div>
+
+    <form id="prefs-form" class="space-y-8">
+      <!-- Email Notifications -->
+      <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-800">
+          <h2 class="font-semibold text-base">📧 Email Notifications</h2>
+          <p class="text-xs text-gray-500 mt-0.5">Delivered to your account email address</p>
+        </div>
+        <div class="divide-y divide-gray-800">
+          {EMAIL_PREFS.map(({ key, label, desc }) => (
+            <div class="px-6 py-4 flex items-center justify-between gap-4">
+              <div>
+                <div class="text-sm font-medium text-gray-200">{label}</div>
+                <div class="text-xs text-gray-500 mt-0.5">{desc}</div>
+              </div>
+              <label class="relative inline-flex items-center cursor-pointer flex-shrink-0">
+                <input
+                  type="checkbox"
+                  name={key}
+                  class="sr-only peer pref-toggle"
+                  checked={prefs[key] === true}
+                  data-key={key}
+                />
+                <div class="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-violet-600"></div>
+              </label>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <!-- In-App Notifications -->
+      <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-800">
+          <h2 class="font-semibold text-base">🔔 In-App Notifications</h2>
+          <p class="text-xs text-gray-500 mt-0.5">Shown in the notification bell in the top nav</p>
+        </div>
+        <div class="divide-y divide-gray-800">
+          {NOTIF_PREFS.map(({ key, label, desc }) => (
+            <div class="px-6 py-4 flex items-center justify-between gap-4">
+              <div>
+                <div class="text-sm font-medium text-gray-200">{label}</div>
+                <div class="text-xs text-gray-500 mt-0.5">{desc}</div>
+              </div>
+              <label class="relative inline-flex items-center cursor-pointer flex-shrink-0">
+                <input
+                  type="checkbox"
+                  name={key}
+                  class="sr-only peer pref-toggle"
+                  checked={prefs[key] === true}
+                  data-key={key}
+                />
+                <div class="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-violet-600"></div>
+              </label>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <!-- Save -->
+      <div class="flex items-center gap-4">
+        <button
+          type="submit"
+          id="save-btn"
+          class="px-6 py-2.5 bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium rounded-lg transition-colors"
+        >
+          Save preferences
+        </button>
+        <a href="/dashboard/notifications" class="text-sm text-gray-500 hover:text-gray-300 transition-colors">
+          ← Back to notifications
+        </a>
+      </div>
+    </form>
+  </div>
+
+  <script>
+    const form = document.getElementById("prefs-form") as HTMLFormElement;
+    const saveBtn = document.getElementById("save-btn") as HTMLButtonElement;
+    const toast = document.getElementById("saved-toast") as HTMLElement;
+
+    let toastTimer: number | null = null;
+    function showToast() {
+      toast.classList.remove("hidden");
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toast.classList.add("hidden"), 3000) as unknown as number;
+    }
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      saveBtn.disabled = true;
+      saveBtn.textContent = "Saving…";
+
+      const updates: Record<string, boolean> = {};
+      form.querySelectorAll<HTMLInputElement>(".pref-toggle").forEach((input) => {
+        const key = input.dataset.key;
+        if (key) updates[key] = input.checked;
+      });
+
+      try {
+        const res = await fetch("/api/notifications/preferences", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(updates),
+        });
+        if (res.ok) {
+          showToast();
+        } else {
+          alert("Failed to save preferences. Please try again.");
+        }
+      } catch {
+        alert("Network error. Please try again.");
+      } finally {
+        saveBtn.disabled = false;
+        saveBtn.textContent = "Save preferences";
+      }
+    });
+  </script>
+</Layout>

@@ -1,16 +1,18 @@
-"""In-app notification endpoints."""
+"""In-app notification endpoints + notification preferences."""
 from __future__ import annotations
 
+from typing import Optional
 from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy import select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth import get_current_user_id
 from core.database import get_db
-from models.db import NotificationDB
+from models.db import NotificationDB, NotificationPreferencesDB
 from models.schemas import NotificationListOut, NotificationOut, UnreadCountOut
 
 logger = structlog.get_logger()
@@ -131,3 +133,108 @@ async def delete_notification(
     await db.delete(notif)
     await db.commit()
     return {"ok": True}
+
+
+# ─── Notification Preferences ──────────────────────────────────────────────
+
+class NotificationPreferencesUpdate(BaseModel):
+    """All fields optional — only provided fields are updated."""
+    # Email
+    email_task_completed: Optional[bool] = None
+    email_task_failed: Optional[bool] = None
+    email_submission_received: Optional[bool] = None
+    email_worker_approved: Optional[bool] = None
+    email_payout_update: Optional[bool] = None
+    email_daily_challenge: Optional[bool] = None
+    email_referral_bonus: Optional[bool] = None
+    email_sla_breach: Optional[bool] = None
+    # In-app
+    notif_task_events: Optional[bool] = None
+    notif_submissions: Optional[bool] = None
+    notif_payouts: Optional[bool] = None
+    notif_gamification: Optional[bool] = None
+    notif_system: Optional[bool] = None
+
+
+def _prefs_to_dict(prefs: NotificationPreferencesDB) -> dict:
+    return {
+        "email_task_completed": prefs.email_task_completed,
+        "email_task_failed": prefs.email_task_failed,
+        "email_submission_received": prefs.email_submission_received,
+        "email_worker_approved": prefs.email_worker_approved,
+        "email_payout_update": prefs.email_payout_update,
+        "email_daily_challenge": prefs.email_daily_challenge,
+        "email_referral_bonus": prefs.email_referral_bonus,
+        "email_sla_breach": prefs.email_sla_breach,
+        "notif_task_events": prefs.notif_task_events,
+        "notif_submissions": prefs.notif_submissions,
+        "notif_payouts": prefs.notif_payouts,
+        "notif_gamification": prefs.notif_gamification,
+        "notif_system": prefs.notif_system,
+        "updated_at": prefs.updated_at.isoformat() if prefs.updated_at else None,
+    }
+
+
+def _default_prefs_dict() -> dict:
+    """Return the factory-default preferences (no DB row exists yet)."""
+    return {
+        "email_task_completed": True,
+        "email_task_failed": True,
+        "email_submission_received": True,
+        "email_worker_approved": True,
+        "email_payout_update": True,
+        "email_daily_challenge": False,
+        "email_referral_bonus": True,
+        "email_sla_breach": True,
+        "notif_task_events": True,
+        "notif_submissions": True,
+        "notif_payouts": True,
+        "notif_gamification": True,
+        "notif_system": True,
+        "updated_at": None,
+    }
+
+
+@router.get("/preferences")
+async def get_notification_preferences(
+    user_id: UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return the current user's notification preferences."""
+    result = await db.execute(
+        select(NotificationPreferencesDB).where(
+            NotificationPreferencesDB.user_id == user_id
+        )
+    )
+    prefs = result.scalar_one_or_none()
+    if not prefs:
+        return _default_prefs_dict()
+    return _prefs_to_dict(prefs)
+
+
+@router.put("/preferences")
+async def update_notification_preferences(
+    body: NotificationPreferencesUpdate,
+    user_id: UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update notification preferences. Only provided fields are changed."""
+    result = await db.execute(
+        select(NotificationPreferencesDB).where(
+            NotificationPreferencesDB.user_id == user_id
+        )
+    )
+    prefs = result.scalar_one_or_none()
+
+    if not prefs:
+        # Create a fresh row with defaults
+        prefs = NotificationPreferencesDB(user_id=user_id)
+        db.add(prefs)
+
+    # Apply only the fields that were explicitly sent
+    for field, value in body.model_dump(exclude_none=True).items():
+        setattr(prefs, field, value)
+
+    await db.commit()
+    await db.refresh(prefs)
+    return _prefs_to_dict(prefs)

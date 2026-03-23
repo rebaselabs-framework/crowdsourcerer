@@ -587,3 +587,132 @@ async def get_matching_stats(
             for r in prof_rows
         ],
     }
+
+
+# ─── Task Queue Visibility ────────────────────────────────────────────────
+
+_PRIORITY_ORDER = {"urgent": 0, "high": 1, "normal": 2, "low": 3}
+
+@router.get("/queue")
+async def get_task_queue(
+    execution_mode: Optional[str] = Query(None, description="Filter: ai | human"),
+    priority: Optional[str] = Query(None, description="Filter: urgent|high|normal|low"),
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(require_admin),
+):
+    """
+    Return the current task queue grouped by priority with ETA estimates.
+
+    ETA is estimated from recent median completion times for matching task types.
+    Queue includes tasks in: pending, queued, running, open, assigned.
+    """
+    now = datetime.now(timezone.utc)
+    lookback = now - timedelta(days=14)
+
+    # Build queue query
+    queue_statuses = ["pending", "queued", "running", "open", "assigned"]
+    q = select(TaskDB).where(TaskDB.status.in_(queue_statuses))
+    if execution_mode:
+        q = q.where(TaskDB.execution_mode == execution_mode)
+    if priority:
+        q = q.where(TaskDB.priority == priority)
+    q = q.order_by(
+        TaskDB.priority.desc(),   # urgent first (relies on enum sort or we sort in Python)
+        TaskDB.created_at.asc(),  # FIFO within same priority
+    )
+
+    tasks_result = await db.execute(q)
+    tasks = tasks_result.scalars().all()
+
+    # Compute average completion times per task type (last 14 days)
+    completed_q = select(
+        TaskDB.type,
+        func.avg(TaskDB.duration_ms).label("avg_ms"),
+        func.count().label("sample_size"),
+    ).where(
+        TaskDB.status == "completed",
+        TaskDB.completed_at >= lookback,
+        TaskDB.duration_ms.is_not(None),
+    ).group_by(TaskDB.type)
+
+    completed_rows = (await db.execute(completed_q)).all()
+    median_by_type: dict[str, float] = {r.type: (r.avg_ms or 0) for r in completed_rows}
+    sample_by_type: dict[str, int] = {r.type: r.sample_size for r in completed_rows}
+
+    # For human tasks with no duration_ms, estimate from assignment → completion times
+    human_fallback_ms = 4 * 3600 * 1000  # 4 hours default for human tasks
+    ai_fallback_ms = 30_000              # 30 seconds default for AI tasks
+
+    def _eta(task: TaskDB) -> Optional[float]:
+        """Return estimated ms until completion from now."""
+        median = median_by_type.get(task.type)
+        if median:
+            elapsed = (now - task.created_at).total_seconds() * 1000
+            remaining = median - elapsed
+            return max(remaining, 0)
+        # Fallback
+        mode = task.execution_mode or "ai"
+        fb = human_fallback_ms if mode == "human" else ai_fallback_ms
+        elapsed = (now - task.created_at).total_seconds() * 1000
+        return max(fb - elapsed, 0)
+
+    def _eta_label(ms: Optional[float]) -> str:
+        if ms is None:
+            return "Unknown"
+        if ms <= 0:
+            return "Overdue"
+        s = ms / 1000
+        if s < 60:
+            return f"{int(s)}s"
+        if s < 3600:
+            return f"{int(s/60)}m"
+        return f"{s/3600:.1f}h"
+
+    # Group by priority
+    by_priority: dict[str, list] = {
+        "urgent": [], "high": [], "normal": [], "low": []
+    }
+    for task in tasks:
+        p = task.priority or "normal"
+        eta_ms = _eta(task)
+        by_priority[p].append({
+            "id": str(task.id),
+            "type": task.type,
+            "status": task.status,
+            "execution_mode": task.execution_mode,
+            "priority": task.priority,
+            "created_at": task.created_at.isoformat(),
+            "age_minutes": round((now - task.created_at).total_seconds() / 60, 1),
+            "eta_ms": round(eta_ms) if eta_ms is not None else None,
+            "eta_label": _eta_label(eta_ms),
+            "has_eta_sample": task.type in median_by_type,
+        })
+
+    # Summary stats per priority
+    priority_summary = []
+    for p in ["urgent", "high", "normal", "low"]:
+        items = by_priority[p]
+        priority_summary.append({
+            "priority": p,
+            "count": len(items),
+            "oldest_age_minutes": max((i["age_minutes"] for i in items), default=0),
+            "tasks": items,
+        })
+
+    # ETA confidence — how many types have real timing data
+    covered_types = len(median_by_type)
+    total_types_in_queue = len({t.type for t in tasks})
+
+    return {
+        "queue_size": len(tasks),
+        "by_priority": priority_summary,
+        "eta_model": {
+            "covered_task_types": covered_types,
+            "total_queue_types": total_types_in_queue,
+            "confidence": "high" if covered_types >= total_types_in_queue else (
+                "medium" if covered_types > 0 else "low"
+            ),
+            "lookback_days": 14,
+        },
+        "generated_at": now.isoformat(),
+    }

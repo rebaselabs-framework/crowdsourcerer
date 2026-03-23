@@ -22,6 +22,7 @@ import ssl
 from typing import Optional
 
 import structlog
+from sqlalchemy import select
 
 from core.config import get_settings
 
@@ -249,3 +250,130 @@ async def notify_worker_approved(
         subject=f"🎉 Submission approved — you earned {earnings} credits!",
         html_body=_worker_approved_html(task_type, earnings, xp),
     )
+
+
+# ─── Preference-gated send helpers ─────────────────────────────────────────
+# These load the user's NotificationPreferencesDB row before sending; if the
+# pref is disabled (or the row doesn't exist yet, defaults to enabled), the
+# email is skipped.
+
+async def _get_prefs(user_id: str):
+    """Return the user's NotificationPreferencesDB row (or None if not set)."""
+    try:
+        from core.database import AsyncSessionLocal
+        from models.db import NotificationPreferencesDB
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                select(NotificationPreferencesDB).where(
+                    NotificationPreferencesDB.user_id == user_id
+                )
+            )
+            return result.scalar_one_or_none()
+    except Exception:
+        return None
+
+
+async def notify_task_completed_gated(
+    to_email: str, user_id: str, task_id: str, task_type: str,
+    output_summary: str = "View full output in dashboard",
+) -> None:
+    prefs = await _get_prefs(user_id)
+    if prefs and not prefs.email_task_completed:
+        return
+    await notify_task_completed(to_email, task_id, task_type, output_summary)
+
+
+async def notify_task_failed_gated(
+    to_email: str, user_id: str, task_id: str, task_type: str,
+    error: str = "An unexpected error occurred",
+) -> None:
+    prefs = await _get_prefs(user_id)
+    if prefs and not prefs.email_task_failed:
+        return
+    await notify_task_failed(to_email, task_id, task_type, error)
+
+
+async def notify_submission_received_gated(
+    to_email: str, user_id: str, task_id: str, task_type: str,
+    worker_name: str = "a worker",
+) -> None:
+    prefs = await _get_prefs(user_id)
+    if prefs and not prefs.email_submission_received:
+        return
+    await notify_submission_received(to_email, task_id, task_type, worker_name)
+
+
+async def notify_worker_approved_gated(
+    to_email: str, user_id: str, task_type: str, earnings: int, xp: int,
+) -> None:
+    prefs = await _get_prefs(user_id)
+    if prefs and not prefs.email_worker_approved:
+        return
+    await notify_worker_approved(to_email, task_type, earnings, xp)
+
+
+async def notify_daily_challenge_gated(
+    to_email: str, user_id: str, challenge_title: str, task_type: str,
+    bonus_xp: int, bonus_credits: int,
+) -> None:
+    prefs = await _get_prefs(user_id)
+    # daily_challenge emails are opt-in (default False)
+    if not prefs or not prefs.email_daily_challenge:
+        return
+    await notify_daily_challenge(to_email, challenge_title, task_type, bonus_xp, bonus_credits)
+
+
+async def notify_sla_breach_gated(
+    to_email: str, user_id: str, task_id: str, task_type: str, sla_hours: float,
+) -> None:
+    """Send SLA breach email if user has opted in."""
+    prefs = await _get_prefs(user_id)
+    if prefs and not prefs.email_sla_breach:
+        return
+    html = f"""
+<html><body style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px">
+<h2 style="color:#ef4444">⚠️ SLA Breach Detected</h2>
+<p>Your <strong>{task_type}</strong> task has exceeded its {sla_hours:.0f}-hour SLA target.</p>
+<table style="width:100%;border-collapse:collapse;margin:16px 0">
+  <tr><td style="padding:8px;background:#f8f9fa;font-weight:bold;width:120px">Task ID</td>
+      <td style="padding:8px">{task_id}</td></tr>
+  <tr><td style="padding:8px;font-weight:bold">SLA Target</td>
+      <td style="padding:8px">{sla_hours:.0f} hours</td></tr>
+</table>
+<p>We apologize for the delay. Your task is still being processed.</p>
+<p><a href="https://crowdsourcerer.rebaselabs.online/dashboard/tasks/{task_id}"
+   style="background:#6366f1;color:white;padding:10px 20px;border-radius:6px;text-decoration:none">
+   View Task →</a></p>
+<hr style="margin:24px 0;border:none;border-top:1px solid #e5e7eb">
+<p style="color:#9ca3af;font-size:12px">CrowdSorcerer · <a href="https://crowdsourcerer.rebaselabs.online">crowdsourcerer.rebaselabs.online</a></p>
+</body></html>
+"""
+    await send_email(to_email, f"⚠️ SLA Breach: Your {task_type} task is overdue", html)
+
+
+async def notify_payout_update_gated(
+    to_email: str, user_id: str, status: str, amount_usd: float,
+) -> None:
+    """Send payout status update email if user has opted in."""
+    prefs = await _get_prefs(user_id)
+    if prefs and not prefs.email_payout_update:
+        return
+    emoji = {"paid": "💸", "rejected": "❌", "processing": "⏳"}.get(status, "📋")
+    html = f"""
+<html><body style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px">
+<h2 style="color:#6366f1">{emoji} Payout {status.capitalize()}</h2>
+<p>Your payout request of <strong>${amount_usd:.2f}</strong> has been updated.</p>
+<table style="width:100%;border-collapse:collapse;margin:16px 0">
+  <tr><td style="padding:8px;background:#f8f9fa;font-weight:bold;width:120px">Amount</td>
+      <td style="padding:8px">${amount_usd:.2f} USD</td></tr>
+  <tr><td style="padding:8px;font-weight:bold">Status</td>
+      <td style="padding:8px">{status.capitalize()}</td></tr>
+</table>
+<p><a href="https://crowdsourcerer.rebaselabs.online/worker/earnings"
+   style="background:#6366f1;color:white;padding:10px 20px;border-radius:6px;text-decoration:none">
+   View Earnings →</a></p>
+<hr style="margin:24px 0;border:none;border-top:1px solid #e5e7eb">
+<p style="color:#9ca3af;font-size:12px">CrowdSorcerer · <a href="https://crowdsourcerer.rebaselabs.online">crowdsourcerer.rebaselabs.online</a></p>
+</body></html>
+"""
+    await send_email(to_email, f"{emoji} Payout {status}: ${amount_usd:.2f}", html)
