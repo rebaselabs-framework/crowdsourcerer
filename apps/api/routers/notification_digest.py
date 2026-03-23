@@ -108,21 +108,29 @@ async def send_test_digest(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Generate a sample digest and log it (mock send).
+    Build a real digest from the last 7 days of data and send (or log if email disabled).
 
     Builds a real digest from the last 7 days of the user's data:
       - Stats: total tasks, completions, credits spent
       - Recent task updates (up to 5 most recent)
       - Pending tasks summary
     """
+    from core.email import send_weekly_digest
+    from core.config import get_settings
+    EMAIL_ENABLED = get_settings().email_enabled
+    from models.db import NotificationDB
+
     now = datetime.now(timezone.utc)
     week_ago = now - timedelta(days=7)
+    week_label = now.strftime("%-d %b %Y")
 
     # Fetch user
     user_res = await db.execute(select(UserDB).where(UserDB.id == user_id))
     user = user_res.scalar_one_or_none()
     if not user:
         raise HTTPException(404, "User not found")
+
+    user_name = user.name or user.email.split("@")[0]
 
     # Stats: total tasks created in last 7 days
     total_tasks = await db.scalar(
@@ -151,7 +159,34 @@ async def send_test_digest(
     )
     credits_spent = int(credits_spent_raw or 0)
 
-    # Recent task updates (most recently updated, up to 5)
+    # Unread notifications for worker stats
+    unread_count = await db.scalar(
+        select(func.count(NotificationDB.id)).where(
+            NotificationDB.user_id == user_id,
+            NotificationDB.is_read == False,  # noqa: E712
+        )
+    ) or 0
+
+    # Top workers (workers who submitted tasks for this requester in last 7 days)
+    from models.db import TaskAssignmentDB
+    workers_res = await db.execute(
+        select(UserDB.name, UserDB.email, func.count(TaskAssignmentDB.id).label("tasks"))
+        .join(TaskDB, TaskDB.id == TaskAssignmentDB.task_id)
+        .join(UserDB, UserDB.id == TaskAssignmentDB.worker_id)
+        .where(
+            TaskDB.user_id == user_id,
+            TaskAssignmentDB.created_at >= week_ago,
+        )
+        .group_by(UserDB.id, UserDB.name, UserDB.email)
+        .order_by(func.count(TaskAssignmentDB.id).desc())
+        .limit(5)
+    )
+    top_workers = [
+        {"name": r.name or r.email.split("@")[0], "tasks": r.tasks}
+        for r in workers_res
+    ]
+
+    # Recent task updates
     recent_res = await db.execute(
         select(TaskDB)
         .where(TaskDB.user_id == user_id)
@@ -189,7 +224,7 @@ async def send_test_digest(
 
     digest_content = {
         "to": user.email,
-        "user_name": user.name or user.email.split("@")[0],
+        "user_name": user_name,
         "period": "Last 7 days",
         "generated_at": now.isoformat(),
         "stats": {
@@ -201,6 +236,7 @@ async def send_test_digest(
         "recent_task_updates": recent_updates,
         "pending_tasks_summary": pending_summary,
         "pending_count": len(pending_summary),
+        "email_enabled": EMAIL_ENABLED,
     }
 
     logger.info(
@@ -210,12 +246,39 @@ async def send_test_digest(
         total_tasks=total_tasks,
         completions=completions,
         credits_spent=credits_spent,
-        pending_count=len(pending_summary),
-        digest=digest_content,
+        email_enabled=EMAIL_ENABLED,
+    )
+
+    # ── Send real email if enabled ────────────────────────────────────────
+    email_sent = False
+    email_error: Optional[str] = None
+    if EMAIL_ENABLED:
+        try:
+            await send_weekly_digest(
+                to_email=user.email,
+                user_name=user_name,
+                week_label=f"Test — {week_label}",
+                tasks_created=total_tasks,
+                tasks_completed=completions,
+                credits_spent=credits_spent,
+                credits_balance=user.credits,
+                top_workers=top_workers,
+            )
+            email_sent = True
+        except Exception as exc:
+            email_error = str(exc)
+            logger.exception("digest.test_send_error", user_id=str(user_id))
+    else:
+        email_error = "EMAIL_ENABLED=false — email not sent (log-only mode)"
+
+    message = (
+        f"Test digest sent to {user.email}" if email_sent
+        else f"Test digest logged (email disabled). {email_error or ''}"
     )
 
     return {
         "ok": True,
-        "message": f"Test digest logged (mock send to {user.email})",
+        "email_sent": email_sent,
+        "message": message,
         "digest": digest_content,
     }

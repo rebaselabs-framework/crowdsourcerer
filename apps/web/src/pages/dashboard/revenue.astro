@@ -1,0 +1,400 @@
+---
+/**
+ * Requester Revenue & Spend Dashboard
+ * Charts: monthly spend vs purchases, weekly trend, type doughnut, priority breakdown
+ * Forecast: linear regression → projected 30-day spend
+ */
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Astro.cookies);
+if (!token) return Astro.redirect("/login");
+
+const months = Number(Astro.url.searchParams.get("months") ?? 6);
+const orgIdParam = Astro.url.searchParams.get("org_id") ?? undefined;
+
+let data: any = null;
+let orgs: any[] = [];
+let error: string | null = null;
+
+try {
+  const orgsData = await apiFetch<any>("/v1/orgs", { token });
+  orgs = Array.isArray(orgsData) ? orgsData : (orgsData as any).items ?? [];
+} catch (_) {}
+
+try {
+  const p = new URLSearchParams({ months: String(months) });
+  if (orgIdParam) p.set("org_id", orgIdParam);
+  data = await apiFetch<any>(`/v1/analytics/revenue?${p}`, { token });
+} catch (e: any) {
+  if (e.message?.includes("401")) return Astro.redirect("/login");
+  error = "Failed to load revenue analytics";
+}
+
+const monthly  = data?.monthly_series  ?? [];
+const weekly   = data?.weekly_series   ?? [];
+const byType   = data?.by_type         ?? {};
+const byPri    = data?.by_priority     ?? {};
+const byMode   = data?.by_execution_mode ?? {};
+const forecast = data?.forecast        ?? {};
+
+// Serialise for client charts
+const monthlyJson  = JSON.stringify(monthly);
+const weeklyJson   = JSON.stringify(weekly);
+const byTypeJson   = JSON.stringify(byType);
+const byPriJson    = JSON.stringify(byPri);
+const byModeJson   = JSON.stringify(byMode);
+const forecastJson = JSON.stringify(forecast);
+
+const TREND_ICON: {[k: string]: string} = {
+  increasing: "↗️",
+  decreasing: "↘️",
+  stable: "→",
+};
+const TREND_COLOR: {[k: string]: string} = {
+  increasing: "text-amber-600",
+  decreasing: "text-emerald-600",
+  stable: "text-blue-600",
+};
+const CONF_COLOR: {[k: string]: string} = {
+  high: "text-emerald-600",
+  medium: "text-amber-600",
+  low: "text-gray-400",
+};
+
+const PRI_COLORS: {[k: string]: string} = {
+  low: "bg-gray-400", normal: "bg-blue-500", high: "bg-amber-500",
+  urgent: "bg-red-500", critical: "bg-red-700",
+};
+
+// Pre-compute priority bars
+const priTotal = Object.values(byPri).reduce((a: any, b: any) => a + b, 0) as number;
+const priBars = Object.entries(byPri).map(([pri, creds]: any) => ({
+  pri,
+  creds,
+  pct: priTotal ? Math.round(creds * 100 / priTotal) : 0,
+  colorClass: PRI_COLORS[pri] ?? "bg-blue-500",
+}));
+
+// Pre-compute mode bars
+const modeTotal = Object.values(byMode).reduce((a: any, b: any) => a + b, 0) as number;
+const modeBars = Object.entries(byMode).map(([mode, creds]: any) => ({
+  mode,
+  creds,
+  pct: modeTotal ? Math.round(creds * 100 / modeTotal) : 0,
+  colorClass: mode === "ai" ? "bg-violet-500" : "bg-emerald-500",
+}));
+---
+
+<Layout title="Revenue Dashboard — CrowdSorcerer">
+  <div class="max-w-7xl mx-auto px-4 py-8">
+
+    <!-- Header -->
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+      <div>
+        <h1 class="text-3xl font-bold text-gray-900 dark:text-white">💰 Revenue Dashboard</h1>
+        <p class="text-gray-500 dark:text-gray-400 mt-1">Track spend, purchases, and projected costs</p>
+      </div>
+      <div class="flex flex-wrap items-center gap-3">
+        <!-- Period filter -->
+        <select onchange="applyFilter('months', this.value)"
+          class="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-800 dark:text-white">
+          {[3,6,12,24].map(m => (
+            <option value={m} selected={months === m}>{m} months</option>
+          ))}
+        </select>
+        <!-- Org filter -->
+        {orgs.length > 0 && (
+          <select onchange="applyFilter('org_id', this.value)"
+            class="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-800 dark:text-white">
+            <option value="">Personal</option>
+            {orgs.map((o: any) => (
+              <option value={o.id} selected={orgIdParam === o.id}>{o.name}</option>
+            ))}
+          </select>
+        )}
+        <a href="/api/tasks/export?format=csv" class="btn-secondary text-sm px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-700">⬇️ Export</a>
+      </div>
+    </div>
+
+    {error && (
+      <div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-xl p-4 mb-6 text-red-700 dark:text-red-300">{error}</div>
+    )}
+
+    {data && (
+      <>
+        <!-- KPI strip -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
+          {[
+            { label: "Total Spent", val: `$${data.total_usd_spent.toFixed(2)}`, sub: `${data.total_credits_spent.toLocaleString()} credits`, color: "violet" },
+            { label: "Avg Daily", val: `${data.avg_daily_credits} cr`, sub: `$${(data.avg_daily_credits/100).toFixed(2)}/day`, color: "blue" },
+            { label: "Success Rate", val: `${data.success_rate_pct}%`, sub: `${data.completed_tasks} / ${data.total_tasks} tasks`, color: "emerald" },
+            { label: "Avg Cost/Task", val: `${data.avg_credits_per_task} cr`, sub: `${data.avg_credits_per_completion} cr/completion`, color: "amber" },
+          ].map(k => (
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
+              <p class="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">{k.label}</p>
+              <p class={`text-2xl font-bold mt-1 text-${k.color}-600`}>{k.val}</p>
+              <p class="text-xs text-gray-400 mt-0.5">{k.sub}</p>
+            </div>
+          ))}
+        </div>
+
+        <!-- Forecast banner -->
+        <div class="bg-gradient-to-r from-violet-50 to-blue-50 dark:from-violet-900/20 dark:to-blue-900/20 border border-violet-200 dark:border-violet-700 rounded-xl p-5 mb-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div>
+            <h3 class="font-semibold text-gray-800 dark:text-white text-lg">📈 30-Day Forecast</h3>
+            <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Based on your last 8 weeks of spending patterns</p>
+          </div>
+          <div class="flex items-center gap-6">
+            <div class="text-center">
+              <p class="text-3xl font-bold text-violet-600">${forecast.next_30_days_usd ?? 0}</p>
+              <p class="text-xs text-gray-500">{(forecast.next_30_days_credits ?? 0).toLocaleString()} credits</p>
+            </div>
+            <div class="text-center">
+              <p class={`text-lg font-semibold ${TREND_COLOR[forecast.trend] ?? "text-gray-600"}`}>
+                {TREND_ICON[forecast.trend] ?? "→"} {forecast.trend ?? "stable"}
+              </p>
+              <p class={`text-xs ${CONF_COLOR[forecast.confidence] ?? "text-gray-400"}`}>{forecast.confidence ?? "low"} confidence</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Charts grid -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+
+          <!-- Monthly spend vs purchased -->
+          <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <h3 class="font-semibold text-gray-800 dark:text-white mb-4">Monthly Spend vs Purchases</h3>
+            <div style="height:220px"><canvas id="monthlyChart"></canvas></div>
+          </div>
+
+          <!-- Weekly spend trend -->
+          <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <h3 class="font-semibold text-gray-800 dark:text-white mb-4">Weekly Spend Trend</h3>
+            <div style="height:220px"><canvas id="weeklyChart"></canvas></div>
+          </div>
+
+          <!-- By task type (doughnut) -->
+          <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <h3 class="font-semibold text-gray-800 dark:text-white mb-4">Spend by Task Type</h3>
+            <div class="flex items-center gap-6">
+              <div style="width:160px;height:160px;flex-shrink:0"><canvas id="typeChart"></canvas></div>
+              <div class="flex-1 space-y-1.5 text-sm">
+                {Object.entries(byType).slice(0,8).map(([t,c]:any, i) => {
+                  const pct = data.total_credits_spent ? Math.round(c*100/data.total_credits_spent) : 0;
+                  return (
+                    <div class="flex items-center gap-2">
+                      <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" style={`background:hsl(${i*40+200},70%,55%)`}></span>
+                      <span class="flex-1 truncate text-gray-700 dark:text-gray-300 capitalize">{t.replace(/_/g," ")}</span>
+                      <span class="text-gray-500 dark:text-gray-400 text-xs">{pct}%</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          <!-- Priority + Mode breakdown -->
+          <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <h3 class="font-semibold text-gray-800 dark:text-white mb-4">Spend by Priority & Mode</h3>
+
+            <!-- Priority bars -->
+            <p class="text-xs text-gray-500 uppercase tracking-wide mb-2">Priority</p>
+            {priBars.map((b) => (
+              <div class="mb-2">
+                <div class="flex justify-between text-xs mb-0.5">
+                  <span class="capitalize text-gray-700 dark:text-gray-300">{b.pri}</span>
+                  <span class="text-gray-500">{b.creds.toLocaleString()} cr</span>
+                </div>
+                <div class="h-2 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
+                  <div class={`h-full ${b.colorClass}`} style={`width:${b.pct}%`}></div>
+                </div>
+              </div>
+            ))}
+
+            <!-- Execution mode bars -->
+            <p class="text-xs text-gray-500 uppercase tracking-wide mt-4 mb-2">Mode</p>
+            {modeBars.map((b) => (
+              <div class="mb-2">
+                <div class="flex justify-between text-xs mb-0.5">
+                  <span class="capitalize text-gray-700 dark:text-gray-300">{b.mode}</span>
+                  <span class="text-gray-500">{b.creds.toLocaleString()} cr</span>
+                </div>
+                <div class="h-2 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
+                  <div class={`h-full ${b.colorClass}`} style={`width:${b.pct}%`}></div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <!-- Monthly details table -->
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+          <div class="p-5 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+            <h3 class="font-semibold text-gray-800 dark:text-white">Monthly Breakdown</h3>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead class="bg-gray-50 dark:bg-gray-700/50">
+                <tr>
+                  {["Month","Spent (credits)","Spent ($)","Purchased","Tasks","Completions","Rate"].map(h => (
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-gray-100 dark:divide-gray-700">
+                {monthly.slice().reverse().map((row: any) => {
+                  const rate = row.task_count ? Math.round(row.completed_count * 100 / row.task_count) : 0;
+                  return (
+                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30">
+                      <td class="px-4 py-3 font-medium text-gray-800 dark:text-gray-200">{row.month}</td>
+                      <td class="px-4 py-3 text-gray-700 dark:text-gray-300">{row.credits_spent.toLocaleString()}</td>
+                      <td class="px-4 py-3 text-gray-700 dark:text-gray-300">${(row.credits_spent/100).toFixed(2)}</td>
+                      <td class="px-4 py-3 text-emerald-600">{row.credits_purchased.toLocaleString()}</td>
+                      <td class="px-4 py-3 text-gray-700 dark:text-gray-300">{row.task_count}</td>
+                      <td class="px-4 py-3 text-gray-700 dark:text-gray-300">{row.completed_count}</td>
+                      <td class="px-4 py-3">
+                        <span class={`px-2 py-0.5 rounded-full text-xs font-medium ${rate>=80?"bg-emerald-100 text-emerald-700":rate>=50?"bg-amber-100 text-amber-700":"bg-red-100 text-red-700"}`}>
+                          {rate}%
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </>
+    )}
+  </div>
+</Layout>
+
+<script define:vars={{ monthlyJson, weeklyJson, byTypeJson, byPriJson, byModeJson }}>
+const monthly  = JSON.parse(monthlyJson);
+const weekly   = JSON.parse(weeklyJson);
+const byType   = JSON.parse(byTypeJson);
+
+function loadChartJs(cb) {
+  if (window.Chart) { cb(); return; }
+  const s = document.createElement("script");
+  s.src = "https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js";
+  s.onload = cb;
+  document.head.appendChild(s);
+}
+
+function applyFilter(key, val) {
+  const u = new URL(window.location.href);
+  if (val) u.searchParams.set(key, val);
+  else u.searchParams.delete(key);
+  window.location.href = u.toString();
+}
+window.applyFilter = applyFilter;
+
+const PALETTE = [
+  "#8b5cf6","#3b82f6","#10b981","#f59e0b","#ef4444",
+  "#6366f1","#14b8a6","#f97316","#ec4899","#84cc16",
+];
+
+loadChartJs(() => {
+  // ── Monthly spend vs purchases ──────────────────────────────────────────
+  const mCtx = document.getElementById("monthlyChart");
+  if (mCtx && monthly.length) {
+    new Chart(mCtx, {
+      type: "bar",
+      data: {
+        labels: monthly.map(m => m.month),
+        datasets: [
+          {
+            label: "Spent (cr)",
+            data: monthly.map(m => m.credits_spent),
+            backgroundColor: "rgba(139,92,246,0.7)",
+            order: 2,
+          },
+          {
+            label: "Purchased (cr)",
+            data: monthly.map(m => m.credits_purchased),
+            backgroundColor: "rgba(16,185,129,0.7)",
+            order: 2,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { labels: { boxWidth: 12 } } },
+        scales: {
+          x: { stacked: false, grid: { display: false }, ticks: { font: { size: 11 } } },
+          y: { ticks: { font: { size: 11 } } },
+        },
+      },
+    });
+  }
+
+  // ── Weekly trend line chart ─────────────────────────────────────────────
+  const wCtx = document.getElementById("weeklyChart");
+  if (wCtx && weekly.length) {
+    // Add forecast point
+    const forecastEl = document.getElementById("weeklyChart");
+    const lastVal = weekly.length ? weekly[weekly.length-1].credits_spent : 0;
+
+    new Chart(wCtx, {
+      type: "line",
+      data: {
+        labels: weekly.map(w => w.week),
+        datasets: [
+          {
+            label: "Credits Spent",
+            data: weekly.map(w => w.credits_spent),
+            borderColor: "#8b5cf6",
+            backgroundColor: "rgba(139,92,246,0.1)",
+            fill: true,
+            tension: 0.3,
+            pointRadius: 3,
+          },
+          {
+            label: "Tasks",
+            data: weekly.map(w => w.task_count),
+            borderColor: "#3b82f6",
+            backgroundColor: "rgba(59,130,246,0.1)",
+            fill: false,
+            tension: 0.3,
+            pointRadius: 3,
+            yAxisID: "y2",
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { labels: { boxWidth: 12 } } },
+        scales: {
+          x: { grid: { display: false }, ticks: { font: { size: 10 }, maxRotation: 45 } },
+          y: { position: "left", ticks: { font: { size: 11 } } },
+          y2: { position: "right", grid: { drawOnChartArea: false }, ticks: { font: { size: 11 } } },
+        },
+      },
+    });
+  }
+
+  // ── Type doughnut ───────────────────────────────────────────────────────
+  const tCtx = document.getElementById("typeChart");
+  if (tCtx && Object.keys(byType).length) {
+    const labels = Object.keys(byType).map(k => k.replace(/_/g," "));
+    const vals   = Object.values(byType);
+    new Chart(tCtx, {
+      type: "doughnut",
+      data: {
+        labels,
+        datasets: [{ data: vals, backgroundColor: PALETTE, borderWidth: 1 }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        cutout: "65%",
+      },
+    });
+  }
+});
+</script>

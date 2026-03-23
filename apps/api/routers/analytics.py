@@ -4,8 +4,9 @@ import csv
 import io
 import json
 import statistics
+import math
 from datetime import datetime, timezone, timedelta, date
-from typing import Optional
+from typing import Optional, List
 from uuid import UUID
 
 import structlog
@@ -566,3 +567,294 @@ async def completion_times(
         )
 
     return CompletionTimesOut(days=days, task_types=task_types)
+
+
+# ── Revenue / Spend Dashboard ─────────────────────────────────────────────────
+
+class MonthlySpendItem(BaseModel):
+    month: str          # "YYYY-MM"
+    credits_spent: int
+    credits_purchased: int
+    task_count: int
+    completed_count: int
+
+
+class WeeklySpendItem(BaseModel):
+    week: str           # "YYYY-WXX"
+    credits_spent: int
+    task_count: int
+
+
+class SpendForecast(BaseModel):
+    next_30_days_credits: int
+    next_30_days_usd: float
+    trend: str          # "increasing" | "decreasing" | "stable"
+    confidence: str     # "high" | "medium" | "low"
+
+
+class RevenueAnalyticsOut(BaseModel):
+    # KPIs
+    total_credits_spent: int
+    total_usd_spent: float
+    avg_daily_credits: float
+    total_tasks: int
+    completed_tasks: int
+    success_rate_pct: float
+    avg_credits_per_task: float
+    avg_credits_per_completion: float
+    # Trends
+    monthly_series: List[MonthlySpendItem]
+    weekly_series: List[WeeklySpendItem]
+    # Breakdown
+    by_type: dict
+    by_priority: dict
+    by_execution_mode: dict
+    # Forecast
+    forecast: SpendForecast
+    # Period
+    months: int
+
+
+@router.get("/revenue", response_model=RevenueAnalyticsOut)
+async def revenue_analytics(
+    months: int = Query(6, ge=1, le=24),
+    org_id: Optional[UUID] = None,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(require_scope(SCOPE_ANALYTICS_READ)),
+):
+    """
+    Requester revenue/spend dashboard: monthly + weekly series, forecast,
+    breakdown by type/priority/mode, ROI metrics.
+    """
+    uid = UUID(user_id)
+    since = utcnow() - timedelta(days=months * 30)
+    now = utcnow()
+
+    # ─── Set up task filters ───────────────────────────────────────────────
+    task_filters = [TaskDB.user_id == uid, TaskDB.created_at >= since]
+    txn_filters = [CreditTransactionDB.user_id == uid, CreditTransactionDB.created_at >= since]
+
+    if org_id:
+        mem = await db.execute(
+            select(OrgMemberDB).where(
+                OrgMemberDB.org_id == org_id,
+                OrgMemberDB.user_id == uid,
+            )
+        )
+        if not mem.scalar_one_or_none():
+            raise HTTPException(status_code=403, detail="Not a member of this organization")
+        task_filters = [TaskDB.org_id == org_id, TaskDB.created_at >= since]
+        txn_filters = [
+            CreditTransactionDB.user_id.in_(
+                select(OrgMemberDB.user_id).where(OrgMemberDB.org_id == org_id)
+            ),
+            CreditTransactionDB.created_at >= since,
+        ]
+
+    # ─── KPI aggregates ───────────────────────────────────────────────────
+    total_tasks = (await db.scalar(
+        select(func.count(TaskDB.id)).where(*task_filters)
+    )) or 0
+
+    completed_tasks = (await db.scalar(
+        select(func.count(TaskDB.id)).where(*task_filters, TaskDB.status == "completed")
+    )) or 0
+
+    total_credits_spent = (await db.scalar(
+        select(func.coalesce(func.sum(TaskDB.credits_used), 0)).where(
+            *task_filters, TaskDB.credits_used.isnot(None)
+        )
+    )) or 0
+
+    # ─── Monthly spend + purchases series ─────────────────────────────────
+    monthly_spend_result = await db.execute(
+        select(
+            func.date_trunc("month", TaskDB.created_at).label("month"),
+            func.coalesce(func.sum(TaskDB.credits_used), 0).label("credits_spent"),
+            func.count(TaskDB.id).label("task_count"),
+            func.count(case((TaskDB.status == "completed", TaskDB.id))).label("completed_count"),
+        )
+        .where(*task_filters, TaskDB.credits_used.isnot(None))
+        .group_by(func.date_trunc("month", TaskDB.created_at))
+        .order_by(func.date_trunc("month", TaskDB.created_at))
+    )
+    spend_by_month: dict = {}
+    for row in monthly_spend_result:
+        key = row.month.strftime("%Y-%m")
+        spend_by_month[key] = {
+            "credits_spent": int(row.credits_spent or 0),
+            "task_count": int(row.task_count or 0),
+            "completed_count": int(row.completed_count or 0),
+        }
+
+    # Monthly credit purchases (positive transactions = top-ups)
+    monthly_purchase_result = await db.execute(
+        select(
+            func.date_trunc("month", CreditTransactionDB.created_at).label("month"),
+            func.coalesce(func.sum(CreditTransactionDB.amount), 0).label("purchased"),
+        )
+        .where(
+            CreditTransactionDB.user_id == uid,
+            CreditTransactionDB.amount > 0,
+            CreditTransactionDB.type == "credit",
+            CreditTransactionDB.created_at >= since,
+        )
+        .group_by(func.date_trunc("month", CreditTransactionDB.created_at))
+    )
+    purchases_by_month: dict = {}
+    for row in monthly_purchase_result:
+        key = row.month.strftime("%Y-%m")
+        purchases_by_month[key] = int(row.purchased or 0)
+
+    # Build ordered monthly series (fill gaps)
+    monthly_series: list[MonthlySpendItem] = []
+    cur = since.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    while cur <= now:
+        key = cur.strftime("%Y-%m")
+        sd = spend_by_month.get(key, {})
+        monthly_series.append(MonthlySpendItem(
+            month=key,
+            credits_spent=sd.get("credits_spent", 0),
+            credits_purchased=purchases_by_month.get(key, 0),
+            task_count=sd.get("task_count", 0),
+            completed_count=sd.get("completed_count", 0),
+        ))
+        # Advance to next month
+        if cur.month == 12:
+            cur = cur.replace(year=cur.year + 1, month=1)
+        else:
+            cur = cur.replace(month=cur.month + 1)
+
+    # ─── Weekly spend series (last 12 weeks) ──────────────────────────────
+    twelve_weeks_ago = now - timedelta(weeks=12)
+    weekly_result = await db.execute(
+        select(
+            func.date_trunc("week", TaskDB.created_at).label("week"),
+            func.coalesce(func.sum(TaskDB.credits_used), 0).label("credits_spent"),
+            func.count(TaskDB.id).label("task_count"),
+        )
+        .where(
+            *task_filters[:1],  # user/org filter only
+            TaskDB.created_at >= twelve_weeks_ago,
+            TaskDB.credits_used.isnot(None),
+        )
+        .group_by(func.date_trunc("week", TaskDB.created_at))
+        .order_by(func.date_trunc("week", TaskDB.created_at))
+    )
+    weekly_series = [
+        WeeklySpendItem(
+            week=row.week.strftime("%Y-W%W"),
+            credits_spent=int(row.credits_spent or 0),
+            task_count=int(row.task_count or 0),
+        )
+        for row in weekly_result
+    ]
+
+    # ─── Breakdowns ───────────────────────────────────────────────────────
+    by_type_result = await db.execute(
+        select(TaskDB.type, func.coalesce(func.sum(TaskDB.credits_used), 0).label("credits"))
+        .where(*task_filters, TaskDB.credits_used.isnot(None))
+        .group_by(TaskDB.type)
+        .order_by(func.sum(TaskDB.credits_used).desc())
+    )
+    by_type = {row.type: int(row.credits or 0) for row in by_type_result}
+
+    by_priority_result = await db.execute(
+        select(TaskDB.priority, func.coalesce(func.sum(TaskDB.credits_used), 0).label("credits"))
+        .where(*task_filters, TaskDB.credits_used.isnot(None))
+        .group_by(TaskDB.priority)
+    )
+    by_priority = {(row.priority or "normal"): int(row.credits or 0) for row in by_priority_result}
+
+    by_mode_result = await db.execute(
+        select(TaskDB.execution_mode, func.coalesce(func.sum(TaskDB.credits_used), 0).label("credits"))
+        .where(*task_filters, TaskDB.credits_used.isnot(None))
+        .group_by(TaskDB.execution_mode)
+    )
+    by_execution_mode = {(row.execution_mode or "ai"): int(row.credits or 0) for row in by_mode_result}
+
+    # ─── Spend Forecast (simple linear regression on weekly spend) ────────
+    forecast = _compute_forecast(weekly_series)
+
+    # ─── Derived KPIs ─────────────────────────────────────────────────────
+    days_in_period = max(1, (now - since).days)
+    avg_daily_credits = round(total_credits_spent / days_in_period, 1)
+    success_rate_pct = round(100 * completed_tasks / total_tasks, 1) if total_tasks else 0.0
+    avg_credits_per_task = round(total_credits_spent / total_tasks, 1) if total_tasks else 0.0
+    avg_credits_per_completion = round(total_credits_spent / completed_tasks, 1) if completed_tasks else 0.0
+
+    return RevenueAnalyticsOut(
+        total_credits_spent=total_credits_spent,
+        total_usd_spent=round(total_credits_spent / 100, 2),
+        avg_daily_credits=avg_daily_credits,
+        total_tasks=total_tasks,
+        completed_tasks=completed_tasks,
+        success_rate_pct=success_rate_pct,
+        avg_credits_per_task=avg_credits_per_task,
+        avg_credits_per_completion=avg_credits_per_completion,
+        monthly_series=monthly_series,
+        weekly_series=weekly_series,
+        by_type=by_type,
+        by_priority=by_priority,
+        by_execution_mode=by_execution_mode,
+        forecast=forecast,
+        months=months,
+    )
+
+
+def _compute_forecast(weekly_series: list[WeeklySpendItem]) -> SpendForecast:
+    """
+    Simple least-squares linear regression on the last 8 weeks of spend
+    to project the next 30 days of credits consumption.
+    """
+    data = [w.credits_spent for w in weekly_series[-8:]]
+    n = len(data)
+
+    if n < 2:
+        return SpendForecast(
+            next_30_days_credits=data[0] * 4 if data else 0,
+            next_30_days_usd=round((data[0] * 4 if data else 0) / 100, 2),
+            trend="stable",
+            confidence="low",
+        )
+
+    # OLS: y = a + b*x
+    xs = list(range(n))
+    mean_x = sum(xs) / n
+    mean_y = sum(data) / n
+    num = sum((xs[i] - mean_x) * (data[i] - mean_y) for i in range(n))
+    den = sum((xs[i] - mean_x) ** 2 for i in range(n))
+    slope = num / den if den else 0
+    intercept = mean_y - slope * mean_x
+
+    # Project 4 more weeks ahead (≈30 days)
+    projected_weekly = max(0, intercept + slope * (n + 3))  # midpoint of next 4 weeks
+    projected_30d = int(projected_weekly * 4)
+
+    # Determine trend from slope
+    rel_slope = slope / mean_y if mean_y else 0
+    if rel_slope > 0.05:
+        trend = "increasing"
+    elif rel_slope < -0.05:
+        trend = "decreasing"
+    else:
+        trend = "stable"
+
+    # Confidence based on R² and data points
+    ss_res = sum((data[i] - (intercept + slope * xs[i])) ** 2 for i in range(n))
+    ss_tot = sum((data[i] - mean_y) ** 2 for i in range(n))
+    r2 = 1 - ss_res / ss_tot if ss_tot else 0
+
+    if r2 >= 0.7 and n >= 6:
+        confidence = "high"
+    elif r2 >= 0.4 and n >= 4:
+        confidence = "medium"
+    else:
+        confidence = "low"
+
+    return SpendForecast(
+        next_30_days_credits=projected_30d,
+        next_30_days_usd=round(projected_30d / 100, 2),
+        trend=trend,
+        confidence=confidence,
+    )

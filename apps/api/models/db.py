@@ -1582,3 +1582,19 @@ class TaskMessageDB(Base):
     task = relationship("TaskDB", foreign_keys=[task_id], backref="messages")
     sender = relationship("UserDB", foreign_keys=[sender_id], backref="sent_task_messages")
     recipient = relationship("UserDB", foreign_keys=[recipient_id], backref="received_task_messages")
+
+
+class AdminAuditLogDB(Base):
+    """Audit trail for all admin actions."""
+    __tablename__ = "admin_audit_logs"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    admin_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    action = Column(String(128), nullable=False, index=True)   # e.g. "ban_user", "issue_strike", "approve_payout"
+    target_type = Column(String(64), nullable=True)            # e.g. "user", "payout", "task"
+    target_id = Column(String(64), nullable=True, index=True)  # UUID of target entity
+    detail = Column(JSON, nullable=True)                       # extra context (before/after, notes)
+    ip_address = Column(String(45), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False, index=True)
+
+    admin = relationship("UserDB", foreign_keys=[admin_id], backref="audit_actions")

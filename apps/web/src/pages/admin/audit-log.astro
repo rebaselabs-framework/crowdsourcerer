@@ -1,0 +1,192 @@
+---
+/**
+ * Admin Audit Log — searchable, filterable trail of all admin actions.
+ */
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Astro.cookies);
+if (!token) return Astro.redirect("/login");
+
+const action     = Astro.url.searchParams.get("action")      ?? "";
+const targetType = Astro.url.searchParams.get("target_type") ?? "";
+const targetId   = Astro.url.searchParams.get("target_id")   ?? "";
+const pageStr    = Astro.url.searchParams.get("page")        ?? "1";
+const page       = Math.max(1, Number(pageStr));
+const limit      = 50;
+const offset     = (page - 1) * limit;
+
+let data: any = null;
+let error: string | null = null;
+
+try {
+  const p = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  if (action)     p.set("action",      action);
+  if (targetType) p.set("target_type", targetType);
+  if (targetId)   p.set("target_id",   targetId);
+  data = await apiFetch<any>(`/v1/admin/audit-log?${p}`, { token });
+} catch (e: any) {
+  if (e.message?.includes("401")) return Astro.redirect("/login");
+  if (e.message?.includes("403")) return Astro.redirect("/dashboard");
+  error = "Failed to load audit log";
+}
+
+const entries  = data?.entries ?? [];
+const total    = data?.total ?? 0;
+const pages    = Math.ceil(total / limit);
+
+const ACTION_COLORS: Record<string, string> = {
+  ban_worker:      "bg-red-100 text-red-700",
+  unban_worker:    "bg-emerald-100 text-emerald-700",
+  issue_strike:    "bg-orange-100 text-orange-700",
+  pardon_strike:   "bg-blue-100 text-blue-700",
+  payout_paid:     "bg-emerald-100 text-emerald-700",
+  payout_rejected: "bg-red-100 text-red-700",
+  payout_processing: "bg-amber-100 text-amber-700",
+};
+
+function relTime(iso: string): string {
+  const d = new Date(iso);
+  const diff = Date.now() - d.getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1)  return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24)  return `${hrs}h ago`;
+  return d.toLocaleDateString();
+}
+---
+
+<Layout title="Audit Log — Admin">
+  <div class="max-w-7xl mx-auto px-4 py-8">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-8">
+      <div>
+        <h1 class="text-3xl font-bold text-gray-900 dark:text-white">📋 Audit Log</h1>
+        <p class="text-gray-500 dark:text-gray-400 mt-1">All admin actions — {total.toLocaleString()} entries</p>
+      </div>
+      <a href="/admin" class="text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">← Admin</a>
+    </div>
+
+    <!-- Filters -->
+    <form method="get" class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 mb-6 flex flex-wrap gap-3 items-end">
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Action</label>
+        <select name="action" class="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 dark:text-white">
+          <option value="">All actions</option>
+          {["ban_worker","unban_worker","issue_strike","pardon_strike","payout_paid","payout_rejected","payout_processing"].map(a => (
+            <option value={a} selected={action === a}>{a.replace(/_/g," ")}</option>
+          ))}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Target type</label>
+        <select name="target_type" class="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 dark:text-white">
+          <option value="">All types</option>
+          {["user","payout","task"].map(t => (
+            <option value={t} selected={targetType === t}>{t}</option>
+          ))}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Target ID</label>
+        <input type="text" name="target_id" value={targetId} placeholder="UUID…"
+          class="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 dark:text-white w-48" />
+      </div>
+      <button type="submit" class="bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
+        Filter
+      </button>
+      {(action || targetType || targetId) && (
+        <a href="/admin/audit-log" class="text-sm text-gray-500 hover:text-gray-700 py-2">✕ Clear</a>
+      )}
+    </form>
+
+    {error && (
+      <div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-xl p-4 mb-6 text-red-700 dark:text-red-300">{error}</div>
+    )}
+
+    <!-- Log table -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden mb-6">
+      {entries.length === 0 ? (
+        <div class="p-12 text-center text-gray-400">
+          <div class="text-4xl mb-3">📋</div>
+          <p class="font-medium">No audit entries found</p>
+          <p class="text-sm mt-1">Admin actions will appear here as they happen</p>
+        </div>
+      ) : (
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-gray-50 dark:bg-gray-700/50">
+              <tr>
+                {["When","Admin","Action","Target","Details","IP"].map(h => (
+                  <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100 dark:divide-gray-700">
+              {entries.map((e: any) => (
+                <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30">
+                  <td class="px-4 py-3 text-gray-500 text-xs whitespace-nowrap" title={e.created_at}>
+                    {relTime(e.created_at)}
+                  </td>
+                  <td class="px-4 py-3 font-medium text-gray-800 dark:text-gray-200">
+                    {e.admin_name}
+                  </td>
+                  <td class="px-4 py-3">
+                    <span class={`px-2 py-0.5 rounded-full text-xs font-medium ${ACTION_COLORS[e.action] ?? "bg-gray-100 text-gray-700"}`}>
+                      {e.action.replace(/_/g," ")}
+                    </span>
+                  </td>
+                  <td class="px-4 py-3 text-gray-600 dark:text-gray-400">
+                    {e.target_type && (
+                      <span class="text-xs">
+                        <span class="uppercase text-gray-400">{e.target_type}</span>{" "}
+                        {e.target_id ? (
+                          <a href={e.target_type === "user" ? `/admin/workers?search=${e.target_id}` : "#"}
+                            class="text-violet-500 hover:underline font-mono text-xs">
+                            {e.target_id.slice(0,8)}…
+                          </a>
+                        ) : "—"}
+                      </span>
+                    )}
+                  </td>
+                  <td class="px-4 py-3 text-gray-600 dark:text-gray-400 max-w-xs">
+                    {e.detail ? (
+                      <details class="text-xs">
+                        <summary class="cursor-pointer text-violet-500">view</summary>
+                        <pre class="mt-1 bg-gray-50 dark:bg-gray-900 rounded p-2 overflow-auto max-h-24 text-gray-700 dark:text-gray-300">
+                          {JSON.stringify(e.detail, null, 2)}
+                        </pre>
+                      </details>
+                    ) : "—"}
+                  </td>
+                  <td class="px-4 py-3 text-gray-400 text-xs font-mono">{e.ip_address ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+
+    <!-- Pagination -->
+    {pages > 1 && (
+      <div class="flex justify-center gap-2">
+        {page > 1 && (
+          <a href={`?page=${page-1}&action=${action}&target_type=${targetType}&target_id=${targetId}`}
+            class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700">
+            ← Prev
+          </a>
+        )}
+        <span class="px-4 py-2 text-sm text-gray-500">Page {page} of {pages}</span>
+        {page < pages && (
+          <a href={`?page=${page+1}&action=${action}&target_type=${targetType}&target_id=${targetId}`}
+            class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700">
+            Next →
+          </a>
+        )}
+      </div>
+    )}
+  </div>
+</Layout>

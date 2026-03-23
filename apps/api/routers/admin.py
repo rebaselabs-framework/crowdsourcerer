@@ -18,7 +18,8 @@ import time as _time_module
 from core.auth import get_current_user_id, require_admin
 from core.database import get_db, AsyncSessionLocal
 from core.sweeper import sweep_once, get_sweeper_task, _sweep_scheduled_tasks, _LAST_SWEEP_AT
-from models.db import TaskDB, UserDB, CreditTransactionDB, TaskAssignmentDB, WebhookLogDB, PayoutRequestDB, WorkerStrikeDB
+from core.audit import log_admin_action
+from models.db import TaskDB, UserDB, CreditTransactionDB, TaskAssignmentDB, WebhookLogDB, PayoutRequestDB, WorkerStrikeDB, AdminAuditLogDB
 
 logger = structlog.get_logger()
 router = APIRouter(prefix="/v1/admin", tags=["admin"])
@@ -1167,6 +1168,8 @@ async def ban_worker(
     worker.is_banned = True
     worker.ban_reason = payload.reason
     worker.ban_expires_at = payload.expires_at
+    await log_admin_action(db, admin_id, "ban_worker", "user", str(worker_id),
+                           {"reason": payload.reason, "expires_at": str(payload.expires_at)})
     await db.commit()
     logger.info("worker_banned", worker_id=str(worker_id), admin_id=admin_id, reason=payload.reason)
     return {"banned": True, "worker_id": str(worker_id)}
@@ -1185,6 +1188,7 @@ async def unban_worker(
     worker.is_banned = False
     worker.ban_reason = None
     worker.ban_expires_at = None
+    await log_admin_action(db, admin_id, "unban_worker", "user", str(worker_id))
     await db.commit()
     logger.info("worker_unbanned", worker_id=str(worker_id), admin_id=admin_id)
     return {"unbanned": True, "worker_id": str(worker_id)}
@@ -1242,6 +1246,8 @@ async def add_strike(
     )
     db.add(strike)
     worker.strike_count = (worker.strike_count or 0) + 1
+    await log_admin_action(db, admin_id, "issue_strike", "user", str(worker_id),
+                           {"severity": payload.severity, "reason": payload.reason})
     await db.commit()
     logger.info("worker_strike_added", worker_id=str(worker_id), admin_id=admin_id, severity=payload.severity)
     return {"strike_id": str(strike.id), "total_strikes": worker.strike_count}
@@ -1265,6 +1271,8 @@ async def pardon_strike(
     worker = await db.get(UserDB, worker_id)
     if worker and worker.strike_count > 0:
         worker.strike_count -= 1
+    await log_admin_action(db, admin_id, "pardon_strike", "user", str(worker_id),
+                           {"strike_id": str(strike_id)})
     await db.commit()
     logger.info("worker_strike_pardoned", strike_id=str(strike_id), admin_id=admin_id)
     return {"pardoned": True, "strike_id": str(strike_id)}
@@ -1369,4 +1377,74 @@ async def get_system_health(
         "total_users": total_users,
         "active_workers_24h": active_workers_24h,
         "timestamp": now.isoformat(),
+    }
+
+
+# ─── Admin Audit Log ─────────────────────────────────────────────────────────
+
+@router.get("/audit-log")
+async def list_audit_log(
+    action: Optional[str] = Query(None, description="Filter by action type"),
+    admin_id_filter: Optional[UUID] = Query(None, alias="admin_id"),
+    target_type: Optional[str] = Query(None),
+    target_id: Optional[str] = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(require_admin),
+):
+    """Return paginated admin audit log entries, newest first."""
+    query = (
+        select(AdminAuditLogDB)
+        .order_by(AdminAuditLogDB.created_at.desc())
+    )
+    if action:
+        query = query.where(AdminAuditLogDB.action == action)
+    if admin_id_filter:
+        query = query.where(AdminAuditLogDB.admin_id == admin_id_filter)
+    if target_type:
+        query = query.where(AdminAuditLogDB.target_type == target_type)
+    if target_id:
+        query = query.where(AdminAuditLogDB.target_id == target_id)
+
+    total = (await db.scalar(
+        select(func.count(AdminAuditLogDB.id)).where(
+            *([AdminAuditLogDB.action == action] if action else []),
+            *([AdminAuditLogDB.admin_id == admin_id_filter] if admin_id_filter else []),
+            *([AdminAuditLogDB.target_type == target_type] if target_type else []),
+            *([AdminAuditLogDB.target_id == target_id] if target_id else []),
+        )
+    )) or 0
+
+    result = await db.execute(query.offset(offset).limit(limit))
+    entries = result.scalars().all()
+
+    # Resolve admin names
+    admin_ids = {e.admin_id for e in entries if e.admin_id}
+    admin_names: dict = {}
+    if admin_ids:
+        users_res = await db.execute(
+            select(UserDB.id, UserDB.name, UserDB.email).where(UserDB.id.in_(admin_ids))
+        )
+        for row in users_res:
+            admin_names[str(row.id)] = row.name or row.email.split("@")[0]
+
+    return {
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+        "entries": [
+            {
+                "id": str(e.id),
+                "admin_id": str(e.admin_id) if e.admin_id else None,
+                "admin_name": admin_names.get(str(e.admin_id), "Unknown") if e.admin_id else "System",
+                "action": e.action,
+                "target_type": e.target_type,
+                "target_id": e.target_id,
+                "detail": e.detail,
+                "ip_address": e.ip_address,
+                "created_at": e.created_at.isoformat(),
+            }
+            for e in entries
+        ],
     }

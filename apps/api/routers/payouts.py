@@ -11,6 +11,7 @@ from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth import get_current_user_id, require_admin
+from core.audit import log_admin_action
 from core.database import get_db
 from core.notify import create_notification, NotifType
 from models.db import UserDB, PayoutRequestDB, CreditTransactionDB
@@ -305,6 +306,8 @@ async def admin_review_payout(
             link="/worker/earnings",
         )
 
+    await log_admin_action(db, admin_id, f"payout_{body.status}", "payout", str(payout_id),
+                           {"status": body.status, "note": body.note})
     await db.commit()
     await db.refresh(payout)
 
