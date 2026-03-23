@@ -1,7 +1,8 @@
 """Auth endpoints: register, login."""
 from datetime import timedelta
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from passlib.context import CryptContext
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -22,7 +23,12 @@ limiter = Limiter(key_func=get_remote_address)
 
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit("5/minute")
-async def register(request: Request, req: RegisterRequest, db: AsyncSession = Depends(get_db)):
+async def register(
+    request: Request,
+    req: RegisterRequest,
+    ref: Optional[str] = Query(None, description="Referral code"),
+    db: AsyncSession = Depends(get_db),
+):
     # Check email uniqueness
     existing = await db.execute(select(UserDB).where(UserDB.email == req.email))
     if existing.scalar_one_or_none():
@@ -35,6 +41,13 @@ async def register(request: Request, req: RegisterRequest, db: AsyncSession = De
         credits=settings.free_tier_credits,
     )
     db.add(user)
+    await db.flush()  # get user.id without committing
+
+    # Apply referral bonus if a valid code was provided
+    if ref:
+        from routers.referrals import apply_referral_on_signup
+        await apply_referral_on_signup(user.id, ref, db)
+
     await db.commit()
     await db.refresh(user)
 

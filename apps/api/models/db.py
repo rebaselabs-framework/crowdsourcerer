@@ -39,6 +39,11 @@ class UserDB(Base):
     is_active = Column(Boolean, default=True, nullable=False)
     is_admin = Column(Boolean, default=False, nullable=False)
 
+    # Referral system
+    referral_code = Column(String(16), unique=True, nullable=True, index=True)  # User's own code
+    # Pending credits = earned credits not yet confirmed (paid after first task completion)
+    credits_pending = Column(Integer, default=0, nullable=False)
+
     # Worker gamification
     worker_xp = Column(Integer, default=0, nullable=False)
     worker_level = Column(Integer, default=1, nullable=False)
@@ -255,3 +260,52 @@ class WebhookLogDB(Base):
     error = Column(Text, nullable=True)                   # Error message if failed
     duration_ms = Column(Integer, nullable=True)
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+class PayoutRequestDB(Base):
+    """Worker payout / withdrawal request."""
+    __tablename__ = "payout_requests"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    worker_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
+                       nullable=False, index=True)
+    credits_requested = Column(Integer, nullable=False)      # Credits to cash out
+    usd_amount = Column(Float, nullable=False)               # Equivalent USD (credits / 100)
+    status = Column(
+        SAEnum("pending", "processing", "paid", "rejected", name="payout_status_enum"),
+        default="pending",
+        nullable=False,
+        index=True,
+    )
+    payout_method = Column(
+        SAEnum("paypal", "bank_transfer", "crypto", name="payout_method_enum"),
+        nullable=False,
+    )
+    payout_details = Column(JSON, nullable=False)            # e.g. {"email": "..."} for PayPal
+    admin_note = Column(Text, nullable=True)
+    processed_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    worker = relationship("UserDB", backref="payout_requests", foreign_keys=[worker_id])
+
+
+class ReferralDB(Base):
+    """Referral tracking — when a user signs up via a referral code."""
+    __tablename__ = "referrals"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    referrer_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
+                         nullable=False, index=True)
+    referred_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
+                         nullable=False, unique=True, index=True)
+    # Bonus tracking
+    referrer_bonus_credits = Column(Integer, default=50, nullable=False)
+    referred_bonus_credits = Column(Integer, default=50, nullable=False)  # Extra over base 100
+    bonus_paid = Column(Boolean, default=False, nullable=False)           # Paid after first task
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    referrer = relationship("UserDB", backref="referrals_made",
+                            foreign_keys=[referrer_id])
+    referred = relationship("UserDB", backref="referral_from",
+                            foreign_keys=[referred_id])

@@ -4,21 +4,26 @@ import Layout from "@/layouts/Layout.astro";
 let error = "";
 let success = false;
 
+// Read referral code from query string (GET) or form (POST)
+const urlParams = new URL(Astro.request.url).searchParams;
+const refCode = urlParams.get("ref") ?? "";
+
 if (Astro.request.method === "POST") {
   const form = await Astro.request.formData();
   const email = form.get("email") as string;
   const password = form.get("password") as string;
   const name = form.get("name") as string;
+  const ref = (form.get("ref") as string) ?? "";
+
+  // Pass referral code as query param to the API
+  const registerUrl = `${import.meta.env.PUBLIC_API_URL ?? "http://api:8100"}/v1/auth/register${ref ? `?ref=${encodeURIComponent(ref)}` : ""}`;
 
   try {
-    const res = await fetch(
-      `${import.meta.env.PUBLIC_API_URL ?? "http://api:8100"}/v1/auth/register`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, name }),
-      }
-    );
+    const res = await fetch(registerUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password, name }),
+    });
 
     if (!res.ok) {
       const data = await res.json();
@@ -49,6 +54,13 @@ if (Astro.request.method === "POST") {
         <p class="text-gray-400 mt-1 text-sm">Start with 100 free credits</p>
       </div>
 
+      {refCode && (
+        <div class="bg-emerald-900/30 border border-emerald-700/40 rounded-lg px-4 py-3 text-sm text-emerald-300 mb-6 flex items-center gap-2">
+          <span>🎁</span>
+          <span>You were invited! Sign up now to get <strong>150 credits</strong> (50 bonus) to start.</span>
+        </div>
+      )}
+
       {error && (
         <div class="bg-red-950/50 border border-red-800 rounded-lg px-4 py-3 text-sm text-red-300 mb-6">
           {error}
@@ -56,6 +68,7 @@ if (Astro.request.method === "POST") {
       )}
 
       <form method="POST" class="space-y-4">
+        {refCode && <input type="hidden" name="ref" value={refCode} />}
         <div>
           <label class="block text-sm text-gray-400 mb-1">Name (optional)</label>
           <input

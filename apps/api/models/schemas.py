@@ -395,6 +395,60 @@ class QualityReportOut(BaseModel):
     worker_xp: int
 
 
+# ─── Payout ───────────────────────────────────────────────────────────────
+
+class PayoutRequestCreate(BaseModel):
+    credits_requested: int
+    payout_method: str  # paypal | bank_transfer | crypto
+    payout_details: dict[str, Any]  # {"email": "..."} or {"address": "..."}
+
+
+class PayoutRequestOut(BaseModel):
+    id: UUID
+    worker_id: UUID
+    credits_requested: int
+    usd_amount: float
+    status: str
+    payout_method: str
+    payout_details: dict[str, Any]
+    admin_note: Optional[str]
+    processed_at: Optional[datetime]
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class PayoutReviewRequest(BaseModel):
+    status: str  # processing | paid | rejected
+    admin_note: Optional[str] = None
+
+
+class PayoutListOut(BaseModel):
+    items: list[PayoutRequestOut]
+    total: int
+
+
+# ─── Referral ─────────────────────────────────────────────────────────────
+
+class ReferralStatsOut(BaseModel):
+    referral_code: str
+    referral_url: str
+    total_referrals: int
+    pending_bonus_credits: int  # credits_pending from referrals
+    paid_bonus_credits: int     # already confirmed bonus credits
+
+
+class ReferralOut(BaseModel):
+    id: UUID
+    referred_email: Optional[str]  # masked for privacy
+    bonus_paid: bool
+    referrer_bonus_credits: int
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 # ─── Health ───────────────────────────────────────────────────────────────
 
 class HealthResponse(BaseModel):

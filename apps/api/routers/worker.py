@@ -581,6 +581,14 @@ async def submit_task(
         except Exception:
             pass  # Email errors never block submission response
 
+    # ── Pay referral bonus on first task completion ───────────────────────
+    if worker and worker.worker_tasks_completed == 1:
+        try:
+            from routers.referrals import pay_referral_bonus_on_first_task
+            await pay_referral_bonus_on_first_task(user_id, db)
+        except Exception:
+            pass  # Referral errors never block submission
+
     msg = f"Submitted! You earned {earnings} credits and {xp} XP."
     if new_badge_ids:
         msg += f" 🏆 New badge(s) earned: {', '.join(new_badge_ids)}"

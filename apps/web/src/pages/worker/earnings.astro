@@ -1,6 +1,7 @@
 ---
 /**
- * Worker earnings history — shows completed assignments and credits earned.
+ * Worker earnings & payout dashboard.
+ * Shows completed assignments, total credits earned, and payout request form.
  */
 import Layout from "@/layouts/Layout.astro";
 import { apiFetch, getToken } from "@/lib/api";
@@ -13,15 +14,17 @@ if (!token) return Astro.redirect("/login");
 
 const url = new URL(Astro.request.url);
 const page = parseInt(url.searchParams.get("page") ?? "1");
+const activeTab = url.searchParams.get("tab") ?? "history";
 
 let user: any = null;
 let stats: any = null;
 let assignments: any[] = [];
-let totalAssignments = 0;
-let hasNext = false;
+let payouts: any[] = [];
+let payoutsTotal = 0;
 let error = "";
 
 const PAGE_SIZE = 20;
+const MIN_PAYOUT = 1000;
 
 try {
   [user, stats] = await Promise.all([
@@ -33,16 +36,21 @@ try {
     return Astro.redirect("/worker");
   }
 
-  // Fetch completed assignments (submitted + approved)
-  const res = await apiFetch<any[]>(
-    `/v1/worker/assignments?status=submitted&page_size=${PAGE_SIZE}&page=${page}`, { token }
-  );
-  assignments = res ?? [];
+  if (activeTab === "payouts") {
+    const payRes = await apiFetch<any>(`/v1/payouts?page=${page}&page_size=${PAGE_SIZE}`, { token });
+    payouts = payRes?.items ?? [];
+    payoutsTotal = payRes?.total ?? 0;
+  } else {
+    const res = await apiFetch<any[]>(
+      `/v1/worker/assignments?status=submitted&page_size=${PAGE_SIZE}&page=${page}`, { token }
+    );
+    assignments = res ?? [];
+  }
 } catch (e: any) {
   if ((e as Error).message?.includes("403")) {
     return Astro.redirect("/worker");
   }
-  error = (e as Error).message ?? "Failed to load earnings";
+  error = (e as Error).message ?? "Failed to load data";
 }
 
 const TASK_TYPE_LABELS: Record<string, string> = {
@@ -52,46 +60,111 @@ const TASK_TYPE_LABELS: Record<string, string> = {
   answer_question: "Answer Question", transcription_review: "Review Transcript",
 };
 
+const PAYOUT_STATUS_STYLES: Record<string, string> = {
+  pending: "bg-yellow-900/40 text-yellow-300",
+  processing: "bg-blue-900/40 text-blue-300",
+  paid: "bg-emerald-900/40 text-emerald-400",
+  rejected: "bg-red-900/40 text-red-400",
+};
+
 function formatDate(d: string) {
   return new Date(d).toLocaleDateString("en-US", {
     month: "short", day: "numeric", year: "numeric",
     hour: "2-digit", minute: "2-digit",
   });
 }
+
+const totalCredits = user?.credits ?? 0;
+const canPayout = totalCredits >= MIN_PAYOUT;
 ---
 
-<Layout title="Earnings — CrowdSorcerer">
+<Layout title="Earnings & Payouts — CrowdSorcerer">
   <div class="max-w-4xl mx-auto px-6 py-10">
+    <!-- Header -->
     <div class="flex items-center justify-between mb-8">
       <div>
-        <h1 class="text-2xl font-bold">Earnings History</h1>
-        <p class="text-gray-400 text-sm mt-0.5">Your completed tasks and credits earned</p>
+        <h1 class="text-2xl font-bold">Earnings & Payouts</h1>
+        <p class="text-gray-400 text-sm mt-0.5">Your task history and withdrawal requests</p>
       </div>
       <a href="/worker" class="text-sm text-gray-400 hover:text-gray-200 transition-colors">← Worker hub</a>
     </div>
 
-    <!-- Summary -->
-    <div class="grid grid-cols-3 gap-4 mb-8">
+    <!-- Summary cards -->
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
       <div class="bg-gray-900 border border-emerald-800/40 rounded-xl p-5">
-        <div class="text-sm text-gray-400 mb-1">Total earned</div>
-        <div class="text-3xl font-bold text-emerald-300">
-          {stats?.total_earnings_credits?.toLocaleString() ?? 0}
-        </div>
-        <div class="text-xs text-gray-500 mt-1">credits ≈ ${((stats?.total_earnings_credits ?? 0) / 100).toFixed(2)}</div>
+        <div class="text-xs text-gray-400 mb-1 uppercase tracking-wider">Credits balance</div>
+        <div class="text-3xl font-bold text-emerald-300">{totalCredits.toLocaleString()}</div>
+        <div class="text-xs text-gray-500 mt-1">≈ ${(totalCredits / 100).toFixed(2)}</div>
       </div>
       <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
-        <div class="text-sm text-gray-400 mb-1">Tasks completed</div>
+        <div class="text-xs text-gray-400 mb-1 uppercase tracking-wider">Total earned</div>
+        <div class="text-3xl font-bold">{(stats?.total_earnings_credits ?? 0).toLocaleString()}</div>
+        <div class="text-xs text-gray-500 mt-1">credits lifetime</div>
+      </div>
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+        <div class="text-xs text-gray-400 mb-1 uppercase tracking-wider">Tasks done</div>
         <div class="text-3xl font-bold">{stats?.tasks_completed?.toLocaleString() ?? 0}</div>
       </div>
       <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
-        <div class="text-sm text-gray-400 mb-1">Accuracy</div>
+        <div class="text-xs text-gray-400 mb-1 uppercase tracking-wider">Accuracy</div>
         <div class="text-3xl font-bold">
           {stats?.accuracy != null ? `${(stats.accuracy * 100).toFixed(0)}%` : "—"}
         </div>
-        <div class="text-xs text-gray-500 mt-1">
-          {stats?.accuracy != null ? "Based on consensus" : "Not enough data"}
-        </div>
       </div>
+    </div>
+
+    <!-- Payout CTA / progress bar -->
+    {canPayout ? (
+      <div class="bg-emerald-900/20 border border-emerald-700/40 rounded-xl p-5 mb-6 flex items-center justify-between">
+        <div>
+          <div class="text-emerald-300 font-semibold text-sm mb-0.5">You're eligible for a payout! 💸</div>
+          <div class="text-gray-400 text-xs">
+            You have {totalCredits.toLocaleString()} credits (${(totalCredits/100).toFixed(2)}).
+            Minimum payout: 1,000 credits ($10).
+          </div>
+        </div>
+        <a
+          href="?tab=payouts#request-payout"
+          class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium rounded-lg transition-colors whitespace-nowrap ml-4"
+        >
+          Request payout
+        </a>
+      </div>
+    ) : (
+      <div class="bg-gray-900 border border-gray-700 rounded-xl p-5 mb-6">
+        <div class="text-sm text-gray-300 mb-2">Payout progress</div>
+        <div class="flex items-center gap-3">
+          <div class="flex-1 bg-gray-800 rounded-full h-2">
+            <div
+              class="bg-emerald-500 h-2 rounded-full transition-all"
+              style={`width: ${Math.min(100, Math.round((totalCredits / MIN_PAYOUT) * 100))}%`}
+            ></div>
+          </div>
+          <span class="text-xs text-gray-400 whitespace-nowrap">
+            {totalCredits.toLocaleString()} / {MIN_PAYOUT.toLocaleString()} credits
+          </span>
+        </div>
+        <p class="text-xs text-gray-500 mt-2">
+          Earn {Math.max(0, MIN_PAYOUT - totalCredits).toLocaleString()} more credits to unlock withdrawals (minimum $10)
+        </p>
+      </div>
+    )}
+
+    <!-- Tabs -->
+    <div class="flex gap-2 mb-6 border-b border-gray-800">
+      <a
+        href="?tab=history"
+        class={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "history" ? "border-emerald-500 text-emerald-400" : "border-transparent text-gray-400 hover:text-gray-200"}`}
+      >
+        Task history
+      </a>
+      <a
+        href="?tab=payouts"
+        class={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "payouts" ? "border-emerald-500 text-emerald-400" : "border-transparent text-gray-400 hover:text-gray-200"}`}
+      >
+        Payout requests
+        {payoutsTotal > 0 && <span class="ml-1.5 text-xs bg-gray-700 px-1.5 py-0.5 rounded-full">{payoutsTotal}</span>}
+      </a>
     </div>
 
     {error && (
@@ -100,21 +173,21 @@ function formatDate(d: string) {
       </div>
     )}
 
-    <!-- Assignment history table -->
-    {assignments.length === 0 ? (
-      <div class="text-center py-20">
-        <div class="text-5xl mb-4">📭</div>
-        <p class="text-gray-400 text-lg mb-2">No completed tasks yet</p>
-        <p class="text-gray-500 text-sm mb-6">Head to the marketplace to start earning!</p>
-        <a
-          href="/worker/marketplace"
-          class="inline-block px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium rounded-lg transition-colors"
-        >
-          Browse marketplace
-        </a>
-      </div>
-    ) : (
-      <div>
+    <!-- ── Task history tab ── -->
+    {activeTab === "history" && (
+      assignments.length === 0 ? (
+        <div class="text-center py-20">
+          <div class="text-5xl mb-4">📭</div>
+          <p class="text-gray-400 text-lg mb-2">No completed tasks yet</p>
+          <p class="text-gray-500 text-sm mb-6">Head to the marketplace to start earning!</p>
+          <a
+            href="/worker/marketplace"
+            class="inline-block px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium rounded-lg transition-colors"
+          >
+            Browse marketplace
+          </a>
+        </div>
+      ) : (
         <div class="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
           <table class="w-full text-sm">
             <thead class="border-b border-gray-800">
@@ -155,29 +228,285 @@ function formatDate(d: string) {
             </tbody>
           </table>
         </div>
+      )
+    )}
 
-        <!-- Pagination -->
-        {(page > 1 || hasNext) && (
-          <div class="flex justify-center gap-3 mt-6">
-            {page > 1 && (
-              <a
-                href={`?page=${page - 1}`}
-                class="px-4 py-2 bg-gray-900 border border-gray-700 hover:border-gray-500 rounded-lg text-sm transition-colors"
-              >
-                ← Prev
-              </a>
-            )}
-            {hasNext && (
-              <a
-                href={`?page=${page + 1}`}
-                class="px-4 py-2 bg-gray-900 border border-gray-700 hover:border-gray-500 rounded-lg text-sm transition-colors"
-              >
-                Next →
-              </a>
-            )}
+    <!-- ── Payout requests tab ── -->
+    {activeTab === "payouts" && (
+      <div>
+        {payouts.length === 0 ? (
+          <div class="text-center py-12 text-gray-500">
+            <div class="text-4xl mb-3">💳</div>
+            <p class="text-sm">No payout requests yet</p>
+          </div>
+        ) : (
+          <div class="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden mb-8">
+            <table class="w-full text-sm">
+              <thead class="border-b border-gray-800">
+                <tr class="text-gray-500 text-xs uppercase tracking-wider">
+                  <th class="text-left px-5 py-3">Amount</th>
+                  <th class="text-left px-5 py-3">Method</th>
+                  <th class="text-left px-5 py-3">Requested</th>
+                  <th class="text-left px-5 py-3">Status</th>
+                  <th class="text-left px-5 py-3">Note</th>
+                  <th class="text-right px-5 py-3"></th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-gray-800">
+                {payouts.map((p: any) => (
+                  <tr class="hover:bg-gray-800/40 transition-colors">
+                    <td class="px-5 py-3">
+                      <div class="font-semibold text-emerald-400">${p.usd_amount.toFixed(2)}</div>
+                      <div class="text-xs text-gray-500">{p.credits_requested.toLocaleString()} credits</div>
+                    </td>
+                    <td class="px-5 py-3 text-gray-300 capitalize">
+                      {p.payout_method.replace(/_/g, " ")}
+                    </td>
+                    <td class="px-5 py-3 text-gray-400 text-xs">{formatDate(p.created_at)}</td>
+                    <td class="px-5 py-3">
+                      <span class={`text-xs px-2 py-0.5 rounded capitalize ${PAYOUT_STATUS_STYLES[p.status] ?? "bg-gray-800 text-gray-400"}`}>
+                        {p.status}
+                      </span>
+                    </td>
+                    <td class="px-5 py-3 text-xs text-gray-400">{p.admin_note ?? "—"}</td>
+                    <td class="px-5 py-3 text-right">
+                      {p.status === "pending" && (
+                        <button
+                          class="text-xs text-red-400 hover:text-red-300 transition-colors cancel-payout"
+                          data-id={p.id}
+                        >
+                          Cancel
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
+
+        <!-- Payout request form (only if eligible) -->
+        <div id="request-payout">
+          {canPayout ? (
+            <div class="bg-gray-900 border border-gray-700 rounded-2xl p-6">
+              <h2 class="text-lg font-semibold mb-1">Request a payout</h2>
+              <p class="text-gray-400 text-sm mb-5">
+                Withdraw your earned credits. Minimum 1,000 credits ($10). Processing takes 1–5 business days.
+              </p>
+
+              <form id="payout-form" class="space-y-4">
+                <div class="grid sm:grid-cols-2 gap-4">
+                  <div>
+                    <label class="block text-xs text-gray-400 mb-1.5">Credits to withdraw</label>
+                    <input
+                      id="payout-credits"
+                      type="number"
+                      min="1000"
+                      max={totalCredits}
+                      step="100"
+                      value="1000"
+                      class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500"
+                    />
+                    <p class="text-xs text-gray-500 mt-1">Available: {totalCredits.toLocaleString()} credits</p>
+                  </div>
+                  <div>
+                    <label class="block text-xs text-gray-400 mb-1.5">USD equivalent</label>
+                    <div id="usd-display" class="bg-gray-800/60 border border-gray-700 rounded-lg px-3 py-2 text-sm text-emerald-400 font-semibold h-[38px] flex items-center">
+                      $10.00
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label class="block text-xs text-gray-400 mb-1.5">Payout method</label>
+                  <select
+                    id="payout-method"
+                    class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500"
+                  >
+                    <option value="paypal">PayPal</option>
+                    <option value="bank_transfer">Bank transfer (SEPA/SWIFT)</option>
+                    <option value="crypto">Crypto (USDC/USDT)</option>
+                  </select>
+                </div>
+
+                <!-- PayPal fields -->
+                <div id="fields-paypal" class="space-y-3">
+                  <div>
+                    <label class="block text-xs text-gray-400 mb-1.5">PayPal email</label>
+                    <input
+                      id="paypal-email"
+                      type="email"
+                      placeholder="you@example.com"
+                      class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                </div>
+
+                <!-- Bank fields -->
+                <div id="fields-bank" class="space-y-3 hidden">
+                  <div>
+                    <label class="block text-xs text-gray-400 mb-1.5">Account holder name</label>
+                    <input
+                      id="bank-name"
+                      type="text"
+                      placeholder="Full name on account"
+                      class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                  <div>
+                    <label class="block text-xs text-gray-400 mb-1.5">IBAN / Account number</label>
+                    <input
+                      id="bank-iban"
+                      type="text"
+                      placeholder="IBAN or SWIFT account details"
+                      class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                </div>
+
+                <!-- Crypto fields -->
+                <div id="fields-crypto" class="space-y-3 hidden">
+                  <div>
+                    <label class="block text-xs text-gray-400 mb-1.5">Network</label>
+                    <select
+                      id="crypto-network"
+                      class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500"
+                    >
+                      <option value="ethereum">Ethereum (USDC/USDT ERC-20)</option>
+                      <option value="solana">Solana (USDC SPL)</option>
+                      <option value="polygon">Polygon (USDC/USDT)</option>
+                      <option value="base">Base (USDC)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="block text-xs text-gray-400 mb-1.5">Wallet address</label>
+                    <input
+                      id="crypto-address"
+                      type="text"
+                      placeholder="0x... or Solana address"
+                      class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                </div>
+
+                <div id="payout-error" class="text-red-400 text-sm hidden"></div>
+                <div id="payout-success" class="text-emerald-400 text-sm hidden"></div>
+
+                <button
+                  type="submit"
+                  class="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-medium rounded-lg transition-colors text-sm"
+                >
+                  Submit withdrawal request
+                </button>
+              </form>
+            </div>
+          ) : (
+            <div class="bg-gray-900/60 border border-gray-800 rounded-2xl p-8 text-center">
+              <div class="text-3xl mb-3">🔒</div>
+              <p class="text-gray-300 font-medium mb-1">Payouts unlock at 1,000 credits</p>
+              <p class="text-gray-500 text-sm">Keep completing tasks to reach the threshold!</p>
+            </div>
+          )}
+        </div>
       </div>
     )}
   </div>
 </Layout>
+
+<script>
+  const cookieToken = document.cookie.split(";").find(c => c.trim().startsWith("token="))?.split("=")[1];
+  const API_BASE = "";  // Relative — proxied by Astro
+
+  // USD live update
+  const creditsInput = document.getElementById("payout-credits") as HTMLInputElement | null;
+  const usdDisplay = document.getElementById("usd-display");
+  if (creditsInput && usdDisplay) {
+    creditsInput.addEventListener("input", () => {
+      const val = parseInt(creditsInput.value) || 0;
+      usdDisplay.textContent = `$${(val / 100).toFixed(2)}`;
+    });
+  }
+
+  // Method field switcher
+  const methodSelect = document.getElementById("payout-method") as HTMLSelectElement | null;
+  function updateFields() {
+    if (!methodSelect) return;
+    ["paypal", "bank", "crypto"].forEach(id =>
+      document.getElementById(`fields-${id}`)?.classList.add("hidden")
+    );
+    const method = methodSelect.value;
+    const fieldId = method === "bank_transfer" ? "fields-bank"
+                  : method === "crypto" ? "fields-crypto"
+                  : "fields-paypal";
+    document.getElementById(fieldId)?.classList.remove("hidden");
+  }
+  methodSelect?.addEventListener("change", updateFields);
+
+  // Payout form submit
+  const payoutForm = document.getElementById("payout-form");
+  payoutForm?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const errEl = document.getElementById("payout-error")!;
+    const okEl = document.getElementById("payout-success")!;
+    errEl.classList.add("hidden");
+    okEl.classList.add("hidden");
+
+    const credits = parseInt((creditsInput as HTMLInputElement)?.value ?? "0");
+    const method = methodSelect?.value ?? "paypal";
+    let details: Record<string, string> = {};
+
+    if (method === "paypal") {
+      const email = (document.getElementById("paypal-email") as HTMLInputElement)?.value?.trim();
+      if (!email) { errEl.textContent = "Please enter your PayPal email"; errEl.classList.remove("hidden"); return; }
+      details = { email };
+    } else if (method === "bank_transfer") {
+      const name = (document.getElementById("bank-name") as HTMLInputElement)?.value?.trim();
+      const iban = (document.getElementById("bank-iban") as HTMLInputElement)?.value?.trim();
+      if (!name || !iban) { errEl.textContent = "Please fill in all bank fields"; errEl.classList.remove("hidden"); return; }
+      details = { account_name: name, iban };
+    } else {
+      const network = (document.getElementById("crypto-network") as HTMLSelectElement)?.value ?? "ethereum";
+      const address = (document.getElementById("crypto-address") as HTMLInputElement)?.value?.trim();
+      if (!address) { errEl.textContent = "Please enter your wallet address"; errEl.classList.remove("hidden"); return; }
+      details = { network, address };
+    }
+
+    try {
+      const res = await fetch(`/api/v1/payouts`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${cookieToken}`,
+        },
+        body: JSON.stringify({ credits_requested: credits, payout_method: method, payout_details: details }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail ?? "Request failed");
+      okEl.textContent = `✅ Withdrawal request submitted! $${data.usd_amount.toFixed(2)} is being processed.`;
+      okEl.classList.remove("hidden");
+      setTimeout(() => { window.location.href = "?tab=payouts"; }, 1500);
+    } catch (err: any) {
+      errEl.textContent = err.message;
+      errEl.classList.remove("hidden");
+    }
+  });
+
+  // Cancel payout
+  document.querySelectorAll(".cancel-payout").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const id = (btn as HTMLElement).dataset.id;
+      if (!confirm("Cancel this withdrawal request? Your credits will be refunded immediately.")) return;
+      const res = await fetch(`/api/v1/payouts/${id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${cookieToken}` },
+      });
+      if (res.ok || res.status === 204) {
+        window.location.reload();
+      } else {
+        const d = await res.json().catch(() => ({}));
+        alert((d as any).detail ?? "Failed to cancel — please try again");
+      }
+    });
+  });
+</script>

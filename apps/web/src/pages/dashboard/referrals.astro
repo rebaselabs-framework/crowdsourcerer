@@ -1,0 +1,227 @@
+---
+/**
+ * Referral / invite page — share your code, earn bonus credits.
+ */
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Object.fromEntries(
+  Astro.cookies.getAll().map((c) => [c.name, c.value])
+));
+if (!token) return Astro.redirect("/login");
+
+let user: any = null;
+let refStats: any = null;
+let referrals: any[] = [];
+let error = "";
+
+try {
+  [user, refStats, referrals] = await Promise.all([
+    apiFetch<any>("/v1/users/me", { token }),
+    apiFetch<any>("/v1/referrals/stats", { token }),
+    apiFetch<any[]>("/v1/referrals?page_size=50", { token }),
+  ]);
+} catch (e: any) {
+  error = (e as Error).message ?? "Failed to load referral data";
+}
+
+function formatDate(d: string) {
+  return new Date(d).toLocaleDateString("en-US", {
+    month: "short", day: "numeric", year: "numeric",
+  });
+}
+---
+
+<Layout title="Referrals — CrowdSorcerer">
+  <div class="max-w-3xl mx-auto px-6 py-10">
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-8">
+      <div>
+        <h1 class="text-2xl font-bold">Invite Friends</h1>
+        <p class="text-gray-400 text-sm mt-0.5">Share CrowdSorcerer and earn bonus credits together</p>
+      </div>
+      <a href="/dashboard" class="text-sm text-gray-400 hover:text-gray-200 transition-colors">← Dashboard</a>
+    </div>
+
+    {error && (
+      <div class="bg-red-900/30 border border-red-700/50 rounded-xl p-4 mb-6 text-red-300 text-sm">
+        {error}
+      </div>
+    )}
+
+    <!-- How it works -->
+    <div class="bg-gray-900 border border-gray-800 rounded-2xl p-6 mb-6">
+      <h2 class="text-base font-semibold mb-4">How it works</h2>
+      <div class="grid sm:grid-cols-3 gap-4">
+        <div class="text-center">
+          <div class="text-3xl mb-2">🔗</div>
+          <div class="text-sm font-medium text-gray-200 mb-1">Share your link</div>
+          <div class="text-xs text-gray-400">Send your unique invite link to friends</div>
+        </div>
+        <div class="text-center">
+          <div class="text-3xl mb-2">🎉</div>
+          <div class="text-sm font-medium text-gray-200 mb-1">They get +50 credits</div>
+          <div class="text-xs text-gray-400">New users sign up with 150 credits instead of 100</div>
+        </div>
+        <div class="text-center">
+          <div class="text-3xl mb-2">💰</div>
+          <div class="text-sm font-medium text-gray-200 mb-1">You earn +50 credits</div>
+          <div class="text-xs text-gray-400">Credited to you when they complete their first task</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Referral link box -->
+    <div class="bg-gray-900 border border-gray-700 rounded-2xl p-6 mb-6">
+      <div class="text-sm text-gray-400 mb-2">Your referral link</div>
+      <div class="flex gap-2">
+        <input
+          id="referral-url"
+          type="text"
+          readonly
+          value={refStats?.referral_url ?? "Loading…"}
+          class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none"
+        />
+        <button
+          id="copy-btn"
+          class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium rounded-lg transition-colors"
+        >
+          Copy
+        </button>
+      </div>
+      <div class="mt-3 flex items-center gap-2">
+        <span class="text-xs text-gray-500">Code:</span>
+        <code class="text-xs bg-gray-800 px-2 py-0.5 rounded text-emerald-400 font-mono">
+          {refStats?.referral_code ?? "—"}
+        </code>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="grid grid-cols-3 gap-4 mb-8">
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 text-center">
+        <div class="text-3xl font-bold text-white">{refStats?.total_referrals ?? 0}</div>
+        <div class="text-xs text-gray-400 mt-1">Friends invited</div>
+      </div>
+      <div class="bg-gray-900 border border-emerald-800/40 rounded-xl p-5 text-center">
+        <div class="text-3xl font-bold text-emerald-300">{refStats?.paid_bonus_credits ?? 0}</div>
+        <div class="text-xs text-gray-400 mt-1">Credits earned</div>
+      </div>
+      <div class="bg-gray-900 border border-yellow-800/30 rounded-xl p-5 text-center">
+        <div class="text-3xl font-bold text-yellow-300">{refStats?.pending_bonus_credits ?? 0}</div>
+        <div class="text-xs text-gray-400 mt-1">Credits pending</div>
+      </div>
+    </div>
+
+    <!-- Share buttons -->
+    <div class="bg-gray-900 border border-gray-800 rounded-2xl p-5 mb-8">
+      <div class="text-sm text-gray-400 mb-3">Share via</div>
+      <div class="flex flex-wrap gap-2">
+        <a
+          id="share-twitter"
+          href="#"
+          target="_blank"
+          rel="noopener"
+          class="flex items-center gap-2 px-4 py-2 bg-sky-900/40 border border-sky-700/40 hover:border-sky-500/60 text-sky-300 text-sm rounded-lg transition-colors"
+        >
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+          X / Twitter
+        </a>
+        <a
+          id="share-linkedin"
+          href="#"
+          target="_blank"
+          rel="noopener"
+          class="flex items-center gap-2 px-4 py-2 bg-blue-900/40 border border-blue-700/40 hover:border-blue-500/60 text-blue-300 text-sm rounded-lg transition-colors"
+        >
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
+          LinkedIn
+        </a>
+        <button
+          id="share-native"
+          class="flex items-center gap-2 px-4 py-2 bg-gray-800 border border-gray-700 hover:border-gray-500 text-gray-300 text-sm rounded-lg transition-colors"
+        >
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" /></svg>
+          Share
+        </button>
+      </div>
+    </div>
+
+    <!-- Referral list -->
+    {(referrals?.length ?? 0) > 0 && (
+      <div>
+        <h2 class="text-base font-semibold mb-4">Your referrals</h2>
+        <div class="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
+          <table class="w-full text-sm">
+            <thead class="border-b border-gray-800">
+              <tr class="text-gray-500 text-xs uppercase tracking-wider">
+                <th class="text-left px-5 py-3">User</th>
+                <th class="text-left px-5 py-3">Joined</th>
+                <th class="text-left px-5 py-3">Your bonus</th>
+                <th class="text-left px-5 py-3">Status</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-800">
+              {(referrals ?? []).map((r: any) => (
+                <tr class="hover:bg-gray-800/40 transition-colors">
+                  <td class="px-5 py-3 text-gray-300">{r.referred_email ?? "Anonymous"}</td>
+                  <td class="px-5 py-3 text-gray-400 text-xs">{formatDate(r.created_at)}</td>
+                  <td class="px-5 py-3">
+                    <span class="text-emerald-400 font-semibold">+{r.referrer_bonus_credits}</span>
+                    <span class="text-gray-500 text-xs ml-1">credits</span>
+                  </td>
+                  <td class="px-5 py-3">
+                    {r.bonus_paid ? (
+                      <span class="text-xs px-2 py-0.5 rounded bg-emerald-900/40 text-emerald-400">Paid ✓</span>
+                    ) : (
+                      <span class="text-xs px-2 py-0.5 rounded bg-yellow-900/30 text-yellow-400">Pending first task</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    )}
+  </div>
+</Layout>
+
+<script>
+  const urlInput = document.getElementById("referral-url") as HTMLInputElement | null;
+  const copyBtn = document.getElementById("copy-btn");
+  const twitterBtn = document.getElementById("share-twitter") as HTMLAnchorElement | null;
+  const linkedinBtn = document.getElementById("share-linkedin") as HTMLAnchorElement | null;
+  const nativeShareBtn = document.getElementById("share-native");
+
+  const refUrl = urlInput?.value ?? "";
+  const shareText = "Join CrowdSorcerer — earn credits by completing AI tasks! Sign up with my link:";
+
+  // Copy button
+  copyBtn?.addEventListener("click", async () => {
+    await navigator.clipboard.writeText(refUrl).catch(() => {});
+    if (copyBtn) {
+      copyBtn.textContent = "Copied!";
+      setTimeout(() => { copyBtn.textContent = "Copy"; }, 2000);
+    }
+  });
+
+  // Twitter
+  if (twitterBtn) {
+    twitterBtn.href = `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText + " " + refUrl)}`;
+  }
+
+  // LinkedIn
+  if (linkedinBtn) {
+    linkedinBtn.href = `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(refUrl)}`;
+  }
+
+  // Native share (mobile)
+  if (navigator.share) {
+    nativeShareBtn?.addEventListener("click", () => {
+      navigator.share({ title: "Join CrowdSorcerer", text: shareText, url: refUrl }).catch(() => {});
+    });
+  } else {
+    nativeShareBtn?.remove();
+  }
+</script>

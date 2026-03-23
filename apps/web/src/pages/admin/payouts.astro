@@ -1,0 +1,289 @@
+---
+/**
+ * Admin payout management page — review and approve/reject worker withdrawal requests.
+ */
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Object.fromEntries(
+  Astro.cookies.getAll().map((c) => [c.name, c.value])
+));
+if (!token) return Astro.redirect("/login");
+
+const url = new URL(Astro.request.url);
+const statusFilter = url.searchParams.get("status") ?? "pending";
+const page = parseInt(url.searchParams.get("page") ?? "1");
+const PAGE_SIZE = 50;
+
+let user: any = null;
+let data: any = null;
+let error = "";
+
+try {
+  user = await apiFetch<any>("/v1/users/me", { token });
+  if (!user?.is_admin) return Astro.redirect("/dashboard");
+
+  data = await apiFetch<any>(
+    `/v1/payouts/admin/all?status=${statusFilter}&page=${page}&page_size=${PAGE_SIZE}`,
+    { token }
+  );
+} catch (e: any) {
+  error = (e as Error).message ?? "Failed to load payouts";
+}
+
+const payouts = data?.items ?? [];
+const total = data?.total ?? 0;
+const hasNext = page * PAGE_SIZE < total;
+
+const STATUS_OPTS = [
+  { value: "pending", label: "Pending", color: "text-yellow-300" },
+  { value: "processing", label: "Processing", color: "text-blue-300" },
+  { value: "paid", label: "Paid", color: "text-emerald-400" },
+  { value: "rejected", label: "Rejected", color: "text-red-400" },
+];
+
+const STATUS_STYLES: Record<string, string> = {
+  pending: "bg-yellow-900/40 text-yellow-300 border-yellow-700/40",
+  processing: "bg-blue-900/40 text-blue-300 border-blue-700/40",
+  paid: "bg-emerald-900/40 text-emerald-400 border-emerald-700/40",
+  rejected: "bg-red-900/40 text-red-400 border-red-700/40",
+};
+
+function formatDate(d: string) {
+  return new Date(d).toLocaleDateString("en-US", {
+    month: "short", day: "numeric", year: "numeric",
+    hour: "2-digit", minute: "2-digit",
+  });
+}
+
+function formatDetails(method: string, details: Record<string, string>): string {
+  if (method === "paypal") return details.email ?? "—";
+  if (method === "bank_transfer") return `${details.account_name} | ${details.iban}`;
+  if (method === "crypto") return `${details.network}: ${details.address?.slice(0, 12)}…`;
+  return JSON.stringify(details);
+}
+---
+
+<Layout title="Payout Management — Admin">
+  <div class="max-w-6xl mx-auto px-6 py-10">
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-8">
+      <div>
+        <h1 class="text-2xl font-bold">Payout Requests</h1>
+        <p class="text-gray-400 text-sm mt-0.5">Review and process worker withdrawal requests</p>
+      </div>
+      <a href="/admin" class="text-sm text-gray-400 hover:text-gray-200 transition-colors">← Admin</a>
+    </div>
+
+    {error && (
+      <div class="bg-red-900/30 border border-red-700/50 rounded-xl p-4 mb-6 text-red-300 text-sm">
+        {error}
+      </div>
+    )}
+
+    <!-- Status filter tabs -->
+    <div class="flex gap-2 mb-6 border-b border-gray-800">
+      {STATUS_OPTS.map(opt => (
+        <a
+          href={`?status=${opt.value}`}
+          class={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            statusFilter === opt.value
+              ? `border-emerald-500 ${opt.color}`
+              : "border-transparent text-gray-400 hover:text-gray-200"
+          }`}
+        >
+          {opt.label}
+        </a>
+      ))}
+    </div>
+
+    <!-- Payout table -->
+    {payouts.length === 0 ? (
+      <div class="text-center py-20 text-gray-500">
+        <div class="text-4xl mb-3">📭</div>
+        <p class="text-sm">No {statusFilter} payout requests</p>
+      </div>
+    ) : (
+      <div class="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden mb-6">
+        <table class="w-full text-sm">
+          <thead class="border-b border-gray-800">
+            <tr class="text-gray-500 text-xs uppercase tracking-wider">
+              <th class="text-left px-5 py-3">Worker</th>
+              <th class="text-left px-5 py-3">Amount</th>
+              <th class="text-left px-5 py-3">Method & Details</th>
+              <th class="text-left px-5 py-3">Requested</th>
+              <th class="text-left px-5 py-3">Status</th>
+              <th class="text-right px-5 py-3">Actions</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-800">
+            {payouts.map((p: any) => (
+              <tr class="hover:bg-gray-800/30 transition-colors" data-payout-id={p.id}>
+                <td class="px-5 py-3">
+                  <div class="font-mono text-xs text-gray-400">{p.worker_id?.slice(0, 8)}…</div>
+                </td>
+                <td class="px-5 py-3">
+                  <div class="font-semibold text-emerald-400">${p.usd_amount.toFixed(2)}</div>
+                  <div class="text-xs text-gray-500">{p.credits_requested.toLocaleString()} cr</div>
+                </td>
+                <td class="px-5 py-3">
+                  <div class="text-xs capitalize text-gray-300 mb-0.5">{p.payout_method.replace(/_/g, " ")}</div>
+                  <div class="text-xs text-gray-500 font-mono truncate max-w-[200px]">
+                    {formatDetails(p.payout_method, p.payout_details ?? {})}
+                  </div>
+                </td>
+                <td class="px-5 py-3 text-gray-400 text-xs">{formatDate(p.created_at)}</td>
+                <td class="px-5 py-3">
+                  <span class={`text-xs px-2 py-0.5 rounded border capitalize ${STATUS_STYLES[p.status] ?? "bg-gray-800 text-gray-400 border-gray-700"}`}>
+                    {p.status}
+                  </span>
+                  {p.admin_note && (
+                    <div class="text-xs text-gray-500 mt-1 italic">{p.admin_note}</div>
+                  )}
+                </td>
+                <td class="px-5 py-3 text-right">
+                  {(p.status === "pending" || p.status === "processing") && (
+                    <div class="flex gap-2 justify-end">
+                      {p.status === "pending" && (
+                        <button
+                          class="text-xs px-2.5 py-1 bg-blue-900/40 border border-blue-700/40 text-blue-300 rounded hover:bg-blue-900/60 transition-colors review-payout"
+                          data-id={p.id}
+                          data-action="processing"
+                        >
+                          Mark processing
+                        </button>
+                      )}
+                      <button
+                        class="text-xs px-2.5 py-1 bg-emerald-900/40 border border-emerald-700/40 text-emerald-300 rounded hover:bg-emerald-900/60 transition-colors review-payout"
+                        data-id={p.id}
+                        data-action="paid"
+                      >
+                        Mark paid ✓
+                      </button>
+                      <button
+                        class="text-xs px-2.5 py-1 bg-red-900/40 border border-red-700/40 text-red-400 rounded hover:bg-red-900/60 transition-colors review-payout"
+                        data-id={p.id}
+                        data-action="rejected"
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )}
+
+    <!-- Pagination -->
+    {(page > 1 || hasNext) && (
+      <div class="flex justify-center gap-3 mt-4">
+        {page > 1 && (
+          <a href={`?status=${statusFilter}&page=${page - 1}`}
+             class="px-4 py-2 bg-gray-900 border border-gray-700 hover:border-gray-500 rounded-lg text-sm transition-colors">
+            ← Prev
+          </a>
+        )}
+        <span class="px-4 py-2 text-sm text-gray-400">Page {page} · {total} total</span>
+        {hasNext && (
+          <a href={`?status=${statusFilter}&page=${page + 1}`}
+             class="px-4 py-2 bg-gray-900 border border-gray-700 hover:border-gray-500 rounded-lg text-sm transition-colors">
+            Next →
+          </a>
+        )}
+      </div>
+    )}
+
+    <!-- Note modal (hidden) -->
+    <div id="note-modal" class="fixed inset-0 bg-black/70 z-50 hidden flex items-center justify-center">
+      <div class="bg-gray-900 border border-gray-700 rounded-2xl p-6 w-full max-w-md mx-4">
+        <h3 class="text-base font-semibold mb-4" id="modal-title">Review payout</h3>
+        <textarea
+          id="modal-note"
+          rows="3"
+          placeholder="Optional note for the worker…"
+          class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 mb-4"
+        ></textarea>
+        <div class="flex gap-3">
+          <button id="modal-confirm"
+            class="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium rounded-lg transition-colors">
+            Confirm
+          </button>
+          <button id="modal-cancel"
+            class="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm rounded-lg transition-colors">
+            Cancel
+          </button>
+        </div>
+        <div id="modal-error" class="text-red-400 text-sm mt-3 hidden"></div>
+      </div>
+    </div>
+  </div>
+</Layout>
+
+<script>
+  const cookieToken = document.cookie.split(";").find(c => c.trim().startsWith("token="))?.split("=")[1];
+
+  let pendingPayoutId: string | null = null;
+  let pendingAction: string | null = null;
+
+  const modal = document.getElementById("note-modal")!;
+  const modalTitle = document.getElementById("modal-title")!;
+  const modalNote = document.getElementById("modal-note") as HTMLTextAreaElement;
+  const modalConfirm = document.getElementById("modal-confirm")!;
+  const modalCancel = document.getElementById("modal-cancel")!;
+  const modalError = document.getElementById("modal-error")!;
+
+  document.querySelectorAll(".review-payout").forEach(btn => {
+    btn.addEventListener("click", () => {
+      pendingPayoutId = (btn as HTMLElement).dataset.id ?? null;
+      pendingAction = (btn as HTMLElement).dataset.action ?? null;
+      modalTitle.textContent = `Confirm: mark as "${pendingAction}"`;
+      modalNote.value = "";
+      modalError.classList.add("hidden");
+      modal.classList.remove("hidden");
+    });
+  });
+
+  modalCancel.addEventListener("click", () => {
+    modal.classList.add("hidden");
+    pendingPayoutId = null;
+    pendingAction = null;
+  });
+
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) {
+      modal.classList.add("hidden");
+    }
+  });
+
+  modalConfirm.addEventListener("click", async () => {
+    if (!pendingPayoutId || !pendingAction) return;
+    modalError.classList.add("hidden");
+    modalConfirm.textContent = "Processing…";
+    (modalConfirm as HTMLButtonElement).disabled = true;
+
+    try {
+      const res = await fetch(`/api/v1/payouts/${pendingPayoutId}/review`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${cookieToken}`,
+        },
+        body: JSON.stringify({
+          status: pendingAction,
+          admin_note: modalNote.value.trim() || null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail ?? "Failed to update");
+      window.location.reload();
+    } catch (err: any) {
+      modalError.textContent = err.message;
+      modalError.classList.remove("hidden");
+      modalConfirm.textContent = "Confirm";
+      (modalConfirm as HTMLButtonElement).disabled = false;
+    }
+  });
+</script>
