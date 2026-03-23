@@ -77,6 +77,16 @@ try {
   comments = [];
 }
 
+// Load task dependencies (upstream) + dependents (downstream)
+let dependencies: any[] = [];
+let dependents: any[] = [];
+try {
+  [dependencies, dependents] = await Promise.all([
+    apiFetch<any[]>(`/v1/tasks/${id}/dependencies`, { token }),
+    apiFetch<any[]>(`/v1/tasks/${id}/dependents`, { token }),
+  ]);
+} catch (_) {}
+
 // Advance requester onboarding: view_results step (fire-and-forget, non-blocking)
 if (task?.status === "completed") {
   apiFetch("/v1/requester-onboarding/steps/view_results/complete", {
@@ -960,6 +970,126 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
           </div>
         )}
 
+        <!-- ── Task Dependency Graph ── -->
+        <div id="task-dependencies" class="bg-gray-900 border border-gray-800 rounded-xl mb-4">
+          <div class="px-5 py-3 border-b border-gray-800 flex items-center justify-between">
+            <h2 class="text-sm font-semibold text-gray-300">🔗 Dependencies</h2>
+            {task.status === "pending" && (
+              <button
+                id="add-dep-btn"
+                class="text-xs px-3 py-1.5 bg-violet-600 hover:bg-violet-500 text-white rounded-lg transition-colors"
+              >
+                + Add dependency
+              </button>
+            )}
+          </div>
+
+          <!-- Add dependency form (hidden by default) -->
+          {task.status === "pending" && (
+            <div id="add-dep-form" class="hidden px-5 py-4 border-b border-gray-800">
+              <p class="text-xs text-gray-400 mb-3">
+                Enter the task ID that must complete <em>before</em> this task runs.
+              </p>
+              <div class="flex items-center gap-2">
+                <input
+                  id="dep-task-id-input"
+                  type="text"
+                  placeholder="Upstream task UUID"
+                  class="flex-1 bg-gray-800 border border-gray-700 text-gray-200 text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-violet-500 font-mono"
+                />
+                <button
+                  id="dep-save-btn"
+                  class="px-3 py-2 bg-violet-600 hover:bg-violet-500 text-white text-sm rounded-lg transition-colors"
+                >
+                  Add
+                </button>
+                <button
+                  id="dep-cancel-btn"
+                  class="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+              <p id="dep-error" class="hidden text-xs text-red-400 mt-2"></p>
+            </div>
+          )}
+
+          <div class="px-5 py-4">
+            {/* Upstream: what this task waits for */}
+            {dependencies.length > 0 && (
+              <div class="mb-4">
+                <p class="text-xs text-gray-500 uppercase tracking-wide mb-2">Waiting for</p>
+                <div class="space-y-2">
+                  {dependencies.map((dep: any) => (
+                    <div class="flex items-center justify-between gap-3 bg-gray-800/50 rounded-lg px-3 py-2">
+                      <div class="flex items-center gap-2 min-w-0">
+                        <span class={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${
+                          dep.depends_on_status === "completed" ? "bg-green-400"
+                          : dep.depends_on_status === "failed" ? "bg-red-400"
+                          : dep.depends_on_status === "running" ? "bg-yellow-400"
+                          : "bg-gray-500"
+                        }`} />
+                        <a
+                          href={`/dashboard/tasks/${dep.depends_on_id}`}
+                          class="text-sm text-violet-400 hover:text-violet-300 truncate font-mono"
+                        >
+                          {dep.depends_on_title || dep.depends_on_id}
+                        </a>
+                        <span class="text-xs text-gray-500 flex-shrink-0">
+                          {dep.depends_on_status}
+                        </span>
+                      </div>
+                      {task.status === "pending" && (
+                        <button
+                          class="dep-remove-btn text-xs text-red-500 hover:text-red-400 flex-shrink-0"
+                          data-dep-id={dep.id}
+                          title="Remove dependency"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Downstream: what's waiting for this task */}
+            {dependents.length > 0 && (
+              <div>
+                <p class="text-xs text-gray-500 uppercase tracking-wide mb-2">Unblocks</p>
+                <div class="space-y-2">
+                  {dependents.map((dep: any) => (
+                    <div class="flex items-center gap-2 bg-gray-800/50 rounded-lg px-3 py-2">
+                      <span class={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${
+                        dep.depends_on_status === "completed" ? "bg-green-400"
+                        : dep.depends_on_status === "failed" ? "bg-red-400"
+                        : "bg-gray-500"
+                      }`} />
+                      <a
+                        href={`/dashboard/tasks/${dep.task_id}`}
+                        class="text-sm text-violet-400 hover:text-violet-300 truncate font-mono"
+                      >
+                        {dep.depends_on_title || dep.task_id}
+                      </a>
+                      <span class="text-xs text-gray-500">
+                        {dep.depends_on_status}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {dependencies.length === 0 && dependents.length === 0 && (
+              <p class="text-sm text-gray-500 text-center py-2">
+                No dependencies configured.
+                {task.status === "pending" && " Add one to block this task until another finishes."}
+              </p>
+            )}
+          </div>
+        </div>
+
         <!-- Comments / Discussion -->
         <div id="comments" class="bg-gray-900 border border-gray-800 rounded-xl mb-4">
           <div class="px-5 py-3 border-b border-gray-800 flex items-center justify-between">
@@ -1212,6 +1342,75 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
         }
       });
     }
+  </script>
+
+  {/* Task dependency management script */}
+  <script define:vars={{ taskId: id }}>
+    const addDepBtn = document.getElementById("add-dep-btn");
+    const addDepForm = document.getElementById("add-dep-form");
+    const depSaveBtn = document.getElementById("dep-save-btn");
+    const depCancelBtn = document.getElementById("dep-cancel-btn");
+    const depInput = document.getElementById("dep-task-id-input");
+    const depError = document.getElementById("dep-error");
+
+    addDepBtn?.addEventListener("click", () => {
+      addDepForm?.classList.toggle("hidden");
+      depInput?.focus();
+    });
+    depCancelBtn?.addEventListener("click", () => {
+      addDepForm?.classList.add("hidden");
+      if (depError) depError.classList.add("hidden");
+      if (depInput) depInput.value = "";
+    });
+    depSaveBtn?.addEventListener("click", async () => {
+      const depends_on_id = depInput?.value?.trim();
+      if (!depends_on_id) {
+        if (depError) { depError.textContent = "Please enter a task ID."; depError.classList.remove("hidden"); }
+        return;
+      }
+      depSaveBtn.disabled = true;
+      depSaveBtn.textContent = "Adding…";
+      try {
+        const res = await fetch(`/api/tasks/${taskId}/dependencies`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ depends_on_id }),
+        });
+        if (!res.ok) {
+          const d = await res.json().catch(() => ({}));
+          throw new Error(d.detail ?? "Failed to add dependency");
+        }
+        location.reload();
+      } catch (e) {
+        if (depError) { depError.textContent = e.message; depError.classList.remove("hidden"); }
+        depSaveBtn.disabled = false;
+        depSaveBtn.textContent = "Add";
+      }
+    });
+
+    // Remove dependency buttons
+    document.querySelectorAll(".dep-remove-btn").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const depId = btn.dataset.depId;
+        if (!confirm("Remove this dependency?")) return;
+        btn.disabled = true;
+        try {
+          const res = await fetch(`/api/tasks/${taskId}/dependencies/${depId}`, {
+            method: "DELETE",
+          });
+          if (res.ok || res.status === 204) {
+            location.reload();
+          } else {
+            const d = await res.json().catch(() => ({}));
+            alert(d.detail ?? "Failed to remove dependency");
+            btn.disabled = false;
+          }
+        } catch {
+          alert("Network error");
+          btn.disabled = false;
+        }
+      });
+    });
   </script>
 
   {/* SSE client script — only loaded for non-terminal tasks */}

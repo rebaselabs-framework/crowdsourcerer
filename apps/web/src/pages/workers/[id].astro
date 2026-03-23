@@ -9,10 +9,14 @@ import { apiFetch } from "@/lib/api";
 const { id } = Astro.params as { id: string };
 
 let profile: any = null;
+let verifiedSkills: any[] = [];
 let error = "";
 
 try {
-  profile = await apiFetch<any>(`/v1/workers/${id}/profile`);
+  [profile, verifiedSkills] = await Promise.all([
+    apiFetch<any>(`/v1/workers/${id}/profile`),
+    apiFetch<any[]>(`/v1/workers/${id}/verified-skills`).catch(() => []),
+  ]);
 } catch (e: any) {
   error = e.message ?? "Worker not found";
 }
@@ -136,34 +140,64 @@ const title = profile ? `${profile.name ?? "Worker"} — CrowdSorcerer` : "Worke
           ))}
         </div>
 
+        {/* ── Verified Skills highlight ────────────────────── */}
+        {verifiedSkills.length > 0 && (
+          <div class="bg-amber-900/20 border border-amber-700/50 rounded-xl p-6">
+            <h2 class="text-lg font-semibold text-amber-300 mb-1 flex items-center gap-2">
+              🏅 Verified Skills
+            </h2>
+            <p class="text-xs text-amber-600 mb-4">
+              Achieved Proficient+ level with ≥90% accuracy and verified task history
+            </p>
+            <div class="flex flex-wrap gap-2">
+              {verifiedSkills.map((s: any) => (
+                <span class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-900/40 border border-amber-700/60 rounded-lg text-sm font-medium text-amber-200">
+                  🏅 {s.task_type.replace(/_/g, " ")}
+                  <span class="text-xs text-amber-400 ml-1">
+                    {s.proficiency_label} · {s.tasks_completed} tasks
+                  </span>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* ── Skills ──────────────────────────────────────────── */}
         {profile.skills?.length > 0 && (
           <div class="bg-gray-800 border border-gray-700 rounded-xl p-6">
             <h2 class="text-lg font-semibold text-white mb-4">Skills</h2>
             <div class="space-y-3">
-              {profile.skills.map((skill: any) => (
-                <div class="flex items-center justify-between">
-                  <div class="flex items-center gap-2">
-                    <span class="text-sm font-medium text-gray-200">
-                      {skill.task_type.replace(/_/g, " ")}
-                    </span>
-                    {skill.certified && (
-                      <span class="text-xs bg-emerald-900/50 text-emerald-400 border border-emerald-700/50 px-1.5 py-0.5 rounded">
-                        ✓ Certified
+              {profile.skills.map((skill: any) => {
+                const isVerified = verifiedSkills.some((vs: any) => vs.task_type === skill.task_type);
+                return (
+                  <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                      <span class="text-sm font-medium text-gray-200">
+                        {skill.task_type.replace(/_/g, " ")}
                       </span>
-                    )}
-                  </div>
-                  <div class="flex items-center gap-3">
-                    <span class="text-xs text-gray-400">{skill.tasks_completed} tasks</span>
-                    {/* Proficiency dots */}
-                    <div class="flex gap-1">
-                      {[1,2,3,4,5].map(i => (
-                        <div class={`w-2 h-2 rounded-full ${i <= skill.proficiency_level ? "bg-indigo-400" : "bg-gray-600"}`} />
-                      ))}
+                      {isVerified && (
+                        <span class="text-xs bg-amber-900/50 text-amber-400 border border-amber-700/50 px-1.5 py-0.5 rounded" title="Verified skill">
+                          🏅 Verified
+                        </span>
+                      )}
+                      {skill.certified && !isVerified && (
+                        <span class="text-xs bg-emerald-900/50 text-emerald-400 border border-emerald-700/50 px-1.5 py-0.5 rounded">
+                          ✓ Certified
+                        </span>
+                      )}
+                    </div>
+                    <div class="flex items-center gap-3">
+                      <span class="text-xs text-gray-400">{skill.tasks_completed} tasks</span>
+                      {/* Proficiency dots */}
+                      <div class="flex gap-1">
+                        {[1,2,3,4,5].map(i => (
+                          <div class={`w-2 h-2 rounded-full ${i <= skill.proficiency_level ? (isVerified ? "bg-amber-400" : "bg-indigo-400") : "bg-gray-600"}`} />
+                        ))}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}

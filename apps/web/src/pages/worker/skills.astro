@@ -26,6 +26,8 @@ try {
 const skills: any[] = skillsData?.skills ?? [];
 const recTasks: any[] = recommended?.items ?? [];
 const topSkill: string | null = skillsData?.top_skill ?? null;
+const verifiedCount: number = skillsData?.verified_count ?? 0;
+const verifiedSkills = skills.filter((s: any) => s.verified);
 
 const HUMAN_TYPES = [
   "label_image", "label_text", "rate_quality", "verify_fact",
@@ -77,6 +79,37 @@ const TASK_ICONS: Record<string, string> = {
       </a>
     </div>
 
+    {/* Verified skills banner */}
+    {verifiedCount > 0 && (
+      <div class="bg-amber-900/20 border border-amber-700/50 rounded-xl p-4 mb-6 flex items-center gap-3">
+        <span class="text-2xl">🏅</span>
+        <div>
+          <p class="text-sm font-semibold text-amber-300">
+            {verifiedCount} Verified {verifiedCount === 1 ? "Skill" : "Skills"}
+          </p>
+          <p class="text-xs text-amber-500 mt-0.5">
+            You've achieved Proficient+ status with 90%+ accuracy on:
+            {verifiedSkills.map((s: any, i: number) => (
+              <span>
+                {i > 0 && ", "}
+                <span class="font-medium text-amber-300">{s.task_type.replace(/_/g, " ")}</span>
+              </span>
+            ))}
+          </p>
+        </div>
+      </div>
+    )}
+
+    {/* Verification progress hint for near-threshold skills */}
+    {skills.some((s: any) => !s.verified && s.proficiency_level >= 3 && s.tasks_completed >= 8) && (
+      <div class="bg-blue-900/20 border border-blue-700/50 rounded-xl p-4 mb-6">
+        <p class="text-xs text-blue-300">
+          💡 <strong>Earn a Verified badge</strong> — reach Proficient (level 4) with ≥90% accuracy
+          and ≥15 completions on any skill. Verified skills appear on your public profile.
+        </p>
+      </div>
+    )}
+
     {error && (
       <div class="text-red-400 bg-red-900/20 border border-red-800/40 rounded-xl p-6 mb-6 text-center">
         {error}
@@ -107,6 +140,9 @@ const TASK_ICONS: Record<string, string> = {
                   <span class="text-2xl">{TASK_ICONS[skill.task_type] ?? "🔧"}</span>
                   <div class="text-sm font-semibold capitalize">
                     {skill.task_type.replace(/_/g, " ")}
+                    {skill.verified && (
+                      <span class="ml-1 text-amber-400" title={`Verified ${skill.verified_at ? new Date(skill.verified_at).toLocaleDateString() : ''}`}>🏅</span>
+                    )}
                   </div>
                 </div>
                 <span class={`text-xs px-2 py-0.5 rounded-full border font-medium ${BADGE_STYLE[skill.proficiency_level] ?? BADGE_STYLE[1]}`}>

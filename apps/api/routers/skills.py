@@ -21,6 +21,11 @@ from models.schemas import (
     PaginatedMarketplaceTasks,
 )
 
+# Auto-verify thresholds
+_VERIFY_MIN_PROFICIENCY = 4
+_VERIFY_MIN_ACCURACY = 0.90
+_VERIFY_MIN_COMPLETED = 15
+
 logger = structlog.get_logger()
 router = APIRouter(prefix="/v1/workers", tags=["skills"])
 
@@ -118,6 +123,24 @@ async def update_worker_skill(
     )
     skill.updated_at = now
 
+    # Auto-verify: upgrade to verified once thresholds are met
+    if (
+        not skill.verified
+        and skill.proficiency_level >= _VERIFY_MIN_PROFICIENCY
+        and skill.accuracy is not None
+        and skill.accuracy >= _VERIFY_MIN_ACCURACY
+        and skill.tasks_completed >= _VERIFY_MIN_COMPLETED
+    ):
+        skill.verified = True
+        skill.verified_at = now
+        logger.info(
+            "skill_auto_verified",
+            worker_id=str(worker_id),
+            task_type=task_type,
+            proficiency=skill.proficiency_level,
+            accuracy=skill.accuracy,
+        )
+
 
 # ─── Endpoints ────────────────────────────────────────────────────────────
 
@@ -149,6 +172,8 @@ async def get_my_skills(
                 proficiency_level=s.proficiency_level,
                 proficiency_label=PROFICIENCY_LABELS.get(s.proficiency_level, "Novice"),
                 last_task_at=s.last_task_at,
+                verified=s.verified,
+                verified_at=s.verified_at,
             )
         )
 
@@ -176,10 +201,13 @@ async def get_my_skills(
     except Exception:
         pass
 
+    verified_count = sum(1 for s in skills if s.verified)
+
     return WorkerSkillsOut(
         skills=skills,
         top_skill=top_skill,
         strongest_category=strongest_category,
+        verified_count=verified_count,
     )
 
 
@@ -267,3 +295,49 @@ async def get_recommended_tasks(
         )
 
     return PaginatedMarketplaceTasks(items=items, total=total)
+
+
+@router.get("/{worker_id}/verified-skills", response_model=list[WorkerSkillOut])
+async def get_worker_verified_skills(
+    worker_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Public endpoint — return the verified skills for a worker profile.
+    Only returns skills where verified=True.
+    """
+    try:
+        uid = uuid.UUID(worker_id)
+    except ValueError:
+        return []
+
+    # Ensure the worker exists and their profile is public
+    user_result = await db.execute(select(UserDB).where(UserDB.id == uid))
+    user = user_result.scalar_one_or_none()
+    if not user or not user.profile_public:
+        return []
+
+    result = await db.execute(
+        select(WorkerSkillDB)
+        .where(WorkerSkillDB.worker_id == uid, WorkerSkillDB.verified == True)  # noqa: E712
+        .order_by(WorkerSkillDB.proficiency_level.desc(), WorkerSkillDB.tasks_completed.desc())
+    )
+    rows = result.scalars().all()
+
+    return [
+        WorkerSkillOut(
+            task_type=s.task_type,
+            tasks_completed=s.tasks_completed,
+            tasks_approved=s.tasks_approved,
+            tasks_rejected=s.tasks_rejected,
+            accuracy=s.accuracy,
+            avg_response_minutes=s.avg_response_minutes,
+            credits_earned=s.credits_earned,
+            proficiency_level=s.proficiency_level,
+            proficiency_label=PROFICIENCY_LABELS.get(s.proficiency_level, "Novice"),
+            last_task_at=s.last_task_at,
+            verified=True,
+            verified_at=s.verified_at,
+        )
+        for s in rows
+    ]

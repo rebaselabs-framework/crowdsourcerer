@@ -574,6 +574,8 @@ class WorkerSkillOut(BaseModel):
     proficiency_level: int
     proficiency_label: str
     last_task_at: Optional[datetime]
+    verified: bool = False
+    verified_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
 
@@ -582,6 +584,24 @@ class WorkerSkillsOut(BaseModel):
     skills: list[WorkerSkillOut]
     top_skill: Optional[str]          # task_type with highest proficiency
     strongest_category: Optional[str]  # "human" or "ai"
+    verified_count: int = 0           # number of verified skills
+
+
+# ─── Task Dependencies ──────────────────────────────────────────────────────
+
+class TaskDependencyOut(BaseModel):
+    id: UUID
+    task_id: UUID
+    depends_on_id: UUID
+    depends_on_title: Optional[str] = None
+    depends_on_status: Optional[str] = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class AddDependencyRequest(BaseModel):
+    depends_on_id: UUID
 
 
 # ─── Task Analytics ────────────────────────────────────────────────────────

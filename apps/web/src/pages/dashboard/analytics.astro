@@ -58,8 +58,8 @@ function pct(a: number, total: number) {
         <h1 class="text-3xl font-bold text-gray-900">📊 Analytics</h1>
         <p class="text-gray-500 mt-1">Track your task usage, costs, and performance</p>
       </div>
-      <!-- Filters -->
-      <div class="flex items-center gap-3">
+      <!-- Filters + Export -->
+      <div class="flex flex-wrap items-center gap-3">
         <select
           onchange="applyFilter('days', this.value)"
           class="border border-gray-300 rounded-lg px-3 py-2 text-sm"
@@ -79,6 +79,23 @@ function pct(a: number, total: number) {
             ))}
           </select>
         )}
+        <!-- Export buttons -->
+        <div class="flex items-center gap-2">
+          <a
+            href={`/api/analytics/export?fmt=csv&days=${days}${orgIdParam ? `&org_id=${orgIdParam}` : ''}`}
+            class="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+            title="Export as CSV"
+          >
+            ⬇️ CSV
+          </a>
+          <a
+            href={`/api/analytics/export?fmt=json&days=${days}${orgIdParam ? `&org_id=${orgIdParam}` : ''}`}
+            class="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+            title="Export as JSON"
+          >
+            ⬇️ JSON
+          </a>
+        </div>
       </div>
     </div>
 

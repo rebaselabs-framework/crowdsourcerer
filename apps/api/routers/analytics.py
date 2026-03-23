@@ -1,11 +1,15 @@
 """Requester analytics — per-user, per-org cost and task breakdowns."""
 from __future__ import annotations
+import csv
+import io
+import json
 from datetime import datetime, timezone, timedelta, date
 from typing import Optional
 from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, text, case
 
@@ -339,4 +343,89 @@ async def cost_breakdown(
         by_execution_mode=by_execution_mode,
         by_month=by_month,
         top_task_types=top_task_types,
+    )
+
+
+# ── Analytics Export ────────────────────────────────────────────────────────────
+
+_EXPORT_COLUMNS = [
+    "id", "type", "execution_mode", "status", "priority",
+    "credits_used", "duration_ms", "created_at", "started_at", "completed_at",
+]
+
+
+@router.get("/export")
+async def export_analytics(
+    fmt: str = Query("csv", regex="^(csv|json)$"),
+    days: int = Query(30, ge=1, le=365),
+    org_id: Optional[UUID] = None,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(require_scope(SCOPE_ANALYTICS_READ)),
+):
+    """
+    Export task analytics as CSV or JSON.
+
+    Query params:
+    - fmt: csv (default) or json
+    - days: look-back window (1–365, default 30)
+    - org_id: filter to org tasks (must be a member)
+    """
+    uid = UUID(user_id)
+    since = utcnow() - timedelta(days=days)
+
+    # Build filters
+    filters = [TaskDB.user_id == uid, TaskDB.created_at >= since]
+    if org_id:
+        mem_result = await db.execute(
+            select(OrgMemberDB).where(OrgMemberDB.org_id == org_id, OrgMemberDB.user_id == uid)
+        )
+        if not mem_result.scalar_one_or_none():
+            raise HTTPException(status_code=403, detail="Not a member of this organization")
+        filters = [TaskDB.org_id == org_id, TaskDB.created_at >= since]
+
+    result = await db.execute(
+        select(TaskDB)
+        .where(*filters)
+        .order_by(TaskDB.created_at.desc())
+        .limit(10_000)
+    )
+    tasks = result.scalars().all()
+
+    def _fmt_dt(dt: Optional[datetime]) -> str:
+        return dt.isoformat() if dt else ""
+
+    rows = [
+        {
+            "id": str(t.id),
+            "type": t.type,
+            "execution_mode": t.execution_mode,
+            "status": t.status,
+            "priority": t.priority,
+            "credits_used": t.credits_used or 0,
+            "duration_ms": t.duration_ms or 0,
+            "created_at": _fmt_dt(t.created_at),
+            "started_at": _fmt_dt(t.started_at),
+            "completed_at": _fmt_dt(t.completed_at),
+        }
+        for t in tasks
+    ]
+
+    if fmt == "json":
+        content = json.dumps({"tasks": rows, "count": len(rows), "days": days}, indent=2)
+        return StreamingResponse(
+            iter([content]),
+            media_type="application/json",
+            headers={"Content-Disposition": f'attachment; filename="analytics_{days}d.json"'},
+        )
+
+    # CSV
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=_EXPORT_COLUMNS)
+    writer.writeheader()
+    writer.writerows(rows)
+    buf.seek(0)
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="analytics_{days}d.csv"'},
     )

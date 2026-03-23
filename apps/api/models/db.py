@@ -411,6 +411,9 @@ class WorkerSkillDB(Base):
     proficiency_level = Column(Integer, default=1, nullable=False)  # 1–5
     match_weight = Column(Float, default=1.0, nullable=True)         # routing weight modifier
     last_task_at = Column(DateTime(timezone=True), nullable=True)
+    # Skill verification — auto-granted at proficiency 4+ with ≥90% accuracy and ≥15 completions
+    verified = Column(Boolean, default=False, nullable=False)
+    verified_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
@@ -1198,3 +1201,29 @@ class WebhookPayloadTemplateDB(Base):
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
 
     user = relationship("UserDB", backref="webhook_payload_templates")
+
+
+class TaskDependencyDB(Base):
+    """
+    Task dependency edges — task_id cannot run until depends_on_id is completed.
+    When all upstream tasks complete, the dependent task is unblocked by the sweeper.
+    """
+    __tablename__ = "task_dependencies"
+    __table_args__ = (
+        UniqueConstraint("task_id", "depends_on_id", name="uq_task_dependency"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    task_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("tasks.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    depends_on_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("tasks.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)

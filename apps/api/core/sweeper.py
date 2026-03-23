@@ -22,7 +22,7 @@ import structlog
 from sqlalchemy import select, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from models.db import TaskDB, TaskAssignmentDB, UserDB, SLABreachDB
+from models.db import TaskDB, TaskAssignmentDB, UserDB, SLABreachDB, TaskDependencyDB
 from core.webhooks import fire_webhook_for_task
 
 logger = structlog.get_logger()
@@ -482,6 +482,82 @@ async def _notify_scheduled_human_task(task_type: str, priority: str, reward_cre
             pass
 
 
+async def _sweep_task_dependencies(session_factory: async_sessionmaker) -> int:
+    """
+    Unblock pending tasks whose dependency tasks have all reached a terminal state
+    (completed or failed).
+
+    For each pending task that has at least one dependency edge, check if every
+    upstream task is in {completed, failed}.  If so, unblock the dependent task:
+      - ai  → queued  (background executor picks it up)
+      - human → open  (visible in marketplace)
+
+    Returns the number of tasks unblocked this sweep.
+    """
+    from workers.router import execute_task
+    unblocked = 0
+
+    async with session_factory() as db:
+        try:
+            # Find all pending tasks that have at least one dependency
+            pending_with_deps_result = await db.execute(
+                select(TaskDependencyDB.task_id).distinct()
+            )
+            dep_task_ids = [r for r, in pending_with_deps_result.fetchall()]
+            if not dep_task_ids:
+                return 0
+
+            tasks_result = await db.execute(
+                select(TaskDB).where(
+                    TaskDB.id.in_(dep_task_ids),
+                    TaskDB.status == "pending",
+                )
+            )
+            pending_tasks = tasks_result.scalars().all()
+
+            TERMINAL = {"completed", "failed", "cancelled"}
+
+            for task in pending_tasks:
+                # Load all upstream dep statuses
+                deps_result = await db.execute(
+                    select(TaskDependencyDB, TaskDB)
+                    .join(TaskDB, TaskDependencyDB.depends_on_id == TaskDB.id)
+                    .where(TaskDependencyDB.task_id == task.id)
+                )
+                pairs = deps_result.all()
+                if not pairs:
+                    continue  # no deps — should not be here
+
+                # All upstreams must be terminal
+                all_done = all(upstream.status in TERMINAL for _, upstream in pairs)
+                if not all_done:
+                    continue
+
+                # Unblock!
+                try:
+                    if task.execution_mode == "ai":
+                        task.status = "queued"
+                        await db.commit()
+                        asyncio.create_task(_run_scheduled_ai_task(str(task.id), str(task.user_id)))
+                    else:
+                        task.status = "open"
+                        await db.commit()
+                    unblocked += 1
+                    logger.info(
+                        "sweeper.dependency_unblocked",
+                        task_id=str(task.id),
+                        mode=task.execution_mode,
+                    )
+                except Exception:  # noqa: BLE001
+                    logger.exception("sweeper.dependency_unblock_error", task_id=str(task.id))
+                    await db.rollback()
+
+        except Exception:  # noqa: BLE001
+            logger.exception("sweeper.dependency_sweep_error")
+
+    return unblocked
+
+
 async def run_sweeper(session_factory: async_sessionmaker, interval: int = SWEEP_INTERVAL_SECONDS):
     """Infinite loop: sweep, sleep, repeat. Designed to run as an asyncio background task."""
     logger.info("sweeper.started", interval_seconds=interval)
@@ -502,6 +578,14 @@ async def run_sweeper(session_factory: async_sessionmaker, interval: int = SWEEP
                 logger.info("sweeper.scheduled_activated", count=activated)
         except Exception:  # noqa: BLE001
             logger.exception("sweeper.scheduled_check_error")
+
+        # Unblock tasks whose dependencies are all complete
+        try:
+            unblocked = await _sweep_task_dependencies(session_factory)
+            if unblocked:
+                logger.info("sweeper.dependency_unblocked_total", count=unblocked)
+        except Exception:  # noqa: BLE001
+            logger.exception("sweeper.dependency_check_error")
 
         # Check SLA breaches on every sweep pass
         try:
