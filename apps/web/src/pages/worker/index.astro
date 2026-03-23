@@ -21,6 +21,7 @@ let reputation: any = null;
 let notifications: any = null;
 
 let profileStatus: any = null;
+let unreadMessages = 0;
 
 try {
   user = await apiFetch("/v1/users/me", { token });
@@ -35,6 +36,8 @@ try {
       apiFetch("/v1/notifications?unread_only=true&page_size=3", { token }).catch(() => null),
       apiFetch("/v1/users/me/profile-status", { token }).catch(() => null),
     ]);
+    const msgCount: any = await apiFetch("/v1/tasks/messages/unread-count", { token }).catch(() => null);
+    unreadMessages = msgCount?.count ?? 0;
   }
 } catch (e) {
   // Non-fatal; page will show enrollment prompt
@@ -529,6 +532,23 @@ const TASK_TYPE_LABELS: Record<string, string> = {
               <div class="font-semibold group-hover:text-teal-300 transition-colors">Availability</div>
               <div class="text-sm text-gray-400">Set weekly schedule &amp; blackouts</div>
             </div>
+          </a>
+          <a
+            href="/worker/messages"
+            class="relative flex items-center gap-4 bg-gray-900 border border-violet-800/40 hover:border-violet-600 rounded-xl p-5 transition-colors group"
+          >
+            <span class="text-3xl">💬</span>
+            <div>
+              <div class="font-semibold group-hover:text-violet-300 transition-colors">Messages</div>
+              <div class="text-sm text-gray-400">
+                {unreadMessages > 0 ? `${unreadMessages} unread` : "Task DMs &amp; conversations"}
+              </div>
+            </div>
+            {unreadMessages > 0 && (
+              <span class="absolute top-3 right-3 w-5 h-5 rounded-full bg-violet-500 text-white text-[10px] flex items-center justify-center font-bold">
+                {unreadMessages > 9 ? "9+" : unreadMessages}
+              </span>
+            )}
           </a>
         </div>
       </div>

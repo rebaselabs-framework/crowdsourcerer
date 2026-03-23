@@ -12,16 +12,26 @@ const tag = Astro.url.searchParams.get("tag") ?? "";
 
 let tasks: any = { items: [], total: 0, page: 1, page_size: 20, has_next: false };
 let userTags: any[] = [];
+// task_id → unread DM count; task_id → total DM count
+let msgUnreadByTask: Record<string, number> = {};
+let msgTotalByTask: Record<string, number> = {};
 
 try {
   const qs = new URLSearchParams({ page: String(page), page_size: "20" });
   if (status) qs.set("status", status);
   if (type) qs.set("type", type);
   if (tag) qs.set("tag", tag);
-  [tasks, userTags] = await Promise.all([
+  const [tasksData, tagsData, msgInbox] = await Promise.all([
     apiFetch<any>(`/v1/tasks?${qs}`, { token }),
     apiFetch<any[]>("/v1/tasks/tags", { token }).catch(() => []),
+    apiFetch<any[]>("/v1/tasks/messages/inbox", { token }).catch(() => []),
   ]);
+  tasks = tasksData;
+  userTags = tagsData;
+  for (const thread of (msgInbox ?? [])) {
+    msgUnreadByTask[thread.task_id] = thread.unread_count ?? 0;
+    msgTotalByTask[thread.task_id] = thread.total_messages ?? 0;
+  }
 } catch (e) {
   return Astro.redirect("/login");
 }
@@ -262,8 +272,21 @@ const STATUS_COLORS: Record<string, string> = {
                     <div class="col-span-2 text-sm text-gray-500 truncate">
                       {new Date(t.created_at).toLocaleString()}
                     </div>
-                    <div class="col-span-2 text-sm text-gray-500">
+                    <div class="col-span-2 text-sm text-gray-500 flex items-center gap-1.5">
                       {duration != null ? `${duration}s` : "—"}
+                      {msgTotalByTask[t.id] > 0 && (
+                        <span
+                          class:list={[
+                            "inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium",
+                            msgUnreadByTask[t.id] > 0
+                              ? "bg-violet-900/60 text-violet-300 border border-violet-700/40"
+                              : "bg-gray-800 text-gray-500 border border-gray-700",
+                          ]}
+                          title={`${msgTotalByTask[t.id]} task message${msgTotalByTask[t.id] !== 1 ? "s" : ""}${msgUnreadByTask[t.id] > 0 ? ` (${msgUnreadByTask[t.id]} unread)` : ""}`}
+                        >
+                          💬 {msgUnreadByTask[t.id] > 0 ? msgUnreadByTask[t.id] : msgTotalByTask[t.id]}
+                        </span>
+                      )}
                     </div>
                   </a>
                 </div>

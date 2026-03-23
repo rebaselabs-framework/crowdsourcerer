@@ -1,0 +1,191 @@
+---
+/**
+ * Worker Messages Inbox — /worker/messages
+ * Shows all task DM conversations for the current user, grouped by (task, other_party).
+ * Sorted by most recent message first.
+ */
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Astro.cookies);
+if (!token) return Astro.redirect("/login?next=/worker/messages");
+
+type InboxThread = {
+  task_id: string;
+  task_type: string;
+  other_party: { id: string; username: string };
+  last_message_body: string;
+  last_message_at: string;
+  unread_count: number;
+  total_messages: number;
+};
+
+let threads: InboxThread[] = [];
+let error: string | null = null;
+let me: any = null;
+
+try {
+  [threads, me] = await Promise.all([
+    apiFetch<InboxThread[]>("/v1/tasks/messages/inbox", { token }),
+    apiFetch<any>("/v1/users/me", { token }),
+  ]);
+} catch (e: any) {
+  if (e.message?.includes("401")) return Astro.redirect("/login");
+  error = "Failed to load messages";
+}
+
+const TASK_TYPE_LABELS: Record<string, string> = {
+  label_image: "Label Image", label_text: "Classify Text",
+  rate_quality: "Rate Quality", verify_fact: "Verify Fact",
+  moderate_content: "Moderate Content", compare_rank: "A/B Compare",
+  answer_question: "Answer Question", transcription_review: "Review Transcript",
+  llm_generate: "LLM Generate", web_research: "Web Research",
+  entity_lookup: "Entity Lookup", document_parse: "Document Parse",
+  data_transform: "Data Transform", screenshot: "Screenshot",
+  audio_transcribe: "Audio Transcribe", pii_detect: "PII Detect",
+  code_execute: "Code Execute", web_intel: "Web Intel",
+};
+
+function taskLabel(type: string) {
+  return TASK_TYPE_LABELS[type] ?? type.replace(/_/g, " ");
+}
+
+function timeAgo(iso: string): string {
+  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (diff < 60) return "just now";
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
+const totalUnread = threads.reduce((s, t) => s + t.unread_count, 0);
+---
+
+<Layout title="Messages — CrowdSorcerer">
+  <div class="max-w-3xl mx-auto px-6 py-10">
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-8">
+      <div>
+        <h1 class="text-2xl font-bold flex items-center gap-2">
+          💬 Messages
+          {totalUnread > 0 && (
+            <span class="px-2 py-0.5 bg-violet-600 text-white text-xs font-bold rounded-full">
+              {totalUnread} unread
+            </span>
+          )}
+        </h1>
+        <p class="text-gray-400 text-sm mt-0.5">Direct messages about your tasks</p>
+      </div>
+      <a
+        href="/worker"
+        class="text-sm text-gray-400 hover:text-gray-200 transition-colors"
+      >
+        ← Dashboard
+      </a>
+    </div>
+
+    {error && (
+      <div class="bg-red-900/30 border border-red-800/40 rounded-xl p-4 text-red-300 text-sm mb-6">
+        {error}
+      </div>
+    )}
+
+    {threads.length === 0 && !error && (
+      <div class="text-center py-20">
+        <div class="text-5xl mb-4">💬</div>
+        <h2 class="text-lg font-semibold text-gray-300 mb-2">No messages yet</h2>
+        <p class="text-gray-500 text-sm max-w-sm mx-auto">
+          When you or a requester sends a task message, conversations will appear here.
+        </p>
+        <a
+          href="/worker/marketplace"
+          class="mt-6 inline-block px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium rounded-lg transition-colors"
+        >
+          Browse tasks →
+        </a>
+      </div>
+    )}
+
+    {threads.length > 0 && (
+      <div class="space-y-3" id="inbox-list">
+        {threads.map((thread) => (
+          <a
+            href={`/dashboard/tasks/${thread.task_id}`}
+            class:list={[
+              "flex items-start gap-4 rounded-xl border p-4 transition-colors group",
+              thread.unread_count > 0
+                ? "bg-violet-950/30 border-violet-800/50 hover:border-violet-600"
+                : "bg-gray-900 border-gray-800 hover:border-gray-600",
+            ]}
+          >
+            <!-- Avatar -->
+            <div class="flex-shrink-0 w-10 h-10 rounded-full bg-gray-700 flex items-center justify-center text-sm font-bold text-gray-300 uppercase">
+              {thread.other_party.username.charAt(0)}
+            </div>
+
+            <!-- Content -->
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center justify-between gap-2 mb-0.5">
+                <div class="flex items-center gap-2 min-w-0">
+                  <span class="font-semibold text-gray-100 truncate">
+                    {thread.other_party.username}
+                  </span>
+                  <span class="text-xs text-gray-500 px-1.5 py-0.5 bg-gray-800 rounded flex-shrink-0">
+                    {taskLabel(thread.task_type)}
+                  </span>
+                </div>
+                <div class="flex items-center gap-2 flex-shrink-0">
+                  {thread.unread_count > 0 && (
+                    <span class="w-5 h-5 rounded-full bg-violet-500 text-white text-[10px] flex items-center justify-center font-bold">
+                      {thread.unread_count > 9 ? "9+" : thread.unread_count}
+                    </span>
+                  )}
+                  <span class="text-xs text-gray-500">{timeAgo(thread.last_message_at)}</span>
+                </div>
+              </div>
+              <p class:list={["text-sm truncate", thread.unread_count > 0 ? "text-gray-200" : "text-gray-400"]}>
+                {thread.last_message_body}
+              </p>
+              <p class="text-xs text-gray-600 mt-0.5">
+                {thread.total_messages} message{thread.total_messages !== 1 ? "s" : ""}
+                · Task {thread.task_id.slice(0, 8)}…
+              </p>
+            </div>
+
+            <!-- Arrow -->
+            <span class="flex-shrink-0 text-gray-600 group-hover:text-gray-300 transition-colors self-center">→</span>
+          </a>
+        ))}
+      </div>
+    )}
+  </div>
+</Layout>
+
+<script>
+  // Auto-refresh inbox every 30s to catch new messages without full reload
+  (function pollInbox() {
+    setInterval(async () => {
+      try {
+        const res = await fetch("/api/tasks/messages/inbox");
+        if (!res.ok) return;
+        const threads: any[] = await res.json();
+        // Update unread badges in-place without full re-render
+        const list = document.getElementById("inbox-list");
+        if (!list) return;
+        threads.forEach((t) => {
+          const el = list.querySelector(`[href="/dashboard/tasks/${t.task_id}"]`);
+          if (!el) return;
+          const badge = el.querySelector(".unread-badge") as HTMLElement | null;
+          if (t.unread_count > 0) {
+            if (badge) {
+              badge.textContent = t.unread_count > 9 ? "9+" : String(t.unread_count);
+            }
+          } else if (badge) {
+            badge.style.display = "none";
+          }
+        });
+      } catch { /* ignore */ }
+    }, 30_000);
+  })();
+</script>
