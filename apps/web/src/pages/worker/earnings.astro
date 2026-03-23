@@ -6,9 +6,7 @@
 import Layout from "@/layouts/Layout.astro";
 import { apiFetch, getToken } from "@/lib/api";
 
-const token = getToken(Object.fromEntries(
-  Astro.cookies.getAll().map((c) => [c.name, c.value])
-));
+const token = getToken(Astro.cookies);
 if (!token) return Astro.redirect("/login");
 
 const url = new URL(Astro.request.url);
@@ -596,7 +594,7 @@ document.getElementById("export-csv-btn")?.addEventListener("click", async () =>
     // Build CSV
     const rows = [
       ["ID", "Amount (USD)", "Credits", "Method", "Status", "Requested At", "Processed At", "Admin Note"],
-      ...items.map((p: any) => [
+      ...items.map((p) => [
         p.id,
         p.usd_amount.toFixed(2),
         p.credits_requested,
@@ -607,7 +605,7 @@ document.getElementById("export-csv-btn")?.addEventListener("click", async () =>
         (p.admin_note ?? "").replace(/"/g, '""'),
       ]),
     ];
-    const csv = rows.map(r => r.map((v: any) => `"${v}"`).join(",")).join("\n");
+    const csv = rows.map(r => r.map((v) => `"${v}"`).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");

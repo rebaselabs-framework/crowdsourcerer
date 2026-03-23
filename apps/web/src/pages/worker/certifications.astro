@@ -2,9 +2,7 @@
 import Layout from "@/layouts/Layout.astro";
 import { apiFetch, getToken } from "@/lib/api";
 
-const token = getToken(Object.fromEntries(
-  Astro.cookies.getAll().map((c) => [c.name, c.value])
-));
+const token = getToken(Astro.cookies);
 if (!token) return Astro.redirect("/login");
 
 // Handle cert attempt submission
@@ -261,6 +259,7 @@ for (const c of myCerts) {
 
   <script>
     function updateAnswers() {
+      /** @type {Array<{question_id: string|null, answer: string|string[]}>} */
       const answers = [];
       const questions = document.querySelectorAll("[data-question-id]");
       for (const qEl of questions) {
@@ -268,25 +267,31 @@ for (const c of myCerts) {
         const singles = qEl.querySelectorAll("input[type=radio]:checked");
         const multis = qEl.querySelectorAll("input[type=checkbox]:checked");
         if (singles.length > 0) {
+          // @ts-ignore — querySelectorAll returns Element but these are HTMLInputElements
           answers.push({ question_id: qId, answer: singles[0].value });
         } else if (multis.length > 0) {
-          answers.push({ question_id: qId, answer: Array.from(multis).map((m: any) => m.value) });
+          // @ts-ignore — same as above
+          answers.push({ question_id: qId, answer: Array.from(multis).map((m) => m.value) });
         }
       }
-      document.getElementById("answers-json").value = JSON.stringify(answers);
+      const hiddenEl = document.getElementById("answers-json");
+      // @ts-ignore — hiddenEl is an <input type="hidden"> so .value exists
+      if (hiddenEl) hiddenEl.value = JSON.stringify(answers);
     }
 
     function submitCert() {
       updateAnswers();
-      const answersJson = document.getElementById("answers-json").value;
-      const answers = JSON.parse(answersJson);
+      const hiddenEl = document.getElementById("answers-json");
+      // @ts-ignore — hiddenEl is an <input type="hidden"> so .value exists
+      const answers = JSON.parse(hiddenEl ? hiddenEl.value : "[]");
       const questions = document.querySelectorAll("[data-question-id]");
 
       // Validate all questions answered
       const missing = [];
       for (const qEl of questions) {
         const qId = qEl.getAttribute("data-question-id");
-        const answered = answers.some((a: any) => a.question_id === qId);
+        // @ts-ignore — answers is any[]
+        const answered = answers.some((a) => a.question_id === qId);
         if (!answered) missing.push(qId);
       }
 

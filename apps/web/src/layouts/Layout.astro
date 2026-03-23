@@ -8,6 +8,9 @@ export interface Props {
   ogType?: string;
   canonicalUrl?: string;
   noIndex?: boolean;
+  // Accepted but unused — some pages pass these for forward compatibility
+  active?: string;
+  user?: any;
 }
 
 const {
@@ -22,9 +25,7 @@ const {
 const siteUrl = "https://crowdsorcerer.dev";
 const canonical = canonicalUrl ?? `${siteUrl}${Astro.url.pathname}`;
 
-const token = getToken(Object.fromEntries(
-  Astro.cookies.getAll().map((c) => [c.name, c.value])
-));
+const token = getToken(Astro.cookies);
 const isLoggedIn = !!token;
 
 // Fetch unread notification count (SSR) — fails gracefully

@@ -2,9 +2,7 @@
 import Layout from "@/layouts/Layout.astro";
 import { apiFetch, getToken } from "@/lib/api";
 
-const token = getToken(Object.fromEntries(
-  Astro.cookies.getAll().map((c) => [c.name, c.value])
-));
+const token = getToken(Astro.cookies);
 
 if (!token) {
   return Astro.redirect("/login");
@@ -13,14 +11,14 @@ if (!token) {
 let user: any = null;
 let credits: any = null;
 let tasks: any = null;
-let apiKeys: any[] = [];
+let apiKeys: any = [];
 
 try {
   [user, credits, tasks, apiKeys] = await Promise.all([
-    apiFetch("/v1/users/me", { token }),
-    apiFetch("/v1/credits", { token }),
-    apiFetch("/v1/tasks?page_size=5", { token }),
-    apiFetch("/v1/api-keys", { token }),
+    apiFetch<any>("/v1/users/me", { token }),
+    apiFetch<any>("/v1/credits", { token }),
+    apiFetch<any>("/v1/tasks?page_size=5", { token }),
+    apiFetch<any>("/v1/api-keys", { token }),
   ]);
 } catch (e) {
   return Astro.redirect("/login");

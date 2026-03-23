@@ -2,7 +2,7 @@ import type { APIRoute } from "astro";
 import { apiFetch, getToken } from "@/lib/api";
 
 export const POST: APIRoute = async ({ params, request, cookies }) => {
-  const token = getToken(Object.fromEntries(cookies.getAll().map((c) => [c.name, c.value])));
+  const token = getToken(cookies);
   if (!token) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
 
   const category = params.category;

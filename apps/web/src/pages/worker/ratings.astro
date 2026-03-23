@@ -7,7 +7,9 @@ if (!token) return Astro.redirect('/login');
 const apiBase = import.meta.env.API_BASE_URL ?? 'http://localhost:8100';
 
 // Fetch my ratings summary
-let summary = { avg_score: null, total_ratings: 0, distribution: {1:0,2:0,3:0,4:0,5:0}, recent: [] };
+let summary: { avg_score: number | null; total_ratings: number; distribution: Record<number, number>; recent: any[] } = {
+  avg_score: null, total_ratings: 0, distribution: {1:0,2:0,3:0,4:0,5:0}, recent: []
+};
 try {
   const r = await fetch(`${apiBase}/v1/workers/me/ratings`, {
     headers: { Authorization: `Bearer ${token}` },
@@ -16,7 +18,7 @@ try {
 } catch {}
 
 const { avg_score, total_ratings, distribution, recent } = summary;
-const dist = distribution as Record<number, number>;
+const dist = distribution;
 
 function stars(score: number) {
   return '⭐'.repeat(score) + '☆'.repeat(5 - score);

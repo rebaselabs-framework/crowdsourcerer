@@ -6,9 +6,7 @@
 import Layout from "@/layouts/Layout.astro";
 import { apiFetch, getToken } from "@/lib/api";
 
-const token = getToken(Object.fromEntries(
-  Astro.cookies.getAll().map((c) => [c.name, c.value])
-));
+const token = getToken(Astro.cookies);
 
 if (!token) {
   return Astro.redirect("/login?next=/workers/browse");
@@ -41,7 +39,7 @@ const params = new URLSearchParams({
 try {
   workers = await apiFetch(`/v1/workers/browse?${params}`, { token });
   // Load requester's open tasks for the invite modal
-  const taskResp = await apiFetch("/v1/tasks?execution_mode=human&status=open&page_size=50", { token }).catch(() => null);
+  const taskResp = await apiFetch<any>("/v1/tasks?execution_mode=human&status=open&page_size=50", { token }).catch(() => null);
   userTasks = taskResp?.items ?? [];
 } catch (e: any) {
   error = e.message ?? "Failed to load workers";

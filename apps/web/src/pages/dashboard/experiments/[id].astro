@@ -5,9 +5,7 @@
 import Layout from "@/layouts/Layout.astro";
 import { apiFetch, getToken } from "@/lib/api";
 
-const token = getToken(Object.fromEntries(
-  Astro.cookies.getAll().map((c) => [c.name, c.value])
-));
+const token = getToken(Astro.cookies);
 if (!token) return Astro.redirect("/login");
 
 const { id } = Astro.params;
@@ -189,9 +187,10 @@ function metricValue(v: any, metric: string): string {
   <script define:vars={{ expId: id }}>
     document.getElementById("enroll-form")?.addEventListener("submit", async (e) => {
       e.preventDefault();
-      const taskId = (document.getElementById("enroll-task-id") as HTMLInputElement).value.trim();
+      const taskEl = document.getElementById("enroll-task-id");
+      const taskId = taskEl ? taskEl.value.trim() : "";
       if (!taskId) return;
-      const resultEl = document.getElementById("enroll-result")!;
+      const resultEl = document.getElementById("enroll-result");
       resultEl.className = "mt-3 text-sm";
       try {
         const token = document.cookie.match(/token=([^;]+)/)?.[1] ?? "";
@@ -205,8 +204,8 @@ function metricValue(v: any, metric: string): string {
         resultEl.textContent = `✅ Enrolled in variant: ${data.variant_name}`;
         resultEl.classList.add("text-green-400");
         resultEl.classList.remove("hidden");
-      } catch (err: any) {
-        resultEl.textContent = `❌ ${err.message}`;
+      } catch (err) {
+        resultEl.textContent = `❌ ${err?.message ?? "Error"}`;
         resultEl.classList.add("text-red-400");
         resultEl.classList.remove("hidden");
       }

@@ -1,4 +1,4 @@
-.PHONY: dev test deploy build lint api-dev web-dev install
+.PHONY: dev test deploy build lint check api-dev web-dev install setup-hooks
 
 # Dev
 dev:
@@ -15,6 +15,12 @@ install:
 	pnpm install
 	pip install -r apps/api/requirements.txt
 
+# Install git hooks (run once after cloning)
+setup-hooks:
+	cp scripts/pre-commit .git/hooks/pre-commit
+	chmod +x .git/hooks/pre-commit
+	@echo "✅ Git hooks installed"
+
 # Build
 build:
 	pnpm build
@@ -30,10 +36,20 @@ lint:
 	cd apps/api && ruff check . && mypy .
 	pnpm lint
 
-# Deploy (push triggers Coolify webhook)
-# Always verify the Astro build passes BEFORE pushing to prevent syntax errors from reaching prod
-deploy:
+# STRICT CHECK — run this before every commit/deploy
+# Catches Astro syntax errors, TypeScript errors, missing imports, and build failures
+# This is mandatory: if check fails, do NOT commit or deploy
+check:
+	@echo "=== Astro type check ==="
+	cd apps/web && pnpm exec astro check
+	@echo "=== Astro build ==="
 	cd apps/web && pnpm build
+	@echo "=== All checks passed ✅ ==="
+
+# Deploy (push triggers Coolify webhook)
+# ALWAYS runs 'make check' first — build errors must never reach prod
+deploy:
+	$(MAKE) check
 	git push origin main
 
 # DB migrations

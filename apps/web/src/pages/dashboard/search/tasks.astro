@@ -6,9 +6,7 @@
 import Layout from "@/layouts/Layout.astro";
 import { apiFetch, getToken } from "@/lib/api";
 
-const token = getToken(Object.fromEntries(
-  Astro.cookies.getAll().map((c) => [c.name, c.value])
-));
+const token = getToken(Astro.cookies);
 if (!token) return Astro.redirect("/login?next=/dashboard/search/tasks");
 
 const q          = Astro.url.searchParams.get("q") ?? "";

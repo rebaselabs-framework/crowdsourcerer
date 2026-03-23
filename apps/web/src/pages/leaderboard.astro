@@ -8,9 +8,7 @@ import Layout from "@/layouts/Layout.astro";
 import { apiFetch, getToken } from "@/lib/api";
 
 // Grab token if the visitor is logged in (optional — no redirect if absent)
-const token = getToken(Object.fromEntries(
-  Astro.cookies.getAll().map((c) => [c.name, c.value])
-));
+const token = getToken(Astro.cookies);
 
 const category = (Astro.url.searchParams.get("category") ?? "xp") as string;
 const period    = (Astro.url.searchParams.get("period")   ?? "all_time") as string;

@@ -89,7 +89,7 @@ const pendingToken = Astro.url.searchParams.get("pt") ?? "";
       // Success — cookie is set by the API route; redirect to dashboard
       window.location.href = "/dashboard";
     } catch (err) {
-      errorEl!.textContent = err?.message ?? "Verification failed";
+      if (errorEl) errorEl.textContent = err?.message ?? "Verification failed";
       errorEl?.classList.remove("hidden");
       btnVerify?.removeAttribute("disabled");
       btnVerify.textContent = "Verify";
@@ -98,7 +98,7 @@ const pendingToken = Astro.url.searchParams.get("pt") ?? "";
 
   // Auto-submit when 6 digits entered
   codeInput?.addEventListener("input", () => {
-    const val = (codeInput as HTMLInputElement).value;
+    const val = codeInput.value;
     if (val.length === 6 || val.length === 8) {
       form?.dispatchEvent(new Event("submit"));
     }

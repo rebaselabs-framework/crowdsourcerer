@@ -6,9 +6,7 @@
 import Layout from "@/layouts/Layout.astro";
 import { apiFetch, getToken } from "@/lib/api";
 
-const token = getToken(Object.fromEntries(
-  Astro.cookies.getAll().map((c) => [c.name, c.value])
-));
+const token = getToken(Astro.cookies);
 if (!token) return Astro.redirect("/login");
 
 let user: any = null;
@@ -393,22 +391,22 @@ function fmt(d: string) {
 
 <script define:vars={{ creditBalance: credits?.available ?? 0 }}>
   // ── Cost estimator logic ──────────────────────────────────────────────────
-  const AI_COSTS: Record<string, number> = {
+  const AI_COSTS = {
     llm_generate: 1, data_transform: 2, document_parse: 3, code_execute: 3,
     screenshot: 2, pii_detect: 2, entity_lookup: 5, web_intel: 5,
     web_research: 10, audio_transcribe: 8,
   };
 
   function update() {
-    const typeEl = document.getElementById("est-type") as HTMLSelectElement;
-    const volEl  = document.getElementById("est-volume") as HTMLInputElement;
-    const rewardEl = document.getElementById("est-reward") as HTMLInputElement;
-    const workersEl = document.getElementById("est-workers") as HTMLInputElement;
-    const totalEl = document.getElementById("est-total")!;
-    const usdEl   = document.getElementById("est-usd")!;
-    const humanCol = document.getElementById("est-human-col")!;
-    const workersCol = document.getElementById("est-workers-col")!;
-    const hintEl  = document.getElementById("est-plan-hint")!;
+    const typeEl = document.getElementById("est-type");
+    const volEl  = document.getElementById("est-volume");
+    const rewardEl = document.getElementById("est-reward");
+    const workersEl = document.getElementById("est-workers");
+    const totalEl = document.getElementById("est-total");
+    const usdEl   = document.getElementById("est-usd");
+    const humanCol = document.getElementById("est-human-col");
+    const workersCol = document.getElementById("est-workers-col");
+    const hintEl  = document.getElementById("est-plan-hint");
 
     const selectedOpt = typeEl.options[typeEl.selectedIndex];
     const isHuman = selectedOpt.dataset.human === "true";
@@ -416,7 +414,7 @@ function fmt(d: string) {
     workersCol.classList.toggle("hidden", !isHuman);
 
     const volume = Math.max(1, parseInt(volEl.value) || 1);
-    let total: number;
+    let total;
     if (isHuman) {
       const reward = Math.max(1, parseInt(rewardEl?.value) || 5);
       const workers = Math.max(1, parseInt(workersEl?.value) || 1);
@@ -433,10 +431,12 @@ function fmt(d: string) {
     // Plan suggestion
     if (volume >= 500) {
       hintEl.classList.remove("hidden");
-      hintEl.querySelector("strong")!.textContent = "Pro";
+      const strongEl = hintEl.querySelector("strong");
+      if (strongEl) strongEl.textContent = "Pro";
     } else if (volume >= 100) {
       hintEl.classList.remove("hidden");
-      hintEl.querySelector("strong")!.textContent = "Starter";
+      const strongEl = hintEl.querySelector("strong");
+      if (strongEl) strongEl.textContent = "Starter";
     } else {
       hintEl.classList.add("hidden");
     }

@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# CrowdSorcerer pre-commit hook
+# Runs Astro type check + build to catch syntax/type errors BEFORE they enter the repo.
+#
+# Install: make setup-hooks   (or: cp scripts/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit)
+
+set -e
+
+echo "🔍 pre-commit: running Astro type check..."
+cd "$(git rev-parse --show-toplevel)/apps/web"
+
+# 1. astro check — catches TypeScript errors, missing imports, invalid Astro syntax
+#    KEY RULES:
+#    - Never call Astro.cookies.getAll() — doesn't exist in Astro 5; use getToken(Astro.cookies)
+#    - No TypeScript syntax (as X, !., Type<X>) in plain <script> tags; use <script lang="ts"> or @ts-ignore
+#    - All apiFetch calls in frontmatter need <any> type param to avoid 'unknown' assignment errors
+if ! pnpm exec astro check 2>&1; then
+  echo ""
+  echo "❌ astro check failed. Fix ALL errors before committing."
+  echo "   Run: cd apps/web && pnpm exec astro check"
+  echo ""
+  echo "   Common Astro 5 pitfalls:"
+  echo "   • Astro.cookies.getAll() → use getToken(Astro.cookies) instead"
+  echo "   • TypeScript syntax in plain <script> → add lang=\"ts\" or use @ts-ignore"
+  echo "   • Unchecked apiFetch → add <any> type param: apiFetch<any>(...)"
+  exit 1
+fi
+
+echo "✅ astro check passed (0 errors)"
+
+# 2. Astro build — catches compiler-level syntax errors that astro check misses
+#    (raw { in template literals, JSX-like generics, missing exports, etc.)
+echo "🔨 pre-commit: running Astro build..."
+if ! pnpm build 2>&1; then
+  echo ""
+  echo "❌ Astro build failed. Fix the errors above before committing."
+  echo "   Run: cd apps/web && pnpm build"
+  echo ""
+  echo "   Common build-breaking patterns:"
+  echo "   • Raw { or } in template strings → escape as \\${'{'}"
+  echo "   • Type<Param> in template expressions → use index signature instead"
+  echo "   • Complex <script> with @astrojs/compiler bug → move to public/scripts/"
+  exit 1
+fi
+
+echo "✅ Astro build passed"
+echo "✅ All checks passed — committing"

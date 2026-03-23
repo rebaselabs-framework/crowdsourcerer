@@ -6,9 +6,7 @@
 import Layout from "@/layouts/Layout.astro";
 import { apiFetch, getToken } from "@/lib/api";
 
-const token = getToken(Object.fromEntries(
-  Astro.cookies.getAll().map((c) => [c.name, c.value])
-));
+const token = getToken(Astro.cookies);
 
 if (!token) {
   return Astro.redirect("/login?next=/worker");
@@ -16,7 +14,7 @@ if (!token) {
 
 let user: any = null;
 let stats: any = null;
-let assignments: any[] = [];
+let assignments: any = [];
 let isWorker = false;
 let dailyChallenge: any = null;
 let reputation: any = null;

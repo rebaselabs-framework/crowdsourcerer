@@ -86,7 +86,73 @@ PUBLIC_API_URL=https://crowdsourcerer.rebaselabs.online
 ```bash
 make dev          # start all services locally
 make test         # run all tests
-make deploy       # push + trigger Coolify deploy
+make check        # MANDATORY before commit/deploy — astro check + build
+make deploy       # runs check first, then push + trigger Coolify deploy
+make setup-hooks  # install git pre-commit hook (run once after clone)
+```
+
+## MANDATORY: Pre-Commit Checks
+
+**ALWAYS run `make check` before committing.** The pre-commit git hook enforces this automatically.
+
+```bash
+make check        # runs: astro check + pnpm build in apps/web
+```
+
+If either step fails, **do not commit**. Fix all errors first.
+
+## Astro 5 Coding Rules (STRICT — violations break production)
+
+### 1. Cookie Access — NEVER use `Astro.cookies.getAll()`
+`getAll()` does NOT exist in Astro 5's `AstroCookies` API. It will crash at runtime.
+
+```typescript
+// ❌ WRONG — throws TypeError at runtime
+const token = getToken(Object.fromEntries(Astro.cookies.getAll().map((c) => [c.name, c.value])));
+
+// ✅ CORRECT — use the typed helper
+const token = getToken(Astro.cookies);  // getToken accepts AstroCookies directly
+```
+
+### 2. TypeScript in `<script>` Tags
+Only use TypeScript syntax (`as X`, `!.`, type annotations) in `<script lang="ts">` tags.
+Plain `<script>` and `<script define:vars>` tags are JavaScript-only.
+
+```html
+<!-- ❌ WRONG — TS syntax in plain script -->
+<script define:vars={{ foo }}>
+  const el = document.getElementById("x") as HTMLInputElement;
+</script>
+
+<!-- ✅ CORRECT — use @ts-ignore or JSDoc, or move to lang="ts" -->
+<script define:vars={{ foo }}>
+  // @ts-ignore — el is always an input element
+  const el = document.getElementById("x");
+</script>
+```
+
+### 3. `apiFetch` Type Parameters
+Always add `<any>` type parameter to `apiFetch` calls in frontmatter if assigning to typed variables.
+
+```typescript
+// ❌ WRONG — causes 'unknown not assignable to any[]' errors
+let items: any[] = [];
+[items] = await Promise.all([apiFetch("/v1/items", { token })]);
+
+// ✅ CORRECT
+let items: any = [];
+[items] = await Promise.all([apiFetch<any>("/v1/items", { token })]);
+```
+
+### 4. Raw Braces in Template Literals
+Escape `{` and `}` inside Astro template expressions when they're literal characters.
+
+```html
+<!-- ❌ WRONG — { in code example confuses Astro compiler -->
+<code>{"{"} "key": "value" {"}"}</code>
+
+<!-- ✅ CORRECT — use HTML entities or template literals -->
+<code>&lbrace; "key": "value" &rbrace;</code>
 ```
 
 ## Conventions
