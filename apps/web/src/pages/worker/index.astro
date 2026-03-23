@@ -22,19 +22,21 @@ let notifications: any = null;
 
 let profileStatus: any = null;
 let unreadMessages = 0;
+let onboardingStatus: any = null;
 
 try {
   user = await apiFetch("/v1/users/me", { token });
   isWorker = user?.role === "worker" || user?.role === "both";
 
   if (isWorker) {
-    [stats, assignments, dailyChallenge, reputation, notifications, profileStatus] = await Promise.all([
+    [stats, assignments, dailyChallenge, reputation, notifications, profileStatus, onboardingStatus] = await Promise.all([
       apiFetch("/v1/worker/stats", { token }),
       apiFetch("/v1/worker/assignments?status=active&page_size=5", { token }),
       apiFetch("/v1/challenges/today", { token }).catch(() => null),
       apiFetch("/v1/reputation/me", { token }).catch(() => null),
       apiFetch("/v1/notifications?unread_only=true&page_size=3", { token }).catch(() => null),
       apiFetch("/v1/users/me/profile-status", { token }).catch(() => null),
+      apiFetch<any>("/v1/onboarding/status", { token }).catch(() => null),
     ]);
     const msgCount: any = await apiFetch("/v1/tasks/messages/unread-count", { token }).catch(() => null);
     unreadMessages = msgCount?.count ?? 0;
@@ -42,6 +44,27 @@ try {
 } catch (e) {
   // Non-fatal; page will show enrollment prompt
 }
+
+// Auto-redirect brand-new workers (0 steps complete, never skipped) to onboarding
+const isNewWorker = Boolean(
+  isWorker &&
+  onboardingStatus &&
+  onboardingStatus.completed_steps === 0 &&
+  !onboardingStatus.skipped_at &&
+  !onboardingStatus.is_complete
+);
+if (isNewWorker) {
+  return Astro.redirect("/worker/onboarding");
+}
+
+// Show onboarding banner if worker has not completed/skipped/dismissed onboarding
+const showOnboardingBanner = Boolean(
+  isWorker &&
+  onboardingStatus &&
+  !onboardingStatus.is_complete &&
+  !onboardingStatus.banner_dismissed &&
+  !onboardingStatus.skipped_at
+);
 
 const profilePct = profileStatus?.completeness_pct ?? 100;
 const showProfileBanner = isWorker && profilePct < 80;
@@ -102,6 +125,43 @@ const TASK_TYPE_LABELS: Record<string, string> = {
               {s === "available" ? "🟢 Available" : s === "busy" ? "🟡 Busy" : "🔴 Away"}
             </button>
           ))}
+        </div>
+      </div>
+    )}
+
+    {/* Onboarding progress banner — shown to new workers until dismissed or completed */}
+    {showOnboardingBanner && (
+      <div id="onboarding-banner" class="bg-violet-950/40 border border-violet-700/50 rounded-xl px-5 py-4 mb-4 flex items-center justify-between gap-4">
+        <div class="flex items-center gap-4 flex-1 min-w-0">
+          <div class="hidden sm:flex w-12 h-12 shrink-0 items-center justify-center bg-violet-900/50 rounded-xl text-2xl">🚀</div>
+          <div class="flex-1 min-w-0">
+            <div class="font-semibold text-violet-300 text-sm mb-1">
+              Getting started — {onboardingStatus?.pct_complete ?? 0}% complete
+            </div>
+            <div class="w-full max-w-xs h-1.5 bg-violet-900/60 rounded-full mb-1">
+              <div
+                class="h-full bg-violet-500 rounded-full transition-all"
+                style={`width:${onboardingStatus?.pct_complete ?? 0}%`}
+              />
+            </div>
+            <p class="text-xs text-violet-200/60 truncate">
+              {onboardingStatus?.completed_steps ?? 0} of {onboardingStatus?.total_steps ?? 5} steps done — complete all 5 to earn +100 bonus credits
+            </p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2 shrink-0">
+          <a
+            href="/worker/onboarding"
+            class="whitespace-nowrap text-xs bg-violet-600 hover:bg-violet-500 text-white px-3 py-1.5 rounded-lg font-medium transition-colors"
+          >
+            Continue →
+          </a>
+          <button
+            id="dismiss-onboarding-banner"
+            class="text-violet-400 hover:text-violet-300 transition-colors p-1 rounded"
+            title="Dismiss banner"
+            aria-label="Dismiss onboarding banner"
+          >✕</button>
         </div>
       </div>
     )}
@@ -598,6 +658,15 @@ const TASK_TYPE_LABELS: Record<string, string> = {
     });
   });
 
+  // Onboarding banner dismiss
+  const dismissBtn = document.getElementById("dismiss-onboarding-banner");
+  dismissBtn?.addEventListener("click", async () => {
+    document.getElementById("onboarding-banner")?.remove();
+    try {
+      await fetch("/api/onboarding/dismiss-banner", { method: "POST" });
+    } catch { /* ignore — UI already updated */ }
+  });
+
   const btn = document.getElementById("enroll-btn");
   const msg = document.getElementById("enroll-msg");
 
@@ -608,7 +677,8 @@ const TASK_TYPE_LABELS: Record<string, string> = {
     try {
       const res = await fetch("/api/worker/enroll", { method: "POST" });
       if (res.ok) {
-        window.location.reload();
+        // Redirect new workers to onboarding flow on first enrollment
+        window.location.href = "/worker/onboarding";
       } else {
         const body = await res.json().catch(() => ({}));
         if (msg) {

@@ -34,7 +34,7 @@ import structlog
 from sqlalchemy import select
 
 from core.database import AsyncSessionLocal
-from models.db import WebhookLogDB, TaskDB, WebhookEndpointDB, WebhookPayloadTemplateDB
+from models.db import WebhookLogDB, TaskDB, WebhookEndpointDB, WebhookPayloadTemplateDB, NotificationPreferencesDB
 
 logger = structlog.get_logger()
 
@@ -175,6 +175,23 @@ async def fire_webhook_for_task(
     )
 
 
+async def _is_event_globally_enabled(user_id: str, event_type: str) -> bool:
+    """Return False if the user has explicitly disabled this event type globally."""
+    try:
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                select(NotificationPreferencesDB).where(
+                    NotificationPreferencesDB.user_id == user_id
+                )
+            )
+            row = result.scalar_one_or_none()
+            if row and row.webhook_event_prefs:
+                return bool(row.webhook_event_prefs.get(event_type, True))
+    except Exception:
+        pass
+    return True
+
+
 async def fire_persistent_endpoints(
     *,
     user_id: str,
@@ -191,7 +208,14 @@ async def fire_persistent_endpoints(
     X-Crowdsourcerer-Signature header.  Delivery stats (delivery_count,
     failure_count, last_triggered_at, last_failure_at) are updated after each
     delivery attempt.
+
+    Respects the user's global webhook_event_prefs — if the event is disabled
+    globally, no endpoint receives it regardless of individual subscriptions.
     """
+    # Check global event preference first (fast path: skip all I/O if disabled)
+    if not await _is_event_globally_enabled(user_id, event_type):
+        return
+
     async with AsyncSessionLocal() as db:
         result = await db.execute(
             select(WebhookEndpointDB).where(

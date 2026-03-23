@@ -16,6 +16,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
+from pydantic import BaseModel
+from core.auth import get_current_user_id
 from core.database import get_db
 from core.scopes import (
     require_scope,
@@ -23,7 +25,7 @@ from core.scopes import (
     SCOPE_WEBHOOKS_WRITE,
 )
 from core.webhooks import ALL_EVENTS, DEFAULT_EVENTS, retry_webhook_log, replay_webhook_log
-from models.db import WebhookLogDB, WebhookEndpointDB
+from models.db import WebhookLogDB, WebhookEndpointDB, NotificationPreferencesDB
 from models.schemas import (
     WebhookEndpointCreate,
     WebhookEndpointUpdate,
@@ -454,3 +456,79 @@ async def _get_owned_endpoint(
     if not ep:
         raise HTTPException(404, "Webhook endpoint not found")
     return ep
+
+
+# ─── Webhook Notification Preferences ────────────────────────────────────────
+
+class WebhookEventPrefsIn(BaseModel):
+    """Map of event_type → enabled bool. Omitted keys default to True."""
+    prefs: dict[str, bool]
+
+
+@router.get("/preferences")
+async def get_webhook_preferences(
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """
+    Return per-event webhook delivery preferences for the current user.
+
+    Each event type is returned with its enabled state (True = fires, False = suppressed).
+    Missing prefs default to True (all events fire by default).
+    """
+    result = await db.execute(
+        select(NotificationPreferencesDB).where(NotificationPreferencesDB.user_id == user_id)
+    )
+    prefs_row = result.scalar_one_or_none()
+    saved: dict[str, bool] = (prefs_row.webhook_event_prefs or {}) if prefs_row else {}
+
+    return {
+        "prefs": {
+            event: saved.get(event, True)
+            for event in ALL_EVENTS
+        },
+        "events": [
+            {
+                "type": e,
+                "description": EVENT_DESCRIPTIONS.get(e, ""),
+                "enabled": saved.get(e, True),
+                "is_default": e in DEFAULT_EVENTS,
+            }
+            for e in ALL_EVENTS
+        ],
+    }
+
+
+@router.put("/preferences")
+async def update_webhook_preferences(
+    body: WebhookEventPrefsIn,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """
+    Update per-event webhook delivery preferences.
+
+    Only keys in body.prefs are updated; unrecognised event types are silently
+    ignored so adding new event types never breaks existing clients.
+    """
+    # Validate event types
+    valid = {e: body.prefs[e] for e in body.prefs if e in ALL_EVENTS}
+
+    result = await db.execute(
+        select(NotificationPreferencesDB).where(NotificationPreferencesDB.user_id == user_id)
+    )
+    prefs_row = result.scalar_one_or_none()
+
+    if prefs_row:
+        merged: dict[str, bool] = dict(prefs_row.webhook_event_prefs or {})
+        merged.update(valid)
+        prefs_row.webhook_event_prefs = merged
+    else:
+        prefs_row = NotificationPreferencesDB(
+            user_id=user_id,
+            webhook_event_prefs=valid,
+        )
+        db.add(prefs_row)
+
+    await db.commit()
+    return {"ok": True, "prefs": {e: (prefs_row.webhook_event_prefs or {}).get(e, True) for e in ALL_EVENTS}}

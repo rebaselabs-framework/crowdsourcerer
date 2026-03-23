@@ -18,6 +18,8 @@ let logs: any = { items: [], total: 0, page: 1, page_size: 25, has_next: false }
 let stats: any = null;
 let eventTypes: any = { events: [] };
 let payloadTemplates: any[] = [];
+let webhookPrefs: Record<string, boolean> = {};
+let prefEvents: any[] = [];
 let error: string | null = null;
 
 try {
@@ -30,6 +32,10 @@ try {
   } else if (tab === "templates") {
     const r = await apiFetch<any>("/v1/webhooks/payload-templates", { token });
     payloadTemplates = r?.items ?? [];
+  } else if (tab === "preferences") {
+    const r = await apiFetch<any>("/v1/webhooks/preferences", { token });
+    webhookPrefs = r?.prefs ?? {};
+    prefEvents = r?.events ?? [];
   } else {
     const qs = new URLSearchParams({ page: String(page), page_size: "25" });
     if (taskId) qs.set("task_id", taskId);
@@ -116,6 +122,17 @@ const ALL_EVENTS = (eventTypes?.events ?? []).map((e: any) => e.type);
         ]}
       >
         🧩 Payload Templates <span class="ml-1.5 text-xs bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded-full">{payloadTemplates.length}</span>
+      </a>
+      <a
+        href="/dashboard/webhooks?tab=preferences"
+        class:list={[
+          "px-5 py-3 text-sm font-medium transition-colors border-b-2 -mb-px",
+          tab === "preferences"
+            ? "border-violet-500 text-white"
+            : "border-transparent text-gray-400 hover:text-gray-200",
+        ]}
+      >
+        ⚙️ Event Preferences
       </a>
     </div>
 
@@ -683,6 +700,72 @@ if not verify(request.get_data(), YOUR_SECRET, sig):
     )}
   </div>
 
+    {/* ─── PREFERENCES TAB ──────────────────────────────────────────────────── */}
+    {tab === "preferences" && (
+      <div>
+        <div class="mb-6">
+          <h2 class="text-base font-semibold">Webhook Event Preferences</h2>
+          <p class="text-xs text-gray-500 mt-1">
+            Control which event types trigger webhook deliveries globally. Disabling an event here
+            prevents <em>all</em> your endpoints from receiving it, regardless of their individual subscriptions.
+          </p>
+        </div>
+
+        <form id="webhook-prefs-form" class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden mb-6">
+          <div class="divide-y divide-gray-800">
+            {prefEvents.length === 0 ? (
+              <div class="px-6 py-8 text-center text-sm text-gray-500">Loading event preferences…</div>
+            ) : prefEvents.map((evt: any) => (
+              <div class="pref-row flex items-center justify-between px-6 py-4 hover:bg-gray-800/40 transition-colors">
+                <div class="flex-1 min-w-0 pr-6">
+                  <div class="flex items-center gap-3 mb-0.5">
+                    <code class="text-sm font-mono text-violet-300">{evt.type}</code>
+                    {evt.is_default && (
+                      <span class="text-xs bg-violet-950 text-violet-400 px-1.5 py-0.5 rounded-full">default</span>
+                    )}
+                    <span class={`pref-status-badge text-xs px-2 py-0.5 rounded-full ${evt.enabled ? "bg-green-950 text-green-400" : "bg-gray-800 text-gray-500"}`}>
+                      {evt.enabled ? "Enabled" : "Disabled"}
+                    </span>
+                  </div>
+                  <p class="text-xs text-gray-500">{evt.description}</p>
+                </div>
+                <label class="relative inline-flex items-center cursor-pointer shrink-0">
+                  <input
+                    type="checkbox"
+                    class="pref-toggle sr-only peer"
+                    data-event={evt.type}
+                    checked={evt.enabled}
+                  />
+                  <div class="w-10 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-5 after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-violet-600"></div>
+                </label>
+              </div>
+            ))}
+          </div>
+
+          <div class="px-6 py-4 border-t border-gray-800 flex items-center justify-between">
+            <span id="prefs-save-msg" class="text-sm text-gray-500"></span>
+            <button
+              id="save-prefs-btn"
+              type="submit"
+              class="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              Save Preferences
+            </button>
+          </div>
+        </form>
+
+        <div class="bg-gray-900/50 border border-gray-800 rounded-xl p-5">
+          <h3 class="text-sm font-medium text-gray-300 mb-2">💡 How this works</h3>
+          <ul class="text-xs text-gray-500 space-y-1.5">
+            <li>• These preferences act as a <strong class="text-gray-400">global master switch</strong> per event type.</li>
+            <li>• If an event is <strong class="text-gray-400">disabled here</strong>, none of your endpoints receive it — even if they subscribe to it individually.</li>
+            <li>• If an event is <strong class="text-gray-400">enabled here</strong>, your endpoint's own subscription still controls delivery (endpoint must also subscribe).</li>
+            <li>• Changes take effect immediately for new events — in-flight deliveries are unaffected.</li>
+          </ul>
+        </div>
+      </div>
+    )}
+
   <script>
     // ─── Create endpoint form toggle ──────────────────────────────────────────
     const showBtn = document.getElementById("show-create-btn");
@@ -965,5 +1048,64 @@ if not verify(request.get_data(), YOUR_SECRET, sig):
         }
       });
     });
+  </script>
+
+  <script>
+    // ─── Webhook Event Preferences (preferences tab) ────────────────────────
+    const prefsForm = document.getElementById("webhook-prefs-form");
+    if (prefsForm) {
+      const saveMsgEl = document.getElementById("prefs-save-msg");
+
+      // Toggle switch handlers — update state visually
+      prefsForm.querySelectorAll<HTMLInputElement>(".pref-toggle").forEach(toggle => {
+        toggle.addEventListener("change", () => {
+          const row = toggle.closest(".pref-row");
+          const badge = row?.querySelector(".pref-status-badge");
+          if (badge) {
+            badge.textContent = toggle.checked ? "Enabled" : "Disabled";
+            badge.className = "pref-status-badge text-xs px-2 py-0.5 rounded-full " +
+              (toggle.checked ? "bg-green-950 text-green-400" : "bg-gray-800 text-gray-500");
+          }
+        });
+      });
+
+      prefsForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const saveBtn = prefsForm.querySelector<HTMLButtonElement>("#save-prefs-btn");
+        if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = "Saving…"; }
+
+        const prefs: Record<string, boolean> = {};
+        prefsForm.querySelectorAll<HTMLInputElement>(".pref-toggle").forEach(toggle => {
+          prefs[toggle.dataset.event ?? ""] = toggle.checked;
+        });
+
+        try {
+          const res = await fetch("/api/webhooks/preferences", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ prefs }),
+          });
+          if (res.ok) {
+            if (saveMsgEl) {
+              saveMsgEl.textContent = "✓ Preferences saved";
+              saveMsgEl.className = "text-sm text-green-400";
+              setTimeout(() => { if (saveMsgEl) saveMsgEl.textContent = ""; }, 3000);
+            }
+          } else {
+            if (saveMsgEl) {
+              saveMsgEl.textContent = "Failed to save preferences";
+              saveMsgEl.className = "text-sm text-red-400";
+            }
+          }
+        } catch {
+          if (saveMsgEl) {
+            saveMsgEl.textContent = "Network error";
+            saveMsgEl.className = "text-sm text-red-400";
+          }
+        } finally {
+          if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = "Save Preferences"; }
+        }
+      });
+    }
   </script>
 </Layout>

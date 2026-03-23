@@ -49,6 +49,7 @@ class OnboardingStatusOut(BaseModel):
     completed_at: Optional[datetime]
     skipped_at: Optional[datetime]
     bonus_claimed: bool
+    banner_dismissed: bool = False
 
     class Config:
         from_attributes = True
@@ -140,6 +141,18 @@ async def skip_onboarding(
     return {"status": "skipped"}
 
 
+@router.post("/dismiss-banner")
+async def dismiss_onboarding_banner(
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Dismiss the onboarding progress banner on the worker dashboard."""
+    progress = await _get_or_create(UUID(user_id), db)
+    progress.banner_dismissed = True
+    await db.commit()
+    return {"status": "dismissed"}
+
+
 @router.post("/reset")
 async def reset_onboarding(
     db: AsyncSession = Depends(get_db),
@@ -206,4 +219,5 @@ def _to_out(p: OnboardingProgressDB) -> OnboardingStatusOut:
         completed_at=p.completed_at,
         skipped_at=p.skipped_at,
         bonus_claimed=p.bonus_claimed,
+        banner_dismissed=getattr(p, "banner_dismissed", False),
     )

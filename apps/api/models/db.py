@@ -943,6 +943,7 @@ class OnboardingProgressDB(Base):
     completed_at = Column(DateTime(timezone=True), nullable=True)
     skipped_at = Column(DateTime(timezone=True), nullable=True)
     bonus_claimed = Column(Boolean, default=False, nullable=False)
+    banner_dismissed = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
 
@@ -982,6 +983,12 @@ class NotificationPreferencesDB(Base):
         default="weekly",
         nullable=False,
     )  # none = off, daily = every morning, weekly = Monday summary
+
+    # ── Webhook event preferences ─────────────────────────────────────────────
+    # Global per-event toggles for webhook delivery (applies across all endpoints).
+    # Keys: webhook event type strings (e.g. "task.completed")
+    # Values: bool — True = fires (default when key absent), False = suppressed globally
+    webhook_event_prefs = Column(JSON, nullable=True, default=dict)
 
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
