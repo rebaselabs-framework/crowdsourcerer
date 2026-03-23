@@ -135,11 +135,13 @@ const currentPath = Astro.url.pathname;
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
                 </svg>
-                {unreadCount > 0 && (
-                  <span class="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-violet-500 text-white text-[10px] flex items-center justify-center font-bold leading-none">
-                    {unreadCount > 9 ? "9+" : unreadCount}
-                  </span>
-                )}
+                <span
+                  id="nav-notif-badge"
+                  class="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-violet-500 text-white text-[10px] flex items-center justify-center font-bold leading-none"
+                  style={unreadCount > 0 ? "" : "display:none"}
+                >
+                  {unreadCount > 9 ? "9+" : unreadCount}
+                </span>
               </a>
               <a href="/dashboard/new-task" class="px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-sm transition-colors">
                 + New task
@@ -165,11 +167,13 @@ const currentPath = Astro.url.pathname;
               <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
               </svg>
-              {unreadCount > 0 && (
-                <span class="absolute top-0 right-0 h-4 w-4 rounded-full bg-violet-500 text-white text-[10px] flex items-center justify-center font-bold leading-none">
-                  {unreadCount > 9 ? "9+" : unreadCount}
-                </span>
-              )}
+              <span
+                id="nav-notif-badge-mobile"
+                class="absolute top-0 right-0 h-4 w-4 rounded-full bg-violet-500 text-white text-[10px] flex items-center justify-center font-bold leading-none"
+                style={unreadCount > 0 ? "" : "display:none"}
+              >
+                {unreadCount > 9 ? "9+" : unreadCount}
+              </span>
             </a>
           )}
           <!-- Hamburger button -->
@@ -207,6 +211,9 @@ const currentPath = Astro.url.pathname;
         </a>
         <a href="/docs/api-reference" class="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
           📖 API Reference
+        </a>
+        <a href="/docs/sandbox" class="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
+          🧪 API Sandbox
         </a>
         <a href="/pricing" class="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
           💵 Pricing
@@ -416,5 +423,33 @@ const currentPath = Astro.url.pathname;
         });
       })();
     </script>
+
+    <!-- Live notification badge polling (every 60s, only when logged in) -->
+    {isLoggedIn && (
+      <script>
+        (function pollNavBadge() {
+          async function refresh() {
+            try {
+              const res = await fetch("/api/notifications/unread-count");
+              if (!res.ok) return;
+              const data = await res.json();
+              const count: number = data.unread_count ?? 0;
+              const display = count > 0 ? "" : "none";
+              const text = count > 9 ? "9+" : String(count);
+              ["nav-notif-badge", "nav-notif-badge-mobile"].forEach((id) => {
+                const el = document.getElementById(id);
+                if (el) {
+                  el.style.display = display;
+                  el.textContent = text;
+                }
+              });
+            } catch { /* ignore */ }
+          }
+          // Initial fetch after 5s (allow page to fully load first)
+          setTimeout(refresh, 5_000);
+          setInterval(refresh, 60_000);
+        })();
+      </script>
+    )}
   </body>
 </html>

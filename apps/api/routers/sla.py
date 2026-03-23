@@ -11,9 +11,12 @@ from pydantic import BaseModel
 from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import asyncio
+
 from core.auth import get_current_user_id, require_admin
 from core.database import get_db
 from core.sla import get_sla_hours, sla_status, compute_sla_deadline, PRIORITY_CREDIT_MULTIPLIER
+from core.webhooks import fire_webhook_for_task, fire_persistent_endpoints
 from models.db import TaskDB, UserDB, SLABreachDB
 
 logger = structlog.get_logger()
@@ -308,3 +311,19 @@ async def record_sla_breach(task: TaskDB, user: UserDB, db: AsyncSession) -> Non
     db.add(breach)
     logger.warning("sla.breach", task_id=str(task.id), plan=plan, priority=priority,
                    sla_hours=hours)
+
+    # Fire sla.breach webhook (per-task + persistent endpoints)
+    _sla_extra = {"type": task.type, "plan": plan, "priority": priority,
+                  "sla_hours": hours, "deadline": deadline.isoformat()}
+    if task.webhook_url:
+        asyncio.create_task(fire_webhook_for_task(
+            task=task,
+            event_type="sla.breach",
+            extra=_sla_extra,
+        ))
+    asyncio.create_task(fire_persistent_endpoints(
+        user_id=str(task.user_id),
+        task_id=str(task.id),
+        event_type="sla.breach",
+        extra=_sla_extra,
+    ))

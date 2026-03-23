@@ -1,6 +1,7 @@
 ---
 /**
- * Notification center — view and manage in-app notifications.
+ * Notification Center — grouped, searchable, real-time badge, mark-all-read,
+ * clear-all, per-notification delete.
  */
 import Layout from "@/layouts/Layout.astro";
 import { apiFetch, getToken } from "@/lib/api";
@@ -10,37 +11,64 @@ const token = getToken(Object.fromEntries(
 ));
 if (!token) return Astro.redirect("/login");
 
-let notifications: any[] = [];
-let totalCount = 0;
-let unreadCount = 0;
+interface NotifItem {
+  id: string;
+  type: string;
+  title: string;
+  body: string;
+  link?: string | null;
+  is_read: boolean;
+  created_at: string;
+}
+interface Group {
+  type: string;
+  label: string;
+  unread_count: number;
+  items: NotifItem[];
+}
+interface GroupedResponse { groups: Group[]; total_unread: number; }
+
+let grouped: Group[] = [];
+let totalUnread = 0;
 let error = "";
 
 try {
-  const data = await apiFetch<any>("/v1/notifications?limit=50&offset=0", { token });
-  notifications = data.items ?? [];
-  totalCount = data.total ?? 0;
-  unreadCount = data.unread_count ?? 0;
+  const data = await apiFetch<GroupedResponse>("/v1/notifications/grouped?limit=200", { token });
+  grouped = data.groups ?? [];
+  totalUnread = data.total_unread ?? 0;
 } catch (e: any) {
   error = (e as Error).message ?? "Failed to load notifications";
 }
 
-// Notification type → icon + colour
-const TYPE_META: Record<string, { icon: string; colour: string }> = {
-  task_completed:      { icon: "✅", colour: "text-emerald-400" },
-  task_failed:         { icon: "❌", colour: "text-red-400" },
-  submission_received: { icon: "📬", colour: "text-blue-400" },
-  submission_approved: { icon: "🎉", colour: "text-emerald-400" },
-  submission_rejected: { icon: "⚠️",  colour: "text-amber-400" },
-  referral_bonus:      { icon: "🎁", colour: "text-violet-400" },
-  payout_processing:   { icon: "⏳", colour: "text-amber-400" },
-  payout_paid:         { icon: "💸", colour: "text-emerald-400" },
-  payout_rejected:     { icon: "❌", colour: "text-red-400" },
-  challenge_completed: { icon: "🏆", colour: "text-yellow-400" },
-  badge_earned:        { icon: "🏅", colour: "text-violet-400" },
+const GROUP_ICONS: Record<string, string> = {
+  task_event:   "⚡",
+  submission:   "📬",
+  payout:       "💸",
+  gamification: "🏆",
+  system:       "🔔",
 };
 
-function meta(type: string) {
-  return TYPE_META[type] ?? { icon: "🔔", colour: "text-gray-400" };
+const TYPE_ICON: Record<string, string> = {
+  TASK_COMPLETED:       "✅",
+  TASK_FAILED:          "❌",
+  TASK_CREATED:         "📋",
+  TASK_ASSIGNED:        "🤝",
+  SLA_BREACH:           "⏰",
+  SUBMISSION_RECEIVED:  "📬",
+  WORKER_APPROVED:      "🎉",
+  WORKER_REJECTED:      "⚠️",
+  PAYOUT_INITIATED:     "⏳",
+  PAYOUT_COMPLETED:     "💸",
+  PAYOUT_FAILED:        "❌",
+  BADGE_EARNED:         "🏅",
+  LEVEL_UP:             "🚀",
+  CHALLENGE_COMPLETED:  "🏆",
+  LEADERBOARD_RANK:     "📊",
+  REFERRAL_BONUS:       "🎁",
+};
+
+function notifIcon(type: string) {
+  return TYPE_ICON[type.toUpperCase()] ?? "🔔";
 }
 
 function timeAgo(dateStr: string): string {
@@ -53,32 +81,54 @@ function timeAgo(dateStr: string): string {
   const days = Math.floor(hrs / 24);
   return `${days}d ago`;
 }
+
+const totalNotifications = grouped.reduce((s, g) => s + g.items.length, 0);
 ---
 
-<Layout title="Notifications — CrowdSorcerer">
-  <div class="max-w-3xl mx-auto px-6 py-10">
+<Layout title="Notification Center — CrowdSorcerer">
+  <div class="max-w-4xl mx-auto px-4 py-8">
+
     <!-- Header -->
-    <div class="flex items-center justify-between mb-8">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
       <div>
-        <h1 class="text-2xl font-bold">Notifications</h1>
-        <p class="text-gray-400 text-sm mt-1">
-          {unreadCount > 0 ? `${unreadCount} unread` : "All caught up!"}
+        <h1 class="text-2xl font-bold flex items-center gap-2">
+          🔔 Notification Center
+          {totalUnread > 0 && (
+            <span id="header-badge"
+              class="inline-flex items-center justify-center h-6 min-w-6 px-1.5 rounded-full bg-violet-600 text-white text-xs font-bold">
+              {totalUnread > 99 ? "99+" : totalUnread}
+            </span>
+          )}
+        </h1>
+        <p class="text-gray-400 text-sm mt-1" id="header-subtitle">
+          {totalUnread > 0
+            ? `${totalUnread} unread across ${grouped.length} categories`
+            : totalNotifications > 0
+              ? "All caught up! ✓"
+              : "No notifications yet"}
         </p>
       </div>
-      <div class="flex items-center gap-3">
+      <div class="flex items-center gap-2 flex-wrap">
         <a
           href="/dashboard/notification-preferences"
-          class="text-sm text-gray-500 hover:text-violet-300 transition-colors"
-          title="Notification preferences"
+          class="px-3 py-1.5 rounded-lg border border-gray-700 text-sm text-gray-400 hover:border-violet-500 hover:text-violet-300 transition-colors"
         >
           ⚙️ Preferences
         </a>
-        {unreadCount > 0 && (
+        {totalUnread > 0 && (
           <button
             id="mark-all-btn"
-            class="px-4 py-2 rounded-lg border border-gray-700 text-sm text-gray-300 hover:border-violet-500 hover:text-violet-300 transition-colors"
+            class="px-3 py-1.5 rounded-lg border border-gray-700 text-sm text-gray-300 hover:border-violet-500 hover:text-violet-300 transition-colors"
           >
-            Mark all as read
+            ✓ Mark all read
+          </button>
+        )}
+        {totalNotifications > 0 && (
+          <button
+            id="clear-all-btn"
+            class="px-3 py-1.5 rounded-lg border border-gray-700 text-sm text-gray-400 hover:border-red-500 hover:text-red-400 transition-colors"
+          >
+            🗑 Clear all
           </button>
         )}
       </div>
@@ -90,147 +140,310 @@ function timeAgo(dateStr: string): string {
       </div>
     )}
 
-    <!-- Notification list -->
-    {notifications.length === 0 ? (
-      <div class="text-center py-20 text-gray-500">
-        <div class="text-5xl mb-4">🔔</div>
-        <p class="text-lg font-medium text-gray-400 mb-2">No notifications yet</p>
-        <p class="text-sm">You'll be notified when tasks complete, submissions arrive, and more.</p>
+    {totalNotifications === 0 && !error ? (
+      <div class="text-center py-24">
+        <div class="text-6xl mb-4">🔔</div>
+        <p class="text-xl font-semibold text-gray-300 mb-2">No notifications yet</p>
+        <p class="text-sm text-gray-500">You'll see task events, submissions, payouts, and achievements here.</p>
       </div>
     ) : (
-      <div class="space-y-2" id="notif-list">
-        {notifications.map((n: any) => {
-          const m = meta(n.type);
-          return (
-            <div
-              class={`rounded-xl border p-4 transition-all ${
-                n.is_read
-                  ? "border-gray-800 bg-gray-900/30"
-                  : "border-violet-700/50 bg-gray-900/60"
-              }`}
-              data-id={n.id}
-              data-read={n.is_read ? "true" : "false"}
+      <>
+        <!-- Tab bar -->
+        <div class="flex items-center gap-1 overflow-x-auto pb-1 mb-6 border-b border-gray-800" id="tab-bar">
+          <button
+            class="tab-btn px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap active"
+            data-group="all"
+          >
+            All
+            {totalUnread > 0 && (
+              <span class="ml-1.5 px-1.5 py-0.5 rounded-full bg-violet-600 text-white text-xs">
+                {totalUnread}
+              </span>
+            )}
+          </button>
+          {grouped.map((g) => (
+            <button
+              class="tab-btn px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap"
+              data-group={g.type}
             >
-              <div class="flex items-start gap-3">
-                <!-- Icon -->
-                <span class={`text-xl flex-shrink-0 mt-0.5 ${m.colour}`}>{m.icon}</span>
+              {GROUP_ICONS[g.type] ?? "🔔"} {g.label}
+              {g.unread_count > 0 && (
+                <span class="ml-1.5 px-1.5 py-0.5 rounded-full bg-violet-600/70 text-white text-xs">
+                  {g.unread_count}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
 
-                <!-- Content -->
-                <div class="flex-1 min-w-0">
-                  <div class="flex items-center justify-between gap-2">
-                    <p class={`font-semibold text-sm ${n.is_read ? "text-gray-300" : "text-white"}`}>
-                      {n.title}
-                    </p>
-                    <div class="flex items-center gap-2 flex-shrink-0">
-                      {!n.is_read && (
-                        <span class="h-2 w-2 rounded-full bg-violet-500 flex-shrink-0"></span>
-                      )}
-                      <span class="text-xs text-gray-500">{timeAgo(n.created_at)}</span>
-                    </div>
-                  </div>
-                  <p class="text-sm text-gray-400 mt-0.5">{n.body}</p>
-                  {n.link && (
-                    <a
-                      href={n.link}
-                      class="inline-block mt-2 text-xs text-violet-400 hover:text-violet-300 transition-colors"
-                      data-notif-id={n.id}
-                    >
-                      View →
-                    </a>
-                  )}
-                </div>
+        <!-- Search input -->
+        <div class="relative mb-4">
+          <input
+            id="notif-search"
+            type="search"
+            placeholder="Search notifications…"
+            class="w-full bg-gray-900 border border-gray-700 rounded-xl px-4 py-2.5 pl-9 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-violet-500 transition-colors"
+          />
+          <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none text-sm">🔍</span>
+        </div>
 
-                <!-- Mark read button -->
-                {!n.is_read && (
-                  <button
-                    class="mark-read-btn flex-shrink-0 text-xs text-gray-500 hover:text-gray-300 transition-colors mt-0.5"
-                    data-id={n.id}
-                    title="Mark as read"
-                  >
-                    ✓
-                  </button>
+        <!-- Notification groups -->
+        <div id="notif-container">
+          {grouped.map((g) => (
+            <div class="notif-group mb-6" data-group={g.type}>
+              <!-- Group header -->
+              <div class="flex items-center justify-between mb-3">
+                <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide flex items-center gap-2">
+                  <span>{GROUP_ICONS[g.type] ?? "🔔"}</span>
+                  <span>{g.label}</span>
+                  <span class="text-gray-600 font-normal normal-case tracking-normal">
+                    ({g.items.length})
+                  </span>
+                </h2>
+                {g.unread_count > 0 && (
+                  <span class="text-xs text-violet-400">{g.unread_count} unread</span>
                 )}
               </div>
+
+              <!-- Items -->
+              <div class="space-y-2">
+                {g.items.map((n) => (
+                  <div
+                    class={`notif-card rounded-xl border p-4 transition-all group ${
+                      n.is_read
+                        ? "border-gray-800 bg-gray-900/30"
+                        : "border-violet-700/40 bg-gray-900/60"
+                    }`}
+                    data-id={n.id}
+                    data-read={n.is_read ? "true" : "false"}
+                    data-title={n.title.toLowerCase()}
+                    data-body={n.body.toLowerCase()}
+                    data-group={g.type}
+                  >
+                    <div class="flex items-start gap-3">
+                      <!-- Icon -->
+                      <span class="text-xl flex-shrink-0 mt-0.5">{notifIcon(n.type)}</span>
+
+                      <!-- Content -->
+                      <div class="flex-1 min-w-0">
+                        <div class="flex items-start justify-between gap-2">
+                          <div class="flex-1 min-w-0">
+                            <p class={`font-semibold text-sm ${n.is_read ? "text-gray-300" : "text-white"}`}>
+                              {!n.is_read && (
+                                <span class="inline-block h-2 w-2 rounded-full bg-violet-500 mr-1.5 mb-0.5 align-middle unread-dot"></span>
+                              )}
+                              {n.title}
+                            </p>
+                            <p class="text-sm text-gray-400 mt-0.5 leading-relaxed">{n.body}</p>
+                          </div>
+                          <div class="flex items-center gap-1 flex-shrink-0 ml-2">
+                            <span class="text-xs text-gray-500 whitespace-nowrap">{timeAgo(n.created_at)}</span>
+                          </div>
+                        </div>
+                        <div class="flex items-center gap-3 mt-2">
+                          {n.link && (
+                            <a
+                              href={n.link}
+                              class="text-xs text-violet-400 hover:text-violet-300 transition-colors"
+                              data-notif-id={n.id}
+                            >
+                              View →
+                            </a>
+                          )}
+                        </div>
+                      </div>
+
+                      <!-- Actions (visible on hover) -->
+                      <div class="flex items-center gap-1 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {!n.is_read && (
+                          <button
+                            class="mark-read-btn p-1.5 rounded-lg text-xs text-gray-500 hover:text-emerald-400 hover:bg-emerald-900/20 transition-colors"
+                            data-id={n.id}
+                            title="Mark as read"
+                          >
+                            ✓
+                          </button>
+                        )}
+                        <button
+                          class="delete-btn p-1.5 rounded-lg text-xs text-gray-600 hover:text-red-400 hover:bg-red-900/20 transition-colors"
+                          data-id={n.id}
+                          title="Delete"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
-          );
-        })}
-      </div>
+          ))}
+        </div>
+      </>
     )}
 
-    {totalCount > 50 && (
-      <p class="text-center text-gray-500 text-sm mt-6">
-        Showing 50 of {totalCount} notifications.
-      </p>
-    )}
   </div>
 
+  <style>
+    .tab-btn {
+      color: theme('colors.gray.400');
+      background: transparent;
+    }
+    .tab-btn:hover {
+      color: theme('colors.gray.200');
+      background: theme('colors.gray.800');
+    }
+    .tab-btn.active {
+      color: theme('colors.violet.300');
+      background: theme('colors.violet.900' / 30%);
+    }
+    .notif-card[data-read="true"] { opacity: 0.75; }
+    .notif-card[data-read="false"] { opacity: 1; }
+  </style>
+
   <script>
-    // Mark single notification as read
-    document.querySelectorAll(".mark-read-btn").forEach((btn) => {
-      btn.addEventListener("click", async (e) => {
-        const id = (e.currentTarget as HTMLElement).dataset.id;
-        if (!id) return;
+    // ── Tabs ──────────────────────────────────────────────────────────────────
+    const tabBtns = document.querySelectorAll<HTMLButtonElement>(".tab-btn");
+    const groups = document.querySelectorAll<HTMLElement>(".notif-group");
+
+    function showGroup(key: string) {
+      tabBtns.forEach((b) => {
+        b.classList.toggle("active", b.dataset.group === key);
+      });
+      groups.forEach((g) => {
+        if (key === "all") {
+          g.style.display = "";
+        } else {
+          g.style.display = g.dataset.group === key ? "" : "none";
+        }
+      });
+    }
+
+    tabBtns.forEach((btn) => {
+      btn.addEventListener("click", () => showGroup(btn.dataset.group ?? "all"));
+    });
+
+    // ── Search ─────────────────────────────────────────────────────────────────
+    const searchInput = document.getElementById("notif-search") as HTMLInputElement | null;
+    searchInput?.addEventListener("input", () => {
+      const q = searchInput.value.toLowerCase().trim();
+      document.querySelectorAll<HTMLElement>(".notif-card").forEach((card) => {
+        const title = card.dataset.title ?? "";
+        const body = card.dataset.body ?? "";
+        card.style.display = !q || title.includes(q) || body.includes(q) ? "" : "none";
+      });
+    });
+
+    // ── Mark single as read ─────────────────────────────────────────────────
+    function markCardRead(id: string) {
+      const card = document.querySelector<HTMLElement>(`.notif-card[data-id="${id}"]`);
+      if (!card || card.dataset.read === "true") return;
+      card.dataset.read = "true";
+      card.classList.remove("border-violet-700/40", "bg-gray-900/60");
+      card.classList.add("border-gray-800", "bg-gray-900/30");
+      card.querySelector(".unread-dot")?.remove();
+      card.querySelector(".mark-read-btn")?.remove();
+      const title = card.querySelector("p.font-semibold");
+      if (title) {
+        title.classList.remove("text-white");
+        title.classList.add("text-gray-300");
+      }
+      updateBadge(-1);
+    }
+
+    document.querySelectorAll<HTMLElement>(".mark-read-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = btn.dataset.id!;
         try {
           await fetch(`/api/notifications/${id}/read`, { method: "POST" });
-          const card = document.querySelector(`[data-id="${id}"]`);
-          if (card) {
-            card.classList.remove("border-violet-700/50", "bg-gray-900/60");
-            card.classList.add("border-gray-800", "bg-gray-900/30");
-            (e.currentTarget as HTMLElement).remove();
-            const dot = card.querySelector(".h-2.w-2.rounded-full.bg-violet-500");
-            dot?.remove();
-            // Update the title style
-            const title = card.querySelector("p.font-semibold");
-            if (title) {
-              title.classList.remove("text-white");
-              title.classList.add("text-gray-300");
-            }
-          }
-        } catch {
-          // ignore
-        }
+          markCardRead(id);
+        } catch { /* ignore */ }
       });
     });
 
-    // Mark all as read
-    const markAllBtn = document.getElementById("mark-all-btn");
-    markAllBtn?.addEventListener("click", async () => {
+    // ── Delete single ───────────────────────────────────────────────────────
+    document.querySelectorAll<HTMLElement>(".delete-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = btn.dataset.id!;
+        try {
+          await fetch(`/api/notifications/${id}`, { method: "DELETE" });
+          const card = document.querySelector<HTMLElement>(`.notif-card[data-id="${id}"]`);
+          if (card) {
+            if (card.dataset.read === "false") updateBadge(-1);
+            card.remove();
+          }
+        } catch { /* ignore */ }
+      });
+    });
+
+    // ── Mark all read ───────────────────────────────────────────────────────
+    document.getElementById("mark-all-btn")?.addEventListener("click", async () => {
       try {
         await fetch("/api/notifications/read-all", { method: "POST" });
-        // Update all cards in the DOM
-        document.querySelectorAll("#notif-list > div[data-read='false']").forEach((card) => {
-          card.classList.remove("border-violet-700/50", "bg-gray-900/60");
-          card.classList.add("border-gray-800", "bg-gray-900/30");
-          card.querySelector(".h-2.w-2.rounded-full.bg-violet-500")?.remove();
-          card.querySelectorAll(".mark-read-btn").forEach((b) => b.remove());
-          const title = card.querySelector("p.font-semibold");
-          if (title) {
-            title.classList.remove("text-white");
-            title.classList.add("text-gray-300");
-          }
-          (card as HTMLElement).dataset.read = "true";
+        document.querySelectorAll<HTMLElement>(".notif-card[data-read='false']").forEach((card) => {
+          markCardRead(card.dataset.id ?? "");
         });
-        markAllBtn.remove();
-        // Update header
-        const subtitle = document.querySelector("h1 + p");
-        if (subtitle) subtitle.textContent = "All caught up!";
-      } catch {
-        // ignore
-      }
+        document.getElementById("mark-all-btn")?.remove();
+        // remove all unread group badges
+        document.querySelectorAll(".tab-btn span.bg-violet-600\\/70, .tab-btn span.bg-violet-600").forEach((s) => {
+          // keep the "All" badge
+        });
+        const badge = document.getElementById("header-badge");
+        if (badge) badge.remove();
+        const subtitle = document.getElementById("header-subtitle");
+        if (subtitle) subtitle.textContent = "All caught up! ✓";
+      } catch { /* ignore */ }
     });
 
-    // Mark as read when clicking a "View →" link
-    document.querySelectorAll("a[data-notif-id]").forEach((link) => {
+    // ── Clear all ───────────────────────────────────────────────────────────
+    document.getElementById("clear-all-btn")?.addEventListener("click", async () => {
+      if (!confirm("Delete all notifications? This cannot be undone.")) return;
+      try {
+        await fetch("/api/notifications/delete-all", { method: "DELETE" });
+        window.location.reload();
+      } catch { /* ignore */ }
+    });
+
+    // ── Badge helper ────────────────────────────────────────────────────────
+    function updateBadge(delta: number) {
+      const badge = document.getElementById("header-badge");
+      if (!badge) return;
+      const current = parseInt(badge.textContent ?? "0", 10);
+      const next = Math.max(0, current + delta);
+      if (next === 0) {
+        badge.remove();
+        const subtitle = document.getElementById("header-subtitle");
+        if (subtitle) subtitle.textContent = "All caught up! ✓";
+        document.getElementById("mark-all-btn")?.remove();
+      } else {
+        badge.textContent = next > 99 ? "99+" : String(next);
+      }
+    }
+
+    // ── Auto-read on "View →" click ─────────────────────────────────────────
+    document.querySelectorAll<HTMLAnchorElement>("a[data-notif-id]").forEach((link) => {
       link.addEventListener("click", async () => {
-        const id = (link as HTMLElement).dataset.notifId;
-        if (id) {
-          try {
-            await fetch(`/api/notifications/${id}/read`, { method: "POST" });
-          } catch {
-            // ignore
-          }
-        }
+        const id = link.dataset.notifId!;
+        try {
+          await fetch(`/api/notifications/${id}/read`, { method: "POST" });
+        } catch { /* ignore */ }
       });
     });
+
+    // ── Poll unread count and refresh badge every 30s ───────────────────────
+    async function pollUnreadCount() {
+      try {
+        const res = await fetch("/api/notifications/unread-count");
+        const data = await res.json();
+        const count: number = data.unread_count ?? 0;
+        // Update nav badge if present (Layout.astro)
+        const navBadge = document.getElementById("nav-notif-badge");
+        if (navBadge) {
+          navBadge.textContent = count > 99 ? "99+" : String(count);
+          navBadge.style.display = count > 0 ? "" : "none";
+        }
+      } catch { /* ignore */ }
+    }
+    setInterval(pollUnreadCount, 30_000);
   </script>
 </Layout>

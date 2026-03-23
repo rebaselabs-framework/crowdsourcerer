@@ -14,7 +14,7 @@ import asyncio as _asyncio_wh
 from core.auth import get_current_user_id
 from core.database import get_db
 from core.reputation import refresh_worker_reputation
-from core.webhooks import fire_webhook_for_task
+from core.webhooks import fire_webhook_for_task, fire_persistent_endpoints
 from models.db import (
     TaskDB, UserDB, TaskAssignmentDB, CreditTransactionDB,
     DailyChallengeDB, DailyChallengeProgressDB,
@@ -517,14 +517,21 @@ async def claim_task(
 
     logger.info("task_claimed", task_id=str(task_id), worker_id=user_id)
 
-    # Fire task.assigned webhook to the task owner
+    # Fire task.assigned webhook to the task owner (per-task + persistent endpoints)
+    _wh_assign_extra = {"type": task.type, "worker_id": str(user_id),
+                        "assignment_id": str(assignment.id)}
     if task.webhook_url:
         _asyncio_wh.create_task(fire_webhook_for_task(
             task=task,
             event_type="task.assigned",
-            extra={"type": task.type, "worker_id": str(user_id),
-                   "assignment_id": str(assignment.id)},
+            extra=_wh_assign_extra,
         ))
+    _asyncio_wh.create_task(fire_persistent_endpoints(
+        user_id=str(task.user_id),
+        task_id=str(task.id),
+        event_type="task.assigned",
+        extra=_wh_assign_extra,
+    ))
 
     # ── Onboarding: mark explore step on first claim ───────────────────────
     try:
@@ -780,14 +787,21 @@ async def submit_task(
                     worker_name=worker_display,
                 ))
 
-            # Webhook: task.submission_received → requester
+            # Webhook: task.submission_received → requester (per-task + persistent endpoints)
+            _wh_sub_extra = {"type": task.type, "worker_id": str(user_id),
+                             "assignment_id": str(assignment.id)}
             if task.webhook_url:
                 _asyncio_wh.create_task(fire_webhook_for_task(
                     task=task,
                     event_type="task.submission_received",
-                    extra={"type": task.type, "worker_id": str(user_id),
-                           "assignment_id": str(assignment.id)},
+                    extra=_wh_sub_extra,
                 ))
+            _asyncio_wh.create_task(fire_persistent_endpoints(
+                user_id=str(task.user_id),
+                task_id=str(task.id),
+                event_type="task.submission_received",
+                extra=_wh_sub_extra,
+            ))
         except Exception:
             pass  # Notification errors never block submission response
 

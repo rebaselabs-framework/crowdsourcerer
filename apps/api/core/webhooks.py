@@ -21,6 +21,9 @@ Payloads always include:
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
+import json
 import time as _time
 import uuid
 from datetime import datetime, timezone
@@ -28,9 +31,10 @@ from typing import Any, Optional
 
 import httpx
 import structlog
+from sqlalchemy import select
 
 from core.database import AsyncSessionLocal
-from models.db import WebhookLogDB, TaskDB
+from models.db import WebhookLogDB, TaskDB, WebhookEndpointDB
 
 logger = structlog.get_logger()
 
@@ -125,6 +129,209 @@ async def fire_webhook_for_task(
         extra=extra,
         max_retries=max_retries,
     )
+
+
+async def fire_persistent_endpoints(
+    *,
+    user_id: str,
+    task_id: str,
+    event_type: str,
+    extra: dict[str, Any] | None = None,
+    max_retries: int = 3,
+) -> None:
+    """
+    Fire all active persistent webhook endpoints owned by *user_id* that subscribe
+    to *event_type*.  Safe to call as fire-and-forget via asyncio.create_task().
+
+    Each endpoint receives an HMAC-SHA256 signed payload via
+    X-Crowdsourcerer-Signature header.  Delivery stats (delivery_count,
+    failure_count, last_triggered_at, last_failure_at) are updated after each
+    delivery attempt.
+    """
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            select(WebhookEndpointDB).where(
+                WebhookEndpointDB.user_id == user_id,
+                WebhookEndpointDB.is_active.is_(True),
+            )
+        )
+        endpoints: list[WebhookEndpointDB] = result.scalars().all()
+
+    # Fire to each matching endpoint concurrently
+    tasks = []
+    for ep in endpoints:
+        # None means "all events"; otherwise check the list
+        subscribed: list[str] | None = ep.events  # type: ignore[assignment]
+        if subscribed is not None and event_type not in subscribed:
+            continue
+        tasks.append(
+            _deliver_to_endpoint(
+                endpoint=ep,
+                task_id=task_id,
+                user_id=user_id,
+                event_type=event_type,
+                extra=extra,
+                max_retries=max_retries,
+            )
+        )
+
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
+async def _deliver_to_endpoint(
+    *,
+    endpoint: WebhookEndpointDB,
+    task_id: str,
+    user_id: str,
+    event_type: str,
+    extra: dict[str, Any] | None,
+    max_retries: int,
+) -> None:
+    """Deliver a signed event payload to a single persistent endpoint."""
+    payload: dict[str, Any] = {
+        "event": event_type,
+        "task_id": task_id,
+        "occurred_at": _utcnow_iso(),
+        "endpoint_id": str(endpoint.id),
+    }
+    if extra:
+        payload.update(extra)
+
+    payload_bytes = json.dumps(payload).encode()
+    sig = hmac.new(endpoint.secret.encode(), payload_bytes, hashlib.sha256).hexdigest()
+
+    endpoint_id = str(endpoint.id)
+
+    for attempt in range(max_retries):
+        t0 = _time.perf_counter()
+        status_code: Optional[int] = None
+        error_msg: Optional[str] = None
+        success = False
+
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(
+                    endpoint.url,
+                    content=payload_bytes,
+                    headers={
+                        "Content-Type": "application/json",
+                        "X-Crowdsourcerer-Event": event_type,
+                        "X-Crowdsourcerer-Signature": sig,
+                        "User-Agent": "CrowdSorcerer-Webhooks/1.0",
+                    },
+                )
+            status_code = resp.status_code
+            if resp.status_code < 500:
+                success = resp.status_code < 400
+                if not success:
+                    error_msg = f"Client error: HTTP {resp.status_code}"
+                duration_ms = int((_time.perf_counter() - t0) * 1000)
+                await _log_endpoint_delivery(
+                    endpoint_id=endpoint_id,
+                    task_id=task_id,
+                    user_id=user_id,
+                    url=endpoint.url,
+                    event_type=event_type,
+                    attempt=attempt + 1,
+                    status_code=status_code,
+                    success=success,
+                    error=error_msg,
+                    duration_ms=duration_ms,
+                )
+                await _update_endpoint_stats(endpoint_id=endpoint_id, success=success)
+                return
+            error_msg = f"Server error: HTTP {resp.status_code}"
+            logger.warning("persistent_webhook_server_error", endpoint_id=endpoint_id,
+                           url=endpoint.url, status=resp.status_code, attempt=attempt + 1)
+        except Exception as exc:
+            error_msg = str(exc)
+            logger.warning("persistent_webhook_failed", endpoint_id=endpoint_id,
+                           url=endpoint.url, error=error_msg, attempt=attempt + 1)
+
+        duration_ms = int((_time.perf_counter() - t0) * 1000)
+        await _log_endpoint_delivery(
+            endpoint_id=endpoint_id,
+            task_id=task_id,
+            user_id=user_id,
+            url=endpoint.url,
+            event_type=event_type,
+            attempt=attempt + 1,
+            status_code=status_code,
+            success=False,
+            error=error_msg,
+            duration_ms=duration_ms,
+        )
+
+        if attempt < max_retries - 1:
+            await asyncio.sleep(2 ** attempt)
+
+    # All retries exhausted
+    await _update_endpoint_stats(endpoint_id=endpoint_id, success=False)
+    logger.error("persistent_webhook_exhausted_retries", endpoint_id=endpoint_id,
+                 task_id=task_id, event=event_type)
+
+
+async def _update_endpoint_stats(*, endpoint_id: str, success: bool) -> None:
+    """Increment delivery/failure counters and update last_triggered_at."""
+    try:
+        from sqlalchemy import update as sa_update
+        now = datetime.now(timezone.utc)
+        async with AsyncSessionLocal() as db:
+            if success:
+                await db.execute(
+                    sa_update(WebhookEndpointDB)
+                    .where(WebhookEndpointDB.id == endpoint_id)
+                    .values(
+                        delivery_count=WebhookEndpointDB.delivery_count + 1,
+                        last_triggered_at=now,
+                    )
+                )
+            else:
+                await db.execute(
+                    sa_update(WebhookEndpointDB)
+                    .where(WebhookEndpointDB.id == endpoint_id)
+                    .values(
+                        failure_count=WebhookEndpointDB.failure_count + 1,
+                        last_failure_at=now,
+                    )
+                )
+            await db.commit()
+    except Exception:
+        logger.warning("webhook_endpoint_stats_update_failed", endpoint_id=endpoint_id)
+
+
+async def _log_endpoint_delivery(
+    *,
+    endpoint_id: str,
+    task_id: str,
+    user_id: str,
+    url: str,
+    event_type: str,
+    attempt: int,
+    status_code: Optional[int],
+    success: bool,
+    error: Optional[str],
+    duration_ms: int,
+) -> None:
+    """Persist a WebhookLogDB row for a persistent endpoint delivery."""
+    try:
+        async with AsyncSessionLocal() as db:
+            log = WebhookLogDB(
+                task_id=task_id,
+                user_id=user_id,
+                url=url,
+                event_type=event_type,
+                attempt=attempt,
+                status_code=status_code,
+                success=success,
+                error=error,
+                duration_ms=duration_ms,
+            )
+            db.add(log)
+            await db.commit()
+    except Exception:
+        logger.warning("persistent_webhook_log_failed", endpoint_id=endpoint_id, task_id=task_id)
 
 
 # ---------------------------------------------------------------------------

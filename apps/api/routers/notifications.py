@@ -113,6 +113,94 @@ async def mark_all_read(
     return {"ok": True}
 
 
+@router.get("/grouped")
+async def get_grouped_notifications(
+    limit: int = Query(100, ge=1, le=200),
+    user_id: UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Return notifications grouped by type label.
+
+    Each group contains:
+      - type: category key (task_event, submission, payout, gamification, system)
+      - label: human-readable label
+      - unread_count: unread items in this group
+      - items: list of notification objects (newest first, up to `limit` total across all groups)
+    """
+    rows_q = await db.execute(
+        select(NotificationDB)
+        .where(NotificationDB.user_id == user_id)
+        .order_by(NotificationDB.created_at.desc())
+        .limit(limit)
+    )
+    all_notifs = rows_q.scalars().all()
+
+    # Group mapping — type_key → NotificationType prefix patterns
+    TYPE_MAP = {
+        "task_event": {"TASK_COMPLETED", "TASK_FAILED", "TASK_CREATED", "SLA_BREACH"},
+        "submission": {"SUBMISSION_RECEIVED", "WORKER_APPROVED", "WORKER_REJECTED",
+                       "TASK_ASSIGNED"},
+        "payout": {"PAYOUT_INITIATED", "PAYOUT_COMPLETED", "PAYOUT_FAILED"},
+        "gamification": {"BADGE_EARNED", "LEVEL_UP", "CHALLENGE_COMPLETED",
+                         "LEADERBOARD_RANK", "REFERRAL_BONUS"},
+        "system": set(),  # catch-all
+    }
+    TYPE_LABELS = {
+        "task_event": "Task Events",
+        "submission": "Submissions & Assignments",
+        "payout": "Payouts",
+        "gamification": "Achievements & Rewards",
+        "system": "System",
+    }
+
+    def _group_key(notif_type: str) -> str:
+        for key, prefixes in TYPE_MAP.items():
+            if key == "system":
+                continue
+            if notif_type in prefixes:
+                return key
+        return "system"
+
+    groups: dict[str, dict] = {
+        k: {"type": k, "label": TYPE_LABELS[k], "unread_count": 0, "items": []}
+        for k in ["task_event", "submission", "payout", "gamification", "system"]
+    }
+    for n in all_notifs:
+        key = _group_key(n.type.value if hasattr(n.type, "value") else str(n.type))
+        groups[key]["items"].append({
+            "id": str(n.id),
+            "type": n.type.value if hasattr(n.type, "value") else str(n.type),
+            "title": n.title,
+            "body": n.body,
+            "link": n.link,
+            "is_read": n.is_read,
+            "created_at": n.created_at.isoformat(),
+        })
+        if not n.is_read:
+            groups[key]["unread_count"] += 1
+
+    # Remove empty groups
+    return {
+        "groups": [g for g in groups.values() if g["items"]],
+        "total_unread": sum(g["unread_count"] for g in groups.values()),
+    }
+
+
+@router.delete("/all")
+async def delete_all_notifications(
+    user_id: UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete ALL notifications for this user."""
+    from sqlalchemy import delete as sa_delete
+    await db.execute(
+        sa_delete(NotificationDB).where(NotificationDB.user_id == user_id)
+    )
+    await db.commit()
+    return {"ok": True}
+
+
 @router.delete("/{notification_id}")
 async def delete_notification(
     notification_id: UUID,
