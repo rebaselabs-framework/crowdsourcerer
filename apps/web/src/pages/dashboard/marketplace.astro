@@ -3,188 +3,228 @@ import Layout from '../../layouts/Layout.astro';
 import { requireAuth } from '../../lib/auth';
 
 const { token, user } = await requireAuth(Astro);
-const API = import.meta.env.API_URL || 'http://api:8000';
+const API_BASE = import.meta.env.PUBLIC_API_URL || 'http://api:8100';
 
-// Fetch templates, categories
-const [templatesRes, categoriesRes] = await Promise.all([
-  fetch(`${API}/v1/marketplace/templates?page_size=24&sort=featured`, {
+// Fetch featured templates + all templates + categories in parallel
+const [featuredRes, templatesRes, categoriesRes] = await Promise.all([
+  fetch(`${API_BASE}/v1/marketplace/templates?page_size=4&sort=featured&is_featured=true`, {
     headers: { Authorization: `Bearer ${token}` },
   }),
-  fetch(`${API}/v1/marketplace/categories`, {
+  fetch(`${API_BASE}/v1/marketplace/templates?page_size=24&sort=featured`, {
+    headers: { Authorization: `Bearer ${token}` },
+  }),
+  fetch(`${API_BASE}/v1/marketplace/categories`, {
     headers: { Authorization: `Bearer ${token}` },
   }),
 ]);
 
+const featuredData = featuredRes.ok ? await featuredRes.json() : { items: [] };
 const templatesData = templatesRes.ok ? await templatesRes.json() : { items: [], total: 0 };
 const categoriesData = categoriesRes.ok ? await categoriesRes.json() : [];
 
+const featuredTemplates = (featuredData.items || []).filter((t: any) => t.is_featured).slice(0, 4);
 const templates = templatesData.items || [];
 const categories = categoriesData;
+const clientApiUrl = import.meta.env.PUBLIC_API_URL ?? '';
+
+function starHtml(rating: number, count: number): string {
+  if (count === 0) return '<span class="text-gray-300 text-xs">No ratings</span>';
+  const filled = Math.round(rating);
+  const stars = Array.from({ length: 5 }, (_, i) =>
+    `<span class="${i < filled ? 'text-yellow-400' : 'text-gray-200'}">★</span>`
+  ).join('');
+  return `<span class="text-sm">${stars}</span><span class="text-xs text-gray-500 ml-1">${rating.toFixed(1)} (${count})</span>`;
+}
 ---
 
 <Layout title="Template Marketplace — CrowdSorcerer" user={user}>
-  <div class="max-w-7xl mx-auto px-4 py-8">
-    <!-- Header -->
-    <div class="flex items-center justify-between mb-8">
-      <div>
-        <h1 class="text-2xl font-bold text-gray-900">🏪 Template Marketplace</h1>
-        <p class="text-gray-500 mt-1">Browse, rate, and reuse community-built task templates</p>
+<div class="max-w-7xl mx-auto px-4 py-8">
+
+  <!-- Header -->
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">🏪 Template Marketplace</h1>
+      <p class="text-gray-500 mt-1">Browse, rate, and reuse community-built task templates</p>
+    </div>
+    <a href="/dashboard/marketplace/new" class="btn-primary">+ Create Template</a>
+  </div>
+
+  <!-- ── Featured Section ──────────────────────────────────────────────── -->
+  {featuredTemplates.length > 0 && (
+    <div class="mb-10">
+      <div class="flex items-center gap-2 mb-4">
+        <span class="text-lg">⭐</span>
+        <h2 class="text-lg font-bold text-gray-900">Featured Templates</h2>
+        <span class="text-xs text-gray-400 bg-yellow-50 border border-yellow-200 px-2 py-0.5 rounded-full">Hand-picked by CrowdSorcerer</span>
       </div>
-      <a href="/dashboard/marketplace/new" class="btn-primary">
-        + Create Template
-      </a>
-    </div>
-
-    <!-- Filters + Search -->
-    <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-6 flex flex-wrap gap-3 items-center">
-      <input
-        id="searchInput"
-        type="text"
-        placeholder="Search templates…"
-        class="input flex-1 min-w-[200px]"
-      />
-      <select id="categoryFilter" class="input w-48">
-        <option value="">All Categories</option>
-        {categories.map((c: any) => (
-          <option value={c.category}>{c.category.replace(/_/g, ' ')} ({c.count})</option>
-        ))}
-      </select>
-      <select id="modeFilter" class="input w-40">
-        <option value="">All Modes</option>
-        <option value="ai">AI Only</option>
-        <option value="human">Human Only</option>
-      </select>
-      <select id="sortFilter" class="input w-40">
-        <option value="featured">Featured</option>
-        <option value="popular">Most Popular</option>
-        <option value="newest">Newest</option>
-        <option value="top_rated">Top Rated</option>
-      </select>
-      <label class="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
-        <input id="myOwnFilter" type="checkbox" class="rounded" />
-        My Templates
-      </label>
-    </div>
-
-    <!-- Category Pills -->
-    <div class="flex flex-wrap gap-2 mb-6" id="categoryPills">
-      <button class="category-pill active" data-cat="">All</button>
-      {categories.slice(0, 8).map((c: any) => (
-        <button class="category-pill" data-cat={c.category}>
-          {c.category.replace(/_/g, ' ')}
-        </button>
-      ))}
-    </div>
-
-    <!-- Results Count -->
-    <div class="flex items-center justify-between mb-4">
-      <p id="resultsCount" class="text-sm text-gray-500">{templates.length} templates</p>
-    </div>
-
-    <!-- Template Grid -->
-    <div id="templateGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-      {templates.map((t: any) => (
-        <div class="template-card bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-all overflow-hidden"
-             data-type={t.task_type} data-cat={t.category} data-mode={t.execution_mode}>
-          <!-- Header -->
-          <div class="p-4 border-b border-gray-50">
-            <div class="flex items-start justify-between mb-2">
-              <span class={`badge ${t.execution_mode === 'ai' ? 'badge-blue' : 'badge-purple'}`}>
-                {t.execution_mode === 'ai' ? '🤖 AI' : '👷 Human'}
-              </span>
-              {t.is_featured && <span class="badge badge-yellow">⭐ Featured</span>}
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        {featuredTemplates.map((t: any) => (
+          <div class="relative bg-gradient-to-br from-indigo-50 to-purple-50 rounded-2xl border border-indigo-200 shadow-md overflow-hidden hover:shadow-lg transition-all">
+            <!-- Featured ribbon -->
+            <div class="absolute top-0 right-0">
+              <div class="bg-yellow-400 text-yellow-900 text-xs font-bold px-3 py-1 rounded-bl-xl">⭐ FEATURED</div>
             </div>
-            <h3 class="font-semibold text-gray-900 mt-2 leading-tight">{t.name}</h3>
-            {t.description && (
-              <p class="text-xs text-gray-500 mt-1 line-clamp-2">{t.description}</p>
-            )}
-          </div>
-
-          <!-- Meta -->
-          <div class="p-4">
-            <div class="flex items-center justify-between text-xs text-gray-400 mb-3">
-              <span class="font-mono bg-gray-50 px-2 py-0.5 rounded text-gray-600">
-                {t.task_type.replace(/_/g, '_')}
-              </span>
-              {t.category && (
-                <span class="text-gray-400">{t.category.replace(/_/g, ' ')}</span>
-              )}
-            </div>
-
-            <!-- Stats -->
-            <div class="flex items-center gap-3 text-xs text-gray-500 mb-4">
-              <span>📥 {t.use_count} uses</span>
-              {t.rating_count > 0 ? (
-                <span>⭐ {t.avg_rating?.toFixed(1)} ({t.rating_count})</span>
-              ) : (
-                <span class="text-gray-300">No ratings yet</span>
-              )}
-            </div>
-
-            <!-- Tags -->
-            {t.tags && t.tags.length > 0 && (
-              <div class="flex flex-wrap gap-1 mb-4">
-                {t.tags.slice(0, 3).map((tag: string) => (
-                  <span class="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">{tag}</span>
-                ))}
+            <div class="p-5">
+              <div class="mb-3">
+                <span class={`text-xs px-2 py-0.5 rounded-full font-medium ${t.execution_mode==='ai'?'bg-blue-100 text-blue-700':'bg-purple-100 text-purple-700'}`}>
+                  {t.execution_mode==='ai'?'🤖 AI':'👷 Human'}
+                </span>
               </div>
-            )}
-
-            <!-- Actions -->
-            <div class="flex gap-2">
-              <button
-                class="btn-primary flex-1 text-sm py-1.5 use-template-btn"
-                data-id={t.id}
-                data-type={t.task_type}
-                data-mode={t.execution_mode}
-              >
-                Use Template
-              </button>
-              <button
-                class="btn-secondary text-sm py-1.5 px-3 view-template-btn"
-                data-id={t.id}
-                title="View details"
-              >
-                👁
-              </button>
+              <h3 class="font-bold text-gray-900 mb-1 leading-tight">{t.name}</h3>
+              {t.description && <p class="text-xs text-gray-600 mb-3 line-clamp-2">{t.description}</p>}
+              <div class="flex items-center gap-1 mb-4" set:html={starHtml(t.avg_rating??0, t.rating_count??0)}></div>
+              <div class="text-xs text-gray-500 mb-4">📥 {t.use_count} uses</div>
+              <div class="flex gap-2">
+                <button class="btn-primary flex-1 text-xs py-2 use-template-btn"
+                  data-id={t.id} data-type={t.task_type} data-mode={t.execution_mode}>
+                  Use Template
+                </button>
+                <button class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs py-2 px-3 rounded-lg font-medium transition-colors clone-task-btn"
+                  data-id={t.id} title="One-click create task from this template">
+                  ⚡ Create
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
+  )}
 
-    <!-- Empty State -->
-    <div id="emptyState" class="hidden text-center py-16">
-      <div class="text-6xl mb-4">🔍</div>
-      <h3 class="text-lg font-semibold text-gray-700">No templates found</h3>
-      <p class="text-gray-400 mb-4">Try adjusting your filters or create your own template.</p>
-      <a href="/dashboard/marketplace/new" class="btn-primary">Create Template</a>
-    </div>
-
-    <!-- Pagination -->
-    <div id="pagination" class="flex justify-center mt-8 gap-2"></div>
+  <!-- ── All Templates Section ─────────────────────────────────────────── -->
+  <div class="flex items-center gap-2 mb-4">
+    <h2 class="text-lg font-bold text-gray-900">All Templates</h2>
   </div>
 
-  <!-- Template Detail Modal -->
-  <div id="templateModal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-    <div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-      <div class="p-6">
-        <div class="flex items-start justify-between mb-4">
-          <h2 id="modalTitle" class="text-xl font-bold text-gray-900"></h2>
-          <button id="closeModal" class="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+  <!-- Filters + Search -->
+  <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-5 flex flex-wrap gap-3 items-center">
+    <input id="searchInput" type="text" placeholder="Search templates…" class="input flex-1 min-w-[200px]"/>
+    <select id="categoryFilter" class="input w-48">
+      <option value="">All Categories</option>
+      {categories.map((c: any) => (
+        <option value={c.category}>{c.category.replace(/_/g,' ')} ({c.count})</option>
+      ))}
+    </select>
+    <select id="modeFilter" class="input w-40">
+      <option value="">All Modes</option>
+      <option value="ai">AI Only</option>
+      <option value="human">Human Only</option>
+    </select>
+    <select id="sortFilter" class="input w-40">
+      <option value="featured">Featured</option>
+      <option value="popular">Most Popular</option>
+      <option value="newest">Newest</option>
+      <option value="top_rated">Top Rated</option>
+    </select>
+    <label class="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+      <input id="myOwnFilter" type="checkbox" class="rounded"/>
+      My Templates
+    </label>
+  </div>
+
+  <!-- Category Pills -->
+  <div class="flex flex-wrap gap-2 mb-5" id="categoryPills">
+    <button class="category-pill active" data-cat="">All</button>
+    {categories.slice(0,8).map((c: any) => (
+      <button class="category-pill" data-cat={c.category}>{c.category.replace(/_/g,' ')}</button>
+    ))}
+  </div>
+
+  <!-- Results Count -->
+  <div class="flex items-center justify-between mb-4">
+    <p id="resultsCount" class="text-sm text-gray-500">{templates.length} templates</p>
+  </div>
+
+  <!-- Template Grid -->
+  <div id="templateGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+    {templates.map((t: any) => (
+      <div class="template-card bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-all overflow-hidden"
+           data-type={t.task_type} data-cat={t.category} data-mode={t.execution_mode}>
+        <div class="p-4 border-b border-gray-50">
+          <div class="flex items-start justify-between mb-2">
+            <span class={`badge ${t.execution_mode==='ai'?'badge-blue':'badge-purple'}`}>
+              {t.execution_mode==='ai'?'🤖 AI':'👷 Human'}
+            </span>
+            {t.is_featured && <span class="badge badge-yellow">⭐ Featured</span>}
+          </div>
+          <h3 class="font-semibold text-gray-900 mt-2 leading-tight">{t.name}</h3>
+          {t.description && <p class="text-xs text-gray-500 mt-1 line-clamp-2">{t.description}</p>}
         </div>
-        <div id="modalBody"></div>
-        <div class="flex gap-3 mt-6">
-          <button id="modalUse" class="btn-primary flex-1">Use This Template</button>
-          <div class="flex gap-1" id="starRating">
-            {[1,2,3,4,5].map(n => (
-              <button class="star-btn text-2xl text-gray-200 hover:text-yellow-400 transition-colors" data-star={n}>★</button>
-            ))}
+        <div class="p-4">
+          <div class="flex items-center justify-between text-xs text-gray-400 mb-2">
+            <span class="font-mono bg-gray-50 px-2 py-0.5 rounded text-gray-600">{t.task_type}</span>
+            {t.category && <span class="text-gray-400">{t.category.replace(/_/g,' ')}</span>}
+          </div>
+          <!-- Star rating display -->
+          <div class="flex items-center gap-1 mb-2" set:html={starHtml(t.avg_rating??0, t.rating_count??0)}></div>
+          <div class="flex items-center gap-3 text-xs text-gray-500 mb-3">
+            <span>📥 {t.use_count} uses</span>
+          </div>
+          {t.tags && t.tags.length > 0 && (
+            <div class="flex flex-wrap gap-1 mb-3">
+              {t.tags.slice(0,3).map((tag: string) => (
+                <span class="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">{tag}</span>
+              ))}
+            </div>
+          )}
+          <div class="flex gap-2">
+            <button class="btn-primary flex-1 text-sm py-1.5 use-template-btn"
+              data-id={t.id} data-type={t.task_type} data-mode={t.execution_mode}>
+              Use Template
+            </button>
+            <button class="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-sm py-1.5 px-3 rounded-lg font-medium border border-emerald-200 transition-colors clone-task-btn"
+              data-id={t.id} title="One-click create task">
+              ⚡
+            </button>
+            <button class="btn-secondary text-sm py-1.5 px-3 view-template-btn" data-id={t.id} title="View details">👁</button>
           </div>
         </div>
       </div>
+    ))}
+  </div>
+
+  <!-- Empty State -->
+  <div id="emptyState" class="hidden text-center py-16">
+    <div class="text-6xl mb-4">🔍</div>
+    <h3 class="text-lg font-semibold text-gray-700">No templates found</h3>
+    <p class="text-gray-400 mb-4">Try adjusting your filters or create your own template.</p>
+    <a href="/dashboard/marketplace/new" class="btn-primary">Create Template</a>
+  </div>
+
+  <!-- Pagination -->
+  <div id="pagination" class="flex justify-center mt-8 gap-2"></div>
+
+</div>
+
+<!-- Template Detail Modal -->
+<div id="templateModal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+  <div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+    <div class="p-6">
+      <div class="flex items-start justify-between mb-4">
+        <h2 id="modalTitle" class="text-xl font-bold text-gray-900"></h2>
+        <button id="closeModal" class="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+      </div>
+      <div id="modalBody"></div>
+      <div class="flex gap-3 mt-6 flex-wrap">
+        <button id="modalUse" class="btn-primary flex-1">Use Template → New Task</button>
+        <button id="modalClone" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+          ⚡ One-Click Create Task
+        </button>
+        <div class="flex gap-1 items-center" id="starRating">
+          {[1,2,3,4,5].map(n => (
+            <button class="star-btn text-2xl text-gray-200 hover:text-yellow-400 transition-colors" data-star={n}>★</button>
+          ))}
+        </div>
+      </div>
+      <div id="cloneMsg" class="hidden mt-3 text-sm rounded-lg px-3 py-2"></div>
     </div>
   </div>
+</div>
+
+<!-- Toast notification -->
+<div id="toast" class="hidden fixed bottom-6 right-6 z-50 bg-gray-900 text-white text-sm rounded-xl px-4 py-3 shadow-xl max-w-xs">
+  <div id="toastMsg"></div>
+</div>
 </Layout>
 
 <style>
@@ -200,68 +240,81 @@ const categories = categoriesData;
   .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 </style>
 
-<script>
-  const API = '/api';
-  const token = document.cookie.match(/token=([^;]+)/)?.[1] || '';
+<script define:vars={{ clientApiUrl }}>
+  const API = clientApiUrl;
+  const token = document.cookie.match(/cs_token=([^;]+)/)?.[1] || '';
   const authHeader = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
 
-  let allTemplates: any[] = [];
-  let activeTemplateId: string | null = null;
+  let activeTemplateId = null;
   let currentPage = 1;
   const PAGE_SIZE = 24;
 
-  async function loadTemplates(params: Record<string, string> = {}) {
-    const qs = new URLSearchParams({ page: String(currentPage), page_size: String(PAGE_SIZE), ...params });
-    const res = await fetch(`/api/v1/marketplace/templates?${qs}`, { headers: authHeader });
-    if (!res.ok) return;
-    const data = await res.json();
-    allTemplates = data.items || [];
-    renderTemplates(allTemplates);
-    renderPagination(data.total, data.page, data.page_size);
-    document.getElementById('resultsCount')!.textContent = `${data.total} templates`;
+  // ── Toast ─────────────────────────────────────────────────────────────────
+  function showToast(msg, isError = false) {
+    const toast = document.getElementById('toast');
+    const toastMsg = document.getElementById('toastMsg');
+    if (!toast || !toastMsg) return;
+    toastMsg.textContent = msg;
+    toast.className = `fixed bottom-6 right-6 z-50 text-white text-sm rounded-xl px-4 py-3 shadow-xl max-w-xs ${isError ? 'bg-red-600' : 'bg-gray-900'}`;
+    setTimeout(() => toast.classList.add('hidden'), 3000);
   }
 
-  function renderTemplates(templates: any[]) {
-    const grid = document.getElementById('templateGrid')!;
-    const empty = document.getElementById('emptyState')!;
+  // ── Stars helper ──────────────────────────────────────────────────────────
+  function renderStars(rating, count) {
+    if (count === 0) return '<span class="text-gray-300 text-xs">No ratings</span>';
+    const stars = Array.from({length:5},(_,i) =>
+      `<span class="${i < Math.round(rating) ? 'text-yellow-400' : 'text-gray-200'}">★</span>`
+    ).join('');
+    return `<span class="text-sm">${stars}</span><span class="text-xs text-gray-500 ml-1">${rating.toFixed(1)} (${count})</span>`;
+  }
+
+  // ── Load & Render templates ───────────────────────────────────────────────
+  async function loadTemplates(params = {}) {
+    const qs = new URLSearchParams({ page: String(currentPage), page_size: String(PAGE_SIZE), ...params });
+    const res = await fetch(`${API}/v1/marketplace/templates?${qs}`, { headers: authHeader });
+    if (!res.ok) return;
+    const data = await res.json();
+    renderTemplates(data.items || []);
+    renderPagination(data.total, data.page, data.page_size);
+    document.getElementById('resultsCount').textContent = `${data.total} templates`;
+  }
+
+  function renderTemplates(templates) {
+    const grid = document.getElementById('templateGrid');
+    const empty = document.getElementById('emptyState');
     if (templates.length === 0) {
-      grid.classList.add('hidden');
-      empty.classList.remove('hidden');
-      return;
+      grid.classList.add('hidden'); empty.classList.remove('hidden'); return;
     }
-    grid.classList.remove('hidden');
-    empty.classList.add('hidden');
+    grid.classList.remove('hidden'); empty.classList.add('hidden');
     grid.innerHTML = templates.map(t => `
       <div class="template-card bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-all overflow-hidden">
         <div class="p-4 border-b border-gray-50">
           <div class="flex items-start justify-between mb-2">
-            <span class="badge ${t.execution_mode === 'ai' ? 'badge-blue' : 'badge-purple'}">
-              ${t.execution_mode === 'ai' ? '🤖 AI' : '👷 Human'}
+            <span class="badge ${t.execution_mode==='ai'?'badge-blue':'badge-purple'}">
+              ${t.execution_mode==='ai'?'🤖 AI':'👷 Human'}
             </span>
-            ${t.is_featured ? '<span class="badge badge-yellow">⭐ Featured</span>' : ''}
+            ${t.is_featured?'<span class="badge badge-yellow">⭐ Featured</span>':''}
           </div>
           <h3 class="font-semibold text-gray-900 mt-2 leading-tight">${t.name}</h3>
-          ${t.description ? `<p class="text-xs text-gray-500 mt-1 line-clamp-2">${t.description}</p>` : ''}
+          ${t.description?`<p class="text-xs text-gray-500 mt-1 line-clamp-2">${t.description}</p>`:''}
         </div>
         <div class="p-4">
-          <div class="flex items-center justify-between text-xs text-gray-400 mb-3">
+          <div class="flex items-center justify-between text-xs text-gray-400 mb-2">
             <span class="font-mono bg-gray-50 px-2 py-0.5 rounded text-gray-600">${t.task_type}</span>
-            ${t.category ? `<span class="text-gray-400">${t.category.replace(/_/g, ' ')}</span>` : ''}
+            ${t.category?`<span class="text-gray-400">${t.category.replace(/_/g,' ')}</span>`:''}
           </div>
-          <div class="flex items-center gap-3 text-xs text-gray-500 mb-4">
+          <div class="flex items-center gap-1 mb-2">${renderStars(t.avg_rating||0, t.rating_count||0)}</div>
+          <div class="flex items-center gap-3 text-xs text-gray-500 mb-3">
             <span>📥 ${t.use_count} uses</span>
-            ${t.rating_count > 0 ? `<span>⭐ ${(t.avg_rating || 0).toFixed(1)} (${t.rating_count})</span>` : '<span class="text-gray-300">No ratings yet</span>'}
           </div>
-          ${t.tags && t.tags.length > 0 ? `
-            <div class="flex flex-wrap gap-1 mb-4">
-              ${t.tags.slice(0, 3).map((tag: string) => `<span class="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">${tag}</span>`).join('')}
-            </div>
-          ` : ''}
+          ${t.tags&&t.tags.length?`<div class="flex flex-wrap gap-1 mb-3">${t.tags.slice(0,3).map(tag=>`<span class="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">${tag}</span>`).join('')}</div>`:''}
           <div class="flex gap-2">
             <button class="btn-primary flex-1 text-sm py-1.5 use-template-btn"
               data-id="${t.id}" data-type="${t.task_type}" data-mode="${t.execution_mode}">
               Use Template
             </button>
+            <button class="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-sm py-1.5 px-3 rounded-lg font-medium border border-emerald-200 transition-colors clone-task-btn"
+              data-id="${t.id}" title="One-click create task">⚡</button>
             <button class="btn-secondary text-sm py-1.5 px-3 view-template-btn" data-id="${t.id}" title="View details">👁</button>
           </div>
         </div>
@@ -270,122 +323,162 @@ const categories = categoriesData;
     attachCardListeners();
   }
 
-  function renderPagination(total: number, page: number, pageSize: number) {
+  function renderPagination(total, page, pageSize) {
     const totalPages = Math.ceil(total / pageSize);
-    const pag = document.getElementById('pagination')!;
+    const pag = document.getElementById('pagination');
     if (totalPages <= 1) { pag.innerHTML = ''; return; }
     let html = '';
     if (page > 1) html += `<button class="page-btn px-3 py-1 rounded border" data-p="${page-1}">‹</button>`;
-    for (let i = Math.max(1, page-2); i <= Math.min(totalPages, page+2); i++) {
-      html += `<button class="page-btn px-3 py-1 rounded border ${i === page ? 'bg-indigo-600 text-white border-indigo-600' : ''}" data-p="${i}">${i}</button>`;
+    for (let i = Math.max(1,page-2); i <= Math.min(totalPages,page+2); i++) {
+      html += `<button class="page-btn px-3 py-1 rounded border ${i===page?'bg-indigo-600 text-white border-indigo-600':''}" data-p="${i}">${i}</button>`;
     }
     if (page < totalPages) html += `<button class="page-btn px-3 py-1 rounded border" data-p="${page+1}">›</button>`;
     pag.innerHTML = html;
     pag.querySelectorAll('.page-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        currentPage = parseInt((btn as HTMLElement).dataset.p!);
-        applyFilters();
-      });
+      btn.addEventListener('click', () => { currentPage = parseInt(btn.dataset.p); applyFilters(); });
     });
   }
 
-  function attachCardListeners() {
-    document.querySelectorAll('.use-template-btn').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const id = (btn as HTMLElement).dataset.id!;
-        const type = (btn as HTMLElement).dataset.type!;
-        const mode = (btn as HTMLElement).dataset.mode!;
-        await useTemplate(id, type, mode);
-      });
-    });
-    document.querySelectorAll('.view-template-btn').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const id = (btn as HTMLElement).dataset.id!;
-        await openModal(id);
-      });
-    });
-  }
-
-  async function useTemplate(id: string, taskType: string, mode: string) {
-    await fetch(`/api/v1/marketplace/templates/${id}/use`, { method: 'POST', headers: authHeader });
-    // Redirect to new task page with prefilled params
+  // ── useTemplate: prefill new-task form ───────────────────────────────────
+  async function useTemplate(id, taskType, mode) {
+    await fetch(`${API}/v1/marketplace/templates/${id}/use`, { method:'POST', headers: authHeader });
     window.location.href = `/dashboard/new-task?template=${id}&type=${taskType}&mode=${mode}`;
   }
 
-  async function openModal(id: string) {
-    const res = await fetch(`/api/v1/marketplace/templates/${id}`, { headers: authHeader });
+  // ── cloneTask: one-click create task from template ────────────────────────
+  async function cloneTask(id) {
+    const btn = document.querySelector(`.clone-task-btn[data-id="${id}"]`);
+    const origText = btn?.textContent;
+    if (btn) btn.textContent = '⏳';
+    try {
+      const res = await fetch(`${API}/v1/marketplace/templates/${id}/clone-task`, {
+        method: 'POST',
+        headers: authHeader,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail ?? 'Failed to create task');
+      showToast(`✅ Task created from "${data.template_name}"! Redirecting…`);
+      setTimeout(() => { window.location.href = `/dashboard/tasks/${data.task_id}`; }, 1200);
+    } catch(e) {
+      if (btn) btn.textContent = origText;
+      showToast(`❌ ${e.message}`, true);
+    }
+  }
+
+  // ── Modal ─────────────────────────────────────────────────────────────────
+  async function openModal(id) {
+    const res = await fetch(`${API}/v1/marketplace/templates/${id}`, { headers: authHeader });
     if (!res.ok) return;
     const t = await res.json();
     activeTemplateId = id;
 
-    document.getElementById('modalTitle')!.textContent = t.name;
-    document.getElementById('modalBody')!.innerHTML = `
+    document.getElementById('modalTitle').textContent = t.name;
+    document.getElementById('modalBody').innerHTML = `
       <div class="space-y-4">
-        ${t.description ? `<p class="text-gray-600">${t.description}</p>` : ''}
+        ${t.description?`<p class="text-gray-600">${t.description}</p>`:''}
         <div class="grid grid-cols-2 gap-4 text-sm">
           <div><span class="text-gray-400">Task Type</span><div class="font-mono font-semibold">${t.task_type}</div></div>
-          <div><span class="text-gray-400">Mode</span><div class="font-semibold">${t.execution_mode === 'ai' ? '🤖 AI' : '👷 Human'}</div></div>
-          <div><span class="text-gray-400">Category</span><div>${t.category?.replace(/_/g, ' ') || '—'}</div></div>
+          <div><span class="text-gray-400">Mode</span><div class="font-semibold">${t.execution_mode==='ai'?'🤖 AI':'👷 Human'}</div></div>
+          <div><span class="text-gray-400">Category</span><div>${t.category?.replace(/_/g,' ')||'—'}</div></div>
           <div><span class="text-gray-400">Uses</span><div>${t.use_count}</div></div>
         </div>
-        ${t.tags?.length ? `<div class="flex flex-wrap gap-1">${t.tags.map((tag: string) => `<span class="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">${tag}</span>`).join('')}</div>` : ''}
+        <div class="flex items-center gap-1">${renderStars(t.avg_rating||0, t.rating_count||0)}</div>
+        ${t.tags?.length?`<div class="flex flex-wrap gap-1">${t.tags.map(tag=>`<span class="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">${tag}</span>`).join('')}</div>`:''}
         <div>
           <p class="text-sm text-gray-400 mb-1">Default Config</p>
-          <pre class="bg-gray-50 rounded-lg p-3 text-xs overflow-auto max-h-32">${JSON.stringify(t.task_config, null, 2)}</pre>
+          <pre class="bg-gray-50 rounded-lg p-3 text-xs overflow-auto max-h-32">${JSON.stringify(t.task_config,null,2)}</pre>
         </div>
-        ${t.example_input ? `
-          <div>
-            <p class="text-sm text-gray-400 mb-1">Example Input</p>
-            <pre class="bg-blue-50 rounded-lg p-3 text-xs overflow-auto max-h-32">${JSON.stringify(t.example_input, null, 2)}</pre>
-          </div>
-        ` : ''}
+        ${t.example_input?`<div>
+          <p class="text-sm text-gray-400 mb-1">Example Input</p>
+          <pre class="bg-blue-50 rounded-lg p-3 text-xs overflow-auto max-h-32">${JSON.stringify(t.example_input,null,2)}</pre>
+        </div>`:''}
       </div>
     `;
 
-    const avgRating = t.avg_rating || 0;
+    const avgRating = t.avg_rating||0;
     document.querySelectorAll('.star-btn').forEach(btn => {
-      const star = parseInt((btn as HTMLElement).dataset.star!);
-      (btn as HTMLElement).style.color = star <= Math.round(avgRating) ? '#f59e0b' : '#d1d5db';
+      const star = parseInt(btn.dataset.star);
+      btn.style.color = star <= Math.round(avgRating) ? '#f59e0b' : '#d1d5db';
     });
 
-    document.getElementById('modalUse')!.onclick = () => useTemplate(id, t.task_type, t.execution_mode);
-    document.getElementById('templateModal')!.classList.remove('hidden');
+    document.getElementById('modalUse').onclick = () => useTemplate(id, t.task_type, t.execution_mode);
+    document.getElementById('modalClone').onclick = async () => {
+      const cloneBtn = document.getElementById('modalClone');
+      const cloneMsg = document.getElementById('cloneMsg');
+      cloneBtn.textContent = '⏳ Creating…';
+      cloneBtn.disabled = true;
+      try {
+        const res = await fetch(`${API}/v1/marketplace/templates/${id}/clone-task`, {
+          method:'POST', headers: authHeader,
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail??'Failed');
+        cloneMsg.textContent = `✅ Task created! `;
+        const link = document.createElement('a');
+        link.href = `/dashboard/tasks/${data.task_id}`;
+        link.textContent = 'View task →';
+        link.className = 'underline text-indigo-600';
+        cloneMsg.appendChild(link);
+        cloneMsg.className = 'mt-3 text-sm rounded-lg px-3 py-2 bg-emerald-50 text-emerald-800 border border-emerald-200';
+        cloneMsg.classList.remove('hidden');
+      } catch(e) {
+        cloneMsg.textContent = `❌ ${e.message}`;
+        cloneMsg.className = 'mt-3 text-sm rounded-lg px-3 py-2 bg-red-50 text-red-700 border border-red-200';
+        cloneMsg.classList.remove('hidden');
+        cloneBtn.textContent = '⚡ One-Click Create Task';
+        cloneBtn.disabled = false;
+      }
+    };
+
+    document.getElementById('templateModal').classList.remove('hidden');
   }
 
-  // Modal close
+  // ── Card listeners ────────────────────────────────────────────────────────
+  function attachCardListeners() {
+    document.querySelectorAll('.use-template-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        useTemplate(btn.dataset.id, btn.dataset.type, btn.dataset.mode);
+      });
+    });
+    document.querySelectorAll('.clone-task-btn').forEach(btn => {
+      btn.addEventListener('click', () => cloneTask(btn.dataset.id));
+    });
+    document.querySelectorAll('.view-template-btn').forEach(btn => {
+      btn.addEventListener('click', () => openModal(btn.dataset.id));
+    });
+  }
+
+  // ── Modal close ───────────────────────────────────────────────────────────
   document.getElementById('closeModal')?.addEventListener('click', () => {
-    document.getElementById('templateModal')!.classList.add('hidden');
+    document.getElementById('templateModal').classList.add('hidden');
   });
-  document.getElementById('templateModal')?.addEventListener('click', (e) => {
-    if (e.target === e.currentTarget) document.getElementById('templateModal')!.classList.add('hidden');
+  document.getElementById('templateModal')?.addEventListener('click', e => {
+    if (e.target === e.currentTarget) document.getElementById('templateModal').classList.add('hidden');
   });
 
-  // Star rating
+  // ── Star rating ───────────────────────────────────────────────────────────
   document.querySelectorAll('.star-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       if (!activeTemplateId) return;
-      const rating = parseInt((btn as HTMLElement).dataset.star!);
-      await fetch(`/api/v1/marketplace/templates/${activeTemplateId}/rate`, {
-        method: 'POST',
-        headers: authHeader,
+      const rating = parseInt(btn.dataset.star);
+      await fetch(`${API}/v1/marketplace/templates/${activeTemplateId}/rate`, {
+        method:'POST', headers: authHeader,
         body: JSON.stringify({ rating }),
       });
-      // Visual update
       document.querySelectorAll('.star-btn').forEach(s => {
-        const n = parseInt((s as HTMLElement).dataset.star!);
-        (s as HTMLElement).style.color = n <= rating ? '#f59e0b' : '#d1d5db';
+        s.style.color = parseInt(s.dataset.star) <= rating ? '#f59e0b' : '#d1d5db';
       });
     });
   });
 
-  // Filters
+  // ── Filters ───────────────────────────────────────────────────────────────
   function getFilterParams() {
-    const search = (document.getElementById('searchInput') as HTMLInputElement).value.trim();
-    const category = (document.getElementById('categoryFilter') as HTMLSelectElement).value;
-    const mode = (document.getElementById('modeFilter') as HTMLSelectElement).value;
-    const sort = (document.getElementById('sortFilter') as HTMLSelectElement).value;
-    const myOwn = (document.getElementById('myOwnFilter') as HTMLInputElement).checked;
-    const params: Record<string, string> = { sort };
+    const search = document.getElementById('searchInput').value.trim();
+    const category = document.getElementById('categoryFilter').value;
+    const mode = document.getElementById('modeFilter').value;
+    const sort = document.getElementById('sortFilter').value;
+    const myOwn = document.getElementById('myOwnFilter').checked;
+    const params = { sort };
     if (search) params.search = search;
     if (category) params.category = category;
     if (mode) params.execution_mode = mode;
@@ -393,31 +486,27 @@ const categories = categoriesData;
     return params;
   }
 
-  function applyFilters() {
-    loadTemplates(getFilterParams());
-  }
+  function applyFilters() { loadTemplates(getFilterParams()); }
 
-  let searchTimer: any;
+  let searchTimer;
   document.getElementById('searchInput')?.addEventListener('input', () => {
     clearTimeout(searchTimer);
     searchTimer = setTimeout(() => { currentPage = 1; applyFilters(); }, 400);
   });
-  ['categoryFilter', 'modeFilter', 'sortFilter', 'myOwnFilter'].forEach(id => {
-    document.getElementById(id)?.addEventListener('change', () => { currentPage = 1; applyFilters(); });
+  ['categoryFilter','modeFilter','sortFilter','myOwnFilter'].forEach(id => {
+    document.getElementById(id)?.addEventListener('change', () => { currentPage=1; applyFilters(); });
   });
 
-  // Category pills
+  // ── Category pills ────────────────────────────────────────────────────────
   document.querySelectorAll('.category-pill').forEach(pill => {
     pill.addEventListener('click', () => {
       document.querySelectorAll('.category-pill').forEach(p => p.classList.remove('active'));
       pill.classList.add('active');
-      const cat = (pill as HTMLElement).dataset.cat || '';
-      (document.getElementById('categoryFilter') as HTMLSelectElement).value = cat;
-      currentPage = 1;
-      applyFilters();
+      document.getElementById('categoryFilter').value = pill.dataset.cat||'';
+      currentPage = 1; applyFilters();
     });
   });
 
-  // Init
+  // ── Init ──────────────────────────────────────────────────────────────────
   attachCardListeners();
 </script>

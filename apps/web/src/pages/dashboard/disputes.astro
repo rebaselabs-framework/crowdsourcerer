@@ -7,6 +7,8 @@ const token = getToken(Object.fromEntries(
 ));
 if (!token) return Astro.redirect("/login");
 
+const clientApiUrl = import.meta.env.PUBLIC_API_URL ?? "";
+
 // Handle dispute resolution POST
 if (Astro.request.method === "POST") {
   const form = await Astro.request.formData();
@@ -14,50 +16,44 @@ if (Astro.request.method === "POST") {
   const taskId = form.get("task_id") as string;
   const assignmentId = form.get("winning_assignment_id") as string;
   const note = form.get("resolution_note") as string | undefined;
-
   if (action === "resolve" && taskId && assignmentId) {
     try {
       await apiFetch(`/v1/disputes/tasks/${taskId}/resolve`, {
-        method: "POST",
-        token,
-        body: JSON.stringify({
-          winning_assignment_id: assignmentId,
-          resolution_note: note || null,
-        }),
+        method: "POST", token,
+        body: JSON.stringify({ winning_assignment_id: assignmentId, resolution_note: note || null }),
       });
-    } catch (_) {
-      // fall through
-    }
+    } catch (_) {}
   }
   return Astro.redirect("/dashboard/disputes");
 }
 
 const statusFilter = Astro.url.searchParams.get("status") ?? "disputed";
 const page = Number(Astro.url.searchParams.get("page") ?? 1);
+// If a specific task is focused, load its evidence + timeline
+const focusTaskId = Astro.url.searchParams.get("task") ?? null;
 
 let disputedTasks: any = { items: [], total: 0, has_next: false };
+let focusEvidence: any[] = [];
+let focusTimeline: any[] = [];
+let adminUsers: any[] = [];
+let currentUser: any = null;
 let error: string | null = null;
 
 try {
-  disputedTasks = await apiFetch<any>(
-    `/v1/disputes/tasks?status=${statusFilter}&page=${page}&page_size=20`,
-    { token }
-  );
+  [disputedTasks, currentUser] = await Promise.all([
+    apiFetch<any>(`/v1/disputes/tasks?status=${statusFilter}&page=${page}&page_size=20`, { token }),
+    apiFetch<any>("/v1/users/me", { token }),
+  ]);
 } catch (e: any) {
-  if (e.message?.includes("401") || e.message?.includes("403")) {
-    return Astro.redirect("/login");
-  }
+  if (e.message?.includes("401") || e.message?.includes("403")) return Astro.redirect("/login");
   error = "Failed to load disputed tasks";
 }
 
-// Fetch consensus state for each disputed task
+// Fetch consensus + submissions for each task
 const tasksWithConsensus: Array<{ task: any; consensus: any; submissions: any[] }> = [];
 for (const task of disputedTasks.items) {
-  let consensus = null;
-  let submissions: any[] = [];
-  try {
-    consensus = await apiFetch<any>(`/v1/disputes/tasks/${task.id}/consensus`, { token });
-  } catch (_) {}
+  let consensus = null, submissions: any[] = [];
+  try { consensus = await apiFetch<any>(`/v1/disputes/tasks/${task.id}/consensus`, { token }); } catch (_) {}
   try {
     const subsData = await apiFetch<any>(`/v1/tasks/${task.id}/submissions`, { token });
     submissions = subsData?.submissions ?? [];
@@ -65,126 +61,135 @@ for (const task of disputedTasks.items) {
   tasksWithConsensus.push({ task, consensus, submissions });
 }
 
+// If focus task selected, load evidence + timeline
+if (focusTaskId) {
+  try {
+    [focusEvidence, focusTimeline] = await Promise.all([
+      apiFetch<any[]>(`/v1/disputes/tasks/${focusTaskId}/evidence`, { token }).catch(() => []),
+      apiFetch<any[]>(`/v1/disputes/tasks/${focusTaskId}/timeline`, { token }).catch(() => []),
+    ]);
+  } catch (_) {}
+}
+
+const isAdmin = currentUser?.is_admin === true;
+
 const TASK_TYPE_LABELS: Record<string, string> = {
-  label_image: "Label Image", label_text: "Label Text", rate_quality: "Rate Quality",
-  verify_fact: "Verify Fact", moderate_content: "Moderate Content", compare_rank: "Compare & Rank",
-  answer_question: "Answer Question", transcription_review: "Review Transcription",
+  label_image:"Label Image", label_text:"Label Text", rate_quality:"Rate Quality",
+  verify_fact:"Verify Fact", moderate_content:"Moderate Content", compare_rank:"Compare & Rank",
+  answer_question:"Answer Question", transcription_review:"Review Transcription",
 };
 
 function strategyBadge(strategy: string) {
   const map: Record<string, { label: string; cls: string }> = {
-    majority_vote:    { label: "Majority Vote", cls: "bg-blue-100 text-blue-800" },
-    unanimous:        { label: "Unanimous",     cls: "bg-purple-100 text-purple-800" },
-    requester_review: { label: "Your Review",   cls: "bg-amber-100 text-amber-800" },
-    any_first:        { label: "First Wins",    cls: "bg-gray-100 text-gray-700" },
+    majority_vote: { label:"Majority Vote", cls:"bg-blue-100 text-blue-800" },
+    unanimous:     { label:"Unanimous",     cls:"bg-purple-100 text-purple-800" },
+    requester_review: { label:"Your Review", cls:"bg-amber-100 text-amber-800" },
+    any_first:     { label:"First Wins",    cls:"bg-gray-100 text-gray-700" },
   };
   return map[strategy] ?? { label: strategy, cls: "bg-gray-100 text-gray-700" };
 }
+
+function fmtDate(d: string) {
+  return new Date(d).toLocaleString("en-US", { month:"short", day:"numeric", hour:"2-digit", minute:"2-digit" });
+}
+
+const EVENT_ICONS: Record<string, string> = {
+  dispute_opened: "🚨",
+  evidence_added: "📎",
+  mediator_assigned: "⚖️",
+  resolution_proposed: "💡",
+  resolved: "✅",
+  escalated: "⬆️",
+};
 ---
 
 <Layout title="Dispute Resolution — CrowdSorcerer" active="dashboard">
-  <div class="max-w-5xl mx-auto px-4 py-10">
+<div class="max-w-6xl mx-auto px-4 py-10">
 
-    <!-- Header -->
-    <div class="flex items-center justify-between mb-6">
-      <div>
-        <h1 class="text-2xl font-bold text-gray-900">⚖️ Dispute Resolution</h1>
-        <p class="text-gray-500 mt-1">
-          Review conflicting worker submissions and pick the best answer.
-        </p>
-      </div>
-      <div class="flex gap-2">
-        {["disputed", "resolved", "all"].map((s) => (
-          <a
-            href={`/dashboard/disputes?status=${s}`}
-            class={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
-              statusFilter === s
-                ? "bg-indigo-600 text-white"
-                : "bg-white border border-gray-200 text-gray-600 hover:bg-gray-50"
-            }`}
-          >
-            {s.charAt(0).toUpperCase() + s.slice(1)}
-          </a>
-        ))}
-      </div>
+  <!-- Header -->
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">⚖️ Dispute Resolution</h1>
+      <p class="text-gray-500 mt-1">Review conflicting submissions, submit evidence, and resolve disputes.</p>
     </div>
+    <div class="flex gap-2">
+      {["disputed","resolved","all"].map(s => (
+        <a href={`/dashboard/disputes?status=${s}`}
+          class={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${statusFilter===s?"bg-indigo-600 text-white":"bg-white border border-gray-200 text-gray-600 hover:bg-gray-50"}`}>
+          {s.charAt(0).toUpperCase()+s.slice(1)}
+        </a>
+      ))}
+    </div>
+  </div>
 
-    {error && (
-      <div class="bg-red-50 border border-red-200 text-red-700 rounded-xl p-4 mb-6">{error}</div>
-    )}
+  {error && <div class="bg-red-50 border border-red-200 text-red-700 rounded-xl p-4 mb-6">{error}</div>}
 
-    {tasksWithConsensus.length === 0 && !error && (
-      <div class="text-center py-20 text-gray-400">
-        <div class="text-5xl mb-4">🎉</div>
-        <p class="text-lg font-medium">No disputes to resolve</p>
-        <p class="text-sm mt-1">
-          {statusFilter === "disputed"
-            ? "All your multi-worker tasks have reached consensus."
-            : "No tasks match this filter."}
-        </p>
-      </div>
-    )}
+  {tasksWithConsensus.length === 0 && !error && (
+    <div class="text-center py-20 text-gray-400">
+      <div class="text-5xl mb-4">🎉</div>
+      <p class="text-lg font-medium">No disputes to resolve</p>
+      <p class="text-sm mt-1">{statusFilter==="disputed"?"All tasks have reached consensus.":"No tasks match this filter."}</p>
+    </div>
+  )}
 
-    <div class="space-y-6">
-      {tasksWithConsensus.map(({ task, consensus, submissions }) => {
-        const badge = strategyBadge(task.consensus_strategy);
-        const isResolved = task.dispute_status === "resolved";
-        return (
-          <div class={`bg-white rounded-2xl border shadow-sm p-6 ${isResolved ? "opacity-75" : ""}`}>
+  <div class="space-y-6">
+    {tasksWithConsensus.map(({ task, consensus, submissions }) => {
+      const badge = strategyBadge(task.consensus_strategy);
+      const isResolved = task.dispute_status === "resolved";
+      const isFocused = focusTaskId === task.id;
+      return (
+        <div class={`bg-white rounded-2xl border shadow-sm overflow-hidden ${isResolved?"opacity-80":""}`}>
 
-            <!-- Task header -->
-            <div class="flex items-start justify-between gap-4 mb-4">
-              <div>
-                <div class="flex items-center gap-2 flex-wrap">
-                  <span class="font-semibold text-gray-900">
-                    {TASK_TYPE_LABELS[task.type] ?? task.type.replace("_", " ")}
-                  </span>
-                  <span class={`px-2 py-0.5 rounded-full text-xs font-medium ${badge.cls}`}>
-                    {badge.label}
-                  </span>
-                  {isResolved ? (
-                    <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">✅ Resolved</span>
-                  ) : (
-                    <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">⚠️ Disputed</span>
-                  )}
-                </div>
-                <p class="text-xs text-gray-400 mt-1 font-mono">{task.id}</p>
+          <!-- Task header bar -->
+          <div class="px-6 py-4 border-b border-gray-100 flex items-start justify-between gap-4">
+            <div>
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="font-semibold text-gray-900">{TASK_TYPE_LABELS[task.type]??task.type.replace("_"," ")}</span>
+                <span class={`px-2 py-0.5 rounded-full text-xs font-medium ${badge.cls}`}>{badge.label}</span>
+                {isResolved
+                  ? <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">✅ Resolved</span>
+                  : <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">⚠️ Disputed</span>
+                }
+                {task.mediator_id && (
+                  <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-violet-100 text-violet-800">⚖️ Mediator assigned</span>
+                )}
               </div>
-              <div class="text-right text-sm text-gray-500">
-                <div>{task.assignments_required} workers required</div>
-                <div>{task.assignments_completed} submitted</div>
-              </div>
+              <p class="text-xs text-gray-400 mt-0.5 font-mono">{task.id}</p>
             </div>
+            <div class="flex items-center gap-3">
+              <div class="text-right text-xs text-gray-500">
+                <div>{task.assignments_required} workers · {task.assignments_completed} submitted</div>
+              </div>
+              <a href={isFocused?`/dashboard/disputes?status=${statusFilter}`:`/dashboard/disputes?status=${statusFilter}&task=${task.id}`}
+                class="px-3 py-1.5 text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg transition">
+                {isFocused?"Close detail":"View detail"}
+              </a>
+            </div>
+          </div>
 
-            <!-- Task input summary -->
-            <div class="bg-gray-50 rounded-xl p-3 mb-4 text-sm text-gray-700 font-mono max-h-32 overflow-auto">
+          <div class="px-6 py-4">
+            <!-- Task input -->
+            <div class="bg-gray-50 rounded-xl p-3 mb-4 text-xs font-mono text-gray-700 max-h-28 overflow-auto">
               {JSON.stringify(task.input, null, 2)}
             </div>
 
-            <!-- Consensus vote breakdown -->
-            {consensus && consensus.votes?.length > 0 && (
+            <!-- Vote breakdown -->
+            {consensus?.votes?.length > 0 && (
               <div class="mb-4">
                 <h3 class="text-sm font-semibold text-gray-700 mb-2">
                   Vote Breakdown ({consensus.assignments_submitted}/{consensus.assignments_required})
                 </h3>
                 <div class="space-y-2">
                   {consensus.votes.map((vote: any, i: number) => (
-                    <div class={`flex items-center gap-3 p-2 rounded-lg ${i === 0 ? "bg-indigo-50 border border-indigo-200" : "bg-gray-50"}`}>
+                    <div class={`flex items-center gap-3 p-2 rounded-lg ${i===0?"bg-indigo-50 border border-indigo-200":"bg-gray-50"}`}>
                       <div class="flex-1 min-w-0">
                         <div class="text-xs font-mono text-gray-600 truncate">
-                          {vote.response_key.length > 120
-                            ? vote.response_key.slice(0, 120) + "…"
-                            : vote.response_key}
+                          {vote.response_key.length>120?vote.response_key.slice(0,120)+"…":vote.response_key}
                         </div>
                       </div>
-                      <div class="text-sm font-medium text-gray-700 shrink-0">
-                        {vote.count} vote{vote.count !== 1 ? "s" : ""} ({vote.percentage}%)
-                      </div>
+                      <div class="text-xs font-medium text-gray-700 shrink-0">{vote.count} vote{vote.count!==1?"s":""} ({vote.percentage}%)</div>
                       <div class="w-20 h-2 bg-gray-200 rounded-full overflow-hidden shrink-0">
-                        <div
-                          class={`h-full rounded-full ${i === 0 ? "bg-indigo-500" : "bg-gray-400"}`}
-                          style={`width: ${vote.percentage}%`}
-                        />
+                        <div class={`h-full rounded-full ${i===0?"bg-indigo-500":"bg-gray-400"}`} style={`width:${vote.percentage}%`}/>
                       </div>
                     </div>
                   ))}
@@ -192,34 +197,28 @@ function strategyBadge(strategy: string) {
               </div>
             )}
 
-            <!-- Submissions list with resolve action -->
+            <!-- Submissions: pick winner -->
             {!isResolved && submissions.length > 0 && (
-              <div>
+              <div class="mb-4">
                 <h3 class="text-sm font-semibold text-gray-700 mb-2">Pick the Best Answer</h3>
                 <div class="space-y-3">
                   {submissions.map((sub: any) => (
-                    <div class={`border rounded-xl p-4 ${task.winning_assignment_id === sub.id ? "border-green-400 bg-green-50" : "border-gray-200"}`}>
+                    <div class={`border rounded-xl p-4 ${task.winning_assignment_id===sub.id?"border-green-400 bg-green-50":"border-gray-200"}`}>
                       <div class="flex items-start justify-between gap-4">
                         <div class="flex-1 min-w-0">
                           <div class="text-xs text-gray-500 mb-1">
-                            Worker #{sub.id.slice(0, 8)} · Level {sub.worker?.worker_level ?? "?"} ·
-                            {sub.worker?.worker_tasks_completed ?? 0} tasks done
+                            Worker #{sub.id.slice(0,8)} · Level {sub.worker?.worker_level??"?"} · {sub.worker?.worker_tasks_completed??0} tasks
                           </div>
                           <div class="bg-white border border-gray-100 rounded-lg p-2 text-xs font-mono text-gray-700 max-h-24 overflow-auto">
                             {JSON.stringify(sub.response, null, 2)}
                           </div>
-                          {sub.worker_note && (
-                            <p class="text-xs text-gray-500 mt-1 italic">Note: {sub.worker_note}</p>
-                          )}
+                          {sub.worker_note && <p class="text-xs text-gray-500 mt-1 italic">Note: {sub.worker_note}</p>}
                         </div>
                         <form method="POST" class="shrink-0">
-                          <input type="hidden" name="action" value="resolve" />
-                          <input type="hidden" name="task_id" value={task.id} />
-                          <input type="hidden" name="winning_assignment_id" value={sub.id} />
-                          <button
-                            type="submit"
-                            class="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition"
-                          >
+                          <input type="hidden" name="action" value="resolve"/>
+                          <input type="hidden" name="task_id" value={task.id}/>
+                          <input type="hidden" name="winning_assignment_id" value={sub.id}/>
+                          <button type="submit" class="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition">
                             Select Winner
                           </button>
                         </form>
@@ -230,44 +229,228 @@ function strategyBadge(strategy: string) {
               </div>
             )}
 
+            <!-- Resolved answer -->
             {isResolved && task.output && (
-              <div class="mt-2 bg-green-50 border border-green-200 rounded-xl p-3">
+              <div class="mb-4 bg-green-50 border border-green-200 rounded-xl p-3">
                 <h3 class="text-sm font-semibold text-green-800 mb-1">✅ Resolved Answer</h3>
-                <div class="text-xs font-mono text-green-700 max-h-24 overflow-auto">
-                  {JSON.stringify(task.output, null, 2)}
-                </div>
+                <div class="text-xs font-mono text-green-700 max-h-24 overflow-auto">{JSON.stringify(task.output, null, 2)}</div>
               </div>
             )}
 
-            <div class="mt-3 flex gap-3">
-              <a href={`/dashboard/tasks/${task.id}`} class="text-xs text-indigo-600 hover:underline">
-                View full task →
-              </a>
+            <!-- ── Detail panel: Evidence + Timeline + Admin actions ── -->
+            {isFocused && (
+              <div class="border-t border-gray-100 pt-4 mt-4 space-y-6">
+
+                <!-- Admin: Assign mediator -->
+                {isAdmin && !isResolved && (
+                  <div class="bg-violet-50 border border-violet-200 rounded-xl p-4">
+                    <h3 class="text-sm font-semibold text-violet-900 mb-2">⚖️ Assign Mediator (Admin)</h3>
+                    <div class="flex gap-3">
+                      <input id={`mediator-input-${task.id}`} type="text" placeholder="Mediator user ID (UUID)"
+                        class="flex-1 border border-violet-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-violet-500 bg-white"/>
+                      <button onclick={`assignMediator('${task.id}')`}
+                        class="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg transition">
+                        Assign
+                      </button>
+                    </div>
+                    <div id={`mediator-msg-${task.id}`} class="text-xs mt-2 hidden"></div>
+                  </div>
+                )}
+
+                <!-- Submit Evidence -->
+                <div>
+                  <h3 class="text-sm font-semibold text-gray-800 mb-3">📎 Submit Evidence</h3>
+                  <div class="bg-gray-50 border border-gray-200 rounded-xl p-4">
+                    <div class="grid sm:grid-cols-2 gap-3 mb-3">
+                      <div>
+                        <label class="block text-xs text-gray-500 mb-1">Evidence type</label>
+                        <select id={`ev-type-${task.id}`}
+                          class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-indigo-500">
+                          <option value="text">Text / Explanation</option>
+                          <option value="url">URL / Link</option>
+                          <option value="image_url">Image URL</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label class="block text-xs text-gray-500 mb-1">Supporting submission (optional)</label>
+                        <select id={`ev-asgn-${task.id}`}
+                          class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-indigo-500">
+                          <option value="">None</option>
+                          {submissions.map((s: any) => (
+                            <option value={s.id}>Submission #{s.id.slice(0,8)}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    <textarea id={`ev-content-${task.id}`} rows="3" placeholder="Describe your evidence..."
+                      class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-indigo-500 resize-none mb-3"></textarea>
+                    <div class="flex justify-between items-center">
+                      <div id={`ev-msg-${task.id}`} class="text-xs hidden"></div>
+                      <button onclick={`submitEvidence('${task.id}')`}
+                        class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition ml-auto">
+                        Submit Evidence
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Existing Evidence -->
+                {focusEvidence.length > 0 && (
+                  <div>
+                    <h3 class="text-sm font-semibold text-gray-800 mb-3">Evidence on File ({focusEvidence.length})</h3>
+                    <div class="space-y-2">
+                      {focusEvidence.map((ev: any) => (
+                        <div class="bg-white border border-gray-200 rounded-xl p-3">
+                          <div class="flex items-center gap-2 mb-1">
+                            <span class={`text-xs px-2 py-0.5 rounded-full font-medium ${ev.submitter_role==="mediator"?"bg-violet-100 text-violet-800":ev.submitter_role==="requester"?"bg-amber-100 text-amber-800":"bg-blue-100 text-blue-800"}`}>
+                              {ev.submitter_role}
+                            </span>
+                            <span class="text-xs text-gray-400">{fmtDate(ev.created_at)}</span>
+                            {ev.evidence_type!=="text" && (
+                              <span class="text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">{ev.evidence_type}</span>
+                            )}
+                          </div>
+                          <p class="text-sm text-gray-700 break-words">
+                            {ev.evidence_type==="url"||ev.evidence_type==="image_url"
+                              ? <a href={ev.content} target="_blank" class="text-indigo-600 hover:underline">{ev.content}</a>
+                              : ev.content
+                            }
+                          </p>
+                          {ev.assignment_id && (
+                            <p class="text-xs text-gray-400 mt-1">Supports: #{ev.assignment_id.slice(0,8)}</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <!-- Resolution Timeline -->
+                <div>
+                  <h3 class="text-sm font-semibold text-gray-800 mb-3">📅 Resolution Timeline</h3>
+                  {focusTimeline.length > 0 ? (
+                    <div class="relative">
+                      <div class="absolute left-4 top-0 bottom-0 w-0.5 bg-gray-200"></div>
+                      <div class="space-y-3 pl-10">
+                        {focusTimeline.map((ev: any) => (
+                          <div class="relative">
+                            <div class="absolute -left-6 w-5 h-5 rounded-full bg-white border-2 border-gray-300 flex items-center justify-center text-[10px]">
+                              {EVENT_ICONS[ev.event_type]??"•"}
+                            </div>
+                            <div class="bg-white border border-gray-200 rounded-xl p-3">
+                              <div class="flex items-center justify-between mb-0.5">
+                                <span class="text-xs font-semibold text-gray-700">{ev.event_type.replace(/_/g," ")}</span>
+                                <span class="text-xs text-gray-400">{fmtDate(ev.created_at)}</span>
+                              </div>
+                              <p class="text-xs text-gray-600">{ev.description}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div class="text-center py-6 text-gray-400 text-sm bg-gray-50 rounded-xl border border-gray-200">
+                      No timeline events yet. Events are logged when dispute milestones occur.
+                    </div>
+                  )}
+                </div>
+
+              </div>
+            )}
+
+            <!-- Footer links -->
+            <div class="mt-3 flex gap-3 flex-wrap">
+              <a href={`/dashboard/tasks/${task.id}`} class="text-xs text-indigo-600 hover:underline">View full task →</a>
               {consensus && (
-                <span class="text-xs text-gray-400">
-                  Consensus: {consensus.strategy.replace("_", " ")}
-                </span>
+                <span class="text-xs text-gray-400">Consensus: {consensus.strategy.replace(/_/g," ")}</span>
+              )}
+              {!isFocused && focusEvidence.length===0 && (
+                <a href={`/dashboard/disputes?status=${statusFilter}&task=${task.id}`} class="text-xs text-gray-500 hover:text-gray-700">
+                  📎 Add evidence / view timeline →
+                </a>
               )}
             </div>
           </div>
-        );
-      })}
-    </div>
-
-    <!-- Pagination -->
-    {(page > 1 || disputedTasks.has_next) && (
-      <div class="flex justify-center gap-4 mt-8">
-        {page > 1 && (
-          <a href={`?status=${statusFilter}&page=${page - 1}`} class="px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm hover:bg-gray-50">
-            ← Previous
-          </a>
-        )}
-        {disputedTasks.has_next && (
-          <a href={`?status=${statusFilter}&page=${page + 1}`} class="px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm hover:bg-gray-50">
-            Next →
-          </a>
-        )}
-      </div>
-    )}
+        </div>
+      );
+    })}
   </div>
+
+  <!-- Pagination -->
+  {(page > 1 || disputedTasks.has_next) && (
+    <div class="flex justify-center gap-4 mt-8">
+      {page > 1 && <a href={`?status=${statusFilter}&page=${page-1}`} class="px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm hover:bg-gray-50">← Previous</a>}
+      {disputedTasks.has_next && <a href={`?status=${statusFilter}&page=${page+1}`} class="px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm hover:bg-gray-50">Next →</a>}
+    </div>
+  )}
+
+</div>
 </Layout>
+
+<script define:vars={{ clientApiUrl }}>
+const TOKEN = document.cookie.split(";").find(c=>c.trim().startsWith("cs_token="))?.split("=")[1];
+const API = clientApiUrl;
+
+async function submitEvidence(taskId) {
+  const typeEl = document.getElementById(`ev-type-${taskId}`);
+  const contentEl = document.getElementById(`ev-content-${taskId}`);
+  const asgnEl = document.getElementById(`ev-asgn-${taskId}`);
+  const msgEl = document.getElementById(`ev-msg-${taskId}`);
+
+  const content = contentEl?.value?.trim();
+  if (!content) { showMsg(msgEl,"Please enter some evidence.","red"); return; }
+
+  const body = {
+    evidence_type: typeEl?.value || "text",
+    content,
+    assignment_id: asgnEl?.value || null,
+  };
+
+  try {
+    const res = await fetch(`${API}/v1/disputes/tasks/${taskId}/evidence`, {
+      method: "POST",
+      headers: { "Content-Type":"application/json", Authorization:`Bearer ${TOKEN}` },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail ?? "Failed");
+    showMsg(msgEl, "✅ Evidence submitted!", "green");
+    if (contentEl) contentEl.value = "";
+    setTimeout(()=>window.location.reload(), 800);
+  } catch(e) {
+    showMsg(msgEl, `❌ ${e.message}`, "red");
+  }
+}
+
+async function assignMediator(taskId) {
+  const input = document.getElementById(`mediator-input-${taskId}`);
+  const msgEl = document.getElementById(`mediator-msg-${taskId}`);
+  const mediatorId = input?.value?.trim();
+  if (!mediatorId) { showMsg(msgEl,"Enter mediator user ID.","red"); return; }
+
+  try {
+    const res = await fetch(`${API}/v1/disputes/admin/tasks/${taskId}/assign-mediator`, {
+      method:"POST",
+      headers:{"Content-Type":"application/json", Authorization:`Bearer ${TOKEN}`},
+      body:JSON.stringify({mediator_user_id: mediatorId}),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail ?? "Failed");
+    showMsg(msgEl, `✅ Mediator ${data.mediator_email} assigned!`, "green");
+    setTimeout(()=>window.location.reload(), 800);
+  } catch(e) {
+    showMsg(msgEl, `❌ ${e.message}`, "red");
+  }
+}
+
+function showMsg(el, text, color) {
+  if (!el) return;
+  el.textContent = text;
+  el.className = `text-xs mt-1 ${color==="green"?"text-green-600":"text-red-600"}`;
+  el.classList.remove("hidden");
+}
+
+// Expose to global scope for inline onclick handlers
+window.submitEvidence = submitEvidence;
+window.assignMediator = assignMediator;
+</script>

@@ -396,6 +396,97 @@ async def use_template(
     }
 
 
+@router.post("/templates/{template_id}/clone-task", status_code=201)
+async def clone_template_as_task(
+    template_id: UUID,
+    title: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+) -> dict:
+    """
+    One-click: create a task directly from a template's config.
+    Returns the new task ID so the client can redirect to it.
+    """
+    from models.db import TaskDB, CreditTransactionDB
+    from core.quotas import enforce_task_creation_quota, record_task_creation
+
+    uid = UUID(user_id)
+    t = await _get_template(template_id, user_id, db)
+
+    # Pull config values
+    cfg = t.task_config or {}
+    task_type = t.task_type
+    execution_mode = t.execution_mode or "ai"
+    credits_cost = cfg.get("credits_cost", 1)
+    reward_credits = cfg.get("reward_credits", 2)
+    workers = cfg.get("workers", 1)
+    timeout = cfg.get("timeout_minutes", 30)
+    instructions = cfg.get("instructions", "")
+
+    # Load user and check credits
+    user_res = await db.execute(select(UserDB).where(UserDB.id == uid))
+    user = user_res.scalar_one_or_none()
+    if not user:
+        raise HTTPException(404, "User not found")
+
+    if execution_mode == "ai" and user.credits < credits_cost:
+        raise HTTPException(
+            402,
+            f"Insufficient credits. Need {credits_cost}, have {user.credits}.",
+        )
+
+    # Check quota
+    await enforce_task_creation_quota(uid, db)
+
+    # Create task
+    task_input = t.example_input or {"_template": str(template_id)}
+    task = TaskDB(
+        user_id=uid,
+        type=task_type,
+        status="pending" if execution_mode == "ai" else "open",
+        execution_mode=execution_mode,
+        input=task_input,
+        task_instructions=instructions or f"Task from template: {t.name}",
+        worker_reward_credits=reward_credits if execution_mode == "human" else None,
+        assignments_required=workers if execution_mode == "human" else 1,
+        claim_timeout_minutes=timeout,
+        credits_used=credits_cost if execution_mode == "ai" else 0,
+        metadata={"template_id": str(template_id), "template_name": t.name},
+    )
+    db.add(task)
+
+    # Charge credits for AI tasks
+    if execution_mode == "ai" and credits_cost > 0:
+        user.credits -= credits_cost
+        txn = CreditTransactionDB(
+            user_id=uid,
+            amount=-credits_cost,
+            type="charge",
+            description=f"Task from template: {t.name}",
+        )
+        db.add(txn)
+
+    # Increment template use_count
+    t.use_count += 1
+    t.updated_at = datetime.now(timezone.utc)
+
+    await db.commit()
+    await db.refresh(task)
+    await record_task_creation(uid, db)
+
+    logger.info("template_cloned_as_task",
+                template_id=str(template_id), task_id=str(task.id), user_id=user_id)
+
+    return {
+        "task_id": str(task.id),
+        "task_type": task_type,
+        "execution_mode": execution_mode,
+        "status": task.status,
+        "template_name": t.name,
+        "message": f"Task created from template '{t.name}'",
+    }
+
+
 @router.get("/categories", response_model=list[dict])
 async def list_categories(
     db: AsyncSession = Depends(get_db),

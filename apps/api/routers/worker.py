@@ -901,6 +901,141 @@ async def release_task(
     logger.info("task_released", task_id=str(task_id), worker_id=user_id)
 
 
+# ─── Earnings analytics ───────────────────────────────────────────────────
+
+@router.get("/earnings/analytics")
+async def get_earnings_analytics(
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """
+    Return rich earnings analytics for the current worker:
+    - by_task_type: credits earned per task type (all-time)
+    - monthly_earnings: last 12 calendar months of credits earned
+    - monthly_payouts: last 12 calendar months of paid-out USD
+    - lifetime stats: total earned, total paid out, avg credits per task, best month
+    """
+    from models.db import PayoutRequestDB
+
+    uid = UUID(user_id)
+
+    # 1. Earnings by task type (join assignments → tasks)
+    type_res = await db.execute(
+        select(TaskDB.type, func.sum(TaskAssignmentDB.earnings_credits).label("credits"))
+        .join(TaskDB, TaskDB.id == TaskAssignmentDB.task_id)
+        .where(
+            TaskAssignmentDB.worker_id == uid,
+            TaskAssignmentDB.status.in_(["submitted", "approved"]),
+        )
+        .group_by(TaskDB.type)
+        .order_by(func.sum(TaskAssignmentDB.earnings_credits).desc())
+    )
+    by_task_type = {row[0]: int(row[1] or 0) for row in type_res.all()}
+
+    # 2. Monthly earnings (last 12 months)
+    from sqlalchemy import extract
+    monthly_res = await db.execute(
+        select(
+            extract("year", TaskAssignmentDB.submitted_at).label("yr"),
+            extract("month", TaskAssignmentDB.submitted_at).label("mo"),
+            func.sum(TaskAssignmentDB.earnings_credits).label("credits"),
+        )
+        .where(
+            TaskAssignmentDB.worker_id == uid,
+            TaskAssignmentDB.status.in_(["submitted", "approved"]),
+            TaskAssignmentDB.submitted_at.isnot(None),
+        )
+        .group_by("yr", "mo")
+        .order_by("yr", "mo")
+    )
+    raw_monthly = monthly_res.all()
+    # Fill last 12 months
+    now = datetime.now(timezone.utc)
+    monthly_earnings: list[dict] = []
+    for i in range(11, -1, -1):
+        # Step back i months from current month
+        mo_offset = (now.month - 1 - i) % 12 + 1
+        yr_offset = now.year + ((now.month - 1 - i) // 12)
+        credits = 0
+        for row in raw_monthly:
+            if int(row[0]) == yr_offset and int(row[1]) == mo_offset:
+                credits = int(row[2] or 0)
+                break
+        monthly_earnings.append({"month": f"{yr_offset}-{mo_offset:02d}", "credits": credits})
+
+    # 3. Monthly paid-out USD (last 12 months, status=paid)
+    payout_res = await db.execute(
+        select(
+            extract("year", PayoutRequestDB.processed_at).label("yr"),
+            extract("month", PayoutRequestDB.processed_at).label("mo"),
+            func.sum(PayoutRequestDB.usd_amount).label("usd"),
+        )
+        .where(
+            PayoutRequestDB.worker_id == uid,
+            PayoutRequestDB.status == "paid",
+            PayoutRequestDB.processed_at.isnot(None),
+        )
+        .group_by("yr", "mo")
+        .order_by("yr", "mo")
+    )
+    raw_payouts = payout_res.all()
+    monthly_payouts: list[dict] = []
+    for i in range(11, -1, -1):
+        mo_offset = (now.month - 1 - i) % 12 + 1
+        yr_offset = now.year + ((now.month - 1 - i) // 12)
+        usd = 0.0
+        for row in raw_payouts:
+            if int(row[0]) == yr_offset and int(row[1]) == mo_offset:
+                usd = float(row[2] or 0)
+                break
+        monthly_payouts.append({"month": f"{yr_offset}-{mo_offset:02d}", "usd": round(usd, 2)})
+
+    # 4. Lifetime stats
+    lifetime_res = await db.execute(
+        select(
+            func.sum(TaskAssignmentDB.earnings_credits),
+            func.count(TaskAssignmentDB.id),
+        )
+        .where(
+            TaskAssignmentDB.worker_id == uid,
+            TaskAssignmentDB.status.in_(["submitted", "approved"]),
+        )
+    )
+    lt_row = lifetime_res.one()
+    lifetime_credits = int(lt_row[0] or 0)
+    lifetime_tasks = int(lt_row[1] or 0)
+    avg_credits_per_task = round(lifetime_credits / lifetime_tasks, 1) if lifetime_tasks > 0 else 0
+
+    payout_total_res = await db.execute(
+        select(
+            func.sum(PayoutRequestDB.usd_amount),
+            func.count(PayoutRequestDB.id),
+        )
+        .where(
+            PayoutRequestDB.worker_id == uid,
+            PayoutRequestDB.status == "paid",
+        )
+    )
+    pt_row = payout_total_res.one()
+    lifetime_paid_out_usd = round(float(pt_row[0] or 0), 2)
+    total_payouts = int(pt_row[1] or 0)
+
+    best_month_credits = max((m["credits"] for m in monthly_earnings), default=0)
+
+    return {
+        "by_task_type": by_task_type,
+        "monthly_earnings": monthly_earnings,
+        "monthly_payouts": monthly_payouts,
+        "lifetime_credits_earned": lifetime_credits,
+        "lifetime_usd_earned": round(lifetime_credits / 100, 2),
+        "lifetime_usd_paid_out": lifetime_paid_out_usd,
+        "total_payouts_completed": total_payouts,
+        "total_tasks_completed": lifetime_tasks,
+        "avg_credits_per_task": avg_credits_per_task,
+        "best_month_credits": best_month_credits,
+    }
+
+
 # ─── My assignments ───────────────────────────────────────────────────────
 
 @router.get("/assignments", response_model=list[TaskAssignmentOut])

@@ -6,14 +6,14 @@ from typing import Optional
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
-from core.auth import get_current_user_id
+from core.auth import get_current_user_id, require_admin
 from core.database import get_db
 from core.notify import create_notification, NotifType
-from models.db import TaskDB, UserDB, TaskAssignmentDB
+from models.db import TaskDB, UserDB, TaskAssignmentDB, DisputeEvidenceDB, DisputeEventDB
 from models.schemas import (
     ConsensusStateOut, ConsensusVoteOut,
     DisputeResolveRequest, DisputeResolveResponse,
@@ -335,3 +335,266 @@ async def resolve_dispute(
         status="resolved",
         message="Dispute resolved. The selected submission has been approved.",
     )
+
+
+# ─── Helper: record a dispute event ────────────────────────────────────────
+
+async def _log_dispute_event(
+    db: AsyncSession,
+    task_id: UUID,
+    event_type: str,
+    description: str,
+    actor_id: Optional[UUID] = None,
+    metadata: Optional[dict] = None,
+) -> DisputeEventDB:
+    ev = DisputeEventDB(
+        task_id=task_id,
+        actor_id=actor_id,
+        event_type=event_type,
+        description=description,
+        event_metadata=metadata or {},
+    )
+    db.add(ev)
+    await db.flush()
+    return ev
+
+
+# ─── Evidence endpoints ────────────────────────────────────────────────────
+
+@router.get("/tasks/{task_id}/evidence")
+async def list_dispute_evidence(
+    task_id: UUID,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> list[dict]:
+    """List all evidence submitted for a disputed task."""
+    uid = UUID(user_id)
+
+    # Verify access: must be task owner, an assigned worker, or admin
+    task_res = await db.execute(select(TaskDB).where(TaskDB.id == task_id))
+    task = task_res.scalar_one_or_none()
+    if not task:
+        raise HTTPException(404, "Task not found")
+
+    # Check access
+    user_res = await db.execute(select(UserDB).where(UserDB.id == uid))
+    user = user_res.scalar_one_or_none()
+    is_admin = user and user.is_admin
+    is_owner = task.user_id == uid
+    asgn_res = await db.execute(
+        select(TaskAssignmentDB).where(
+            TaskAssignmentDB.task_id == task_id,
+            TaskAssignmentDB.worker_id == uid,
+        )
+    )
+    is_worker = asgn_res.scalar_one_or_none() is not None
+
+    if not (is_admin or is_owner or is_worker):
+        raise HTTPException(403, "Access denied")
+
+    ev_res = await db.execute(
+        select(DisputeEvidenceDB)
+        .where(DisputeEvidenceDB.task_id == task_id)
+        .order_by(DisputeEvidenceDB.created_at.asc())
+    )
+    evidence = ev_res.scalars().all()
+
+    return [
+        {
+            "id": str(e.id),
+            "submitter_id": str(e.submitter_id),
+            "submitter_role": e.submitter_role,
+            "evidence_type": e.evidence_type,
+            "content": e.content,
+            "assignment_id": str(e.assignment_id) if e.assignment_id else None,
+            "created_at": e.created_at.isoformat(),
+        }
+        for e in evidence
+    ]
+
+
+@router.post("/tasks/{task_id}/evidence", status_code=201)
+async def submit_dispute_evidence(
+    task_id: UUID,
+    evidence_type: str = Body("text", embed=True),
+    content: str = Body(..., embed=True),
+    assignment_id: Optional[UUID] = Body(None, embed=True),
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Submit evidence in support of a disputed task."""
+    uid = UUID(user_id)
+
+    if evidence_type not in ("text", "url", "image_url"):
+        raise HTTPException(400, "evidence_type must be text, url, or image_url")
+    if not content.strip():
+        raise HTTPException(400, "content cannot be empty")
+
+    task_res = await db.execute(select(TaskDB).where(TaskDB.id == task_id))
+    task = task_res.scalar_one_or_none()
+    if not task:
+        raise HTTPException(404, "Task not found")
+
+    # Determine submitter role
+    user_res = await db.execute(select(UserDB).where(UserDB.id == uid))
+    user = user_res.scalar_one_or_none()
+
+    if user and user.is_admin:
+        role = "mediator"
+    elif task.user_id == uid:
+        role = "requester"
+    else:
+        asgn_res = await db.execute(
+            select(TaskAssignmentDB).where(
+                TaskAssignmentDB.task_id == task_id,
+                TaskAssignmentDB.worker_id == uid,
+            )
+        )
+        if not asgn_res.scalar_one_or_none():
+            raise HTTPException(403, "You are not involved in this dispute")
+        role = "worker"
+
+    evidence = DisputeEvidenceDB(
+        task_id=task_id,
+        submitter_id=uid,
+        submitter_role=role,
+        evidence_type=evidence_type,
+        content=content,
+        assignment_id=assignment_id,
+    )
+    db.add(evidence)
+
+    await _log_dispute_event(
+        db, task_id, "evidence_added",
+        f"{role.capitalize()} submitted evidence ({evidence_type})",
+        actor_id=uid,
+        metadata={"evidence_type": evidence_type, "content_preview": content[:100]},
+    )
+    await db.commit()
+    await db.refresh(evidence)
+
+    # Notify task owner if worker submitted evidence
+    if role == "worker" and task.user_id != uid:
+        await create_notification(
+            db=db,
+            user_id=str(task.user_id),
+            type=NotifType.SYSTEM,
+            title="New dispute evidence",
+            body=f"A worker submitted evidence for task {str(task_id)[:8]}…",
+            link=f"/dashboard/disputes",
+        )
+        await db.commit()
+
+    return {
+        "id": str(evidence.id),
+        "submitter_role": role,
+        "evidence_type": evidence_type,
+        "created_at": evidence.created_at.isoformat(),
+    }
+
+
+# ─── Timeline endpoints ─────────────────────────────────────────────────────
+
+@router.get("/tasks/{task_id}/timeline")
+async def get_dispute_timeline(
+    task_id: UUID,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> list[dict]:
+    """Return the full dispute event timeline for a task."""
+    uid = UUID(user_id)
+
+    task_res = await db.execute(select(TaskDB).where(TaskDB.id == task_id))
+    task = task_res.scalar_one_or_none()
+    if not task:
+        raise HTTPException(404, "Task not found")
+
+    # Access check
+    user_res = await db.execute(select(UserDB).where(UserDB.id == uid))
+    user = user_res.scalar_one_or_none()
+    is_admin = user and user.is_admin
+    is_owner = task.user_id == uid
+    asgn_res = await db.execute(
+        select(TaskAssignmentDB).where(
+            TaskAssignmentDB.task_id == task_id,
+            TaskAssignmentDB.worker_id == uid,
+        )
+    )
+    is_worker = asgn_res.scalar_one_or_none() is not None
+
+    if not (is_admin or is_owner or is_worker):
+        raise HTTPException(403, "Access denied")
+
+    ev_res = await db.execute(
+        select(DisputeEventDB)
+        .where(DisputeEventDB.task_id == task_id)
+        .order_by(DisputeEventDB.created_at.asc())
+    )
+    events = ev_res.scalars().all()
+
+    return [
+        {
+            "id": str(e.id),
+            "event_type": e.event_type,
+            "description": e.description,
+            "actor_id": str(e.actor_id) if e.actor_id else None,
+            "metadata": e.event_metadata or {},
+            "created_at": e.created_at.isoformat(),
+        }
+        for e in events
+    ]
+
+
+# ─── Admin: assign mediator ────────────────────────────────────────────────
+
+@router.post("/admin/tasks/{task_id}/assign-mediator", status_code=200)
+async def assign_mediator(
+    task_id: UUID,
+    mediator_user_id: UUID = Body(..., embed=True),
+    admin_id: str = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Admin: assign a mediator user to a disputed task."""
+    task_res = await db.execute(select(TaskDB).where(TaskDB.id == task_id))
+    task = task_res.scalar_one_or_none()
+    if not task:
+        raise HTTPException(404, "Task not found")
+
+    if task.dispute_status != "disputed":
+        raise HTTPException(400, "Task is not currently in disputed state")
+
+    # Verify mediator is admin
+    mediator_res = await db.execute(select(UserDB).where(UserDB.id == mediator_user_id))
+    mediator = mediator_res.scalar_one_or_none()
+    if not mediator:
+        raise HTTPException(404, "Mediator user not found")
+    if not mediator.is_admin:
+        raise HTTPException(400, "Mediator must be an admin user")
+
+    task.mediator_id = mediator_user_id
+    await _log_dispute_event(
+        db, task_id, "mediator_assigned",
+        f"Mediator {mediator.email} assigned to resolve dispute",
+        actor_id=UUID(admin_id),
+        metadata={"mediator_id": str(mediator_user_id), "mediator_email": mediator.email},
+    )
+    await db.commit()
+
+    # Notify mediator
+    await create_notification(
+        db=db,
+        user_id=str(mediator_user_id),
+        type=NotifType.SYSTEM,
+        title="You've been assigned as mediator",
+        body=f"Please review and resolve the dispute for task {str(task_id)[:8]}…",
+        link=f"/dashboard/disputes",
+    )
+    await db.commit()
+
+    logger.info("mediator_assigned", task_id=str(task_id), mediator_id=str(mediator_user_id))
+    return {
+        "task_id": str(task_id),
+        "mediator_id": str(mediator_user_id),
+        "mediator_email": mediator.email,
+        "message": "Mediator assigned successfully",
+    }

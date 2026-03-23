@@ -177,6 +177,8 @@ class TaskDB(Base):
     winning_assignment_id = Column(UUID(as_uuid=True),
                                    ForeignKey("task_assignments.id", ondelete="SET NULL"),
                                    nullable=True)
+    mediator_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"),
+                         nullable=True)  # Admin mediator assigned to dispute
 
     # Org scoping (optional — tasks can belong to an org's shared pool)
     org_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="SET NULL"),
@@ -1015,5 +1017,47 @@ class SkillQuizAttemptDB(Base):
     passed = Column(Boolean, nullable=False, default=False)
     proficiency_level = Column(Integer, nullable=False, default=1)  # 1-5, set on pass
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+class DisputeEvidenceDB(Base):
+    """Evidence submitted by a worker, requester, or mediator in a dispute."""
+    __tablename__ = "dispute_evidence"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    task_id = Column(UUID(as_uuid=True), ForeignKey("tasks.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    submitter_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
+                          nullable=False, index=True)
+    # Role of the submitter in this dispute
+    submitter_role = Column(String(32), nullable=False)   # worker | requester | mediator
+    evidence_type = Column(String(32), nullable=False, default="text")  # text | url | image_url
+    content = Column(Text, nullable=False)                # Text description or URL
+    assignment_id = Column(UUID(as_uuid=True),
+                           ForeignKey("task_assignments.id", ondelete="SET NULL"),
+                           nullable=True)                 # Which submission this supports
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    task = relationship("TaskDB", backref="evidence")
+    submitter = relationship("UserDB", backref="dispute_evidence")
+
+
+class DisputeEventDB(Base):
+    """Audit trail / timeline event for a dispute."""
+    __tablename__ = "dispute_events"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    task_id = Column(UUID(as_uuid=True), ForeignKey("tasks.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    actor_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"),
+                      nullable=True)
+    # Event types: dispute_opened | evidence_added | mediator_assigned |
+    #              resolution_proposed | resolved | escalated
+    event_type = Column(String(64), nullable=False)
+    description = Column(Text, nullable=False)
+    event_metadata = Column(JSON, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False, index=True)
+
+    task = relationship("TaskDB", backref="dispute_events")
+    actor = relationship("UserDB", backref="dispute_actions")
 
     worker = relationship("UserDB", backref="quiz_attempts")
