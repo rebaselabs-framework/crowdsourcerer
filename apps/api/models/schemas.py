@@ -1071,3 +1071,78 @@ class SavedSearchOut(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+# ─── API Key Usage Analytics ───────────────────────────────────────────────
+
+class ApiKeyUsageDayOut(BaseModel):
+    date: str          # "YYYY-MM-DD"
+    requests: int
+    errors: int
+    credits_used: int
+    avg_response_ms: Optional[float]
+
+
+class ApiKeyUsageEndpointOut(BaseModel):
+    endpoint: str
+    method: str
+    requests: int
+    errors: int
+    avg_response_ms: Optional[float]
+
+
+class ApiKeyUsageDetailOut(BaseModel):
+    key_id: UUID
+    key_name: str
+    key_prefix: str
+    total_requests: int
+    total_errors: int
+    total_credits_used: int
+    last_used_at: Optional[datetime]
+    daily: list[ApiKeyUsageDayOut]
+    top_endpoints: list[ApiKeyUsageEndpointOut]
+
+    model_config = {"from_attributes": True}
+
+
+class ApiKeyUsageOverviewOut(BaseModel):
+    total_requests: int
+    total_errors: int
+    total_credits_used: int
+    keys: list[dict]  # per-key summary
+
+
+# ─── Skill Quiz ────────────────────────────────────────────────────────────
+
+class SkillQuizQuestionOut(BaseModel):
+    id: UUID
+    question: str
+    options: list[str]
+    difficulty: int  # 1-3
+    # correct_index is NOT exposed in the question fetch — only in results
+
+
+class SkillQuizSubmitRequest(BaseModel):
+    answers: list[int]  # index of chosen option per question (same order as questions)
+
+
+class SkillQuizResultOut(BaseModel):
+    score: int           # number correct
+    total: int
+    passed: bool
+    proficiency_level: int  # 1-5 set on their WorkerSkillDB
+    skill_category: str
+    questions: list[dict]   # with correct_index + explanation revealed
+    credits_earned: int      # bonus credits for passing
+
+
+class SkillQuizAttemptOut(BaseModel):
+    id: UUID
+    skill_category: str
+    score: int
+    total: int
+    passed: bool
+    proficiency_level: int
+    created_at: datetime
+
+    model_config = {"from_attributes": True}

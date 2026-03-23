@@ -98,6 +98,8 @@ class ApiKeyDB(Base):
     key_prefix = Column(String(16), nullable=False)
     scopes = Column(JSON, default=list, nullable=False)
     last_used_at = Column(DateTime(timezone=True), nullable=True)
+    request_count = Column(Integer, default=0, nullable=False)
+    total_credits_used = Column(Integer, default=0, nullable=False)
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
 
     user = relationship("UserDB", back_populates="api_keys")
@@ -962,3 +964,56 @@ class SavedSearchDB(Base):
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     user = relationship("UserDB", back_populates="saved_searches")
+
+
+class ApiKeyUsageLogDB(Base):
+    """Per-request usage log for API key calls."""
+    __tablename__ = "api_key_usage_logs"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    api_key_id = Column(UUID(as_uuid=True), ForeignKey("api_keys.id", ondelete="CASCADE"),
+                        nullable=False, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    endpoint = Column(String(256), nullable=False)
+    method = Column(String(8), nullable=False, default="GET")
+    status_code = Column(Integer, nullable=False, default=200)
+    response_time_ms = Column(Integer, nullable=True)
+    credits_used = Column(Integer, default=0, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False, index=True)
+
+    api_key = relationship("ApiKeyDB", backref="usage_logs")
+    user = relationship("UserDB", backref="api_usage_logs")
+
+
+class SkillQuizQuestionDB(Base):
+    """Static question bank for worker skill assessments."""
+    __tablename__ = "skill_quiz_questions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    skill_category = Column(String(64), nullable=False, index=True)
+    question = Column(Text, nullable=False)
+    options = Column(JSON, nullable=False)          # list[str] — 4 choices
+    correct_index = Column(Integer, nullable=False)  # 0-3
+    difficulty = Column(Integer, nullable=False, default=1)  # 1=easy 2=medium 3=hard
+    explanation = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+class SkillQuizAttemptDB(Base):
+    """Record of a worker's quiz attempt for a skill category."""
+    __tablename__ = "skill_quiz_attempts"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    worker_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
+                       nullable=False, index=True)
+    skill_category = Column(String(64), nullable=False)
+    question_ids = Column(JSON, nullable=False)   # list[str] UUIDs of questions used
+    answers = Column(JSON, nullable=False)         # list[int] worker's chosen indices
+    score = Column(Integer, nullable=False)        # number correct
+    total = Column(Integer, nullable=False)
+    passed = Column(Boolean, nullable=False, default=False)
+    proficiency_level = Column(Integer, nullable=False, default=1)  # 1-5, set on pass
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    worker = relationship("UserDB", backref="quiz_attempts")

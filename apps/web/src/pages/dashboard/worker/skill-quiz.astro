@@ -1,0 +1,377 @@
+---
+/**
+ * Worker Skill Assessment — take a quiz to validate and level up your skills.
+ */
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Object.fromEntries(
+  Astro.cookies.getAll().map((c) => [c.name, c.value])
+));
+if (!token) return Astro.redirect("/login");
+
+const categoryParam = Astro.url.searchParams.get("category") ?? null;
+
+let categories: any[] = [];
+let attempts: any[] = [];
+let questions: any[] = [];
+let error = "";
+
+try {
+  [categories, attempts] = await Promise.all([
+    apiFetch<any[]>("/v1/worker/skill-quiz/categories", { token }),
+    apiFetch<any[]>("/v1/worker/skill-quiz/attempts?limit=30", { token }),
+  ]);
+} catch (e: any) {
+  if ((e as Error).message?.includes("401")) return Astro.redirect("/login");
+  error = (e as Error).message ?? "Failed to load quiz data";
+}
+
+if (categoryParam && categories.length > 0) {
+  try {
+    questions = await apiFetch<any[]>(`/v1/worker/skill-quiz/${categoryParam}/questions`, { token });
+  } catch (e: any) {
+    error = (e as Error).message ?? "Failed to load questions";
+  }
+}
+
+// Build a map of best (latest passing) attempt per category
+const bestAttempt: Record<string, any> = {};
+for (const a of attempts) {
+  if (!bestAttempt[a.skill_category] || (a.passed && !bestAttempt[a.skill_category]?.passed)) {
+    bestAttempt[a.skill_category] = a;
+  }
+}
+
+function fmt(d: string) {
+  return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+function profLabel(level: number) {
+  return ["", "Beginner", "Developing", "Proficient", "Advanced", "Expert"][level] ?? "Unknown";
+}
+
+function profColor(level: number) {
+  return ["", "text-gray-400", "text-blue-400", "text-emerald-400", "text-violet-400", "text-amber-400"][level] ?? "text-gray-400";
+}
+
+const selectedCategory = categories.find((c: any) => c.category === categoryParam);
+---
+
+<Layout title="Skill Assessment — CrowdSorcerer">
+  <div class="max-w-3xl mx-auto px-6 py-10">
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-8">
+      <div>
+        <h1 class="text-2xl font-bold">Skill Assessment</h1>
+        <p class="text-gray-400 text-sm mt-0.5">Take a short quiz to validate your skills and set your proficiency level</p>
+      </div>
+      <a href="/dashboard" class="text-sm text-gray-400 hover:text-gray-200 transition-colors">← Dashboard</a>
+    </div>
+
+    {error && (
+      <div class="bg-red-900/30 border border-red-700/50 rounded-xl p-4 mb-6 text-red-300 text-sm">{error}</div>
+    )}
+
+    <!-- Category picker OR Quiz UI -->
+    {!categoryParam ? (
+      <!-- Category grid -->
+      <div>
+        <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Choose a skill to assess</h2>
+        <div class="grid sm:grid-cols-2 gap-3">
+          {categories.map((cat: any) => {
+            const best = bestAttempt[cat.category];
+            return (
+              <a
+                href={`/dashboard/worker/skill-quiz?category=${cat.category}`}
+                class="bg-gray-900 border border-gray-800 hover:border-gray-600 rounded-xl p-5 transition-colors group"
+              >
+                <div class="flex items-center justify-between">
+                  <div>
+                    <div class="font-medium text-sm text-gray-200 group-hover:text-white transition-colors">
+                      {cat.label}
+                    </div>
+                    {best ? (
+                      <div class="mt-1 flex items-center gap-2 text-xs">
+                        <span class={`font-semibold ${profColor(best.proficiency_level)}`}>
+                          {profLabel(best.proficiency_level)}
+                        </span>
+                        <span class="text-gray-500">· {fmt(best.created_at)}</span>
+                        {best.passed && <span class="text-emerald-400">✓</span>}
+                      </div>
+                    ) : (
+                      <div class="mt-1 text-xs text-gray-500">Not attempted</div>
+                    )}
+                  </div>
+                  <div class="text-gray-600 group-hover:text-gray-400 transition-colors">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                    </svg>
+                  </div>
+                </div>
+              </a>
+            );
+          })}
+        </div>
+
+        <!-- Recent attempts -->
+        {attempts.length > 0 && (
+          <div class="mt-10">
+            <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Recent attempts</h2>
+            <div class="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
+              <table class="w-full text-sm">
+                <thead class="border-b border-gray-800">
+                  <tr class="text-xs text-gray-500 uppercase tracking-wider">
+                    <th class="text-left px-5 py-3">Skill</th>
+                    <th class="text-left px-5 py-3">Score</th>
+                    <th class="text-left px-5 py-3">Level</th>
+                    <th class="text-left px-5 py-3">Date</th>
+                    <th class="text-left px-5 py-3">Result</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-800">
+                  {attempts.slice(0, 10).map((a: any) => (
+                    <tr class="hover:bg-gray-800/40 transition-colors">
+                      <td class="px-5 py-3 text-gray-200">{a.skill_category.replace(/_/g, " ")}</td>
+                      <td class="px-5 py-3 text-gray-300">{a.score}/{a.total}</td>
+                      <td class={`px-5 py-3 font-medium ${profColor(a.proficiency_level)}`}>
+                        {profLabel(a.proficiency_level)}
+                      </td>
+                      <td class="px-5 py-3 text-gray-500 text-xs">{fmt(a.created_at)}</td>
+                      <td class="px-5 py-3">
+                        {a.passed ? (
+                          <span class="text-xs px-2 py-0.5 rounded bg-emerald-900/40 text-emerald-400">Passed ✓</span>
+                        ) : (
+                          <span class="text-xs px-2 py-0.5 rounded bg-red-900/30 text-red-400">Not passed</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+    ) : questions.length > 0 ? (
+      <!-- Quiz UI -->
+      <div id="quiz-container">
+        <div class="flex items-center gap-3 mb-6">
+          <a href="/dashboard/worker/skill-quiz" class="text-sm text-gray-400 hover:text-gray-200">← Back</a>
+          <div class="flex-1">
+            <h2 class="text-base font-semibold">{selectedCategory?.label ?? categoryParam} Assessment</h2>
+            <p class="text-xs text-gray-400">{questions.length} questions · 60% to pass</p>
+          </div>
+        </div>
+
+        <!-- Progress bar -->
+        <div class="w-full bg-gray-800 rounded-full h-1.5 mb-8">
+          <div id="progress-bar" class="bg-violet-500 h-1.5 rounded-full transition-all duration-300" style="width: 0%"></div>
+        </div>
+
+        <!-- Questions (shown one at a time) -->
+        <div id="questions-wrapper">
+          {questions.map((q: any, idx: number) => (
+            <div class={`question-card ${idx === 0 ? "" : "hidden"}`} data-idx={idx} data-qid={q.id}>
+              <div class="flex items-center gap-2 mb-1">
+                <span class="text-xs text-gray-500">Question {idx + 1} of {questions.length}</span>
+                <span class={`text-xs px-1.5 py-0.5 rounded ${
+                  q.difficulty === 1 ? "bg-green-900/30 text-green-400" :
+                  q.difficulty === 2 ? "bg-yellow-900/30 text-yellow-400" :
+                  "bg-red-900/30 text-red-400"
+                }`}>
+                  {q.difficulty === 1 ? "Easy" : q.difficulty === 2 ? "Medium" : "Hard"}
+                </span>
+              </div>
+              <p class="text-gray-100 font-medium text-base mb-5 leading-relaxed">{q.question}</p>
+              <div class="space-y-2.5" data-qidx={idx}>
+                {(q.options as string[]).map((opt: string, oi: number) => (
+                  <button
+                    class="option-btn w-full text-left px-5 py-3 rounded-xl border border-gray-700 hover:border-gray-500 text-sm text-gray-300 hover:text-gray-100 transition-all"
+                    data-qidx={idx}
+                    data-aidx={oi}
+                  >
+                    <span class="inline-flex items-center justify-center w-5 h-5 rounded-full border border-gray-600 text-xs mr-3 font-medium">
+                      {String.fromCharCode(65 + oi)}
+                    </span>
+                    {opt}
+                  </button>
+                ))}
+              </div>
+              <div class="mt-5 flex justify-end">
+                {idx < questions.length - 1 ? (
+                  <button
+                    class="next-btn hidden px-5 py-2.5 bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium rounded-xl transition-colors"
+                    data-next={idx + 1}
+                  >
+                    Next →
+                  </button>
+                ) : (
+                  <button
+                    id="submit-quiz-btn"
+                    class="hidden px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium rounded-xl transition-colors"
+                  >
+                    Submit Quiz
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <!-- Results (hidden until submission) -->
+        <div id="quiz-results" class="hidden">
+          <div id="result-header" class="text-center py-10">
+            <!-- populated by JS -->
+          </div>
+          <div id="result-breakdown" class="mt-6 space-y-4">
+            <!-- populated by JS -->
+          </div>
+          <div class="mt-8 flex gap-3 justify-center">
+            <a href="/dashboard/worker/skill-quiz"
+              class="px-5 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium rounded-xl transition-colors">
+              ← All Skills
+            </a>
+            <a href={`/dashboard/worker/skill-quiz?category=${categoryParam}`}
+              class="px-5 py-2.5 bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium rounded-xl transition-colors">
+              Retake Quiz
+            </a>
+          </div>
+        </div>
+      </div>
+    ) : (
+      <div class="text-center py-16 text-gray-500">
+        <div class="text-4xl mb-3">📭</div>
+        <p>No questions available for this category yet.</p>
+        <a href="/dashboard/worker/skill-quiz" class="text-violet-400 text-sm mt-3 inline-block hover:text-violet-300">← Back to skills</a>
+      </div>
+    )}
+  </div>
+</Layout>
+
+<script define:vars={{ categoryParam, questions: questions.map((q: any) => ({ id: q.id })) }}>
+  const CATEGORY = categoryParam;
+  const QUESTION_IDS = questions.map((q) => q.id);
+  const answers = new Array(QUESTION_IDS.length).fill(-1);
+
+  const progressBar = document.getElementById("progress-bar");
+  const quizContainer = document.getElementById("quiz-container");
+  const quizResults = document.getElementById("quiz-results");
+  const resultHeader = document.getElementById("result-header");
+  const resultBreakdown = document.getElementById("result-breakdown");
+
+  function updateProgress(current) {
+    if (progressBar) {
+      const pct = ((current + 1) / QUESTION_IDS.length) * 100;
+      progressBar.style.width = `${pct}%`;
+    }
+  }
+
+  // Option selection
+  document.querySelectorAll(".option-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const qidx = parseInt(btn.dataset.qidx);
+      const aidx = parseInt(btn.dataset.aidx);
+      answers[qidx] = aidx;
+
+      // Update UI for this question's options
+      const siblings = document.querySelectorAll(`.option-btn[data-qidx="${qidx}"]`);
+      siblings.forEach((s) => {
+        s.classList.remove("border-violet-500", "bg-violet-900/20", "text-violet-200");
+        s.classList.add("border-gray-700", "text-gray-300");
+      });
+      btn.classList.remove("border-gray-700", "text-gray-300");
+      btn.classList.add("border-violet-500", "bg-violet-900/20", "text-violet-200");
+
+      // Show next/submit button
+      const card = document.querySelector(`.question-card[data-idx="${qidx}"]`);
+      card?.querySelector(".next-btn")?.classList.remove("hidden");
+      card?.querySelector("#submit-quiz-btn")?.classList.remove("hidden");
+    });
+  });
+
+  // Next button
+  document.querySelectorAll(".next-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const nextIdx = parseInt(btn.dataset.next);
+      // Hide current
+      const currentCard = btn.closest(".question-card");
+      currentCard?.classList.add("hidden");
+      // Show next
+      document.querySelector(`.question-card[data-idx="${nextIdx}"]`)?.classList.remove("hidden");
+      updateProgress(nextIdx);
+    });
+  });
+
+  // Submit
+  document.getElementById("submit-quiz-btn")?.addEventListener("click", async () => {
+    const btn = document.getElementById("submit-quiz-btn");
+    if (btn) btn.textContent = "Grading…";
+    if (btn) btn.disabled = true;
+
+    try {
+      const resp = await fetch(`/api/worker/skill-quiz/${CATEGORY}/submit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ answers }),
+        credentials: "include",
+      });
+      const data = await resp.json();
+
+      // Show results
+      document.getElementById("questions-wrapper")?.classList.add("hidden");
+      document.getElementById("progress-bar")?.parentElement?.classList.add("hidden");
+      quizResults?.classList.remove("hidden");
+
+      const passed = data.passed;
+      const profLabels = ["", "Beginner", "Developing", "Proficient", "Advanced", "Expert"];
+      const profColors = ["", "#9ca3af", "#60a5fa", "#34d399", "#a78bfa", "#fbbf24"];
+      const prof = data.proficiency_level ?? 1;
+
+      if (resultHeader) {
+        resultHeader.innerHTML = `
+          <div class="text-5xl mb-4">${passed ? "🎉" : "📚"}</div>
+          <h2 class="text-2xl font-bold mb-2">${passed ? "Passed!" : "Keep Practicing"}</h2>
+          <p class="text-gray-400 mb-1">You scored <strong class="text-white">${data.score}/${data.total}</strong> (${Math.round((data.score/data.total)*100)}%)</p>
+          <p class="text-sm" style="color: ${profColors[prof]}">
+            Proficiency level set to: <strong>${profLabels[prof]}</strong>
+          </p>
+          ${data.credits_earned > 0 ? `<p class="mt-2 text-emerald-400 text-sm font-medium">+${data.credits_earned} bonus credits earned! 🎁</p>` : ""}
+          ${!passed ? `<p class="mt-3 text-sm text-gray-500">Score 60%+ to pass. Review the answers below and try again.</p>` : ""}
+        `;
+      }
+
+      // Breakdown
+      if (resultBreakdown && data.questions) {
+        resultBreakdown.innerHTML = data.questions.map((q, i) => `
+          <div class="bg-gray-900 border ${q.is_correct ? "border-emerald-800/40" : "border-red-800/40"} rounded-xl p-5">
+            <div class="flex items-start gap-3">
+              <span class="text-lg mt-0.5">${q.is_correct ? "✅" : "❌"}</span>
+              <div class="flex-1">
+                <p class="text-sm font-medium text-gray-200 mb-2">${i+1}. ${q.question}</p>
+                <div class="space-y-1">
+                  ${q.options.map((opt, oi) => `
+                    <div class="text-xs px-3 py-1.5 rounded-lg ${
+                      oi === q.correct_index ? "bg-emerald-900/30 text-emerald-300 border border-emerald-800/40" :
+                      oi === q.your_answer && !q.is_correct ? "bg-red-900/20 text-red-300 border border-red-800/30" :
+                      "text-gray-500"
+                    }">
+                      ${String.fromCharCode(65+oi)}. ${opt}
+                      ${oi === q.correct_index ? " ← correct" : ""}
+                      ${oi === q.your_answer && !q.is_correct ? " ← your answer" : ""}
+                    </div>
+                  `).join("")}
+                </div>
+                ${q.explanation ? `<p class="mt-2 text-xs text-gray-400 italic">${q.explanation}</p>` : ""}
+              </div>
+            </div>
+          </div>
+        `).join("");
+      }
+    } catch (err) {
+      if (btn) btn.textContent = "Submit Quiz";
+      if (btn) btn.disabled = false;
+      alert("Failed to submit quiz. Please try again.");
+    }
+  });
+</script>

@@ -1,4 +1,7 @@
 ---
+/**
+ * API Keys — list, create, revoke, and view per-key usage analytics.
+ */
 import Layout from "@/layouts/Layout.astro";
 import { apiFetch, getToken } from "@/lib/api";
 
@@ -8,8 +11,11 @@ const token = getToken(Object.fromEntries(
 if (!token) return Astro.redirect("/login");
 
 let apiKeys: any[] = [];
+let usageOverview: any = null;
 let error = "";
 let newKey: string | null = null;
+const selectedKeyId = Astro.url.searchParams.get("key") ?? null;
+let selectedKeyUsage: any = null;
 
 // Handle POST (create) and DELETE (revoke)
 if (Astro.request.method === "POST") {
@@ -38,111 +44,275 @@ if (Astro.request.method === "POST") {
   }
 }
 
-// Load keys
+// Load keys + usage overview in parallel
 try {
-  apiKeys = await apiFetch<any[]>("/v1/api-keys", { token });
+  [apiKeys, usageOverview] = await Promise.all([
+    apiFetch<any[]>("/v1/api-keys", { token }),
+    apiFetch<any>("/v1/api-keys/usage/overview?days=30", { token }).catch(() => null),
+  ]);
 } catch (e) {
   return Astro.redirect("/login");
+}
+
+// If a specific key is selected, load its detail usage
+if (selectedKeyId) {
+  try {
+    selectedKeyUsage = await apiFetch<any>(`/v1/api-keys/${selectedKeyId}/usage?days=30`, { token });
+  } catch (_) {}
+}
+
+function fmt(d: string) {
+  return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+// Build a map of keyId -> overview stats
+const keyStats: Record<string, any> = {};
+if (usageOverview?.keys) {
+  for (const k of usageOverview.keys) {
+    keyStats[k.id] = k;
+  }
+}
+
+// Simple sparkline: compute bar heights (0-100%) for last 7 days from selectedKeyUsage
+function buildSparkline(daily: any[]): number[] {
+  const last7 = daily.slice(-7);
+  const max = Math.max(...last7.map((d: any) => d.requests), 1);
+  return last7.map((d: any) => Math.round((d.requests / max) * 100));
 }
 ---
 
 <Layout title="API Keys — CrowdSorcerer">
-  <div class="max-w-3xl mx-auto px-6 py-10">
+  <div class="max-w-4xl mx-auto px-6 py-10">
+    <!-- Breadcrumb -->
     <div class="text-sm text-gray-500 mb-6">
       <a href="/dashboard" class="hover:text-gray-300 transition-colors">Dashboard</a>
       <span class="mx-2">›</span>
       <span>API Keys</span>
     </div>
 
-    <h1 class="text-2xl font-bold mb-1">API Keys</h1>
-    <p class="text-gray-400 text-sm mb-8">
-      Use these keys to authenticate with the CrowdSorcerer API or SDK.
-      Keys start with <code class="text-violet-300 bg-gray-900 px-1 rounded">csk_</code>.
-    </p>
+    <div class="flex items-center justify-between mb-8">
+      <div>
+        <h1 class="text-2xl font-bold">API Keys</h1>
+        <p class="text-gray-400 text-sm mt-0.5">
+          Authenticate with the CrowdSorcerer API.
+          Keys start with <code class="text-violet-300 bg-gray-900 px-1 rounded">csk_</code>.
+        </p>
+      </div>
+    </div>
 
     {error && (
-      <div class="bg-red-950/50 border border-red-800 rounded-lg px-4 py-3 text-sm text-red-300 mb-6">
-        {error}
-      </div>
+      <div class="bg-red-900/30 border border-red-700/50 rounded-xl p-4 mb-6 text-red-300 text-sm">{error}</div>
     )}
 
     {newKey && (
-      <div class="bg-green-950/30 border border-green-800 rounded-xl p-5 mb-6">
-        <div class="text-sm font-medium text-green-300 mb-2">
-          🔑 New API key created — copy it now, it won't be shown again
+      <div class="bg-emerald-900/30 border border-emerald-700/50 rounded-xl p-5 mb-6">
+        <div class="text-sm font-medium text-emerald-300 mb-2">Key created — copy it now, it won't be shown again</div>
+        <div class="flex gap-2">
+          <input id="new-key-input" type="text" readonly value={newKey}
+            class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm font-mono text-emerald-300 focus:outline-none" />
+          <button id="copy-new-key"
+            class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium rounded-lg transition-colors">
+            Copy
+          </button>
         </div>
-        <code class="block font-mono text-sm text-green-200 bg-green-950/50 rounded-lg px-4 py-3 select-all break-all">
-          {newKey}
-        </code>
       </div>
     )}
 
-    <!-- Create form -->
-    <form method="POST" class="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-6">
-      <input type="hidden" name="action" value="create" />
-      <h2 class="text-sm font-semibold mb-3">Create new key</h2>
-      <div class="flex gap-3">
-        <input
-          type="text"
-          name="name"
-          required
-          maxlength="64"
-          class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-violet-500 transition-colors"
-          placeholder="e.g. Production, CI/CD, My App"
-        />
-        <button
-          type="submit"
-          class="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium rounded-lg transition-colors whitespace-nowrap"
-        >
-          Create key
-        </button>
+    <!-- Usage Overview (30-day) -->
+    {usageOverview && (
+      <div class="bg-gray-900 border border-gray-800 rounded-2xl p-5 mb-8">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-sm font-semibold text-gray-300">Last 30 Days — All Keys</h2>
+          <span class="text-xs text-gray-500">API Usage</span>
+        </div>
+        <div class="grid grid-cols-3 gap-4">
+          <div class="text-center">
+            <div class="text-2xl font-bold text-white">{usageOverview.total_requests.toLocaleString()}</div>
+            <div class="text-xs text-gray-400 mt-0.5">Total requests</div>
+          </div>
+          <div class="text-center">
+            <div class={`text-2xl font-bold ${usageOverview.total_errors > 0 ? "text-red-400" : "text-gray-300"}`}>
+              {usageOverview.total_errors.toLocaleString()}
+            </div>
+            <div class="text-xs text-gray-400 mt-0.5">Errors</div>
+          </div>
+          <div class="text-center">
+            <div class="text-2xl font-bold text-violet-300">{usageOverview.total_credits_used.toLocaleString()}</div>
+            <div class="text-xs text-gray-400 mt-0.5">Credits used</div>
+          </div>
+        </div>
       </div>
-    </form>
+    )}
+
+    <!-- Key Detail Usage Panel -->
+    {selectedKeyUsage && (
+      <div class="bg-gray-900 border border-violet-800/40 rounded-2xl p-6 mb-8">
+        <div class="flex items-center justify-between mb-5">
+          <div>
+            <h2 class="text-base font-semibold">{selectedKeyUsage.key_name}</h2>
+            <code class="text-xs text-violet-300">{selectedKeyUsage.key_prefix}…</code>
+          </div>
+          <a href="/dashboard/api-keys" class="text-xs text-gray-400 hover:text-gray-200">x Close</a>
+        </div>
+        <!-- Stats row -->
+        <div class="grid grid-cols-3 gap-4 mb-5">
+          <div class="bg-gray-800/60 rounded-xl p-4 text-center">
+            <div class="text-xl font-bold">{selectedKeyUsage.total_requests.toLocaleString()}</div>
+            <div class="text-xs text-gray-400">Requests</div>
+          </div>
+          <div class="bg-gray-800/60 rounded-xl p-4 text-center">
+            <div class={`text-xl font-bold ${selectedKeyUsage.total_errors > 0 ? "text-red-400" : ""}`}>
+              {selectedKeyUsage.total_errors.toLocaleString()}
+            </div>
+            <div class="text-xs text-gray-400">Errors</div>
+          </div>
+          <div class="bg-gray-800/60 rounded-xl p-4 text-center">
+            <div class="text-xl font-bold text-violet-300">{selectedKeyUsage.total_credits_used.toLocaleString()}</div>
+            <div class="text-xs text-gray-400">Credits used</div>
+          </div>
+        </div>
+
+        <!-- Sparkline bar chart (last 7 days) -->
+        {selectedKeyUsage.daily?.length > 0 && (
+          <div class="mb-5">
+            <div class="text-xs text-gray-500 mb-2">Daily requests (last {Math.min(selectedKeyUsage.daily.length, 7)} days)</div>
+            <div class="flex items-end gap-1 h-16">
+              {buildSparkline(selectedKeyUsage.daily).map((h: number, i: number) => (
+                <div class="flex-1 bg-violet-600/70 rounded-sm transition-all hover:bg-violet-500"
+                  style={`height: ${Math.max(h, 4)}%`}
+                  title={`Day ${i+1}: ${selectedKeyUsage.daily.slice(-7)[i]?.requests ?? 0} req`}>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <!-- Top endpoints -->
+        {selectedKeyUsage.top_endpoints?.length > 0 && (
+          <div>
+            <div class="text-xs text-gray-500 mb-2">Top endpoints</div>
+            <div class="space-y-1">
+              {selectedKeyUsage.top_endpoints.slice(0, 5).map((ep: any) => (
+                <div class="flex items-center gap-3 text-xs">
+                  <span class={`px-1.5 py-0.5 rounded font-mono ${
+                    ep.method === "POST" ? "bg-green-900/40 text-green-400" :
+                    ep.method === "DELETE" ? "bg-red-900/40 text-red-400" :
+                    "bg-blue-900/40 text-blue-400"
+                  }`}>{ep.method}</span>
+                  <span class="text-gray-300 font-mono flex-1 truncate">{ep.endpoint}</span>
+                  <span class="text-gray-400">{ep.requests.toLocaleString()} req</span>
+                  {ep.avg_response_ms && (
+                    <span class="text-gray-500">{ep.avg_response_ms}ms</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    )}
 
     <!-- Keys list -->
-    <div class="bg-gray-900 border border-gray-800 rounded-xl">
+    <div class="space-y-3 mb-8">
       {apiKeys.length === 0 ? (
-        <div class="px-6 py-12 text-center text-gray-500 text-sm">
-          No API keys yet. Create one above.
+        <div class="text-center py-12 text-gray-500">
+          <div class="text-4xl mb-3">🔑</div>
+          <p>No API keys yet. Create one below.</p>
         </div>
       ) : (
-        <div class="divide-y divide-gray-800">
-          {apiKeys.map((k: any) => (
-            <div class="flex items-center justify-between px-5 py-4">
-              <div>
-                <div class="font-medium text-sm">{k.name}</div>
-                <div class="font-mono text-xs text-gray-500 mt-0.5">{k.prefix}••••••••</div>
-                {k.last_used_at ? (
-                  <div class="text-xs text-gray-600 mt-1">
-                    Last used {new Date(k.last_used_at).toLocaleDateString()}
+        apiKeys.map((key: any) => {
+          const stats = keyStats[key.id];
+          const isSelected = selectedKeyId === key.id;
+          return (
+            <div class={`bg-gray-900 border rounded-xl p-5 ${isSelected ? "border-violet-600/60" : "border-gray-800"}`}>
+              <div class="flex items-start justify-between">
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-2 mb-1">
+                    <span class="font-medium text-sm">{key.name}</span>
+                    <code class="text-xs bg-gray-800 px-2 py-0.5 rounded text-violet-300 font-mono">
+                      {key.key_prefix}…
+                    </code>
                   </div>
-                ) : (
-                  <div class="text-xs text-gray-600 mt-1">Never used</div>
-                )}
+                  <div class="flex items-center gap-4 text-xs text-gray-500">
+                    <span>Created {fmt(key.created_at)}</span>
+                    {key.last_used_at && <span>Last used {fmt(key.last_used_at)}</span>}
+                    {stats && (
+                      <>
+                        <span class="text-gray-400">{(stats.requests || 0).toLocaleString()} req/30d</span>
+                        {stats.errors > 0 && (
+                          <span class="text-red-400">{stats.errors} errors</span>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+                <div class="flex items-center gap-2 ml-4">
+                  <a
+                    href={isSelected ? "/dashboard/api-keys" : `/dashboard/api-keys?key=${key.id}`}
+                    class={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${
+                      isSelected
+                        ? "bg-violet-900/40 border-violet-700 text-violet-300"
+                        : "border-gray-700 text-gray-400 hover:border-gray-500 hover:text-gray-200"
+                    }`}
+                  >
+                    {isSelected ? "Hide usage" : "Usage"}
+                  </a>
+                  <form method="POST" onsubmit="return confirm('Revoke this API key?')">
+                    <input type="hidden" name="action" value="delete" />
+                    <input type="hidden" name="key_id" value={key.id} />
+                    <button type="submit"
+                      class="text-xs px-3 py-1.5 rounded-lg border border-red-900/50 text-red-400 hover:border-red-700 hover:text-red-300 transition-colors">
+                      Revoke
+                    </button>
+                  </form>
+                </div>
               </div>
-              <form method="POST" onsubmit="return confirm('Revoke this key? This cannot be undone.')">
-                <input type="hidden" name="action" value="delete" />
-                <input type="hidden" name="key_id" value={k.id} />
-                <button
-                  type="submit"
-                  class="px-3 py-1.5 border border-red-900 text-red-400 hover:bg-red-950/30 text-xs rounded-lg transition-colors"
-                >
-                  Revoke
-                </button>
-              </form>
             </div>
-          ))}
-        </div>
+          );
+        })
       )}
     </div>
 
-    <!-- Usage example -->
-    <div class="mt-8 bg-gray-900 border border-gray-800 rounded-xl p-5">
-      <h2 class="text-sm font-semibold mb-3">Quick start</h2>
-      <pre class="font-mono text-xs text-gray-400 overflow-x-auto"><span class="text-violet-400">import</span> {"{ CrowdSorcerer }"} <span class="text-violet-400">from</span> <span class="text-green-400">"@crowdsourcerer/sdk"</span>;
+    <!-- Create new key -->
+    <div class="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+      <h2 class="text-sm font-semibold mb-4">Create new key</h2>
+      <form method="POST" class="flex gap-3">
+        <input type="hidden" name="action" value="create" />
+        <input
+          type="text"
+          name="name"
+          placeholder="Key name (e.g. Production, Testing)"
+          required
+          maxlength="80"
+          class="flex-1 bg-gray-800 border border-gray-700 focus:border-violet-600 rounded-lg px-4 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none transition-colors"
+        />
+        <button type="submit"
+          class="px-5 py-2 bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium rounded-lg transition-colors whitespace-nowrap">
+          Create Key
+        </button>
+      </form>
+      <p class="text-xs text-gray-600 mt-3">
+        Scopes: read + write. Store the key securely — it won't be shown again.
+      </p>
+    </div>
 
-<span class="text-violet-400">const</span> crowd = <span class="text-violet-400">new</span> CrowdSorcerer({"{ apiKey: "}}<span class="text-green-400">"csk_your_key_here"</span> {"}"});
-<span class="text-violet-400">const</span> result = <span class="text-violet-400">await</span> crowd.webResearch({"{ query: "}<span class="text-green-400">"AI news this week"</span> {"}"});</pre>
+    <!-- Docs link -->
+    <div class="mt-6 text-center text-sm text-gray-500">
+      See <a href="/docs" class="text-violet-400 hover:text-violet-300 transition-colors">API Docs</a>
+      for endpoint reference and SDK examples.
     </div>
   </div>
 </Layout>
+
+<script>
+  // Copy new key
+  const newKeyInput = document.getElementById("new-key-input") as HTMLInputElement | null;
+  const copyNewKeyBtn = document.getElementById("copy-new-key");
+  copyNewKeyBtn?.addEventListener("click", async () => {
+    if (newKeyInput) {
+      await navigator.clipboard.writeText(newKeyInput.value).catch(() => {});
+      copyNewKeyBtn.textContent = "Copied!";
+      setTimeout(() => { copyNewKeyBtn.textContent = "Copy"; }, 2000);
+    }
+  });
+</script>
