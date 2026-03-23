@@ -566,3 +566,69 @@ export interface PlatformStats {
   };
   generated_at: string;
 }
+
+// ─── Template Marketplace ────────────────────────────────────────────────────
+
+export interface Template {
+  id: string;
+  creator_id: string | null;
+  name: string;
+  description: string | null;
+  task_type: string;
+  execution_mode: "ai" | "human";
+  category: string | null;
+  tags: string[] | null;
+  task_config: Record<string, any>;
+  example_input: Record<string, any> | null;
+  is_public: boolean;
+  is_featured: boolean;
+  use_count: number;
+  rating_sum: number;
+  rating_count: number;
+  avg_rating: number | null;
+  created_at: string;
+}
+
+export interface TemplateCreateRequest {
+  name: string;
+  description?: string | null;
+  task_type: string;
+  execution_mode?: "ai" | "human";
+  category?: string | null;
+  tags?: string[] | null;
+  task_config?: Record<string, any>;
+  example_input?: Record<string, any> | null;
+  is_public?: boolean;
+}
+
+export interface TemplateUseResponse {
+  template_id: string;
+  task_type: string;
+  execution_mode: string;
+  task_config: Record<string, any>;
+  example_input: Record<string, any> | null;
+}
+
+export interface TemplateRateResponse {
+  template_id: string;
+  your_rating: number;
+  new_avg: number | null;
+  total_ratings: number;
+}
+
+// ─── Quota ───────────────────────────────────────────────────────────────────
+
+export interface QuotaLimitEntry {
+  used: number;
+  limit: number | null;
+  unlimited: boolean;
+}
+
+export interface QuotaStatus {
+  plan: string;
+  tasks: QuotaLimitEntry;
+  pipeline_runs: QuotaLimitEntry;
+  pipelines_total: QuotaLimitEntry;
+  batch_task_size: number;
+  max_worker_assignments: number;
+}

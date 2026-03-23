@@ -599,3 +599,71 @@ class WorkerCertificationDB(Base):
 
     worker = relationship("UserDB", backref="certifications")
     certification = relationship("CertificationDB", back_populates="worker_certs")
+
+
+# ─── Task Template Marketplace ────────────────────────────────────────────────
+
+class TaskTemplateDB(Base):
+    """A user-created or system task template available in the marketplace."""
+    __tablename__ = "task_templates_marketplace"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    creator_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
+                        nullable=True)  # NULL = system template
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    task_type = Column(String(64), nullable=False, index=True)
+    execution_mode = Column(
+        SAEnum("ai", "human", name="template_exec_mode_enum"),
+        default="ai",
+        nullable=False,
+    )
+    category = Column(String(64), nullable=True, index=True)  # e.g. "data_labeling", "moderation"
+    tags = Column(JSON, nullable=True)            # ["nlp", "image", ...]
+    task_config = Column(JSON, nullable=False, default=dict)  # default task input fields
+    example_input = Column(JSON, nullable=True)   # Example input shown in preview
+    is_public = Column(Boolean, default=True, nullable=False)
+    is_featured = Column(Boolean, default=False, nullable=False)
+    use_count = Column(Integer, default=0, nullable=False)
+    rating_sum = Column(Integer, default=0, nullable=False)
+    rating_count = Column(Integer, default=0, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+
+    creator = relationship("UserDB", backref="marketplace_templates")
+
+
+class TaskTemplateRatingDB(Base):
+    """A user's rating (1–5 stars) of a marketplace template."""
+    __tablename__ = "task_template_ratings"
+    __table_args__ = (
+        UniqueConstraint("template_id", "user_id", name="uq_template_rating"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    template_id = Column(UUID(as_uuid=True),
+                         ForeignKey("task_templates_marketplace.id", ondelete="CASCADE"),
+                         nullable=False, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    rating = Column(Integer, nullable=False)  # 1–5
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+# ─── Rate Limit Quota Buckets ─────────────────────────────────────────────────
+
+class RateLimitBucketDB(Base):
+    """Per-user daily/monthly usage counters for rate limiting."""
+    __tablename__ = "rate_limit_buckets"
+    __table_args__ = (
+        UniqueConstraint("user_id", "bucket_key", name="uq_rate_limit_bucket"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    bucket_key = Column(String(64), nullable=False)  # e.g. "tasks:2026-03-23"
+    count = Column(Integer, default=0, nullable=False)
+    reset_at = Column(DateTime(timezone=True), nullable=False)
+
+    user = relationship("UserDB", backref="rate_limit_buckets")

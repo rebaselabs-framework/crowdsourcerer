@@ -1,0 +1,213 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import { requireAuth } from '../../lib/auth';
+
+const { token, user } = await requireAuth(Astro);
+const API = import.meta.env.API_URL || 'http://api:8000';
+
+const quotaRes = await fetch(`${API}/v1/users/quota`, {
+  headers: { Authorization: `Bearer ${token}` },
+});
+const quota = quotaRes.ok ? await quotaRes.json() : null;
+
+const PLAN_LABELS: Record<string, string> = {
+  free: 'Free',
+  starter: 'Starter',
+  pro: 'Pro',
+  enterprise: 'Enterprise',
+};
+
+function pct(used: number, limit: number | null) {
+  if (limit === null) return 0;
+  return Math.min(100, Math.round((used / limit) * 100));
+}
+---
+
+<Layout title="Plan & Quota — CrowdSorcerer" user={user}>
+  <div class="max-w-4xl mx-auto px-4 py-8">
+    <h1 class="text-2xl font-bold text-gray-900 mb-6">⚡ Plan & Quota Usage</h1>
+
+    {!quota ? (
+      <div class="bg-red-50 text-red-600 rounded-xl p-6">Unable to load quota data. Please try again.</div>
+    ) : (
+      <div class="space-y-6">
+        <!-- Plan Badge -->
+        <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-6 flex items-center justify-between">
+          <div>
+            <p class="text-sm text-gray-400">Current Plan</p>
+            <p class="text-3xl font-bold text-indigo-600 mt-1">{PLAN_LABELS[quota.plan] || quota.plan}</p>
+            <p class="text-sm text-gray-500 mt-1">
+              {quota.plan === 'free' && 'Limited access — upgrade to unlock more'}
+              {quota.plan === 'starter' && 'Good for small teams and projects'}
+              {quota.plan === 'pro' && 'Ideal for production workloads'}
+              {quota.plan === 'enterprise' && 'Unlimited access — contact us for billing'}
+            </p>
+          </div>
+          {quota.plan !== 'enterprise' && (
+            <a href="/pricing" class="btn-primary">Upgrade Plan →</a>
+          )}
+        </div>
+
+        <!-- Quota Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <!-- Tasks per day -->
+          <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
+            <div class="flex items-center gap-2 mb-3">
+              <span class="text-2xl">📋</span>
+              <h3 class="font-semibold text-gray-700">Tasks Today</h3>
+            </div>
+            <div class="text-3xl font-bold text-gray-900 mb-1">
+              {quota.tasks.used}
+              <span class="text-lg font-normal text-gray-400">
+                / {quota.tasks.unlimited ? '∞' : quota.tasks.limit}
+              </span>
+            </div>
+            {!quota.tasks.unlimited && (
+              <div class="mt-3">
+                <div class="w-full bg-gray-100 rounded-full h-2">
+                  <div
+                    class={`h-2 rounded-full ${pct(quota.tasks.used, quota.tasks.limit) >= 90 ? 'bg-red-500' : pct(quota.tasks.used, quota.tasks.limit) >= 70 ? 'bg-yellow-500' : 'bg-indigo-500'}`}
+                    style={`width: ${pct(quota.tasks.used, quota.tasks.limit)}%`}
+                  ></div>
+                </div>
+                <p class="text-xs text-gray-400 mt-1">Resets at midnight UTC</p>
+              </div>
+            )}
+            {quota.tasks.unlimited && (
+              <p class="text-xs text-green-500 mt-2">✓ Unlimited</p>
+            )}
+          </div>
+
+          <!-- Pipeline Runs per day -->
+          <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
+            <div class="flex items-center gap-2 mb-3">
+              <span class="text-2xl">⛓️</span>
+              <h3 class="font-semibold text-gray-700">Pipeline Runs Today</h3>
+            </div>
+            <div class="text-3xl font-bold text-gray-900 mb-1">
+              {quota.pipeline_runs.used}
+              <span class="text-lg font-normal text-gray-400">
+                / {quota.pipeline_runs.unlimited ? '∞' : quota.pipeline_runs.limit}
+              </span>
+            </div>
+            {!quota.pipeline_runs.unlimited && (
+              <div class="mt-3">
+                <div class="w-full bg-gray-100 rounded-full h-2">
+                  <div
+                    class={`h-2 rounded-full ${pct(quota.pipeline_runs.used, quota.pipeline_runs.limit) >= 90 ? 'bg-red-500' : 'bg-indigo-500'}`}
+                    style={`width: ${pct(quota.pipeline_runs.used, quota.pipeline_runs.limit)}%`}
+                  ></div>
+                </div>
+                <p class="text-xs text-gray-400 mt-1">Resets at midnight UTC</p>
+              </div>
+            )}
+            {quota.pipeline_runs.unlimited && (
+              <p class="text-xs text-green-500 mt-2">✓ Unlimited</p>
+            )}
+          </div>
+
+          <!-- Total Pipelines -->
+          <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
+            <div class="flex items-center gap-2 mb-3">
+              <span class="text-2xl">🗂️</span>
+              <h3 class="font-semibold text-gray-700">Pipelines (Total)</h3>
+            </div>
+            <div class="text-3xl font-bold text-gray-900 mb-1">
+              {quota.pipelines_total.used}
+              <span class="text-lg font-normal text-gray-400">
+                / {quota.pipelines_total.unlimited ? '∞' : quota.pipelines_total.limit}
+              </span>
+            </div>
+            {!quota.pipelines_total.unlimited && (
+              <div class="mt-3">
+                <div class="w-full bg-gray-100 rounded-full h-2">
+                  <div
+                    class={`h-2 rounded-full ${pct(quota.pipelines_total.used, quota.pipelines_total.limit) >= 90 ? 'bg-red-500' : 'bg-indigo-500'}`}
+                    style={`width: ${pct(quota.pipelines_total.used, quota.pipelines_total.limit)}%`}
+                  ></div>
+                </div>
+              </div>
+            )}
+            {quota.pipelines_total.unlimited && (
+              <p class="text-xs text-green-500 mt-2">✓ Unlimited</p>
+            )}
+          </div>
+        </div>
+
+        <!-- Plan Features Table -->
+        <div class="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+          <div class="px-6 py-4 border-b border-gray-50">
+            <h3 class="font-semibold text-gray-700">Plan Comparison</h3>
+          </div>
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="bg-gray-50">
+                <th class="text-left px-6 py-3 text-gray-500 font-medium">Feature</th>
+                <th class="text-center px-4 py-3 text-gray-500 font-medium">Free</th>
+                <th class="text-center px-4 py-3 text-gray-500 font-medium">Starter</th>
+                <th class="text-center px-4 py-3 text-indigo-600 font-bold">Pro</th>
+                <th class="text-center px-4 py-3 text-gray-500 font-medium">Enterprise</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-50">
+              <tr>
+                <td class="px-6 py-3 text-gray-700">Tasks per day</td>
+                <td class="text-center px-4 py-3">10</td>
+                <td class="text-center px-4 py-3">100</td>
+                <td class="text-center px-4 py-3 font-semibold text-indigo-600">500</td>
+                <td class="text-center px-4 py-3">∞</td>
+              </tr>
+              <tr class="bg-gray-50/50">
+                <td class="px-6 py-3 text-gray-700">Pipeline runs per day</td>
+                <td class="text-center px-4 py-3">2</td>
+                <td class="text-center px-4 py-3">20</td>
+                <td class="text-center px-4 py-3 font-semibold text-indigo-600">100</td>
+                <td class="text-center px-4 py-3">∞</td>
+              </tr>
+              <tr>
+                <td class="px-6 py-3 text-gray-700">Total pipelines</td>
+                <td class="text-center px-4 py-3">2</td>
+                <td class="text-center px-4 py-3">10</td>
+                <td class="text-center px-4 py-3 font-semibold text-indigo-600">∞</td>
+                <td class="text-center px-4 py-3">∞</td>
+              </tr>
+              <tr class="bg-gray-50/50">
+                <td class="px-6 py-3 text-gray-700">Batch task size</td>
+                <td class="text-center px-4 py-3">10</td>
+                <td class="text-center px-4 py-3">25</td>
+                <td class="text-center px-4 py-3 font-semibold text-indigo-600">50</td>
+                <td class="text-center px-4 py-3">50</td>
+              </tr>
+              <tr>
+                <td class="px-6 py-3 text-gray-700">Max workers per task</td>
+                <td class="text-center px-4 py-3">1</td>
+                <td class="text-center px-4 py-3">5</td>
+                <td class="text-center px-4 py-3 font-semibold text-indigo-600">20</td>
+                <td class="text-center px-4 py-3">100</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Additional Limits -->
+        <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
+          <h3 class="font-semibold text-gray-700 mb-4">Your Current Limits</h3>
+          <div class="grid grid-cols-2 gap-4 text-sm">
+            <div class="flex justify-between py-2 border-b border-gray-50">
+              <span class="text-gray-500">Batch task size limit</span>
+              <span class="font-medium">{quota.batch_task_size} tasks</span>
+            </div>
+            <div class="flex justify-between py-2 border-b border-gray-50">
+              <span class="text-gray-500">Max workers per human task</span>
+              <span class="font-medium">{quota.max_worker_assignments} workers</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
+  </div>
+</Layout>
+
+<style>
+  .btn-primary { @apply bg-indigo-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors; }
+</style>

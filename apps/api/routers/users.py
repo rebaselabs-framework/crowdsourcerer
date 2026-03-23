@@ -78,3 +78,20 @@ async def delete_api_key(
         raise HTTPException(status_code=404, detail="API key not found")
     await db.delete(key)
     await db.commit()
+
+
+@router.get("/quota")
+async def get_my_quota(
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Return the current user's plan quota usage and limits."""
+    from sqlalchemy import select
+    from models.db import UserDB
+    user_result = await db.execute(select(UserDB).where(UserDB.id == user_id))
+    user = user_result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    from core.quotas import get_quota_status
+    return await get_quota_status(db, user_id, user.plan)

@@ -67,6 +67,10 @@ async def create_task(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
+    # Enforce plan quota limits
+    from core.quotas import enforce_task_creation_quota, record_task_creation
+    await enforce_task_creation_quota(db, user_id, user.plan)
+
     # Org billing: if org_id specified, check membership and deduct from org pool
     org = None
     if req.org_id:
@@ -161,6 +165,9 @@ async def create_task(
     await db.commit()
     await db.refresh(task)
 
+    # Record quota usage
+    await record_task_creation(db, user_id)
+
     if not is_human:
         # Run AI task in background
         background_tasks.add_task(_run_task, str(task.id), str(user_id))
@@ -200,6 +207,12 @@ async def create_tasks_batch(
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+
+    # Enforce plan quota limits (batch size + daily limit)
+    from core.quotas import enforce_task_creation_quota, record_task_creation, enforce_batch_size
+    enforce_batch_size(user.plan, len(req.tasks))
+    await enforce_task_creation_quota(db, user_id, user.plan, task_count=len(req.tasks))
+
     if user.credits < total_credits:
         raise HTTPException(
             status_code=402,
@@ -267,6 +280,10 @@ async def create_tasks_batch(
             failed.append({"index": i, "type": task_req.type, "error": str(e)})
 
     await db.commit()
+
+    # Record quota usage for successfully created tasks
+    if created:
+        await record_task_creation(db, user_id, task_count=len(created))
 
     # Refresh and schedule AI tasks
     results = []
@@ -742,6 +759,14 @@ async def approve_submission(
             ))
     except Exception:
         pass
+
+    # If task is now completed (requester_review strategy), resume any waiting pipeline
+    if task.status == "completed" and task.output is not None:
+        try:
+            from routers.pipelines import resume_pipeline_after_human_step
+            await resume_pipeline_after_human_step(task.id, task.output, db)
+        except Exception:
+            pass
 
     return SubmissionReviewResponse(
         assignment_id=assignment.id,

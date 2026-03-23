@@ -80,6 +80,7 @@ class CrowdSorcerer:
         self.credits = _CreditsResource(self)
         self.users = _UsersResource(self)
         self.api_keys = _ApiKeysResource(self)
+        self.marketplace = _MarketplaceResource(self)
 
     def _request(self, method: str, path: str, **kwargs) -> Any:
         """Make an authenticated HTTP request with retries."""
@@ -309,3 +310,87 @@ class _ApiKeysResource:
     def delete(self, key_id: Union[str, UUID]) -> None:
         """Delete an API key."""
         self._c._request("DELETE", f"/v1/users/me/api-keys/{key_id}")
+
+
+class _MarketplaceResource:
+    """Access the CrowdSorcerer template marketplace."""
+
+    def __init__(self, client: CrowdSorcerer) -> None:
+        self._c = client
+
+    def list(
+        self,
+        task_type: Optional[str] = None,
+        category: Optional[str] = None,
+        execution_mode: Optional[str] = None,
+        search: Optional[str] = None,
+        sort: str = "featured",
+        my_own: bool = False,
+        page: int = 1,
+        page_size: int = 24,
+    ) -> Dict[str, Any]:
+        """Browse the template marketplace."""
+        params: Dict[str, Any] = {"page": page, "page_size": page_size, "sort": sort}
+        if task_type:
+            params["task_type"] = task_type
+        if category:
+            params["category"] = category
+        if execution_mode:
+            params["execution_mode"] = execution_mode
+        if search:
+            params["search"] = search
+        if my_own:
+            params["my_own"] = "true"
+        return self._c._request("GET", "/v1/marketplace/templates", params=params)
+
+    def get(self, template_id: Union[str, UUID]) -> Dict[str, Any]:
+        """Get a single template."""
+        return self._c._request("GET", f"/v1/marketplace/templates/{template_id}")
+
+    def create(
+        self,
+        name: str,
+        task_type: str,
+        task_config: Optional[Dict[str, Any]] = None,
+        description: Optional[str] = None,
+        execution_mode: str = "ai",
+        category: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        example_input: Optional[Dict[str, Any]] = None,
+        is_public: bool = True,
+    ) -> Dict[str, Any]:
+        """Save a task configuration as a reusable marketplace template."""
+        payload = {
+            "name": name,
+            "task_type": task_type,
+            "task_config": task_config or {},
+            "description": description,
+            "execution_mode": execution_mode,
+            "category": category,
+            "tags": tags,
+            "example_input": example_input,
+            "is_public": is_public,
+        }
+        return self._c._request("POST", "/v1/marketplace/templates", json=payload)
+
+    def use(self, template_id: Union[str, UUID]) -> Dict[str, Any]:
+        """Mark a template as used and get its config for pre-filling a task."""
+        return self._c._request("POST", f"/v1/marketplace/templates/{template_id}/use")
+
+    def rate(self, template_id: Union[str, UUID], rating: int) -> Dict[str, Any]:
+        """Rate a template 1–5 stars."""
+        if not (1 <= rating <= 5):
+            raise ValueError("Rating must be between 1 and 5")
+        return self._c._request(
+            "POST",
+            f"/v1/marketplace/templates/{template_id}/rate",
+            json={"rating": rating},
+        )
+
+    def categories(self) -> List[Dict[str, Any]]:
+        """List all template categories with counts."""
+        return self._c._request("GET", "/v1/marketplace/categories")
+
+    def quota(self) -> Dict[str, Any]:
+        """Get current user's plan quota usage and limits."""
+        return self._c._request("GET", "/v1/users/quota")

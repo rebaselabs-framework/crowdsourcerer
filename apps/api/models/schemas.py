@@ -877,3 +877,63 @@ class HealthResponse(BaseModel):
     status: str = "ok"
     version: str
     workers_online: int
+
+
+# ─── Task Template Marketplace ────────────────────────────────────────────────
+
+class TemplateCreateRequest(BaseModel):
+    name: str
+    description: Optional[str] = None
+    task_type: str
+    execution_mode: str = "ai"
+    category: Optional[str] = None
+    tags: Optional[list[str]] = None
+    task_config: dict = {}
+    example_input: Optional[dict] = None
+    is_public: bool = True
+
+
+class TemplateOut(BaseModel):
+    id: UUID
+    creator_id: Optional[UUID]
+    name: str
+    description: Optional[str]
+    task_type: str
+    execution_mode: str
+    category: Optional[str]
+    tags: Optional[list]
+    task_config: dict
+    example_input: Optional[dict]
+    is_public: bool
+    is_featured: bool
+    use_count: int
+    rating_sum: int
+    rating_count: int
+    avg_rating: Optional[float] = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+    @property
+    def _avg_rating(self) -> Optional[float]:
+        if self.rating_count == 0:
+            return None
+        return round(self.rating_sum / self.rating_count, 1)
+
+
+class PaginatedTemplates(BaseModel):
+    items: list[TemplateOut]
+    total: int
+    page: int
+    page_size: int
+
+
+class TemplateRateRequest(BaseModel):
+    rating: int  # 1–5
+
+
+class TemplateRateResponse(BaseModel):
+    template_id: UUID
+    your_rating: int
+    new_avg: Optional[float]
+    total_ratings: int

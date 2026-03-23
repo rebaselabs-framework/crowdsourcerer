@@ -322,6 +322,13 @@ async def resolve_dispute(
     )
     await db.commit()
 
+    # Resume pipeline if this task was a human step in a pipeline
+    try:
+        from routers.pipelines import resume_pipeline_after_human_step
+        await resume_pipeline_after_human_step(task.id, task.output, db)
+    except Exception:
+        logger.exception("pipeline_resume_failed_after_dispute", task_id=str(task_id))
+
     return DisputeResolveResponse(
         task_id=task_id,
         winning_assignment_id=winner.id,

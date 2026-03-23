@@ -441,6 +441,9 @@ async def submit_task(
     # Compute XP
     xp = compute_xp_for_task(assignment.task.type if hasattr(assignment, "task") else "label_image")
 
+    # Track whether this submission completes a pipeline step
+    _pipeline_task_completed: Optional[tuple] = None  # (task_id, output)
+
     # Load task to get type
     task_result = await db.execute(select(TaskDB).where(TaskDB.id == task_id))
     task = task_result.scalar_one_or_none()
@@ -456,6 +459,7 @@ async def submit_task(
                 task.completed_at = now
                 task.winning_assignment_id = assignment.id
                 task.output = req.response
+                _pipeline_task_completed = (task.id, req.response)  # trigger pipeline resume
             else:
                 # For majority_vote / unanimous / requester_review:
                 # All assignments are in — run consensus check below.
@@ -654,8 +658,20 @@ async def submit_task(
                 from routers.disputes import check_and_apply_consensus
                 await check_and_apply_consensus(task, db)
                 await db.commit()
+                # After consensus, check if task is now completed to resume pipeline
+                if task.status == "completed" and task.output is not None:
+                    _pipeline_task_completed = (task.id, task.output)
             except Exception:
                 logger.exception("consensus_check_failed", task_id=str(task_id))
+
+    # ── Pipeline Resumption ───────────────────────────────────────────────
+    if _pipeline_task_completed:
+        try:
+            from routers.pipelines import resume_pipeline_after_human_step
+            ptask_id, poutput = _pipeline_task_completed
+            await resume_pipeline_after_human_step(ptask_id, poutput, db)
+        except Exception:
+            logger.exception("pipeline_resume_failed", task_id=str(task_id))
 
     msg = f"Submitted! You earned {earnings} credits and {xp} XP."
     if new_badge_ids:

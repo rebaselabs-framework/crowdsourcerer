@@ -22,6 +22,11 @@ import type {
   PiiDetectInput,
   CodeExecuteInput,
   WebIntelInput,
+  Template,
+  TemplateCreateRequest,
+  TemplateUseResponse,
+  TemplateRateResponse,
+  QuotaStatus,
 } from "@crowdsourcerer/types";
 import {
   CrowdSorcererError,
@@ -286,6 +291,72 @@ export class CrowdSorcerer {
 
   async getMe(): Promise<User> {
     return this.fetch<User>("/v1/users/me");
+  }
+
+  // ─── Quota ───────────────────────────────────────────────────────────────
+
+  async getQuota(): Promise<QuotaStatus> {
+    return this.fetch<QuotaStatus>("/v1/users/quota");
+  }
+
+  // ─── Template Marketplace ─────────────────────────────────────────────────
+
+  async listTemplates(params?: {
+    page?: number;
+    page_size?: number;
+    task_type?: string;
+    category?: string;
+    execution_mode?: string;
+    search?: string;
+    sort?: "featured" | "popular" | "newest" | "top_rated";
+    my_own?: boolean;
+  }): Promise<PaginatedResponse<Template>> {
+    const qs = new URLSearchParams();
+    if (params?.page) qs.set("page", String(params.page));
+    if (params?.page_size) qs.set("page_size", String(params.page_size));
+    if (params?.task_type) qs.set("task_type", params.task_type);
+    if (params?.category) qs.set("category", params.category);
+    if (params?.execution_mode) qs.set("execution_mode", params.execution_mode);
+    if (params?.search) qs.set("search", params.search);
+    if (params?.sort) qs.set("sort", params.sort);
+    if (params?.my_own) qs.set("my_own", "true");
+    return this.fetch<PaginatedResponse<Template>>(
+      `/v1/marketplace/templates${qs.size ? `?${qs}` : ""}`
+    );
+  }
+
+  async getTemplate(templateId: string): Promise<Template> {
+    return this.fetch<Template>(`/v1/marketplace/templates/${templateId}`);
+  }
+
+  async createTemplate(req: TemplateCreateRequest): Promise<Template> {
+    return this.fetch<Template>("/v1/marketplace/templates", {
+      method: "POST",
+      body: JSON.stringify(req),
+    });
+  }
+
+  async useTemplate(templateId: string): Promise<TemplateUseResponse> {
+    return this.fetch<TemplateUseResponse>(
+      `/v1/marketplace/templates/${templateId}/use`,
+      { method: "POST" }
+    );
+  }
+
+  async rateTemplate(
+    templateId: string,
+    rating: number
+  ): Promise<TemplateRateResponse> {
+    return this.fetch<TemplateRateResponse>(
+      `/v1/marketplace/templates/${templateId}/rate`,
+      { method: "POST", body: JSON.stringify({ rating }) }
+    );
+  }
+
+  async listTemplateCategories(): Promise<Array<{ category: string; count: number }>> {
+    return this.fetch<Array<{ category: string; count: number }>>(
+      "/v1/marketplace/categories"
+    );
   }
 }
 

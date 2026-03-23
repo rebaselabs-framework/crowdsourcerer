@@ -1,5 +1,6 @@
 """Task Pipeline endpoints — define and run multi-step task chains."""
 from __future__ import annotations
+import asyncio
 import re
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -111,6 +112,13 @@ async def create_pipeline(
     user_id: str = Depends(get_current_user_id),
 ):
     """Create a new pipeline definition."""
+    # Enforce pipeline-total quota
+    user_result = await db.execute(select(UserDB).where(UserDB.id == UUID(user_id)))
+    user = user_result.scalar_one_or_none()
+    if user:
+        from core.quotas import enforce_pipeline_total_quota
+        await enforce_pipeline_total_quota(db, user_id, user.plan)
+
     pipeline = TaskPipelineDB(
         user_id=UUID(user_id),
         org_id=req.org_id,
@@ -262,6 +270,10 @@ async def run_pipeline(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
+    # Enforce pipeline-run quota
+    from core.quotas import enforce_pipeline_run_quota, record_pipeline_run
+    await enforce_pipeline_run_quota(db, user_id, user.plan)
+
     # Estimate credits (sum of AI step costs; human steps handled separately)
     ai_steps = [s for s in steps if s.execution_mode == "ai"]
     estimated_credits = sum(TASK_CREDITS.get(s.task_type, 1) for s in ai_steps)
@@ -296,6 +308,9 @@ async def run_pipeline(
 
     await db.commit()
     await db.refresh(run)
+
+    # Record pipeline run quota usage
+    await record_pipeline_run(db, user_id)
 
     # Run the pipeline in the background
     background_tasks.add_task(_execute_pipeline_run, run.id, str(pipeline.id), str(user_id))
@@ -408,8 +423,22 @@ async def cancel_pipeline_run(
 
 # ── Background Execution ───────────────────────────────────────────────────────
 
-async def _execute_pipeline_run(run_id: UUID, pipeline_id: str, user_id: str) -> None:
-    """Execute each step of a pipeline run sequentially."""
+async def _execute_pipeline_run(
+    run_id: UUID,
+    pipeline_id: str,
+    user_id: str,
+    resume_from_step: int = 0,
+    prior_outputs: Optional[list[Optional[dict]]] = None,
+) -> None:
+    """Execute each step of a pipeline run sequentially.
+
+    Args:
+        run_id: The pipeline run ID.
+        pipeline_id: The pipeline definition ID.
+        user_id: The user who owns the pipeline.
+        resume_from_step: The step_order index to start/resume from.
+        prior_outputs: Outputs already collected from steps 0..(resume_from_step-1).
+    """
     from core.database import AsyncSessionLocal
     async with AsyncSessionLocal() as db:
         try:
@@ -434,9 +463,20 @@ async def _execute_pipeline_run(run_id: UUID, pipeline_id: str, user_id: str) ->
             )
             step_runs = step_runs_result.scalars().all()
 
-            step_outputs: list[Optional[dict]] = [None] * len(steps)
+            # Build output history — start from prior_outputs, fill in completed steps
+            step_outputs: list[Optional[dict]] = prior_outputs if prior_outputs else [None] * len(steps)
+            if len(step_outputs) < len(steps):
+                step_outputs.extend([None] * (len(steps) - len(step_outputs)))
+
+            # Backfill outputs from completed step_runs we may have skipped
+            for sr in step_runs:
+                if sr.step_order < resume_from_step and sr.output is not None:
+                    step_outputs[sr.step_order] = sr.output
 
             for i, (step, sr) in enumerate(zip(steps, step_runs)):
+                if i < resume_from_step:
+                    continue  # Already done
+
                 # Check if cancelled
                 await db.refresh(run)
                 if run.status == "cancelled":
@@ -510,8 +550,9 @@ async def _execute_pipeline_run(run_id: UUID, pipeline_id: str, user_id: str) ->
                         return
 
                 else:
-                    # Human step — create an open task and mark step as "running"
-                    # The step will remain in 'running' state until the task completes
+                    # Human step — create an open task on the marketplace.
+                    # The step remains "running" until a worker completes it.
+                    # resume_pipeline_after_human_step() will be called automatically.
                     task = TaskDB(
                         user_id=UUID(user_id),
                         type=step.task_type,
@@ -531,12 +572,9 @@ async def _execute_pipeline_run(run_id: UUID, pipeline_id: str, user_id: str) ->
                     sr.status = "running"
                     await db.commit()
 
-                    # For human tasks we stop here — pipeline remains "running"
-                    # A webhook or polling mechanism would advance it when complete.
-                    # For now, we pause and return to allow human work to complete.
                     logger.info("pipeline_waiting_for_human_step",
                                 run_id=str(run_id), step=i, task_id=str(task.id))
-                    return  # Remain in "running" status
+                    return  # Pause — pipeline stays "running" until human work done
 
             # All steps completed
             last_output = next((o for o in reversed(step_outputs) if o is not None), None)
@@ -558,6 +596,71 @@ async def _execute_pipeline_run(run_id: UUID, pipeline_id: str, user_id: str) ->
                     await db.commit()
             except Exception:
                 pass
+
+
+async def resume_pipeline_after_human_step(
+    task_id: UUID,
+    task_output: Optional[dict],
+    db: AsyncSession,
+) -> None:
+    """Called when a human-assigned task is completed.
+
+    If the task belongs to a pipeline step run, marks that step as complete
+    and resumes the pipeline from the next step in a background coroutine.
+
+    This is a no-op if the task is not linked to any pipeline step.
+    """
+    # Look up the step run linked to this task
+    sr_result = await db.execute(
+        select(TaskPipelineStepRunDB).where(TaskPipelineStepRunDB.task_id == task_id)
+    )
+    sr = sr_result.scalar_one_or_none()
+    if not sr:
+        return  # Task is not part of any pipeline
+
+    # Mark the step as completed
+    sr.status = "completed"
+    sr.output = task_output
+    sr.completed_at = utcnow()
+
+    # Load the run
+    run_result = await db.execute(
+        select(TaskPipelineRunDB).where(TaskPipelineRunDB.id == sr.run_id)
+    )
+    run = run_result.scalar_one_or_none()
+    if not run or run.status in ("cancelled", "failed", "completed"):
+        await db.commit()
+        return
+
+    # Load the pipeline to get the pipeline_id + user_id
+    pipeline_result = await db.execute(
+        select(TaskPipelineDB).where(TaskPipelineDB.id == run.pipeline_id)
+    )
+    pipeline = pipeline_result.scalar_one_or_none()
+    if not pipeline:
+        await db.commit()
+        return
+
+    await db.commit()
+
+    # Resume execution starting from the NEXT step
+    next_step = sr.step_order + 1
+    logger.info(
+        "pipeline_resuming_after_human_step",
+        run_id=str(run.id),
+        completed_step=sr.step_order,
+        next_step=next_step,
+    )
+
+    # Fire the continuation as a background task (non-blocking)
+    asyncio.create_task(
+        _execute_pipeline_run(
+            run_id=run.id,
+            pipeline_id=str(pipeline.id),
+            user_id=str(run.user_id),
+            resume_from_step=next_step,
+        )
+    )
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

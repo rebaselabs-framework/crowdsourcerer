@@ -1,0 +1,186 @@
+---
+import Layout from '../../../layouts/Layout.astro';
+import { requireAuth } from '../../../lib/auth';
+
+const { token, user } = await requireAuth(Astro);
+---
+
+<Layout title="Create Template — CrowdSorcerer" user={user}>
+  <div class="max-w-2xl mx-auto px-4 py-8">
+    <div class="flex items-center gap-3 mb-6">
+      <a href="/dashboard/marketplace" class="text-gray-400 hover:text-gray-600">←</a>
+      <h1 class="text-2xl font-bold text-gray-900">Create Template</h1>
+    </div>
+
+    <form id="templateForm" class="space-y-6">
+      <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-6 space-y-5">
+        <h2 class="font-semibold text-gray-700">Basic Info</h2>
+
+        <div>
+          <label class="label">Template Name *</label>
+          <input id="name" type="text" required class="input w-full" placeholder="e.g. Image Spam Classifier" />
+        </div>
+
+        <div>
+          <label class="label">Description</label>
+          <textarea id="description" class="input w-full h-24 resize-none" placeholder="Describe what this template does and when to use it…"></textarea>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="label">Task Type *</label>
+            <select id="taskType" required class="input w-full">
+              <option value="">Select type…</option>
+              <optgroup label="AI Tasks">
+                <option value="summarize">Summarize</option>
+                <option value="analyze_sentiment">Analyze Sentiment</option>
+                <option value="extract_entities">Extract Entities</option>
+                <option value="translate">Translate</option>
+                <option value="classify">Classify</option>
+                <option value="review_code">Review Code</option>
+                <option value="generate_text">Generate Text</option>
+              </optgroup>
+              <optgroup label="Human Tasks">
+                <option value="label_image">Label Image</option>
+                <option value="label_text">Label Text</option>
+                <option value="rate_quality">Rate Quality</option>
+                <option value="verify_fact">Verify Fact</option>
+                <option value="moderate_content">Moderate Content</option>
+                <option value="compare_rank">Compare & Rank</option>
+                <option value="answer_question">Answer Question</option>
+                <option value="transcription_review">Transcription Review</option>
+              </optgroup>
+            </select>
+          </div>
+          <div>
+            <label class="label">Execution Mode *</label>
+            <select id="executionMode" class="input w-full">
+              <option value="ai">🤖 AI</option>
+              <option value="human">👷 Human</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="label">Category</label>
+            <select id="category" class="input w-full">
+              <option value="">None</option>
+              <option value="data_labeling">Data Labeling</option>
+              <option value="nlp">NLP</option>
+              <option value="moderation">Moderation</option>
+              <option value="qa">Q&A</option>
+              <option value="knowledge">Knowledge</option>
+              <option value="development">Development</option>
+              <option value="research">Research</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div>
+            <label class="label">Tags (comma-separated)</label>
+            <input id="tags" type="text" class="input w-full" placeholder="nlp, classification, text" />
+          </div>
+        </div>
+
+        <div>
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input id="isPublic" type="checkbox" checked class="rounded" />
+            <span class="text-sm text-gray-700">Make public (visible to all users)</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-6 space-y-5">
+        <h2 class="font-semibold text-gray-700">Default Configuration</h2>
+        <p class="text-xs text-gray-400">JSON object with default values that will pre-fill the task creation form.</p>
+        <textarea id="taskConfig" class="input w-full h-40 font-mono text-sm resize-y" placeholder='{"labels": ["cat", "dog", "other"]}'>{}</textarea>
+        <p id="configError" class="text-xs text-red-500 hidden">Invalid JSON</p>
+      </div>
+
+      <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-6 space-y-5">
+        <h2 class="font-semibold text-gray-700">Example Input (optional)</h2>
+        <p class="text-xs text-gray-400">Show users what a real task input looks like.</p>
+        <textarea id="exampleInput" class="input w-full h-32 font-mono text-sm resize-y" placeholder='{"image_url": "https://example.com/photo.jpg"}'></textarea>
+      </div>
+
+      <div id="errorMsg" class="hidden bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm"></div>
+
+      <div class="flex justify-end gap-3">
+        <a href="/dashboard/marketplace" class="btn-secondary">Cancel</a>
+        <button type="submit" id="submitBtn" class="btn-primary">Create Template</button>
+      </div>
+    </form>
+  </div>
+</Layout>
+
+<style>
+  .label { @apply block text-sm font-medium text-gray-700 mb-1; }
+  .input { @apply border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500; }
+  .btn-primary { @apply bg-indigo-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors; }
+  .btn-secondary { @apply bg-gray-100 text-gray-700 px-5 py-2 rounded-lg text-sm font-medium hover:bg-gray-200 transition-colors; }
+</style>
+
+<script>
+  const token = document.cookie.match(/token=([^;]+)/)?.[1] || '';
+  const authHeader = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
+
+  document.getElementById('templateForm')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('submitBtn') as HTMLButtonElement;
+    const errMsg = document.getElementById('errorMsg')!;
+    btn.disabled = true;
+    btn.textContent = 'Creating…';
+    errMsg.classList.add('hidden');
+
+    const configText = (document.getElementById('taskConfig') as HTMLTextAreaElement).value.trim() || '{}';
+    const exampleText = (document.getElementById('exampleInput') as HTMLTextAreaElement).value.trim();
+    const configErr = document.getElementById('configError')!;
+
+    let taskConfig: any, exampleInput: any;
+    try {
+      taskConfig = JSON.parse(configText);
+      configErr.classList.add('hidden');
+    } catch {
+      configErr.classList.remove('hidden');
+      btn.disabled = false;
+      btn.textContent = 'Create Template';
+      return;
+    }
+    try {
+      exampleInput = exampleText ? JSON.parse(exampleText) : null;
+    } catch {
+      exampleInput = null;
+    }
+
+    const tagsRaw = (document.getElementById('tags') as HTMLInputElement).value;
+    const tags = tagsRaw ? tagsRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
+
+    const body = {
+      name: (document.getElementById('name') as HTMLInputElement).value,
+      description: (document.getElementById('description') as HTMLTextAreaElement).value || null,
+      task_type: (document.getElementById('taskType') as HTMLSelectElement).value,
+      execution_mode: (document.getElementById('executionMode') as HTMLSelectElement).value,
+      category: (document.getElementById('category') as HTMLSelectElement).value || null,
+      tags,
+      task_config: taskConfig,
+      example_input: exampleInput,
+      is_public: (document.getElementById('isPublic') as HTMLInputElement).checked,
+    };
+
+    const res = await fetch('/api/v1/marketplace/templates', {
+      method: 'POST',
+      headers: authHeader,
+      body: JSON.stringify(body),
+    });
+
+    if (res.ok) {
+      window.location.href = '/dashboard/marketplace';
+    } else {
+      const err = await res.json().catch(() => ({ detail: 'Unknown error' }));
+      errMsg.textContent = typeof err.detail === 'string' ? err.detail : JSON.stringify(err.detail);
+      errMsg.classList.remove('hidden');
+      btn.disabled = false;
+      btn.textContent = 'Create Template';
+    }
+  });
+</script>
