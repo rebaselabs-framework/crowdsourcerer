@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# CrowdSorcerer pre-push hook
+# LAST LINE OF DEFENSE — runs full astro check + build before any push to remote.
+# Even if pre-commit was bypassed or skipped, this runs at push time.
+#
+# Install: make setup-hooks   (or: cp scripts/pre-push .git/hooks/pre-push && chmod +x .git/hooks/pre-push)
+
+set -e
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+
+echo ""
+echo "🚀 pre-push: Verifying Astro build is clean before pushing..."
+echo ""
+
+cd "$REPO_ROOT/apps/web"
+
+# 1. astro check — TypeScript + Astro 5 syntax
+echo "=== Step 1/2: astro check ==="
+if ! pnpm exec astro check 2>&1; then
+  echo ""
+  echo "❌ PUSH BLOCKED — astro check failed"
+  echo "   Fix all errors, then: make check && git push"
+  echo ""
+  exit 1
+fi
+echo "✅ astro check: 0 errors"
+echo ""
+
+# 2. pnpm build — compiler-level build verification
+echo "=== Step 2/2: Astro build ==="
+if ! pnpm build 2>&1; then
+  echo ""
+  echo "❌ PUSH BLOCKED — Astro build failed"
+  echo "   Fix all errors, then: make check && git push"
+  echo ""
+  exit 1
+fi
+echo "✅ Astro build: Complete"
+echo ""
+echo "✅ All checks passed — pushing to remote"
+echo ""

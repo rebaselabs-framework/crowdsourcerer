@@ -105,9 +105,12 @@ jobs:
       - name: Type check
         run: pnpm -r type-check
 
-  # ─── Web build ────────────────────────────────────────────────────────────
+  # ─── Web check + build ────────────────────────────────────────────────────
+  # MANDATORY: astro check must pass (0 errors) AND pnpm build must succeed.
+  # This is the authoritative gate — if this job fails, the commit is broken.
+  # Never push to main without this job passing.
   web-build:
-    name: Web Build (Astro)
+    name: Web Check + Build (Astro)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -125,8 +128,38 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build web
+      # Step 1: astro check — catches TypeScript errors, bad imports, Astro 5 syntax issues.
+      # Must produce: "0 errors". Any error here = broken deploy.
+      - name: Astro type check (0 errors required)
         working-directory: apps/web
-        run: pnpm build
+        run: |
+          set -e
+          OUTPUT=$(pnpm exec astro check 2>&1)
+          echo "$OUTPUT"
+          if echo "$OUTPUT" | grep -qE "^[0-9]+ error"; then
+            echo ""
+            echo "❌ astro check reported errors — build blocked"
+            exit 1
+          fi
+          if echo "$OUTPUT" | grep -qiE "error"; then
+            # Confirm it's really 0 errors by checking the summary line
+            if ! echo "$OUTPUT" | grep -qE "0 errors"; then
+              echo ""
+              echo "❌ astro check may have errors — review output above"
+              exit 1
+            fi
+          fi
+          echo "✅ astro check: 0 errors"
+        env:
+          PUBLIC_API_URL: http://localhost:8100
+
+      # Step 2: full Astro build — catches compiler-level errors that astro check misses.
+      # Must end with: "Complete!" — any build failure blocks deploy.
+      - name: Astro build (must complete successfully)
+        working-directory: apps/web
+        run: |
+          set -e
+          pnpm build
+          echo "✅ Astro build: Complete"
         env:
           PUBLIC_API_URL: http://localhost:8100

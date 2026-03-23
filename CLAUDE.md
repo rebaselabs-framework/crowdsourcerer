@@ -88,18 +88,44 @@ make dev          # start all services locally
 make test         # run all tests
 make check        # MANDATORY before commit/deploy — astro check + build
 make deploy       # runs check first, then push + trigger Coolify deploy
-make setup-hooks  # install git pre-commit hook (run once after clone)
+make setup-hooks  # install git hooks (pre-commit + pre-push) — run once after clone
 ```
 
-## MANDATORY: Pre-Commit Checks
+## 🚨 MANDATORY BUILD CHECKS — NEVER SKIP 🚨
 
-**ALWAYS run `make check` before committing.** The pre-commit git hook enforces this automatically.
+**Every session that touches `apps/web/` MUST run this before committing:**
 
 ```bash
-make check        # runs: astro check + pnpm build in apps/web
+cd /workspace/projects/crowdsourcerer
+make check
 ```
 
-If either step fails, **do not commit**. Fix all errors first.
+This runs:
+1. `cd apps/web && pnpm exec astro check` — must report **0 errors**
+2. `cd apps/web && pnpm build` — must end with **"Complete!"**
+
+**If either step fails → fix ALL errors → re-run `make check` → only then commit.**
+
+Do NOT use `git commit --no-verify`. Do NOT skip the pre-commit hook. Ever.
+
+### Three Layers of Protection
+
+| Layer | When | What runs |
+|-------|------|-----------|
+| `make check` | Manually, before every commit | `astro check` + `pnpm build` |
+| `.git/hooks/pre-commit` | Auto on `git commit` | `astro check` + `pnpm build` |
+| `.git/hooks/pre-push` | Auto on `git push` | `astro check` + `pnpm build` |
+| GitHub Actions `web-build` | Auto on every push | `astro check` + `pnpm build` |
+
+All four must pass. GitHub Actions is the canonical CI gate.
+
+### If You're Not Sure — Check First
+
+Before committing **any** change to an Astro file, always:
+```bash
+cd apps/web && pnpm exec astro check 2>&1 | tail -5
+```
+Should show: `0 errors`. If not, stop and fix before continuing.
 
 ## Astro 5 Coding Rules (STRICT — violations break production)
 

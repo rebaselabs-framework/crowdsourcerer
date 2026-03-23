@@ -16,10 +16,13 @@ install:
 	pip install -r apps/api/requirements.txt
 
 # Install git hooks (run once after cloning)
+# Installs BOTH pre-commit (catches errors before commit) and pre-push (last-line-of-defense before remote push)
 setup-hooks:
 	cp scripts/pre-commit .git/hooks/pre-commit
 	chmod +x .git/hooks/pre-commit
-	@echo "✅ Git hooks installed"
+	cp scripts/pre-push .git/hooks/pre-push
+	chmod +x .git/hooks/pre-push
+	@echo "✅ Git hooks installed (pre-commit + pre-push)"
 
 # Build
 build:
