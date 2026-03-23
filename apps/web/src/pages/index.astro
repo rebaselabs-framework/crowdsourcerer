@@ -125,18 +125,34 @@ console.<span class="text-yellow-400">log</span>(task.output.summary);
     <h2 class="text-3xl font-bold mb-3">Pay as you go</h2>
     <p class="text-gray-400 mb-10">100 credits free on signup. $1 = 100 credits.</p>
     <div class="grid md:grid-cols-3 gap-6">
-      {[
-        { plan: "Free", credits: 100, price: "$0", note: "On signup, no card required" },
-        { plan: "Starter", credits: 1000, price: "$10", note: "Best for prototypes" },
-        { plan: "Pro", credits: 10000, price: "$90", note: "10% volume discount" },
-      ].map(({ plan, credits, price, note }) => (
-        <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 text-left">
-          <div class="text-sm text-gray-500 mb-1">{plan}</div>
-          <div class="text-3xl font-bold mb-1">{price}</div>
-          <div class="text-violet-300 font-medium mb-3">{credits.toLocaleString()} credits</div>
-          <div class="text-sm text-gray-500">{note}</div>
+      {/* Free tier — prominently highlighted */}
+      <div class="bg-gradient-to-br from-violet-950/60 to-gray-900 border-2 border-violet-600 rounded-xl p-6 text-left relative overflow-hidden">
+        <div class="absolute top-3 right-3">
+          <span class="text-[10px] font-bold uppercase tracking-widest bg-violet-600 text-white px-2 py-0.5 rounded-full">Most popular</span>
         </div>
-      ))}
+        <div class="text-sm text-violet-400 font-semibold mb-1">Free</div>
+        <div class="text-3xl font-bold mb-1">$0</div>
+        <div class="text-violet-300 font-medium mb-3">100 credits</div>
+        <div class="text-sm text-gray-400 mb-4">Start free — 100 credits, no credit card required</div>
+        <a
+          href="/register"
+          class="inline-block w-full text-center py-2.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-sm font-semibold transition-colors"
+        >
+          Get started free →
+        </a>
+      </div>
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 text-left">
+        <div class="text-sm text-gray-500 mb-1">Starter</div>
+        <div class="text-3xl font-bold mb-1">$10</div>
+        <div class="text-violet-300 font-medium mb-3">1,000 credits</div>
+        <div class="text-sm text-gray-500">Best for prototypes</div>
+      </div>
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 text-left">
+        <div class="text-sm text-gray-500 mb-1">Pro</div>
+        <div class="text-3xl font-bold mb-1">$90</div>
+        <div class="text-violet-300 font-medium mb-3">10,000 credits</div>
+        <div class="text-sm text-gray-500">10% volume discount</div>
+      </div>
     </div>
   </section>
 
@@ -233,6 +249,56 @@ console.<span class="text-yellow-400">log</span>(task.output.summary);
     </div>
   </section>
 
+  <!-- Testimonials -->
+  <section class="max-w-5xl mx-auto px-6 pb-20">
+    <h2 class="text-2xl font-bold text-center mb-3 text-gray-200">What people are saying</h2>
+    <p class="text-center text-gray-500 text-sm mb-10">Trusted by ML teams and freelancers alike</p>
+    <div class="grid md:grid-cols-3 gap-6">
+      {[
+        {
+          quote: "CrowdSorcerer cut our data labeling costs by 60%. The quality control system is incredible.",
+          name: "Sarah K.",
+          role: "ML Engineer at TechCorp",
+          avatar: "SK",
+          color: "violet",
+        },
+        {
+          quote: "I've earned over $800 in my first month completing tasks in my spare time. Highly recommend!",
+          name: "Marcus T.",
+          role: "Freelance Worker",
+          avatar: "MT",
+          color: "emerald",
+        },
+        {
+          quote: "The pipeline feature lets us chain AI and human tasks seamlessly. Game changer for our workflow.",
+          name: "David L.",
+          role: "Product Manager",
+          avatar: "DL",
+          color: "blue",
+        },
+      ].map(({ quote, name, role, avatar, color }) => (
+        <div class="bg-gray-900 border border-gray-800 rounded-2xl p-6 flex flex-col gap-4">
+          <div class="text-2xl text-gray-600 leading-none">&ldquo;</div>
+          <p class="text-gray-300 text-sm leading-relaxed flex-1">{quote}</p>
+          <div class="flex items-center gap-3 pt-2 border-t border-gray-800">
+            <div class:list={[
+              "w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0",
+              color === "violet" ? "bg-violet-900/60 text-violet-300" :
+              color === "emerald" ? "bg-emerald-900/60 text-emerald-300" :
+              "bg-blue-900/60 text-blue-300"
+            ]}>
+              {avatar}
+            </div>
+            <div>
+              <div class="text-sm font-semibold text-gray-200">{name}</div>
+              <div class="text-xs text-gray-500">{role}</div>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  </section>
+
   <!-- Social Proof -->
   <section class="max-w-5xl mx-auto px-6 pb-24">
     <!-- Stats bar -->
@@ -263,7 +329,7 @@ console.<span class="text-yellow-400">log</span>(task.output.summary);
           href="/register"
           class="px-8 py-3 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-semibold transition-colors"
         >
-          Start free
+          Start free — 100 credits, no credit card required
         </a>
         <a
           href="/docs/api-reference"

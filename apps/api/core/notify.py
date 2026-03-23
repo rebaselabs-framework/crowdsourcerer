@@ -50,6 +50,7 @@ class NotifType:
     APPLICATION_ACCEPTED     = "application_accepted"   # Worker's application was accepted
     APPLICATION_REJECTED     = "application_rejected"   # Worker's application was rejected
     TEAM_TASK_ASSIGNED       = "team_task_assigned"     # A task was assigned to a worker team
+    TASK_MESSAGE             = "task_message"           # A direct message about a task
 
 
 async def create_notification(

@@ -1523,3 +1523,49 @@ class TaskApplicationDB(Base):
 
     task = relationship("TaskDB", backref="applications", foreign_keys=[task_id])
     worker = relationship("UserDB", backref="task_applications", foreign_keys=[worker_id])
+
+
+class WorkerAvailabilityDB(Base):
+    """Recurring weekly availability slot for a worker."""
+    __tablename__ = "worker_availability"
+    __table_args__ = (UniqueConstraint("worker_id", "day_of_week", "start_hour", name="uq_worker_avail_slot"),)
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    worker_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    day_of_week = Column(Integer, nullable=False)  # 0=Mon … 6=Sun
+    start_hour = Column(Integer, nullable=False)   # 0-23
+    end_hour = Column(Integer, nullable=False)     # 1-24
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    worker = relationship("UserDB", foreign_keys=[worker_id], backref="availability_slots")
+
+
+class WorkerBlackoutDB(Base):
+    """A date on which a worker is unavailable."""
+    __tablename__ = "worker_blackouts"
+    __table_args__ = (UniqueConstraint("worker_id", "blackout_date", name="uq_worker_blackout"),)
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    worker_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    blackout_date = Column(Date, nullable=False)
+    reason = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    worker = relationship("UserDB", foreign_keys=[worker_id], backref="blackout_dates")
+
+
+class TaskMessageDB(Base):
+    """A direct message between requester and worker about a specific task."""
+    __tablename__ = "task_messages"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    task_id = Column(UUID(as_uuid=True), ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False, index=True)
+    sender_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    recipient_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    body = Column(Text, nullable=False)
+    is_read = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    task = relationship("TaskDB", foreign_keys=[task_id], backref="messages")
+    sender = relationship("UserDB", foreign_keys=[sender_id], backref="sent_task_messages")
+    recipient = relationship("UserDB", foreign_keys=[recipient_id], backref="received_task_messages")
