@@ -33,20 +33,25 @@ try {
 
 // ── Derived stats ─────────────────────────────────────────────────────────────
 const totalTasks = overview?.total_tasks ?? 0;
-const completedTasks = overview?.completed_tasks ?? 0;
-const failedCount = overview?.failed_tasks ?? 0;
+const completedTasks = overview?.tasks_completed ?? 0;
+const failedCount = overview?.tasks_failed ?? 0;
 const successRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
-const avgMs = overview?.avg_completion_ms;
-const avgSec = avgMs != null ? (avgMs / 1000).toFixed(1) : null;
-const creditsSpent = overview?.credits_spent ?? 0;
+const avgMin = overview?.avg_completion_time_minutes;
+const avgMinStr = avgMin != null ? (avgMin < 1 ? `${Math.round(avgMin * 60)}s` : `${avgMin.toFixed(1)}m`) : null;
+const creditsSpent30d = overview?.credits_spent_30d ?? 0;
+const totalCreditsSpent = overview?.total_credits_spent ?? 0;
+const workersUsed = overview?.workers_used ?? 0;
 
 // Task type breakdown from costs
 const byType: Array<{ type: string; count: number; credits: number }> =
   costs?.by_type?.slice(0, 6) ?? [];
 
 // Daily tasks sparkline data (last 7 days)
+// API returns tasks_last_30_days as [{date, count}] — normalize to {date, tasks}
 const dailySeries: Array<{ date: string; tasks: number }> =
-  (overview?.daily_tasks ?? []).slice(-7);
+  (overview?.tasks_last_30_days ?? overview?.daily_tasks ?? [])
+    .slice(-7)
+    .map((d: any) => ({ date: d.date, tasks: d.tasks ?? d.count ?? 0 }));
 const sparkMax = Math.max(...dailySeries.map((d) => d.tasks), 1);
 
 function fmt(d: string) {
@@ -82,29 +87,32 @@ function fmt(d: string) {
       </div>
     </div>
 
-    <!-- ── KPI strip (30-day) ──────────────────────────────────────────────── -->
-    <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
+    <!-- ── KPI strip ──────────────────────────────────────────────── -->
+    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
+      <!-- Credits balance -->
       <div class="bg-gray-900 border border-gray-800 rounded-2xl p-5">
         <div class="flex items-center justify-between mb-1">
-          <div class="text-xs text-gray-400">Credits balance</div>
+          <div class="text-xs text-gray-400">Balance</div>
           <a href="/dashboard/credits" class="text-xs text-violet-400 hover:text-violet-300">Top up →</a>
         </div>
         <div class="text-2xl font-bold text-violet-300">
           {(credits?.available ?? 0).toLocaleString()}
         </div>
         <div class="text-xs text-gray-500 mt-0.5">
-          ≈ ${((credits?.available ?? 0) / 100).toFixed(2)} USD
+          ≈ ${((credits?.available ?? 0) / 100).toFixed(2)}
         </div>
       </div>
+      <!-- Total tasks (all-time) -->
       <div class="bg-gray-900 border border-gray-800 rounded-2xl p-5">
-        <div class="text-xs text-gray-400 mb-1">Tasks (30d)</div>
+        <div class="text-xs text-gray-400 mb-1">Total tasks</div>
         <div class="text-2xl font-bold">{totalTasks.toLocaleString()}</div>
         <div class="text-xs text-gray-500 mt-0.5">
-          {completedTasks} completed · {failedCount} failed
+          {completedTasks} done · {failedCount} failed
         </div>
       </div>
+      <!-- Success rate -->
       <div class="bg-gray-900 border border-gray-800 rounded-2xl p-5">
-        <div class="text-xs text-gray-400 mb-1">Success rate</div>
+        <div class="text-xs text-gray-400 mb-1">Completion rate</div>
         <div class={`text-2xl font-bold ${successRate >= 90 ? "text-emerald-300" : successRate >= 70 ? "text-yellow-300" : "text-red-300"}`}>
           {successRate}%
         </div>
@@ -112,13 +120,34 @@ function fmt(d: string) {
           {totalTasks > 0 ? `of ${totalTasks} tasks` : "No tasks yet"}
         </div>
       </div>
+      <!-- Credits spent 30d -->
       <div class="bg-gray-900 border border-gray-800 rounded-2xl p-5">
-        <div class="text-xs text-gray-400 mb-1">Credits spent (30d)</div>
+        <div class="text-xs text-gray-400 mb-1">Spend (30d)</div>
         <div class="text-2xl font-bold text-orange-300">
-          {creditsSpent.toLocaleString()}
+          {creditsSpent30d.toLocaleString()}
         </div>
         <div class="text-xs text-gray-500 mt-0.5">
-          ≈ ${(creditsSpent / 100).toFixed(2)} USD
+          ≈ ${(creditsSpent30d / 100).toFixed(2)} of ${(totalCreditsSpent / 100).toFixed(0)} total
+        </div>
+      </div>
+      <!-- Workers used -->
+      <div class="bg-gray-900 border border-gray-800 rounded-2xl p-5">
+        <div class="text-xs text-gray-400 mb-1">Workers used</div>
+        <div class="text-2xl font-bold text-sky-300">
+          {workersUsed.toLocaleString()}
+        </div>
+        <div class="text-xs text-gray-500 mt-0.5">
+          unique contributors
+        </div>
+      </div>
+      <!-- Avg completion time -->
+      <div class="bg-gray-900 border border-gray-800 rounded-2xl p-5">
+        <div class="text-xs text-gray-400 mb-1">Avg time</div>
+        <div class="text-2xl font-bold text-teal-300">
+          {avgMinStr ?? "—"}
+        </div>
+        <div class="text-xs text-gray-500 mt-0.5">
+          per task completion
         </div>
       </div>
     </div>
@@ -155,10 +184,10 @@ function fmt(d: string) {
         )}
 
         <!-- Avg completion time -->
-        {avgSec && (
+        {avgMinStr && (
           <div class="mt-4 pt-4 border-t border-gray-800 flex items-center gap-2 text-xs text-gray-400">
             <span>⏱</span>
-            <span>Avg completion: <strong class="text-gray-200">{avgSec}s</strong></span>
+            <span>Avg completion: <strong class="text-gray-200">{avgMinStr}</strong></span>
           </div>
         )}
       </div>

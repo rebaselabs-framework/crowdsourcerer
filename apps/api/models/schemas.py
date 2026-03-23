@@ -959,7 +959,9 @@ class RequesterOverviewOut(BaseModel):
     tasks_pending: int
     tasks_failed: int
     total_credits_spent: int
+    credits_spent_30d: int = 0        # Credits spent in the last 30 days
     avg_completion_time_minutes: Optional[float]
+    workers_used: int = 0             # Distinct workers who've submitted to requester's tasks
     tasks_by_type: dict[str, int]
     tasks_by_status: dict[str, int]
     tasks_last_30_days: list[dict]  # [{date, count}]

@@ -1750,6 +1750,35 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
           </div>
         </div>
 
+        <!-- Related Tasks + Suggested Workers (lazy-loaded) -->
+        {isRequester && (
+          <div class="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <!-- Related Tasks -->
+            <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+              <div class="px-5 py-3 border-b border-gray-800 flex items-center justify-between">
+                <h2 class="text-sm font-semibold text-gray-300">🔁 Related Tasks</h2>
+                <a href="/dashboard/tasks" class="text-xs text-gray-500 hover:text-gray-300 transition-colors">View all →</a>
+              </div>
+              <div id="related-tasks-list" class="divide-y divide-gray-800">
+                <div class="px-5 py-4 text-sm text-gray-600 text-center">Loading…</div>
+              </div>
+            </div>
+
+            <!-- Suggested Workers (human tasks only) -->
+            {task.execution_mode === "human" && (
+              <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+                <div class="px-5 py-3 border-b border-gray-800 flex items-center justify-between">
+                  <h2 class="text-sm font-semibold text-gray-300">👷 Suggested Workers</h2>
+                  <a href="/workers/browse" class="text-xs text-gray-500 hover:text-gray-300 transition-colors">Browse all →</a>
+                </div>
+                <div id="suggested-workers-list" class="divide-y divide-gray-800">
+                  <div class="px-5 py-4 text-sm text-gray-600 text-center">Loading…</div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         <!-- Retry if failed -->
         {task.status === "failed" && (
           <div class="mt-6">
@@ -2355,6 +2384,121 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
             stopStream();
           }
         };
+      });
+    }
+  </script>
+
+  <!-- Related tasks + suggested workers lazy loader -->
+  <script define:vars={{ taskId: id, isRequester, executionMode: task?.execution_mode }}>
+    if (isRequester) {
+      // ── Related tasks ──────────────────────────────────────────────────────
+      const STATUS_BADGE = {
+        completed: "bg-green-900/30 text-green-400",
+        failed:    "bg-red-900/30 text-red-400",
+        running:   "bg-yellow-900/30 text-yellow-400",
+        queued:    "bg-blue-900/30 text-blue-400",
+        pending:   "bg-gray-800 text-gray-400",
+        open:      "bg-violet-900/30 text-violet-400",
+        assigned:  "bg-amber-900/30 text-amber-400",
+        cancelled: "bg-gray-800 text-gray-500",
+        archived:  "bg-gray-900 text-gray-600",
+      };
+
+      async function loadRelated() {
+        const container = document.getElementById("related-tasks-list");
+        if (!container) return;
+        try {
+          const res = await fetch(`/api/tasks/${taskId}/related?limit=6`);
+          const tasks = res.ok ? await res.json() : [];
+          if (!tasks.length) {
+            container.innerHTML = `<p class="px-5 py-4 text-sm text-gray-600 text-center">No other ${tasks.length === 0 ? "" : "related "}tasks found.</p>`;
+            return;
+          }
+          container.innerHTML = tasks.map(t => {
+            const badge = STATUS_BADGE[t.status] ?? "bg-gray-800 text-gray-400";
+            const date = t.created_at ? new Date(t.created_at).toLocaleDateString() : "";
+            const tags = (t.tags || []).slice(0, 2).map(tag =>
+              `<span class="px-1.5 py-0.5 bg-gray-800 text-gray-500 text-[10px] rounded">${tag}</span>`
+            ).join(" ");
+            return `<a href="/dashboard/tasks/${t.id}" class="flex items-center justify-between px-5 py-3 hover:bg-gray-800/50 transition-colors group">
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="text-sm text-gray-300 group-hover:text-white truncate">${t.type.replace(/_/g, " ")}</span>
+                  ${tags}
+                </div>
+                <div class="text-xs text-gray-600 mt-0.5">${date}</div>
+              </div>
+              <div class="flex items-center gap-2 ml-3 shrink-0">
+                ${t.credits_used ? `<span class="text-xs text-gray-500">${t.credits_used} cr</span>` : ""}
+                <span class="text-[11px] px-2 py-0.5 rounded-full ${badge}">${t.status}</span>
+              </div>
+            </a>`;
+          }).join("");
+        } catch {
+          container.innerHTML = `<p class="px-5 py-4 text-sm text-gray-600 text-center">Could not load related tasks.</p>`;
+        }
+      }
+
+      // ── Suggested workers (human tasks only) ──────────────────────────────
+      const AVAIL_BADGE = {
+        available: "bg-green-900/30 text-green-400",
+        busy:      "bg-yellow-900/30 text-yellow-400",
+        away:      "bg-gray-800 text-gray-500",
+      };
+
+      async function loadSuggestedWorkers() {
+        const container = document.getElementById("suggested-workers-list");
+        if (!container) return;
+        try {
+          const res = await fetch(`/api/tasks/${taskId}/suggested-workers?limit=8`);
+          const workers = res.ok ? await res.json() : [];
+          if (!workers.length) {
+            container.innerHTML = `<p class="px-5 py-4 text-sm text-gray-600 text-center">No experienced workers found for this task type yet.</p>`;
+            return;
+          }
+          container.innerHTML = workers.map(w => {
+            const initials = (w.display_name || "?").split(" ").map(p => p[0]).join("").slice(0, 2).toUpperCase();
+            const accuracy = w.accuracy != null ? `${Math.round(w.accuracy * 100)}%` : "—";
+            const repColor = w.reputation_score >= 80 ? "text-green-400" : w.reputation_score >= 50 ? "text-yellow-400" : "text-red-400";
+            const profLabels = ["", "Novice", "Beginner", "Competent", "Proficient", "Expert"];
+            const prof = profLabels[w.proficiency_level] ?? `L${w.proficiency_level}`;
+            const availBadge = AVAIL_BADGE[w.availability_status] ?? "bg-gray-800 text-gray-500";
+            const verifiedBadge = w.verified ? `<span class="text-amber-400 text-xs" title="Verified skill">🏅</span>` : "";
+            return `<div class="flex items-center gap-3 px-5 py-3 hover:bg-gray-800/50 transition-colors">
+              <div class="w-9 h-9 rounded-full bg-violet-800/50 flex items-center justify-center text-violet-300 text-sm font-semibold shrink-0">
+                ${w.avatar_url ? `<img src="${w.avatar_url}" class="w-9 h-9 rounded-full object-cover" />` : initials}
+              </div>
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-1.5">
+                  <a href="/workers/${w.worker_id}" class="text-sm text-gray-200 hover:text-white font-medium truncate">${w.display_name}</a>
+                  ${verifiedBadge}
+                  <span class="text-[10px] px-1.5 py-0.5 rounded-full ${availBadge}">${w.availability_status}</span>
+                </div>
+                <div class="flex items-center gap-2 mt-0.5 flex-wrap">
+                  <span class="text-xs text-gray-500">${prof}</span>
+                  <span class="text-gray-700">·</span>
+                  <span class="text-xs text-gray-500">${w.tasks_completed} tasks</span>
+                  <span class="text-gray-700">·</span>
+                  <span class="text-xs text-gray-500">${accuracy} acc.</span>
+                  <span class="text-gray-700">·</span>
+                  <span class="text-xs ${repColor}">${w.reputation_score} rep</span>
+                </div>
+              </div>
+              <a href="/workers/browse?invite_task=${taskId}&worker=${w.worker_id}"
+                class="shrink-0 px-2.5 py-1 bg-violet-900/30 hover:bg-violet-800/50 border border-violet-800/50 text-violet-300 text-xs rounded-lg transition-colors">
+                Invite
+              </a>
+            </div>`;
+          }).join("");
+        } catch {
+          container.innerHTML = `<p class="px-5 py-4 text-sm text-gray-600 text-center">Could not load suggestions.</p>`;
+        }
+      }
+
+      // Load both after page renders
+      requestAnimationFrame(() => {
+        loadRelated();
+        if (executionMode === "human") loadSuggestedWorkers();
       });
     }
   </script>

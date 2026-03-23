@@ -17,7 +17,7 @@ from core.auth import get_current_user_id
 from core.scopes import require_scope, SCOPE_TASKS_READ, SCOPE_TASKS_WRITE
 from core.database import get_db
 from core.webhooks import fire_webhook_for_task, fire_persistent_endpoints, ALL_EVENTS, DEFAULT_EVENTS
-from models.db import TaskDB, UserDB, CreditTransactionDB, TaskAssignmentDB, WebhookLogDB
+from models.db import TaskDB, UserDB, CreditTransactionDB, TaskAssignmentDB, WebhookLogDB, WorkerSkillDB
 from models.schemas import (
     TaskCreateRequest, TaskCreateResponse, TaskOut, PaginatedTasks,
     BatchTaskCreateRequest, BatchTaskCreateResponse,
@@ -1949,3 +1949,103 @@ async def rerun_task(
         status=new_task.status,
         estimated_credits=estimated_credits,
     )
+
+
+# ── Related tasks ──────────────────────────────────────────────────────────────
+
+@router.get("/{task_id}/related")
+async def get_related_tasks(
+    task_id: UUID,
+    limit: int = Query(6, ge=1, le=20),
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(require_scope(SCOPE_TASKS_READ)),
+):
+    """Return up to `limit` other tasks by the same requester with the same type.
+
+    Ordered newest-first.  Useful for the 'Related Tasks' sidebar on the task
+    detail page.  Only returns tasks owned by the authenticated user.
+    """
+    result = await db.execute(
+        select(TaskDB)
+        .where(
+            TaskDB.user_id == user_id,
+            TaskDB.id != task_id,
+            # Join-less: filter by the same type as the target task via subquery
+            TaskDB.type == select(TaskDB.type).where(TaskDB.id == task_id).scalar_subquery(),
+        )
+        .order_by(TaskDB.created_at.desc())
+        .limit(limit)
+    )
+    tasks = result.scalars().all()
+    return [
+        {
+            "id": str(t.id),
+            "type": t.type,
+            "status": t.status,
+            "execution_mode": t.execution_mode,
+            "credits_used": t.credits_used,
+            "priority": t.priority,
+            "tags": t.tags or [],
+            "created_at": t.created_at.isoformat() if t.created_at else None,
+            "completed_at": t.completed_at.isoformat() if t.completed_at else None,
+        }
+        for t in tasks
+    ]
+
+
+# ── Suggested workers ──────────────────────────────────────────────────────────
+
+@router.get("/{task_id}/suggested-workers")
+async def get_suggested_workers(
+    task_id: UUID,
+    limit: int = Query(8, ge=1, le=20),
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(require_scope(SCOPE_TASKS_READ)),
+):
+    """Return top workers for the task type, ranked by proficiency + accuracy + reputation.
+
+    Only accessible by the task's owner (requester).  Useful for the
+    'Suggested Workers' sidebar on the task detail page.
+    """
+    # Verify ownership
+    task_result = await db.execute(
+        select(TaskDB).where(TaskDB.id == task_id, TaskDB.user_id == user_id)
+    )
+    task = task_result.scalar_one_or_none()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    # Fetch top skilled workers for this task type (join with users for name/rep)
+    result = await db.execute(
+        select(WorkerSkillDB, UserDB)
+        .join(UserDB, WorkerSkillDB.worker_id == UserDB.id)
+        .where(
+            WorkerSkillDB.task_type == task.type,
+            WorkerSkillDB.tasks_completed >= 1,
+            UserDB.is_banned.isnot(True),
+            UserDB.availability_status.in_(["available", "busy"]),
+        )
+        .order_by(
+            WorkerSkillDB.proficiency_level.desc(),
+            WorkerSkillDB.accuracy.desc().nulls_last(),
+            UserDB.reputation_score.desc(),
+            WorkerSkillDB.tasks_completed.desc(),
+        )
+        .limit(limit)
+    )
+    rows = result.all()
+    return [
+        {
+            "worker_id": str(skill.worker_id),
+            "display_name": user.name or user.email.split("@")[0],
+            "avatar_url": user.avatar_url,
+            "proficiency_level": skill.proficiency_level,
+            "accuracy": round(skill.accuracy, 2) if skill.accuracy is not None else None,
+            "tasks_completed": skill.tasks_completed,
+            "verified": skill.verified,
+            "reputation_score": round(user.reputation_score, 1) if user.reputation_score else 50.0,
+            "availability_status": user.availability_status,
+            "last_task_at": skill.last_task_at.isoformat() if skill.last_task_at else None,
+        }
+        for skill, user in rows
+    ]

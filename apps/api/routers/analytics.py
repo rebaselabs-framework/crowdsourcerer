@@ -18,7 +18,7 @@ from sqlalchemy import select, func, and_, text, case
 from core.auth import get_current_user_id
 from core.scopes import require_scope, SCOPE_ANALYTICS_READ
 from core.database import get_db
-from models.db import TaskDB, CreditTransactionDB, OrganizationDB, OrgMemberDB, UserDB
+from models.db import TaskDB, CreditTransactionDB, OrganizationDB, OrgMemberDB, UserDB, TaskAssignmentDB
 from models.schemas import RequesterOverviewOut, OrgAnalyticsOut, CostBreakdownOut
 
 logger = structlog.get_logger()
@@ -133,13 +133,39 @@ async def requester_overview(
         for row in daily_result
     ]
 
+    # Workers used — distinct workers who've submitted to this requester's tasks
+    since_30d = utcnow() - timedelta(days=30)
+    workers_used_result = await db.execute(
+        select(func.count(func.distinct(TaskAssignmentDB.worker_id)))
+        .select_from(TaskAssignmentDB)
+        .join(TaskDB, TaskAssignmentDB.task_id == TaskDB.id)
+        .where(
+            TaskDB.user_id == uid,
+            TaskAssignmentDB.status.in_(["submitted", "approved", "rejected"]),
+        )
+    )
+    workers_used = workers_used_result.scalar() or 0
+
+    # Credits spent in the last 30 days specifically
+    credits_spent_30d_result = await db.execute(
+        select(func.coalesce(func.sum(func.abs(CreditTransactionDB.amount)), 0))
+        .where(
+            CreditTransactionDB.user_id == uid,
+            CreditTransactionDB.amount < 0,
+            CreditTransactionDB.created_at >= since_30d,
+        )
+    )
+    credits_spent_30d = credits_spent_30d_result.scalar() or 0
+
     return RequesterOverviewOut(
         total_tasks=total_tasks,
         tasks_completed=tasks_completed,
         tasks_pending=tasks_pending,
         tasks_failed=tasks_failed,
         total_credits_spent=total_credits_spent,
+        credits_spent_30d=int(credits_spent_30d),
         avg_completion_time_minutes=round(avg_time, 1) if avg_time else None,
+        workers_used=workers_used,
         tasks_by_type=tasks_by_type,
         tasks_by_status=tasks_by_status,
         tasks_last_30_days=tasks_last_n_days,
