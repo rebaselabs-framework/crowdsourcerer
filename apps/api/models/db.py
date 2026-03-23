@@ -432,3 +432,170 @@ class NotificationDB(Base):
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
 
     user = relationship("UserDB", backref="notifications")
+
+
+# ─── Task Pipelines ───────────────────────────────────────────────────────────
+
+class TaskPipelineDB(Base):
+    """A reusable pipeline definition — an ordered chain of task steps."""
+    __tablename__ = "task_pipelines"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    org_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="SET NULL"),
+                    nullable=True, index=True)
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    user = relationship("UserDB", backref="pipelines")
+    steps = relationship("TaskPipelineStepDB", back_populates="pipeline",
+                         order_by="TaskPipelineStepDB.step_order", cascade="all, delete-orphan")
+    runs = relationship("TaskPipelineRunDB", back_populates="pipeline", lazy="dynamic")
+
+
+class TaskPipelineStepDB(Base):
+    """One step within a pipeline definition."""
+    __tablename__ = "task_pipeline_steps"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    pipeline_id = Column(UUID(as_uuid=True), ForeignKey("task_pipelines.id", ondelete="CASCADE"),
+                         nullable=False, index=True)
+    step_order = Column(Integer, nullable=False)          # 0-based ordering
+    name = Column(String(255), nullable=False)
+    task_type = Column(String(64), nullable=False)         # e.g. "llm_generate", "rate_quality"
+    execution_mode = Column(String(16), default="ai", nullable=False)  # ai | human
+    # Static config merged with dynamic input; {key: value} where value can be
+    # a template string like "{{prev.output.text}}" referencing prior step output
+    task_config = Column(JSON, nullable=False, default=dict)
+    # Input mapping: how to pull fields from pipeline run input or prior step output
+    # e.g. {"prompt": "$.input.text", "context": "$.steps.0.output.summary"}
+    input_mapping = Column(JSON, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    pipeline = relationship("TaskPipelineDB", back_populates="steps")
+
+
+class TaskPipelineRunDB(Base):
+    """One execution of a pipeline — tracks state across all steps."""
+    __tablename__ = "task_pipeline_runs"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    pipeline_id = Column(UUID(as_uuid=True), ForeignKey("task_pipelines.id", ondelete="CASCADE"),
+                         nullable=False, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    status = Column(
+        SAEnum("pending", "running", "completed", "failed", "cancelled",
+               name="pipeline_run_status_enum"),
+        default="pending",
+        nullable=False,
+        index=True,
+    )
+    input = Column(JSON, nullable=False, default=dict)      # Initial input payload
+    output = Column(JSON, nullable=True)                    # Final output from last step
+    current_step = Column(Integer, default=0, nullable=False)  # which step index is active
+    error = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
+    pipeline = relationship("TaskPipelineDB", back_populates="runs")
+    user = relationship("UserDB", backref="pipeline_runs")
+    step_runs = relationship("TaskPipelineStepRunDB", back_populates="run",
+                              order_by="TaskPipelineStepRunDB.step_order",
+                              cascade="all, delete-orphan")
+
+
+class TaskPipelineStepRunDB(Base):
+    """Tracks one step's execution within a pipeline run."""
+    __tablename__ = "task_pipeline_step_runs"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    run_id = Column(UUID(as_uuid=True), ForeignKey("task_pipeline_runs.id", ondelete="CASCADE"),
+                    nullable=False, index=True)
+    step_id = Column(UUID(as_uuid=True), ForeignKey("task_pipeline_steps.id", ondelete="CASCADE"),
+                     nullable=False)
+    step_order = Column(Integer, nullable=False)
+    task_id = Column(UUID(as_uuid=True), ForeignKey("tasks.id", ondelete="SET NULL"),
+                     nullable=True)  # The actual Task created for this step
+    status = Column(
+        SAEnum("pending", "running", "completed", "failed", name="step_run_status_enum"),
+        default="pending",
+        nullable=False,
+    )
+    input = Column(JSON, nullable=True)    # Resolved input for this step
+    output = Column(JSON, nullable=True)   # Output from the task
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
+    run = relationship("TaskPipelineRunDB", back_populates="step_runs")
+    step = relationship("TaskPipelineStepDB")
+
+
+# ─── Worker Certification ─────────────────────────────────────────────────────
+
+class CertificationDB(Base):
+    """A certification program for a specific task type."""
+    __tablename__ = "certifications"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    task_type = Column(String(64), unique=True, nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    passing_score = Column(Integer, default=70, nullable=False)  # % needed to pass
+    badge_icon = Column(String(64), nullable=True)               # emoji or icon name
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    questions = relationship("CertificationQuestionDB", back_populates="certification",
+                              cascade="all, delete-orphan")
+    worker_certs = relationship("WorkerCertificationDB", back_populates="certification",
+                                 lazy="dynamic")
+
+
+class CertificationQuestionDB(Base):
+    """One question in a certification test."""
+    __tablename__ = "certification_questions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    cert_id = Column(UUID(as_uuid=True), ForeignKey("certifications.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    question = Column(Text, nullable=False)
+    question_type = Column(String(32), default="single_choice", nullable=False)
+    # single_choice | multi_choice | text_match
+    options = Column(JSON, nullable=True)           # [{"id": "a", "text": "..."}, ...]
+    correct_answer = Column(JSON, nullable=False)   # "a" | ["a","c"] | "expected text"
+    explanation = Column(Text, nullable=True)       # Shown after answering
+    points = Column(Integer, default=10, nullable=False)
+    order_index = Column(Integer, default=0, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    certification = relationship("CertificationDB", back_populates="questions")
+
+
+class WorkerCertificationDB(Base):
+    """A worker's certification result for a specific task type."""
+    __tablename__ = "worker_certifications"
+    __table_args__ = (
+        UniqueConstraint("worker_id", "cert_id", name="uq_worker_cert"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    worker_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
+                       nullable=False, index=True)
+    cert_id = Column(UUID(as_uuid=True), ForeignKey("certifications.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    score = Column(Integer, default=0, nullable=False)    # % achieved
+    passed = Column(Boolean, default=False, nullable=False)
+    attempt_count = Column(Integer, default=0, nullable=False)
+    best_score = Column(Integer, default=0, nullable=False)
+    certified_at = Column(DateTime(timezone=True), nullable=True)  # when first passed
+    last_attempt_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    worker = relationship("UserDB", backref="certifications")
+    certification = relationship("CertificationDB", back_populates="worker_certs")

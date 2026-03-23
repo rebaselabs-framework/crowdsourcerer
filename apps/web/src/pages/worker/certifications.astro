@@ -1,0 +1,301 @@
+---
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Object.fromEntries(
+  Astro.cookies.getAll().map((c) => [c.name, c.value])
+));
+if (!token) return Astro.redirect("/login");
+
+// Handle cert attempt submission
+if (Astro.request.method === "POST") {
+  const form = await Astro.request.formData();
+  const taskType = form.get("task_type") as string;
+  const answersJson = form.get("answers_json") as string;
+
+  try {
+    const answers = JSON.parse(answersJson || "[]");
+    const result = await apiFetch<any>(`/v1/certifications/${taskType}/attempt`, {
+      method: "POST",
+      token,
+      body: JSON.stringify({ answers }),
+    });
+    // Store result in URL params for display
+    return Astro.redirect(
+      `/worker/certifications?result_type=${taskType}&score=${result.score}&passed=${result.passed}&earned=${result.earned_points}&total=${result.total_points}&correct=${result.correct_count}&count=${result.question_count}`
+    );
+  } catch (e: any) {
+    return Astro.redirect(`/worker/certifications?error=attempt_failed&type=${taskType}`);
+  }
+}
+
+// Get params
+const selectedType = Astro.url.searchParams.get("take");
+const resultType = Astro.url.searchParams.get("result_type");
+const resultScore = Astro.url.searchParams.get("score");
+const resultPassed = Astro.url.searchParams.get("passed");
+const resultEarned = Astro.url.searchParams.get("earned");
+const resultTotal = Astro.url.searchParams.get("total");
+const resultCorrect = Astro.url.searchParams.get("correct");
+const resultCount = Astro.url.searchParams.get("count");
+
+let certifications: any[] = [];
+let myCerts: any[] = [];
+let certDetail: any = null;
+let error: string | null = Astro.url.searchParams.get("error");
+
+try {
+  certifications = await apiFetch<any[]>("/v1/certifications", { token });
+} catch (e: any) {
+  if (e.message?.includes("401")) return Astro.redirect("/login");
+  error = "Failed to load certifications";
+}
+
+try {
+  myCerts = await apiFetch<any[]>("/v1/certifications/me/earned", { token });
+} catch (_) {}
+
+if (selectedType) {
+  try {
+    certDetail = await apiFetch<any>(`/v1/certifications/${selectedType}`, { token });
+  } catch (_) {}
+}
+
+// Build my cert lookup
+const myMap: Record<string, any> = {};
+for (const c of myCerts) {
+  myMap[c.task_type] = c;
+}
+---
+
+<Layout title="Worker Certifications — CrowdSorcerer">
+  <div class="max-w-6xl mx-auto px-4 py-8">
+    <!-- Header -->
+    <div class="mb-8">
+      <h1 class="text-3xl font-bold text-gray-900">🎓 Worker Certifications</h1>
+      <p class="text-gray-500 mt-1">Earn certifications to unlock higher-value tasks and boost your credibility</p>
+    </div>
+
+    {error && (
+      <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
+        {error === "attempt_failed" ? "Failed to submit your answers. Please try again." : error}
+      </div>
+    )}
+
+    <!-- Attempt Result -->
+    {resultType && (
+      <div class={`rounded-2xl p-6 mb-8 border-2 ${resultPassed === "true" ? "bg-green-50 border-green-300" : "bg-red-50 border-red-300"}`}>
+        <div class="flex items-center gap-4">
+          <div class="text-5xl">{resultPassed === "true" ? "🎉" : "😞"}</div>
+          <div>
+            <h2 class="text-2xl font-bold">{resultPassed === "true" ? "Certification Passed!" : "Not Passed This Time"}</h2>
+            <p class="text-gray-600 mt-1">
+              Score: <strong>{resultScore}%</strong> — Got {resultCorrect} of {resultCount} questions right
+              ({resultEarned} / {resultTotal} points)
+            </p>
+            {resultPassed === "true" ? (
+              <p class="text-green-700 mt-2">✅ You are now certified for <strong>{resultType}</strong> tasks!</p>
+            ) : (
+              <p class="text-red-700 mt-2">You can retake this certification after 60 minutes.</p>
+            )}
+          </div>
+        </div>
+      </div>
+    )}
+
+    <!-- Take Certification Test -->
+    {certDetail && (
+      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 mb-8">
+        <div class="p-6 border-b border-gray-100 flex items-center justify-between">
+          <div>
+            <h2 class="text-xl font-bold">{certDetail.badge_icon} {certDetail.name}</h2>
+            <p class="text-gray-500 text-sm mt-1">{certDetail.question_count} questions • Pass with {certDetail.passing_score}%+</p>
+          </div>
+          <a href="/worker/certifications" class="text-gray-400 hover:text-gray-600 text-2xl">×</a>
+        </div>
+        <form method="POST" id="cert-form" class="p-6">
+          <input type="hidden" name="task_type" value={certDetail.task_type} />
+          <input type="hidden" name="answers_json" id="answers-json" value="[]" />
+
+          <div class="space-y-8">
+            {certDetail.questions?.map((q: any, i: number) => (
+              <div class="space-y-3" data-question-id={q.id}>
+                <div class="flex gap-3">
+                  <span class="w-7 h-7 rounded-full bg-violet-100 text-violet-700 text-sm font-bold flex-shrink-0 flex items-center justify-center mt-0.5">
+                    {i + 1}
+                  </span>
+                  <p class="font-medium text-gray-900">{q.question}</p>
+                </div>
+                <div class="ml-10 space-y-2">
+                  {q.question_type === "single_choice" && q.options?.map((opt: any) => (
+                    <label class="flex items-center gap-3 p-3 rounded-xl border border-gray-200 hover:border-violet-300 hover:bg-violet-50 cursor-pointer transition">
+                      <input
+                        type="radio"
+                        name={`q_${q.id}`}
+                        value={opt.id}
+                        data-qid={q.id}
+                        data-qtype="single"
+                        onchange="updateAnswers()"
+                        class="text-violet-600"
+                      />
+                      <span class="text-sm">{opt.text}</span>
+                    </label>
+                  ))}
+                  {q.question_type === "multi_choice" && q.options?.map((opt: any) => (
+                    <label class="flex items-center gap-3 p-3 rounded-xl border border-gray-200 hover:border-violet-300 hover:bg-violet-50 cursor-pointer transition">
+                      <input
+                        type="checkbox"
+                        name={`q_${q.id}`}
+                        value={opt.id}
+                        data-qid={q.id}
+                        data-qtype="multi"
+                        onchange="updateAnswers()"
+                        class="text-violet-600 rounded"
+                      />
+                      <span class="text-sm">{opt.text}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div class="mt-8 flex gap-4">
+            <a href="/worker/certifications"
+              class="flex-1 text-center border border-gray-300 text-gray-700 px-4 py-3 rounded-xl text-sm font-medium hover:bg-gray-50">
+              Cancel
+            </a>
+            <button
+              type="submit"
+              onclick="return submitCert()"
+              class="flex-1 bg-violet-600 hover:bg-violet-700 text-white px-4 py-3 rounded-xl text-sm font-bold"
+            >
+              Submit Answers
+            </button>
+          </div>
+        </form>
+      </div>
+    )}
+
+    <!-- My Certifications -->
+    {myCerts.length > 0 && !certDetail && (
+      <div class="mb-8">
+        <h2 class="text-xl font-bold text-gray-900 mb-4">My Certifications ({myCerts.length})</h2>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {myCerts.map((c: any) => (
+            <div class={`p-5 rounded-2xl border-2 ${c.passed ? "border-green-300 bg-green-50" : "border-gray-200 bg-gray-50"}`}>
+              <div class="flex items-center justify-between mb-3">
+                <div class="text-3xl">{c.passed ? "✅" : "❌"}</div>
+                <span class={`text-sm font-bold px-2 py-0.5 rounded-full ${c.passed ? "bg-green-200 text-green-800" : "bg-red-100 text-red-700"}`}>
+                  {c.score}%
+                </span>
+              </div>
+              <h3 class="font-bold text-gray-900">{c.cert_name}</h3>
+              <p class="text-xs text-gray-500 mt-1">{c.task_type}</p>
+              {c.passed && c.certified_at && (
+                <p class="text-xs text-green-600 mt-2">Certified {new Date(c.certified_at).toLocaleDateString()}</p>
+              )}
+              {!c.passed && (
+                <a
+                  href={`/worker/certifications?take=${c.task_type}`}
+                  class="mt-3 block text-center text-sm text-violet-600 hover:underline font-medium"
+                >
+                  Retake →
+                </a>
+              )}
+              <p class="text-xs text-gray-400 mt-1">{c.attempt_count} attempt{c.attempt_count !== 1 ? "s" : ""} • Best: {c.best_score}%</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    )}
+
+    <!-- Available Certifications -->
+    {!certDetail && (
+      <div>
+        <h2 class="text-xl font-bold text-gray-900 mb-4">Available Certifications</h2>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          {certifications.map((cert: any) => {
+            const my = myMap[cert.task_type];
+            return (
+              <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 hover:shadow-md transition">
+                <div class="flex items-start justify-between mb-4">
+                  <div class="text-4xl">{cert.badge_icon || "🏅"}</div>
+                  {my?.passed && (
+                    <span class="bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded-full">✓ Certified</span>
+                  )}
+                  {my && !my.passed && (
+                    <span class="bg-orange-100 text-orange-700 text-xs font-bold px-2 py-1 rounded-full">Best: {my.best_score}%</span>
+                  )}
+                </div>
+                <h3 class="font-bold text-gray-900 mb-1">{cert.name}</h3>
+                <p class="text-sm text-gray-500 mb-3">{cert.description}</p>
+                <div class="flex items-center justify-between text-xs text-gray-400 mb-4">
+                  <span>📋 {cert.question_count} questions</span>
+                  <span>🎯 Pass at {cert.passing_score}%</span>
+                </div>
+                <a
+                  href={`/worker/certifications?take=${cert.task_type}`}
+                  class={`block text-center py-2 rounded-xl text-sm font-medium transition ${
+                    my?.passed
+                      ? "bg-green-50 text-green-700 border border-green-200 hover:bg-green-100"
+                      : "bg-violet-600 hover:bg-violet-700 text-white"
+                  }`}
+                >
+                  {my?.passed ? "✓ View Details" : my ? "Retake Test" : "Take Test"}
+                </a>
+              </div>
+            );
+          })}
+        </div>
+
+        {certifications.length === 0 && (
+          <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-12 text-center text-gray-400">
+            <div class="text-5xl mb-4">🎓</div>
+            <p class="text-lg font-medium">No certifications available yet</p>
+          </div>
+        )}
+      </div>
+    )}
+  </div>
+
+  <script>
+    function updateAnswers() {
+      const answers = [];
+      const questions = document.querySelectorAll("[data-question-id]");
+      for (const qEl of questions) {
+        const qId = qEl.getAttribute("data-question-id");
+        const singles = qEl.querySelectorAll("input[type=radio]:checked");
+        const multis = qEl.querySelectorAll("input[type=checkbox]:checked");
+        if (singles.length > 0) {
+          answers.push({ question_id: qId, answer: singles[0].value });
+        } else if (multis.length > 0) {
+          answers.push({ question_id: qId, answer: Array.from(multis).map((m: any) => m.value) });
+        }
+      }
+      document.getElementById("answers-json").value = JSON.stringify(answers);
+    }
+
+    function submitCert() {
+      updateAnswers();
+      const answersJson = document.getElementById("answers-json").value;
+      const answers = JSON.parse(answersJson);
+      const questions = document.querySelectorAll("[data-question-id]");
+
+      // Validate all questions answered
+      const missing = [];
+      for (const qEl of questions) {
+        const qId = qEl.getAttribute("data-question-id");
+        const answered = answers.some((a: any) => a.question_id === qId);
+        if (!answered) missing.push(qId);
+      }
+
+      if (missing.length > 0) {
+        alert(`Please answer all ${questions.length} questions before submitting.`);
+        return false;
+      }
+
+      return true;
+    }
+  </script>
+</Layout>

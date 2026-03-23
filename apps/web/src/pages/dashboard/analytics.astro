@@ -1,0 +1,330 @@
+---
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Object.fromEntries(
+  Astro.cookies.getAll().map((c) => [c.name, c.value])
+));
+if (!token) return Astro.redirect("/login");
+
+const days = Number(Astro.url.searchParams.get("days") ?? 30);
+const orgIdParam = Astro.url.searchParams.get("org_id") ?? undefined;
+const view = Astro.url.searchParams.get("view") ?? "overview";
+
+let overview: any = null;
+let costs: any = null;
+let orgAnalytics: any = null;
+let orgs: any[] = [];
+let error: string | null = null;
+
+// Load orgs for filter dropdown
+try {
+  const orgsData = await apiFetch<any[]>("/v1/orgs", { token });
+  orgs = Array.isArray(orgsData) ? orgsData : (orgsData as any).items ?? [];
+} catch (_) {}
+
+try {
+  const overviewParams = new URLSearchParams({ days: String(days) });
+  if (orgIdParam) overviewParams.set("org_id", orgIdParam);
+  overview = await apiFetch<any>(`/v1/analytics/overview?${overviewParams}`, { token });
+} catch (e: any) {
+  if (e.message?.includes("401")) return Astro.redirect("/login");
+  error = "Failed to load analytics";
+}
+
+try {
+  const costsParams = new URLSearchParams({ months: String(Math.ceil(days / 30)) });
+  if (orgIdParam) costsParams.set("org_id", orgIdParam);
+  costs = await apiFetch<any>(`/v1/analytics/costs?${costsParams}`, { token });
+} catch (_) {}
+
+if (orgIdParam && view === "org") {
+  try {
+    orgAnalytics = await apiFetch<any>(`/v1/analytics/org/${orgIdParam}?days=${days}`, { token });
+  } catch (_) {}
+}
+
+function pct(a: number, total: number) {
+  if (!total) return 0;
+  return Math.round((a / total) * 100);
+}
+---
+
+<Layout title="Analytics — CrowdSorcerer">
+  <div class="max-w-6xl mx-auto px-4 py-8">
+    <!-- Header -->
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+      <div>
+        <h1 class="text-3xl font-bold text-gray-900">📊 Analytics</h1>
+        <p class="text-gray-500 mt-1">Track your task usage, costs, and performance</p>
+      </div>
+      <!-- Filters -->
+      <div class="flex items-center gap-3">
+        <select
+          onchange="applyFilter('days', this.value)"
+          class="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+        >
+          {[7, 14, 30, 60, 90].map(d => (
+            <option value={d} selected={days === d}>{d} days</option>
+          ))}
+        </select>
+        {orgs.length > 0 && (
+          <select
+            onchange="applyFilter('org_id', this.value)"
+            class="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+          >
+            <option value="">Personal</option>
+            {orgs.map((o: any) => (
+              <option value={o.id} selected={orgIdParam === o.id}>{o.name}</option>
+            ))}
+          </select>
+        )}
+      </div>
+    </div>
+
+    {error && (
+      <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">{error}</div>
+    )}
+
+    {overview && (
+      <>
+        <!-- KPI Cards -->
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+          <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+            <p class="text-sm text-gray-500">Total Tasks</p>
+            <p class="text-3xl font-bold text-gray-900 mt-1">{overview.total_tasks.toLocaleString()}</p>
+            <p class="text-xs text-gray-400 mt-1">All time</p>
+          </div>
+          <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+            <p class="text-sm text-gray-500">Completed</p>
+            <p class="text-3xl font-bold text-green-600 mt-1">{overview.tasks_completed.toLocaleString()}</p>
+            <p class="text-xs text-gray-400 mt-1">{pct(overview.tasks_completed, overview.total_tasks)}% success rate</p>
+          </div>
+          <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+            <p class="text-sm text-gray-500">Credits Spent</p>
+            <p class="text-3xl font-bold text-violet-600 mt-1">{overview.total_credits_spent.toLocaleString()}</p>
+            <p class="text-xs text-gray-400 mt-1">All time</p>
+          </div>
+          <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+            <p class="text-sm text-gray-500">Avg Completion</p>
+            <p class="text-3xl font-bold text-blue-600 mt-1">
+              {overview.avg_completion_time_minutes
+                ? `${overview.avg_completion_time_minutes}m`
+                : "—"}
+            </p>
+            <p class="text-xs text-gray-400 mt-1">Per task</p>
+          </div>
+        </div>
+
+        <!-- Charts row -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+          <!-- Daily tasks chart -->
+          <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+            <h3 class="font-semibold text-gray-800 mb-4">Tasks Created (Last {days} Days)</h3>
+            <canvas id="dailyChart" height="180"></canvas>
+          </div>
+
+          <!-- Status breakdown -->
+          <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+            <h3 class="font-semibold text-gray-800 mb-4">Task Status Breakdown</h3>
+            <canvas id="statusChart" height="180"></canvas>
+          </div>
+        </div>
+
+        <!-- Task type breakdown + cost -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+          <!-- Tasks by type -->
+          <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+            <h3 class="font-semibold text-gray-800 mb-4">Tasks by Type</h3>
+            {Object.entries(overview.tasks_by_type).length === 0 ? (
+              <p class="text-gray-400 text-sm text-center py-8">No tasks yet</p>
+            ) : (
+              <div class="space-y-3">
+                {Object.entries(overview.tasks_by_type)
+                  .sort(([,a], [,b]) => (b as number) - (a as number))
+                  .slice(0, 8)
+                  .map(([type, count]) => (
+                    <div>
+                      <div class="flex items-center justify-between text-sm mb-1">
+                        <span class="text-gray-700">{type}</span>
+                        <span class="font-medium">{count as number}</span>
+                      </div>
+                      <div class="w-full bg-gray-100 rounded-full h-2">
+                        <div
+                          class="bg-violet-500 h-2 rounded-full"
+                          style={`width: ${pct(count as number, overview.total_tasks)}%`}
+                        />
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            )}
+          </div>
+
+          <!-- Cost breakdown -->
+          {costs && (
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+              <h3 class="font-semibold text-gray-800 mb-4">Cost Breakdown</h3>
+              <div class="grid grid-cols-2 gap-3 mb-4">
+                <div class="bg-violet-50 rounded-xl p-3 text-center">
+                  <p class="text-2xl font-bold text-violet-700">{costs.total_credits_spent}</p>
+                  <p class="text-xs text-gray-500">Total Credits</p>
+                </div>
+                {Object.entries(costs.by_execution_mode).map(([mode, credits]) => (
+                  <div class="bg-blue-50 rounded-xl p-3 text-center">
+                    <p class="text-2xl font-bold text-blue-700">{credits as number}</p>
+                    <p class="text-xs text-gray-500">{mode} tasks</p>
+                  </div>
+                ))}
+              </div>
+              <!-- Monthly cost chart -->
+              <canvas id="monthlyChart" height="140"></canvas>
+            </div>
+          )}
+        </div>
+
+        <!-- Org Analytics -->
+        {orgAnalytics && (
+          <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-6">
+            <h3 class="font-semibold text-gray-800 mb-4">🏢 {orgAnalytics.org_name} — Member Activity</h3>
+            <div class="overflow-x-auto">
+              <table class="w-full text-sm">
+                <thead>
+                  <tr class="text-left text-gray-500 border-b border-gray-100">
+                    <th class="pb-2 font-medium">Member</th>
+                    <th class="pb-2 font-medium">Role</th>
+                    <th class="pb-2 font-medium text-right">Tasks</th>
+                    <th class="pb-2 font-medium text-right">Credits Used</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-50">
+                  {orgAnalytics.member_activity?.map((m: any) => (
+                    <tr class="hover:bg-gray-50">
+                      <td class="py-2">
+                        <span class="font-medium">{m.name}</span>
+                        <span class="text-gray-400 text-xs ml-1">({m.email})</span>
+                      </td>
+                      <td class="py-2">
+                        <span class="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">{m.role}</span>
+                      </td>
+                      <td class="py-2 text-right font-medium">{m.tasks_created}</td>
+                      <td class="py-2 text-right text-violet-700 font-medium">{m.credits_used}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </>
+    )}
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+  <script define:vars={{
+    dailyData: overview?.tasks_last_30_days ?? [],
+    statusData: overview?.tasks_by_status ?? {},
+    monthlyData: costs?.by_month ?? [],
+  }}>
+    Chart.defaults.font.family = "'Inter', sans-serif";
+    const palette = {
+      violet: "#7c3aed",
+      green: "#16a34a",
+      blue: "#2563eb",
+      red: "#dc2626",
+      orange: "#ea580c",
+      gray: "#6b7280",
+    };
+
+    // Daily tasks chart
+    if (document.getElementById("dailyChart") && dailyData.length > 0) {
+      new Chart(document.getElementById("dailyChart"), {
+        type: "bar",
+        data: {
+          labels: dailyData.map(d => d.date?.slice(5) ?? ""), // MM-DD
+          datasets: [{
+            label: "Tasks",
+            data: dailyData.map(d => d.count),
+            backgroundColor: palette.violet + "40",
+            borderColor: palette.violet,
+            borderWidth: 1,
+            borderRadius: 4,
+          }],
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { display: false } },
+          scales: {
+            y: { beginAtZero: true, ticks: { stepSize: 1 } },
+            x: { ticks: { maxTicksLimit: 10 } },
+          },
+        },
+      });
+    }
+
+    // Status doughnut
+    if (document.getElementById("statusChart") && Object.keys(statusData).length > 0) {
+      const statusColors = {
+        completed: palette.green,
+        failed: palette.red,
+        pending: palette.gray,
+        running: palette.blue,
+        queued: palette.blue,
+        open: palette.orange,
+        assigned: palette.orange,
+        cancelled: "#9ca3af",
+      };
+      const labels = Object.keys(statusData);
+      new Chart(document.getElementById("statusChart"), {
+        type: "doughnut",
+        data: {
+          labels,
+          datasets: [{
+            data: Object.values(statusData),
+            backgroundColor: labels.map(l => statusColors[l] ?? palette.gray),
+          }],
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { position: "right", labels: { boxWidth: 12, font: { size: 11 } } },
+          },
+          cutout: "65%",
+        },
+      });
+    }
+
+    // Monthly cost line chart
+    if (document.getElementById("monthlyChart") && monthlyData.length > 0) {
+      new Chart(document.getElementById("monthlyChart"), {
+        type: "line",
+        data: {
+          labels: monthlyData.map(d => d.month),
+          datasets: [{
+            label: "Credits",
+            data: monthlyData.map(d => d.credits),
+            borderColor: palette.violet,
+            backgroundColor: palette.violet + "20",
+            fill: true,
+            tension: 0.4,
+            pointRadius: 3,
+          }],
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { display: false } },
+          scales: { y: { beginAtZero: true } },
+        },
+      });
+    }
+
+  </script>
+  <script is:inline>
+    function applyFilter(key, value) {
+      const url = new URL(window.location.href);
+      if (value) url.searchParams.set(key, value);
+      else url.searchParams.delete(key);
+      window.location.href = url.toString();
+    }
+  </script>
+</Layout>

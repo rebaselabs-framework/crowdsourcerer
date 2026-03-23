@@ -675,6 +675,202 @@ class OrgUpdateRequest(BaseModel):
     avatar_url: Optional[str] = None
 
 
+# ─── Task Pipelines ───────────────────────────────────────────────────────
+
+class PipelineStepCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    task_type: str
+    execution_mode: Literal["ai", "human"] = "ai"
+    task_config: dict = Field(default_factory=dict)
+    input_mapping: Optional[dict] = None
+
+
+class PipelineCreateRequest(BaseModel):
+    name: str = Field(min_length=2, max_length=255)
+    description: Optional[str] = None
+    org_id: Optional[UUID] = None
+    steps: list[PipelineStepCreate] = Field(min_length=1, max_length=20)
+
+
+class PipelineStepOut(BaseModel):
+    id: UUID
+    pipeline_id: UUID
+    step_order: int
+    name: str
+    task_type: str
+    execution_mode: str
+    task_config: dict
+    input_mapping: Optional[dict]
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class PipelineOut(BaseModel):
+    id: UUID
+    user_id: UUID
+    org_id: Optional[UUID]
+    name: str
+    description: Optional[str]
+    is_active: bool
+    step_count: int = 0
+    run_count: int = 0
+    created_at: datetime
+    updated_at: Optional[datetime]
+
+    model_config = {"from_attributes": True}
+
+
+class PipelineDetailOut(PipelineOut):
+    steps: list[PipelineStepOut] = []
+
+
+class PipelineRunRequest(BaseModel):
+    input: dict = Field(default_factory=dict)
+
+
+class PipelineStepRunOut(BaseModel):
+    id: UUID
+    step_order: int
+    task_id: Optional[UUID]
+    status: str
+    input: Optional[dict]
+    output: Optional[dict]
+    started_at: Optional[datetime]
+    completed_at: Optional[datetime]
+
+    model_config = {"from_attributes": True}
+
+
+class PipelineRunOut(BaseModel):
+    id: UUID
+    pipeline_id: UUID
+    user_id: UUID
+    status: str
+    input: dict
+    output: Optional[dict]
+    current_step: int
+    error: Optional[str]
+    created_at: datetime
+    started_at: Optional[datetime]
+    completed_at: Optional[datetime]
+    step_runs: list[PipelineStepRunOut] = []
+
+    model_config = {"from_attributes": True}
+
+
+class PaginatedPipelines(BaseModel):
+    items: list[PipelineOut]
+    total: int
+    page: int
+    page_size: int
+
+
+class PaginatedPipelineRuns(BaseModel):
+    items: list[PipelineRunOut]
+    total: int
+    page: int
+    page_size: int
+
+
+# ─── Worker Certifications ─────────────────────────────────────────────────
+
+class CertificationQuestionOut(BaseModel):
+    id: UUID
+    question: str
+    question_type: str
+    options: Optional[list[dict]]
+    explanation: Optional[str]   # only shown after answering
+    points: int
+    order_index: int
+
+    model_config = {"from_attributes": True}
+
+
+class CertificationOut(BaseModel):
+    id: UUID
+    task_type: str
+    name: str
+    description: Optional[str]
+    passing_score: int
+    badge_icon: Optional[str]
+    question_count: int = 0
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class CertificationDetailOut(CertificationOut):
+    questions: list[CertificationQuestionOut] = []
+
+
+class CertAttemptAnswer(BaseModel):
+    question_id: UUID
+    answer: Union[str, list[str]]
+
+
+class CertAttemptRequest(BaseModel):
+    answers: list[CertAttemptAnswer]
+
+
+class CertAttemptResult(BaseModel):
+    score: int           # % achieved
+    passed: bool
+    total_points: int
+    earned_points: int
+    question_count: int
+    correct_count: int
+    details: list[dict]  # per-question: {question_id, correct, earned, explanation}
+
+
+class WorkerCertificationOut(BaseModel):
+    id: UUID
+    cert_id: UUID
+    task_type: str
+    cert_name: str
+    score: int
+    passed: bool
+    attempt_count: int
+    best_score: int
+    certified_at: Optional[datetime]
+    last_attempt_at: Optional[datetime]
+
+    model_config = {"from_attributes": True}
+
+
+# ─── Requester Analytics ───────────────────────────────────────────────────
+
+class RequesterOverviewOut(BaseModel):
+    total_tasks: int
+    tasks_completed: int
+    tasks_pending: int
+    tasks_failed: int
+    total_credits_spent: int
+    avg_completion_time_minutes: Optional[float]
+    tasks_by_type: dict[str, int]
+    tasks_by_status: dict[str, int]
+    tasks_last_30_days: list[dict]  # [{date, count}]
+
+
+class OrgAnalyticsOut(BaseModel):
+    org_id: UUID
+    org_name: str
+    total_tasks: int
+    tasks_completed: int
+    credits_spent: int
+    member_activity: list[dict]  # [{user_id, name, tasks_created, credits_used}]
+    tasks_by_type: dict[str, int]
+    tasks_last_30_days: list[dict]
+
+
+class CostBreakdownOut(BaseModel):
+    total_credits_spent: int
+    by_type: dict[str, int]
+    by_execution_mode: dict[str, int]
+    by_month: list[dict]  # [{month, credits}]
+    top_task_types: list[dict]  # [{type, credits, count}]
+
+
 # ─── Health ───────────────────────────────────────────────────────────────
 
 class HealthResponse(BaseModel):

@@ -1,0 +1,496 @@
+---
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Object.fromEntries(
+  Astro.cookies.getAll().map((c) => [c.name, c.value])
+));
+if (!token) return Astro.redirect("/login");
+
+// Handle pipeline creation
+if (Astro.request.method === "POST") {
+  const form = await Astro.request.formData();
+  const action = form.get("action") as string;
+
+  if (action === "create") {
+    try {
+      const name = form.get("name") as string;
+      const description = form.get("description") as string;
+      const stepsJson = form.get("steps_json") as string;
+      const steps = JSON.parse(stepsJson || "[]");
+
+      await apiFetch("/v1/pipelines", {
+        method: "POST",
+        token,
+        body: JSON.stringify({ name, description: description || null, steps }),
+      });
+    } catch (_) {}
+  } else if (action === "delete") {
+    const pipelineId = form.get("pipeline_id") as string;
+    try {
+      await apiFetch(`/v1/pipelines/${pipelineId}`, { method: "DELETE", token });
+    } catch (_) {}
+  } else if (action === "run") {
+    const pipelineId = form.get("pipeline_id") as string;
+    const inputJson = form.get("input_json") as string;
+    try {
+      const input = JSON.parse(inputJson || "{}");
+      await apiFetch(`/v1/pipelines/${pipelineId}/run`, {
+        method: "POST",
+        token,
+        body: JSON.stringify({ input }),
+      });
+    } catch (_) {}
+  }
+  return Astro.redirect("/dashboard/pipelines");
+}
+
+const page = Number(Astro.url.searchParams.get("page") ?? 1);
+const selectedId = Astro.url.searchParams.get("id");
+
+let pipelinesData: any = { items: [], total: 0 };
+let pipelineDetail: any = null;
+let recentRuns: any = { items: [], total: 0 };
+let error: string | null = null;
+
+try {
+  pipelinesData = await apiFetch<any>(`/v1/pipelines?page=${page}&page_size=20`, { token });
+} catch (e: any) {
+  if (e.message?.includes("401")) return Astro.redirect("/login");
+  error = "Failed to load pipelines";
+}
+
+if (selectedId) {
+  try {
+    pipelineDetail = await apiFetch<any>(`/v1/pipelines/${selectedId}`, { token });
+    recentRuns = await apiFetch<any>(`/v1/pipelines/${selectedId}/runs?page=1&page_size=10`, { token });
+  } catch (_) {}
+}
+
+const pipelines = pipelinesData.items ?? [];
+const totalPages = Math.ceil((pipelinesData.total ?? 0) / 20);
+
+// Available AI task types for pipeline step creation
+const AI_TYPES = [
+  { value: "web_research", label: "🔍 Web Research", credits: 10 },
+  { value: "entity_lookup", label: "🏷️ Entity Lookup", credits: 5 },
+  { value: "document_parse", label: "📄 Document Parse", credits: 3 },
+  { value: "data_transform", label: "🔄 Data Transform", credits: 2 },
+  { value: "llm_generate", label: "🤖 LLM Generate", credits: 1 },
+  { value: "screenshot", label: "📸 Screenshot", credits: 2 },
+  { value: "audio_transcribe", label: "🎙️ Audio Transcribe", credits: 8 },
+  { value: "pii_detect", label: "🔒 PII Detect", credits: 2 },
+  { value: "code_execute", label: "💻 Code Execute", credits: 3 },
+  { value: "web_intel", label: "🌐 Web Intel", credits: 5 },
+];
+
+const HUMAN_TYPES = [
+  { value: "label_image", label: "🖼️ Label Image" },
+  { value: "label_text", label: "📝 Label Text" },
+  { value: "rate_quality", label: "⭐ Rate Quality" },
+  { value: "verify_fact", label: "✅ Verify Fact" },
+  { value: "moderate_content", label: "🛡️ Moderate Content" },
+  { value: "compare_rank", label: "📊 Compare & Rank" },
+  { value: "answer_question", label: "❓ Answer Question" },
+  { value: "transcription_review", label: "📋 Transcription Review" },
+];
+
+function statusBadge(status: string) {
+  const map: Record<string, string> = {
+    pending: "bg-gray-100 text-gray-700",
+    running: "bg-blue-100 text-blue-700",
+    completed: "bg-green-100 text-green-700",
+    failed: "bg-red-100 text-red-700",
+    cancelled: "bg-orange-100 text-orange-700",
+  };
+  return map[status] ?? "bg-gray-100 text-gray-700";
+}
+---
+
+<Layout title="Task Pipelines — CrowdSorcerer">
+  <div class="max-w-7xl mx-auto px-4 py-8">
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-8">
+      <div>
+        <h1 class="text-3xl font-bold text-gray-900">⛓️ Task Pipelines</h1>
+        <p class="text-gray-500 mt-1">Chain tasks together — AI validates, humans review, results flow forward</p>
+      </div>
+      <button
+        onclick="document.getElementById('create-modal').classList.remove('hidden')"
+        class="bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg font-medium transition"
+      >
+        + New Pipeline
+      </button>
+    </div>
+
+    {error && (
+      <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">{error}</div>
+    )}
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <!-- Pipeline List -->
+      <div class="lg:col-span-1">
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div class="p-4 border-b border-gray-100">
+            <h2 class="font-semibold text-gray-800">My Pipelines ({pipelinesData.total})</h2>
+          </div>
+
+          {pipelines.length === 0 ? (
+            <div class="p-8 text-center text-gray-400">
+              <div class="text-4xl mb-3">⛓️</div>
+              <p class="font-medium">No pipelines yet</p>
+              <p class="text-sm mt-1">Create your first pipeline to chain tasks together</p>
+            </div>
+          ) : (
+            <div class="divide-y divide-gray-50">
+              {pipelines.map((p: any) => (
+                <a
+                  href={`/dashboard/pipelines?id=${p.id}`}
+                  class={`block p-4 hover:bg-gray-50 transition ${selectedId === p.id ? 'bg-violet-50 border-l-4 border-violet-500' : ''}`}
+                >
+                  <div class="flex items-start justify-between">
+                    <div class="flex-1 min-w-0">
+                      <p class="font-medium text-gray-900 truncate">{p.name}</p>
+                      {p.description && (
+                        <p class="text-sm text-gray-500 truncate mt-0.5">{p.description}</p>
+                      )}
+                      <div class="flex gap-3 mt-2 text-xs text-gray-500">
+                        <span>📋 {p.step_count} steps</span>
+                        <span>▶️ {p.run_count} runs</span>
+                      </div>
+                    </div>
+                  </div>
+                </a>
+              ))}
+            </div>
+          )}
+
+          <!-- Pagination -->
+          {totalPages > 1 && (
+            <div class="p-4 border-t border-gray-100 flex gap-2 justify-center">
+              {page > 1 && (
+                <a href={`?page=${page-1}`} class="text-sm text-violet-600 hover:underline">← Prev</a>
+              )}
+              <span class="text-sm text-gray-500">{page} / {totalPages}</span>
+              {page < totalPages && (
+                <a href={`?page=${page+1}`} class="text-sm text-violet-600 hover:underline">Next →</a>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <!-- Pipeline Detail / Runs -->
+      <div class="lg:col-span-2">
+        {pipelineDetail ? (
+          <div class="space-y-6">
+            <!-- Pipeline info -->
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+              <div class="flex items-start justify-between mb-4">
+                <div>
+                  <h2 class="text-xl font-bold text-gray-900">{pipelineDetail.name}</h2>
+                  {pipelineDetail.description && (
+                    <p class="text-gray-500 mt-1">{pipelineDetail.description}</p>
+                  )}
+                  <div class="flex gap-4 mt-2 text-sm text-gray-500">
+                    <span>📋 {pipelineDetail.steps?.length ?? 0} steps</span>
+                    <span>▶️ {pipelineDetail.run_count} total runs</span>
+                    <span>🗓️ {new Date(pipelineDetail.created_at).toLocaleDateString()}</span>
+                  </div>
+                </div>
+                <div class="flex gap-2">
+                  <!-- Run Pipeline -->
+                  <button
+                    onclick="document.getElementById('run-modal').classList.remove('hidden')"
+                    class="bg-violet-600 hover:bg-violet-700 text-white px-3 py-1.5 rounded-lg text-sm font-medium"
+                  >
+                    ▶ Run
+                  </button>
+                  <!-- Delete Pipeline -->
+                  <form method="POST">
+                    <input type="hidden" name="action" value="delete" />
+                    <input type="hidden" name="pipeline_id" value={pipelineDetail.id} />
+                    <button
+                      type="submit"
+                      onclick="return confirm('Delete this pipeline?')"
+                      class="text-red-500 hover:text-red-700 px-3 py-1.5 rounded-lg text-sm border border-red-200 hover:bg-red-50"
+                    >
+                      🗑 Delete
+                    </button>
+                  </form>
+                </div>
+              </div>
+
+              <!-- Steps visualization -->
+              <div class="mt-4">
+                <h3 class="font-semibold text-gray-700 mb-3">Pipeline Steps</h3>
+                <div class="space-y-2">
+                  {pipelineDetail.steps?.map((step: any, i: number) => (
+                    <div class="flex items-center gap-3">
+                      {i > 0 && (
+                        <div class="ml-5 w-0.5 h-4 bg-gray-300 absolute -mt-4" />
+                      )}
+                      <div class={`flex items-center gap-3 p-3 rounded-lg border ${
+                        step.execution_mode === 'ai' ? 'bg-blue-50 border-blue-200' : 'bg-orange-50 border-orange-200'
+                      } flex-1`}>
+                        <div class={`w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold ${
+                          step.execution_mode === 'ai' ? 'bg-blue-500 text-white' : 'bg-orange-500 text-white'
+                        }`}>
+                          {i + 1}
+                        </div>
+                        <div class="flex-1">
+                          <p class="font-medium text-sm">{step.name}</p>
+                          <p class="text-xs text-gray-500">{step.task_type} • {step.execution_mode}</p>
+                        </div>
+                        <span class={`text-xs px-2 py-0.5 rounded-full ${
+                          step.execution_mode === 'ai' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'
+                        }`}>
+                          {step.execution_mode === 'ai' ? '🤖 AI' : '👤 Human'}
+                        </span>
+                      </div>
+                      {i < pipelineDetail.steps.length - 1 && (
+                        <div class="text-gray-400 text-lg">↓</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <!-- Recent Runs -->
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+              <div class="p-4 border-b border-gray-100">
+                <h3 class="font-semibold text-gray-800">Recent Runs ({recentRuns.total})</h3>
+              </div>
+              {recentRuns.items?.length === 0 ? (
+                <div class="p-8 text-center text-gray-400">
+                  <p>No runs yet. Click <strong>▶ Run</strong> to start a pipeline execution.</p>
+                </div>
+              ) : (
+                <div class="divide-y divide-gray-50">
+                  {recentRuns.items?.map((run: any) => (
+                    <div class="p-4">
+                      <div class="flex items-center justify-between mb-2">
+                        <div class="flex items-center gap-2">
+                          <span class={`px-2 py-0.5 rounded-full text-xs font-medium ${statusBadge(run.status)}`}>
+                            {run.status}
+                          </span>
+                          <span class="text-xs text-gray-400">
+                            Step {run.current_step + 1} / {pipelineDetail.steps?.length ?? '?'}
+                          </span>
+                        </div>
+                        <span class="text-xs text-gray-400">{new Date(run.created_at).toLocaleString()}</span>
+                      </div>
+                      <!-- Step run progress -->
+                      <div class="flex gap-1 mt-2">
+                        {run.step_runs?.map((sr: any) => (
+                          <div
+                            title={`Step ${sr.step_order + 1}: ${sr.status}`}
+                            class={`h-2 flex-1 rounded-full ${
+                              sr.status === 'completed' ? 'bg-green-400' :
+                              sr.status === 'running' ? 'bg-blue-400 animate-pulse' :
+                              sr.status === 'failed' ? 'bg-red-400' :
+                              'bg-gray-200'
+                            }`}
+                          />
+                        ))}
+                      </div>
+                      {run.error && (
+                        <p class="text-xs text-red-500 mt-1">{run.error}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-12 text-center text-gray-400">
+            <div class="text-5xl mb-4">⛓️</div>
+            <p class="text-lg font-medium">Select a pipeline to view details</p>
+            <p class="text-sm mt-2">Or create a new one with the button above</p>
+          </div>
+        )}
+      </div>
+    </div>
+  </div>
+
+  <!-- Create Pipeline Modal -->
+  <div id="create-modal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+      <div class="p-6 border-b border-gray-100 flex items-center justify-between">
+        <h2 class="text-lg font-bold">Create New Pipeline</h2>
+        <button onclick="document.getElementById('create-modal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600 text-2xl">×</button>
+      </div>
+      <form method="POST" class="p-6 space-y-5">
+        <input type="hidden" name="action" value="create" />
+        <input type="hidden" name="steps_json" id="steps-json-input" value="[]" />
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Pipeline Name *</label>
+          <input type="text" name="name" required placeholder="e.g. Research → Verify → Summarize"
+            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-violet-500 outline-none" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Description</label>
+          <textarea name="description" rows="2" placeholder="What does this pipeline do?"
+            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-violet-500 outline-none resize-none"></textarea>
+        </div>
+
+        <!-- Steps builder -->
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <label class="block text-sm font-medium text-gray-700">Pipeline Steps *</label>
+            <button type="button" onclick="addStep()"
+              class="text-sm text-violet-600 hover:text-violet-800 font-medium">
+              + Add Step
+            </button>
+          </div>
+          <div id="steps-container" class="space-y-3">
+            <!-- Steps rendered by JS -->
+          </div>
+          <p id="no-steps-msg" class="text-sm text-gray-400 text-center py-4">Click "+ Add Step" to build your pipeline</p>
+        </div>
+
+        <div class="flex gap-3 pt-2">
+          <button type="button" onclick="document.getElementById('create-modal').classList.add('hidden')"
+            class="flex-1 border border-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm">
+            Cancel
+          </button>
+          <button type="submit"
+            class="flex-1 bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
+            Create Pipeline
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Run Pipeline Modal -->
+  {pipelineDetail && (
+    <div id="run-modal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg">
+        <div class="p-6 border-b border-gray-100 flex items-center justify-between">
+          <h2 class="text-lg font-bold">Run Pipeline: {pipelineDetail.name}</h2>
+          <button onclick="document.getElementById('run-modal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600 text-2xl">×</button>
+        </div>
+        <form method="POST" class="p-6 space-y-4">
+          <input type="hidden" name="action" value="run" />
+          <input type="hidden" name="pipeline_id" value={pipelineDetail.id} />
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Input (JSON)</label>
+            <textarea name="input_json" rows="6" placeholder='{"text": "Hello world", "url": "https://example.com"}'
+              class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-violet-500 outline-none resize-none">{"{}"}</textarea>
+            <p class="text-xs text-gray-400 mt-1">This input will be passed to the first step and available to all subsequent steps.</p>
+          </div>
+          <div class="flex gap-3">
+            <button type="button" onclick="document.getElementById('run-modal').classList.add('hidden')"
+              class="flex-1 border border-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm">
+              Cancel
+            </button>
+            <button type="submit"
+              class="flex-1 bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
+              ▶ Start Run
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )}
+
+  <script define:vars={{ AI_TYPES, HUMAN_TYPES }}>
+    let steps = [];
+
+    function addStep() {
+      const idx = steps.length;
+      steps.push({
+        name: `Step ${idx + 1}`,
+        task_type: "llm_generate",
+        execution_mode: "ai",
+        task_config: {},
+        input_mapping: null,
+      });
+      renderSteps();
+    }
+
+    function removeStep(idx) {
+      steps.splice(idx, 1);
+      renderSteps();
+    }
+
+    function updateStep(idx, field, value) {
+      steps[idx][field] = value;
+      syncJSON();
+    }
+
+    function renderSteps() {
+      const container = document.getElementById("steps-container");
+      const noMsg = document.getElementById("no-steps-msg");
+      noMsg.classList.toggle("hidden", steps.length > 0);
+
+      container.innerHTML = steps.map((step, i) => {
+        const allTypes = [
+          ...AI_TYPES.map(t => ({ ...t, mode: "ai" })),
+          ...HUMAN_TYPES.map(t => ({ ...t, mode: "human" })),
+        ];
+        const typeOptions = allTypes.map(t =>
+          `<option value="${t.value}" ${step.task_type === t.value ? "selected" : ""}>${t.label}</option>`
+        ).join("");
+
+        return `
+          <div class="border border-gray-200 rounded-xl p-4 bg-gray-50">
+            <div class="flex items-center justify-between mb-3">
+              <div class="flex items-center gap-2">
+                <span class="w-6 h-6 rounded-full bg-violet-500 text-white text-xs font-bold flex items-center justify-center">${i + 1}</span>
+                <input
+                  type="text"
+                  value="${step.name}"
+                  onchange="steps[${i}].name = this.value; syncJSON()"
+                  class="text-sm font-medium bg-transparent border-b border-transparent hover:border-gray-300 focus:border-violet-500 outline-none px-1"
+                />
+              </div>
+              <button type="button" onclick="removeStep(${i})" class="text-red-400 hover:text-red-600 text-sm">✕</button>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="text-xs text-gray-500">Task Type</label>
+                <select onchange="steps[${i}].task_type = this.value; syncJSON()"
+                  class="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm mt-1">
+                  <optgroup label="AI Tasks">${AI_TYPES.map(t => `<option value="${t.value}" ${step.task_type === t.value ? "selected" : ""}>${t.label}</option>`).join("")}</optgroup>
+                  <optgroup label="Human Tasks">${HUMAN_TYPES.map(t => `<option value="${t.value}" ${step.task_type === t.value ? "selected" : ""}>${t.label}</option>`).join("")}</optgroup>
+                </select>
+              </div>
+              <div>
+                <label class="text-xs text-gray-500">Mode</label>
+                <select onchange="steps[${i}].execution_mode = this.value; syncJSON()"
+                  class="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm mt-1">
+                  <option value="ai" ${step.execution_mode === "ai" ? "selected" : ""}>🤖 AI</option>
+                  <option value="human" ${step.execution_mode === "human" ? "selected" : ""}>👤 Human</option>
+                </select>
+              </div>
+            </div>
+            ${i > 0 ? `
+            <div class="mt-3">
+              <label class="text-xs text-gray-500">Input Mapping (optional JSON)</label>
+              <textarea
+                rows="2"
+                placeholder='{"prompt": "$.steps.${i-1}.output.text"}'
+                onchange="steps[${i}].input_mapping = this.value ? JSON.parse(this.value) : null; syncJSON()"
+                class="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs font-mono mt-1 resize-none"
+              ></textarea>
+            </div>` : ""}
+          </div>
+        `;
+      }).join("");
+
+      syncJSON();
+    }
+
+    function syncJSON() {
+      document.getElementById("steps-json-input").value = JSON.stringify(steps);
+    }
+
+    // Init with empty steps
+    renderSteps();
+  </script>
+</Layout>
