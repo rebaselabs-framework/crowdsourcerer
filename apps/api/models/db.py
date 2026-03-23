@@ -311,6 +311,31 @@ class ReferralDB(Base):
                             foreign_keys=[referred_id])
 
 
+class WorkerSkillDB(Base):
+    """Per-task-type skill profile for a worker. Updated on each approved/rejected assignment."""
+    __tablename__ = "worker_skills"
+    __table_args__ = (
+        UniqueConstraint("worker_id", "task_type", name="uq_worker_skill"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    worker_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
+                       nullable=False, index=True)
+    task_type = Column(String(64), nullable=False, index=True)
+    tasks_completed = Column(Integer, default=0, nullable=False)
+    tasks_approved = Column(Integer, default=0, nullable=False)
+    tasks_rejected = Column(Integer, default=0, nullable=False)
+    accuracy = Column(Float, nullable=True)               # approved / (approved + rejected)
+    avg_response_minutes = Column(Float, nullable=True)   # avg time from claim to submit
+    credits_earned = Column(Integer, default=0, nullable=False)
+    proficiency_level = Column(Integer, default=1, nullable=False)  # 1–5
+    last_task_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    worker = relationship("UserDB", backref="skills", foreign_keys=[worker_id])
+
+
 class NotificationDB(Base):
     """In-app notification for a user."""
     __tablename__ = "notifications"

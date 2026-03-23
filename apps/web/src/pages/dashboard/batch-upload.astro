@@ -1,0 +1,440 @@
+---
+/**
+ * CSV Batch Task Upload — drag & drop a spreadsheet to create up to 50 tasks at once.
+ */
+import Layout from "@/layouts/Layout.astro";
+import { getToken } from "@/lib/api";
+
+const token = getToken(Object.fromEntries(
+  Astro.cookies.getAll().map((c) => [c.name, c.value])
+));
+if (!token) return Astro.redirect("/login");
+
+const TASK_TYPES = [
+  "web_research", "entity_lookup", "document_parse", "data_transform",
+  "llm_generate", "screenshot", "audio_transcribe", "pii_detect",
+  "code_execute", "web_intel",
+  "label_image", "label_text", "rate_quality", "verify_fact",
+  "moderate_content", "compare_rank", "answer_question", "transcription_review",
+];
+
+const TASK_CREDITS: Record<string, number> = {
+  web_research: 10, entity_lookup: 5, document_parse: 3, data_transform: 2,
+  llm_generate: 1, screenshot: 2, audio_transcribe: 8, pii_detect: 2,
+  code_execute: 3, web_intel: 5,
+  label_image: 5, label_text: 3, rate_quality: 2, verify_fact: 3,
+  moderate_content: 2, compare_rank: 2, answer_question: 4, transcription_review: 6,
+};
+---
+
+<Layout title="Batch Upload — CrowdSorcerer">
+  <div class="max-w-5xl mx-auto px-6 py-10">
+
+    <!-- Header -->
+    <div class="flex items-start justify-between mb-8">
+      <div>
+        <h1 class="text-2xl font-bold">📤 Batch Task Upload</h1>
+        <p class="text-gray-400 text-sm mt-0.5">Upload a CSV file to create up to 50 tasks at once</p>
+      </div>
+      <a href="/dashboard/new-task" class="text-sm text-gray-400 hover:text-white transition-colors">
+        Single task →
+      </a>
+    </div>
+
+    <!-- CSV format guide -->
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-6">
+      <h2 class="font-semibold text-gray-300 mb-3">📋 CSV Format</h2>
+      <p class="text-sm text-gray-400 mb-3">
+        Your CSV must have a header row. Required columns: <code class="text-violet-400">type</code> and <code class="text-violet-400">input</code> (JSON string).
+        Optional: <code class="text-violet-400">priority</code>, <code class="text-violet-400">webhook_url</code>, <code class="text-violet-400">title</code>, <code class="text-violet-400">instructions</code>, <code class="text-violet-400">reward</code>.
+      </p>
+      <div class="bg-gray-950 rounded-lg p-3 text-xs font-mono text-green-400 overflow-x-auto">
+        <div>type,input,priority,title</div>
+        <div>llm_generate,"{""messages"":[{""role"":""user"",""content"":""Write a haiku""}]}",normal,Haiku writer</div>
+        <div>pii_detect,"{""text"":""Call John at 555-0100""}",high,PII check</div>
+        <div>label_image,"{""url"":""https://example.com/img.jpg""}",normal,Cat or dog?</div>
+      </div>
+      <div class="mt-3 flex gap-3">
+        <button id="download-template" class="text-xs px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg transition-colors">
+          ⬇ Download template
+        </button>
+        <span class="text-xs text-gray-500 self-center">Supported: .csv, .tsv</span>
+      </div>
+    </div>
+
+    <!-- Drop zone -->
+    <div
+      id="drop-zone"
+      class="border-2 border-dashed border-gray-700 hover:border-violet-600 rounded-xl p-10 text-center cursor-pointer transition-colors mb-6"
+    >
+      <div class="text-4xl mb-3">📂</div>
+      <div class="font-semibold text-gray-300 mb-1">Drop your CSV here</div>
+      <div class="text-sm text-gray-500 mb-4">or click to browse</div>
+      <input id="file-input" type="file" accept=".csv,.tsv" class="hidden" />
+      <label for="file-input" class="inline-block px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg text-sm cursor-pointer transition-colors">
+        Choose File
+      </label>
+    </div>
+
+    <!-- Parse error -->
+    <div id="parse-error" class="hidden text-red-400 bg-red-900/20 border border-red-800/40 rounded-xl p-4 mb-6"></div>
+
+    <!-- Preview table -->
+    <div id="preview-section" class="hidden mb-6">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="font-semibold text-gray-300">
+          Preview — <span id="row-count">0</span> tasks
+        </h2>
+        <div class="flex items-center gap-3">
+          <span id="credit-estimate" class="text-sm text-amber-400 font-medium"></span>
+          <button id="clear-btn" class="text-xs px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-400 rounded-lg transition-colors">
+            Clear
+          </button>
+        </div>
+      </div>
+
+      <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden mb-4">
+        <div class="overflow-x-auto max-h-72">
+          <table class="w-full text-sm" id="preview-table">
+            <thead class="bg-gray-800 sticky top-0">
+              <tr>
+                <th class="px-3 py-2.5 text-left text-xs font-medium text-gray-400 uppercase">#</th>
+                <th class="px-3 py-2.5 text-left text-xs font-medium text-gray-400 uppercase">Type</th>
+                <th class="px-3 py-2.5 text-left text-xs font-medium text-gray-400 uppercase">Title</th>
+                <th class="px-3 py-2.5 text-left text-xs font-medium text-gray-400 uppercase">Input (truncated)</th>
+                <th class="px-3 py-2.5 text-left text-xs font-medium text-gray-400 uppercase">Priority</th>
+                <th class="px-3 py-2.5 text-left text-xs font-medium text-gray-400 uppercase">Credits</th>
+                <th class="px-3 py-2.5 text-left text-xs font-medium text-gray-400 uppercase">Valid?</th>
+              </tr>
+            </thead>
+            <tbody id="preview-tbody" class="divide-y divide-gray-800"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Validation summary -->
+      <div id="validation-summary" class="text-sm mb-4"></div>
+
+      <!-- Submit button -->
+      <button
+        id="submit-btn"
+        class="w-full py-3 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-colors"
+      >
+        🚀 Create All Tasks
+      </button>
+    </div>
+
+    <!-- Results -->
+    <div id="results-section" class="hidden">
+      <h2 class="font-semibold text-gray-300 mb-3">Results</h2>
+      <div id="results-content" class="space-y-2"></div>
+      <div class="mt-4 flex gap-3">
+        <a href="/dashboard/tasks" class="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white rounded-lg text-sm font-medium transition-colors">
+          View Tasks →
+        </a>
+        <button id="new-upload-btn" class="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg text-sm transition-colors">
+          Upload Another
+        </button>
+      </div>
+    </div>
+  </div>
+</Layout>
+
+<script define:vars={{ TASK_TYPES, TASK_CREDITS }}>
+  // ─── CSV parsing ────────────────────────────────────────────────────────
+
+  function parseCSV(text) {
+    const lines = text.split(/\r?\n/).filter((l) => l.trim());
+    if (lines.length < 2) return { headers: [], rows: [] };
+
+    // Detect delimiter (comma vs tab)
+    const delim = lines[0].includes("\t") ? "\t" : ",";
+
+    function splitRow(line) {
+      const cells = [];
+      let inQuote = false;
+      let cell = "";
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (ch === '"' && !inQuote) { inQuote = true; continue; }
+        if (ch === '"' && inQuote && line[i + 1] === '"') { cell += '"'; i++; continue; }
+        if (ch === '"' && inQuote) { inQuote = false; continue; }
+        if (ch === delim && !inQuote) { cells.push(cell); cell = ""; continue; }
+        cell += ch;
+      }
+      cells.push(cell);
+      return cells;
+    }
+
+    const headers = splitRow(lines[0]).map((h) => h.trim().toLowerCase());
+    const rows = lines.slice(1).map((l) => {
+      const vals = splitRow(l);
+      const obj = {};
+      headers.forEach((h, i) => { obj[h] = (vals[i] ?? "").trim(); });
+      return obj;
+    });
+    return { headers, rows };
+  }
+
+  function validateRow(row, idx) {
+    const errors = [];
+    if (!row.type) errors.push("Missing type");
+    else if (!TASK_TYPES.includes(row.type)) errors.push(`Unknown type: ${row.type}`);
+    if (!row.input) errors.push("Missing input");
+    else {
+      try { JSON.parse(row.input); } catch { errors.push("Input is not valid JSON"); }
+    }
+    return errors;
+  }
+
+  // ─── DOM refs ────────────────────────────────────────────────────────────
+  const dropZone = document.getElementById("drop-zone");
+  const fileInput = document.getElementById("file-input");
+  const parseError = document.getElementById("parse-error");
+  const previewSection = document.getElementById("preview-section");
+  const previewTbody = document.getElementById("preview-tbody");
+  const rowCount = document.getElementById("row-count");
+  const creditEstimate = document.getElementById("credit-estimate");
+  const validationSummary = document.getElementById("validation-summary");
+  const submitBtn = document.getElementById("submit-btn");
+  const clearBtn = document.getElementById("clear-btn");
+  const resultsSection = document.getElementById("results-section");
+  const resultsContent = document.getElementById("results-content");
+  const newUploadBtn = document.getElementById("new-upload-btn");
+  const downloadTemplate = document.getElementById("download-template");
+
+  let parsedRows = [];
+
+  // ─── Drag & drop ─────────────────────────────────────────────────────────
+  dropZone.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    dropZone.classList.add("border-violet-500", "bg-violet-950/20");
+  });
+  dropZone.addEventListener("dragleave", () => {
+    dropZone.classList.remove("border-violet-500", "bg-violet-950/20");
+  });
+  dropZone.addEventListener("drop", (e) => {
+    e.preventDefault();
+    dropZone.classList.remove("border-violet-500", "bg-violet-950/20");
+    const file = e.dataTransfer?.files[0];
+    if (file) handleFile(file);
+  });
+  dropZone.addEventListener("click", () => fileInput.click());
+  fileInput.addEventListener("change", (e) => {
+    const file = e.target.files?.[0];
+    if (file) handleFile(file);
+  });
+
+  function handleFile(file) {
+    const reader = new FileReader();
+    reader.onload = (e) => processText(e.target.result, file.name);
+    reader.readAsText(file);
+  }
+
+  function processText(text, filename) {
+    parseError.classList.add("hidden");
+    previewSection.classList.add("hidden");
+
+    const { headers, rows } = parseCSV(text);
+
+    if (!headers.includes("type") || !headers.includes("input")) {
+      parseError.textContent = `CSV must have "type" and "input" columns. Found: ${headers.join(", ")}`;
+      parseError.classList.remove("hidden");
+      return;
+    }
+
+    if (rows.length === 0) {
+      parseError.textContent = "CSV has no data rows.";
+      parseError.classList.remove("hidden");
+      return;
+    }
+
+    if (rows.length > 50) {
+      parseError.textContent = `Too many rows (${rows.length}). Maximum 50 tasks per batch.`;
+      parseError.classList.remove("hidden");
+      return;
+    }
+
+    parsedRows = rows;
+    renderPreview(rows);
+  }
+
+  function renderPreview(rows) {
+    previewTbody.innerHTML = "";
+    let totalCredits = 0;
+    let errorCount = 0;
+
+    rows.forEach((row, i) => {
+      const errors = validateRow(row, i);
+      const valid = errors.length === 0;
+      if (!valid) errorCount++;
+
+      const credits = TASK_CREDITS[row.type] ?? 0;
+      if (valid) totalCredits += credits;
+
+      const tr = document.createElement("tr");
+      tr.className = `hover:bg-gray-800/40 ${!valid ? "bg-red-900/10" : ""}`;
+      tr.innerHTML = `
+        <td class="px-3 py-2.5 text-gray-500">${i + 1}</td>
+        <td class="px-3 py-2.5">
+          <span class="text-xs px-2 py-0.5 rounded bg-violet-900/40 text-violet-300 font-mono">${row.type || "—"}</span>
+        </td>
+        <td class="px-3 py-2.5 text-gray-400 text-xs max-w-[120px] truncate">${row.title || "—"}</td>
+        <td class="px-3 py-2.5 text-gray-500 text-xs font-mono max-w-[200px] truncate">${(row.input || "").slice(0, 60)}…</td>
+        <td class="px-3 py-2.5 text-gray-400 text-xs">${row.priority || "normal"}</td>
+        <td class="px-3 py-2.5 text-amber-400 text-xs font-medium">${credits}</td>
+        <td class="px-3 py-2.5">
+          ${valid
+            ? '<span class="text-green-400 text-xs">✓</span>'
+            : `<span class="text-red-400 text-xs" title="${errors.join("; ")}">✗ ${errors[0]}</span>`
+          }
+        </td>
+      `;
+      previewTbody.appendChild(tr);
+    });
+
+    rowCount.textContent = rows.length;
+    creditEstimate.textContent = `~${totalCredits} credits`;
+
+    if (errorCount > 0) {
+      validationSummary.innerHTML = `<span class="text-red-400">⚠ ${errorCount} row${errorCount > 1 ? "s" : ""} have errors and will be skipped.</span>`;
+    } else {
+      validationSummary.innerHTML = `<span class="text-green-400">✓ All ${rows.length} rows are valid.</span>`;
+    }
+
+    const validRows = rows.filter((r, i) => validateRow(r, i).length === 0);
+    submitBtn.disabled = validRows.length === 0;
+    submitBtn.textContent = `🚀 Create ${validRows.length} Task${validRows.length !== 1 ? "s" : ""}`;
+
+    previewSection.classList.remove("hidden");
+  }
+
+  clearBtn.addEventListener("click", () => {
+    parsedRows = [];
+    fileInput.value = "";
+    previewSection.classList.add("hidden");
+    parseError.classList.add("hidden");
+    previewTbody.innerHTML = "";
+  });
+
+  // ─── Submit ───────────────────────────────────────────────────────────────
+  submitBtn.addEventListener("click", async () => {
+    const validRows = parsedRows.filter((r, i) => validateRow(r, i).length === 0);
+    if (validRows.length === 0) return;
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Creating tasks…";
+
+    const tasks = validRows.map((row) => {
+      const task = {
+        type: row.type,
+        input: JSON.parse(row.input),
+        priority: row.priority || "normal",
+      };
+      if (row.webhook_url) task.webhook_url = row.webhook_url;
+      if (row.title) {
+        task.input.title = task.input.title ?? row.title;
+      }
+      if (row.instructions) task.task_instructions = row.instructions;
+      if (row.reward) task.worker_reward_credits = parseInt(row.reward) || undefined;
+      return task;
+    });
+
+    try {
+      const res = await fetch("/api/tasks/batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tasks }),
+      });
+
+      const data = await res.json();
+      showResults(data, tasks.length);
+    } catch (e) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = `🚀 Create ${validRows.length} Task${validRows.length !== 1 ? "s" : ""}`;
+      validationSummary.innerHTML = `<span class="text-red-400">Network error: ${e.message}</span>`;
+    }
+  });
+
+  function showResults(data, total) {
+    previewSection.classList.add("hidden");
+    resultsSection.classList.remove("hidden");
+
+    const created = data.created ?? [];
+    const errors = data.errors ?? [];
+    const summary = data.summary ?? {};
+
+    resultsContent.innerHTML = `
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-4">
+        <div class="grid grid-cols-3 gap-4 text-center">
+          <div>
+            <div class="text-2xl font-bold text-green-400">${summary.created ?? created.length}</div>
+            <div class="text-xs text-gray-500 mt-1">Created</div>
+          </div>
+          <div>
+            <div class="text-2xl font-bold text-red-400">${summary.failed ?? errors.length}</div>
+            <div class="text-xs text-gray-500 mt-1">Failed</div>
+          </div>
+          <div>
+            <div class="text-2xl font-bold text-amber-400">${summary.credits_used ?? 0}</div>
+            <div class="text-xs text-gray-500 mt-1">Credits Used</div>
+          </div>
+        </div>
+      </div>
+
+      ${errors.length > 0 ? `
+        <div class="bg-red-900/20 border border-red-800/40 rounded-xl p-4">
+          <h3 class="text-sm font-semibold text-red-300 mb-2">Failures</h3>
+          <ul class="space-y-1">
+            ${errors.map((e) => `
+              <li class="text-xs text-red-400">Row ${e.index ?? "?"}: ${e.error ?? "Unknown error"}</li>
+            `).join("")}
+          </ul>
+        </div>
+      ` : ""}
+
+      ${created.length > 0 ? `
+        <div class="bg-green-900/20 border border-green-800/40 rounded-xl p-4">
+          <h3 class="text-sm font-semibold text-green-300 mb-2">${created.length} Task${created.length !== 1 ? "s" : ""} Created</h3>
+          <ul class="space-y-1 max-h-32 overflow-y-auto">
+            ${created.map((t) => `
+              <li class="text-xs text-green-400 font-mono">
+                <a href="/dashboard/tasks/${t.id}" class="hover:underline">${t.id}</a>
+                ${t.type ? `<span class="text-gray-500"> — ${t.type}</span>` : ""}
+              </li>
+            `).join("")}
+          </ul>
+        </div>
+      ` : ""}
+    `;
+  }
+
+  newUploadBtn.addEventListener("click", () => {
+    parsedRows = [];
+    fileInput.value = "";
+    resultsSection.classList.add("hidden");
+    previewSection.classList.add("hidden");
+    parseError.classList.add("hidden");
+    previewTbody.innerHTML = "";
+    submitBtn.disabled = false;
+  });
+
+  // ─── Template download ────────────────────────────────────────────────────
+  downloadTemplate.addEventListener("click", () => {
+    const header = "type,input,priority,title,webhook_url,instructions,reward";
+    const examples = [
+      `llm_generate,"{""messages"":[{""role"":""user"",""content"":""Summarize this: {{text}}""}]}",normal,LLM Summarise,,`,
+      `pii_detect,"{""text"":""Contact John at john@example.com""}",high,PII Check,,`,
+      `label_image,"{""url"":""https://example.com/image.jpg"",""labels"":[""cat"",""dog""]}",normal,Image Label,,, 5`,
+      `verify_fact,"{""claim"":""The Eiffel Tower is in Paris""}",normal,Fact Check,,,4`,
+    ];
+    const csv = [header, ...examples].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "crowdsourcerer-batch-template.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+</script>

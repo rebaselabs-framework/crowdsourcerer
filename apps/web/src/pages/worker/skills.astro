@@ -1,0 +1,253 @@
+---
+/**
+ * Worker Skill Profile — per-task-type proficiency breakdown + recommended tasks.
+ */
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Object.fromEntries(
+  Astro.cookies.getAll().map((c) => [c.name, c.value])
+));
+if (!token) return Astro.redirect("/login?next=/worker/skills");
+
+let skillsData: any = null;
+let recommended: any = null;
+let error: string | null = null;
+
+try {
+  [skillsData, recommended] = await Promise.all([
+    apiFetch("/v1/workers/me/skills", { token }),
+    apiFetch("/v1/workers/me/recommended?limit=6", { token }),
+  ]);
+} catch (e: any) {
+  error = e.message ?? "Failed to load skill data.";
+}
+
+const skills: any[] = skillsData?.skills ?? [];
+const recTasks: any[] = recommended?.items ?? [];
+const topSkill: string | null = skillsData?.top_skill ?? null;
+
+const HUMAN_TYPES = [
+  "label_image", "label_text", "rate_quality", "verify_fact",
+  "moderate_content", "compare_rank", "answer_question", "transcription_review",
+];
+
+const radarData = HUMAN_TYPES.map((t) => {
+  const s = skills.find((sk: any) => sk.task_type === t);
+  return s ? s.proficiency_level * 20 : 0;
+});
+const radarLabels = HUMAN_TYPES.map((t) =>
+  t.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+);
+
+const BADGE_STYLE: Record<number, string> = {
+  1: "bg-gray-800 text-gray-400 border-gray-700",
+  2: "bg-blue-900/40 text-blue-300 border-blue-700",
+  3: "bg-green-900/40 text-green-300 border-green-700",
+  4: "bg-purple-900/40 text-purple-300 border-purple-700",
+  5: "bg-amber-900/40 text-amber-300 border-amber-700",
+};
+
+const TASK_ICONS: Record<string, string> = {
+  label_image: "🖼️", label_text: "📝", rate_quality: "⭐",
+  verify_fact: "✅", moderate_content: "🛡️", compare_rank: "📊",
+  answer_question: "💬", transcription_review: "🎙️",
+  web_research: "🔍", entity_lookup: "🏢", document_parse: "📄",
+  data_transform: "⚙️", llm_generate: "🤖", screenshot: "📸",
+  audio_transcribe: "🎤", pii_detect: "🔒", code_execute: "💻", web_intel: "🌐",
+};
+---
+
+<Layout title="My Skills — CrowdSorcerer">
+  <div class="max-w-5xl mx-auto px-6 py-10">
+
+    <!-- Header -->
+    <div class="flex items-start justify-between mb-8">
+      <div>
+        <h1 class="text-2xl font-bold">🎯 My Skills</h1>
+        <p class="text-gray-400 text-sm mt-0.5">
+          Your task proficiency profile
+          {topSkill && (
+            <> — top skill: <span class="text-violet-400">{topSkill.replace(/_/g, " ")}</span></>
+          )}
+        </p>
+      </div>
+      <a href="/worker" class="text-sm text-gray-400 hover:text-white transition-colors">
+        ← Back to Earn
+      </a>
+    </div>
+
+    {error && (
+      <div class="text-red-400 bg-red-900/20 border border-red-800/40 rounded-xl p-6 mb-6 text-center">
+        {error}
+      </div>
+    )}
+
+    {skills.length === 0 && !error ? (
+      <!-- Empty state -->
+      <div class="text-center py-16 bg-gray-900 border border-gray-800 rounded-2xl">
+        <div class="text-6xl mb-4">🌱</div>
+        <h2 class="text-lg font-semibold mb-2">No skills yet</h2>
+        <p class="text-gray-400 text-sm mb-6 max-w-sm mx-auto">
+          Complete tasks to build your skill profile and unlock personalised recommendations.
+        </p>
+        <a href="/worker/marketplace"
+           class="inline-flex px-6 py-2.5 bg-violet-600 hover:bg-violet-500 text-white rounded-lg text-sm font-medium transition-colors">
+          Browse Tasks
+        </a>
+      </div>
+    ) : (
+      <>
+        <!-- Skills grid -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-10">
+          {skills.map((skill: any) => (
+            <div class="bg-gray-900 border border-gray-800 hover:border-violet-700 rounded-xl p-5 transition-colors">
+              <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center gap-2">
+                  <span class="text-2xl">{TASK_ICONS[skill.task_type] ?? "🔧"}</span>
+                  <div class="text-sm font-semibold capitalize">
+                    {skill.task_type.replace(/_/g, " ")}
+                  </div>
+                </div>
+                <span class={`text-xs px-2 py-0.5 rounded-full border font-medium ${BADGE_STYLE[skill.proficiency_level] ?? BADGE_STYLE[1]}`}>
+                  {skill.proficiency_label}
+                </span>
+              </div>
+
+              <!-- Progress bar -->
+              <div class="w-full bg-gray-800 rounded-full h-1.5 mb-3">
+                <div
+                  class="bg-violet-500 h-1.5 rounded-full transition-all"
+                  style={`width: ${skill.proficiency_level * 20}%`}
+                />
+              </div>
+
+              <div class="grid grid-cols-3 gap-2 text-xs">
+                <div class="text-center">
+                  <div class="font-bold text-white">{skill.tasks_completed}</div>
+                  <div class="text-gray-500">Done</div>
+                </div>
+                <div class="text-center">
+                  <div class={`font-bold ${skill.accuracy != null && skill.accuracy >= 0.8 ? "text-green-400" : "text-gray-300"}`}>
+                    {skill.accuracy != null ? `${(skill.accuracy * 100).toFixed(0)}%` : "—"}
+                  </div>
+                  <div class="text-gray-500">Accuracy</div>
+                </div>
+                <div class="text-center">
+                  <div class="font-bold text-amber-400">{skill.credits_earned}</div>
+                  <div class="text-gray-500">Credits</div>
+                </div>
+              </div>
+
+              {skill.avg_response_minutes != null && (
+                <div class="mt-2 text-xs text-gray-600 text-center">
+                  Avg {skill.avg_response_minutes.toFixed(1)} min/task
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <!-- Radar chart -->
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 mb-10">
+          <h2 class="font-semibold text-gray-300 mb-4">Skill Radar (Human Tasks)</h2>
+          <div class="max-w-sm mx-auto">
+            <canvas id="radarChart"></canvas>
+          </div>
+        </div>
+
+        <!-- Recommended Tasks -->
+        {recTasks.length > 0 && (
+          <section>
+            <div class="flex items-center justify-between mb-4">
+              <div>
+                <h2 class="text-lg font-bold">✨ Recommended For You</h2>
+                <p class="text-gray-400 text-sm">Tasks matched to your strengths</p>
+              </div>
+              <a href="/worker/marketplace" class="text-sm text-violet-400 hover:text-violet-300">
+                All tasks →
+              </a>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {recTasks.map((task: any) => (
+                <div class="bg-gray-900 border border-violet-800/40 hover:border-violet-600 rounded-xl p-4 transition-colors">
+                  <div class="flex items-center justify-between mb-2">
+                    <div class="flex items-center gap-1.5">
+                      <span class="text-lg">{TASK_ICONS[task.type] ?? "🔧"}</span>
+                      <span class="text-xs font-medium text-violet-400 uppercase tracking-wide">
+                        {task.type.replace(/_/g, " ")}
+                      </span>
+                    </div>
+                    <span class="text-sm font-bold text-emerald-400">+{task.reward_credits} cr</span>
+                  </div>
+                  <div class="font-medium text-sm mb-1 line-clamp-2">{task.title}</div>
+                  {task.description && (
+                    <div class="text-xs text-gray-500 mb-3 line-clamp-2">{task.description}</div>
+                  )}
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs text-gray-500">{task.slots_remaining} slot{task.slots_remaining !== 1 ? "s" : ""}</span>
+                    <a
+                      href={`/worker/tasks/${task.id}`}
+                      class="text-xs px-3 py-1 bg-violet-600 hover:bg-violet-500 text-white rounded-full transition-colors"
+                    >
+                      Claim
+                    </a>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+      </>
+    )}
+  </div>
+</Layout>
+
+<script define:vars={{ radarData, radarLabels }}>
+  const s = document.createElement("script");
+  s.src = "https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js";
+  s.onload = () => {
+    const ctx = document.getElementById("radarChart");
+    if (!ctx) return;
+    new Chart(ctx, {
+      type: "radar",
+      data: {
+        labels: radarLabels,
+        datasets: [{
+          label: "Skill Level",
+          data: radarData,
+          backgroundColor: "rgba(139, 92, 246, 0.15)",
+          borderColor: "rgba(139, 92, 246, 0.8)",
+          pointBackgroundColor: "rgba(139, 92, 246, 1)",
+          pointBorderColor: "#fff",
+          borderWidth: 2,
+        }],
+      },
+      options: {
+        responsive: true,
+        scales: {
+          r: {
+            min: 0, max: 100,
+            ticks: { stepSize: 20, display: false },
+            grid: { color: "rgba(255,255,255,0.06)" },
+            angleLines: { color: "rgba(255,255,255,0.06)" },
+            pointLabels: { color: "#9ca3af", font: { size: 11 } },
+          },
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => {
+                const level = Math.round(ctx.raw / 20);
+                const names = ["", "Novice", "Learner", "Competent", "Proficient", "Expert"];
+                return `Level ${level} — ${names[level] ?? ""}`;
+              },
+            },
+          },
+        },
+      },
+    });
+  };
+  document.head.appendChild(s);
+</script>

@@ -2,6 +2,7 @@
 from __future__ import annotations
 from datetime import datetime, timezone, timedelta
 from typing import Optional
+import uuid as uuid_mod
 from uuid import UUID, uuid4
 
 import structlog
@@ -504,6 +505,25 @@ async def submit_task(
         description=f"Task completion: {task.type if task else 'unknown'}",
     )
     db.add(txn)
+
+    # Update worker skill profile (outcome = "completed" — will be upgraded to approved/rejected later)
+    if task:
+        try:
+            from routers.skills import update_worker_skill
+            resp_minutes: float | None = None
+            if assignment.submitted_at and assignment.claimed_at:
+                delta = assignment.submitted_at - assignment.claimed_at
+                resp_minutes = delta.total_seconds() / 60
+            await update_worker_skill(
+                db,
+                worker_id=uuid_mod.UUID(user_id),
+                task_type=task.type,
+                outcome="completed",
+                response_minutes=resp_minutes,
+                credits_earned=earnings,
+            )
+        except Exception:
+            pass
 
     # ── Daily challenge progress ───────────────────────────────────────────
     if task and worker:

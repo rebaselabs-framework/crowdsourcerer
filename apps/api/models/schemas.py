@@ -484,6 +484,68 @@ class UnreadCountOut(BaseModel):
     unread_count: int
 
 
+# ─── Worker Skills ────────────────────────────────────────────────────────
+
+PROFICIENCY_LABELS = {
+    1: "Novice",
+    2: "Learner",
+    3: "Competent",
+    4: "Proficient",
+    5: "Expert",
+}
+
+
+class WorkerSkillOut(BaseModel):
+    task_type: str
+    tasks_completed: int
+    tasks_approved: int
+    tasks_rejected: int
+    accuracy: Optional[float]
+    avg_response_minutes: Optional[float]
+    credits_earned: int
+    proficiency_level: int
+    proficiency_label: str
+    last_task_at: Optional[datetime]
+
+    model_config = {"from_attributes": True}
+
+
+class WorkerSkillsOut(BaseModel):
+    skills: list[WorkerSkillOut]
+    top_skill: Optional[str]          # task_type with highest proficiency
+    strongest_category: Optional[str]  # "human" or "ai"
+
+
+# ─── Task Analytics ────────────────────────────────────────────────────────
+
+class AssignmentAnalyticsRow(BaseModel):
+    worker_id: UUID
+    worker_name: Optional[str]
+    status: str
+    submitted_at: Optional[datetime]
+    response_minutes: Optional[float]
+    earnings_credits: int
+    is_accurate: Optional[bool]  # vs gold_answer, if gold standard
+
+
+class TaskAnalyticsOut(BaseModel):
+    task_id: UUID
+    task_type: str
+    title: Optional[str]
+    status: str
+    execution_mode: str
+    total_assignments: int
+    approved_count: int
+    rejected_count: int
+    pending_count: int
+    avg_response_minutes: Optional[float]
+    total_credits_paid: int
+    is_gold_standard: bool
+    accuracy_rate: Optional[float]   # % accurate vs gold answer
+    response_distribution: dict      # {answer_value: count}
+    assignments: list[AssignmentAnalyticsRow]
+
+
 # ─── Health ───────────────────────────────────────────────────────────────
 
 class HealthResponse(BaseModel):

@@ -62,7 +62,13 @@ if (Astro.request.method === "POST") {
       <a href="/dashboard" class="text-gray-500 hover:text-gray-300 transition-colors text-sm">← Dashboard</a>
     </div>
 
-    <h1 class="text-2xl font-bold mb-1">Submit a new task</h1>
+    <div class="flex items-start justify-between mb-1">
+      <h1 class="text-2xl font-bold">Submit a new task</h1>
+      <a href="/dashboard/batch-upload"
+         class="text-sm px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg transition-colors flex items-center gap-1.5">
+        📤 Batch upload
+      </a>
+    </div>
     <p class="text-gray-400 text-sm mb-6">Select a task type, provide JSON input, and get results.</p>
 
     <!-- Templates quick-start -->

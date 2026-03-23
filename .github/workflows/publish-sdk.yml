@@ -1,0 +1,84 @@
+name: Publish SDKs
+
+on:
+  push:
+    tags:
+      - "sdk/v*"       # e.g. sdk/v0.2.0 → triggers both NPM + PyPI
+      - "py-sdk/v*"    # e.g. py-sdk/v0.2.0 → triggers PyPI only
+      - "npm-sdk/v*"   # e.g. npm-sdk/v0.2.0 → triggers NPM only
+
+permissions:
+  contents: read
+  id-token: write  # Required for PyPI trusted publishing
+
+jobs:
+  # ─── Python SDK → PyPI ──────────────────────────────────────────────────
+  publish-pypi:
+    name: Publish Python SDK to PyPI
+    if: startsWith(github.ref, 'refs/tags/sdk/') || startsWith(github.ref, 'refs/tags/py-sdk/')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build tools
+        run: pip install hatch build
+
+      - name: Build Python package
+        working-directory: packages/python-sdk
+        run: python -m build
+
+      - name: Publish to PyPI (trusted publishing)
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: packages/python-sdk/dist/
+
+  # ─── TypeScript SDK → NPM ───────────────────────────────────────────────
+  publish-npm:
+    name: Publish TypeScript SDK to NPM
+    if: startsWith(github.ref, 'refs/tags/sdk/') || startsWith(github.ref, 'refs/tags/npm-sdk/')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build types package
+        working-directory: packages/types
+        run: pnpm build
+
+      - name: Build SDK package
+        working-directory: packages/sdk
+        run: pnpm build
+
+      - name: Publish @crowdsourcerer/types
+        working-directory: packages/types
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish @crowdsourcerer/sdk
+        working-directory: packages/sdk
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

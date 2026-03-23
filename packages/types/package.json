@@ -23,5 +23,15 @@
     "typescript": "^5.7.0"
   },
   "files": ["dist"],
-  "license": "MIT"
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rebaselabs-framework/crowdsourcerer.git",
+    "directory": "packages/types"
+  },
+  "homepage": "https://crowdsourcerer.rebaselabs.online"
 }

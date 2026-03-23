@@ -21,6 +21,7 @@ from models.schemas import (
     BatchTaskCreateRequest, BatchTaskCreateResponse,
     HUMAN_TASK_TYPES,
     SubmissionOut, SubmissionWorkerOut, SubmissionReviewRequest, SubmissionReviewResponse,
+    TaskAnalyticsOut, AssignmentAnalyticsRow,
 )
 from workers.base import get_rebasekit_client, WorkerError
 from workers.router import execute_task, TASK_CREDITS
@@ -648,6 +649,24 @@ async def approve_submission(
 
     assignment.status = "approved"
 
+    # Update worker skill profile
+    try:
+        from routers.skills import update_worker_skill
+        resp_minutes: float | None = None
+        if assignment.submitted_at and assignment.claimed_at:
+            delta = assignment.submitted_at - assignment.claimed_at
+            resp_minutes = delta.total_seconds() / 60
+        await update_worker_skill(
+            db,
+            worker_id=assignment.worker_id,
+            task_type=task.type,
+            outcome="approved",
+            response_minutes=resp_minutes,
+            credits_earned=assignment.earnings_credits,
+        )
+    except Exception:
+        pass
+
     # In-app notification to worker
     try:
         from core.notify import create_notification, NotifType
@@ -729,6 +748,24 @@ async def reject_submission(
 
     assignment.status = "rejected"
 
+    # Update worker skill profile
+    try:
+        from routers.skills import update_worker_skill
+        resp_minutes: float | None = None
+        if assignment.submitted_at and assignment.claimed_at:
+            delta = assignment.submitted_at - assignment.claimed_at
+            resp_minutes = delta.total_seconds() / 60
+        await update_worker_skill(
+            db,
+            worker_id=assignment.worker_id,
+            task_type=task.type,
+            outcome="rejected",
+            response_minutes=resp_minutes,
+            credits_earned=0,
+        )
+    except Exception:
+        pass
+
     # Refund worker reward to requester
     refund_amount = assignment.earnings_credits
     requester_result = await db.execute(select(UserDB).where(UserDB.id == user_id))
@@ -777,6 +814,122 @@ async def reject_submission(
         assignment_id=assignment.id,
         status="rejected",
         message=f"Submission rejected. {refund_amount} credits refunded to your account.",
+    )
+
+
+# ─── Task Analytics ────────────────────────────────────────────────────────
+
+@router.get("/{task_id}/analytics", response_model=TaskAnalyticsOut)
+async def get_task_analytics(
+    task_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Return aggregated analytics for a specific task (requester only)."""
+    task_result = await db.execute(
+        select(TaskDB).where(TaskDB.id == task_id, TaskDB.user_id == user_id)
+    )
+    task = task_result.scalar_one_or_none()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    # Load all assignments with worker info
+    a_result = await db.execute(
+        select(TaskAssignmentDB, UserDB.name)
+        .outerjoin(UserDB, TaskAssignmentDB.worker_id == UserDB.id)
+        .where(TaskAssignmentDB.task_id == task_id)
+        .order_by(TaskAssignmentDB.submitted_at.desc().nullslast())
+    )
+    rows = a_result.all()
+
+    approved_count = 0
+    rejected_count = 0
+    pending_count = 0
+    total_credits = 0
+    response_times: list[float] = []
+    response_distribution: dict = {}
+    assignment_rows: list[AssignmentAnalyticsRow] = []
+
+    for assignment, worker_name in rows:
+        if assignment.status == "approved":
+            approved_count += 1
+        elif assignment.status == "rejected":
+            rejected_count += 1
+        else:
+            pending_count += 1
+
+        total_credits += assignment.earnings_credits
+
+        resp_minutes: float | None = None
+        if assignment.submitted_at and assignment.claimed_at:
+            delta = assignment.submitted_at - assignment.claimed_at
+            resp_minutes = delta.total_seconds() / 60
+            response_times.append(resp_minutes)
+
+        # Build response distribution
+        if assignment.response and isinstance(assignment.response, dict):
+            # Try common keys: label, answer, rating, verdict
+            for key in ("label", "answer", "rating", "verdict", "choice"):
+                val = assignment.response.get(key)
+                if val is not None:
+                    val_str = str(val)
+                    response_distribution[val_str] = response_distribution.get(val_str, 0) + 1
+                    break
+
+        # Gold standard accuracy check
+        is_accurate: bool | None = None
+        if task.is_gold_standard and task.gold_answer and assignment.response:
+            # Simple equality check — works for label/answer style tasks
+            gold_label = task.gold_answer.get("label") or task.gold_answer.get("answer")
+            resp_label = assignment.response.get("label") or assignment.response.get("answer")
+            if gold_label is not None and resp_label is not None:
+                is_accurate = str(gold_label).lower() == str(resp_label).lower()
+
+        assignment_rows.append(
+            AssignmentAnalyticsRow(
+                worker_id=assignment.worker_id,
+                worker_name=worker_name,
+                status=assignment.status,
+                submitted_at=assignment.submitted_at,
+                response_minutes=resp_minutes,
+                earnings_credits=assignment.earnings_credits,
+                is_accurate=is_accurate,
+            )
+        )
+
+    avg_response_minutes = (
+        sum(response_times) / len(response_times) if response_times else None
+    )
+
+    # Accuracy rate for gold standard tasks
+    accuracy_rate: float | None = None
+    if task.is_gold_standard:
+        graded = [r for r in assignment_rows if r.is_accurate is not None]
+        if graded:
+            accuracy_rate = sum(1 for r in graded if r.is_accurate) / len(graded)
+
+    title = (
+        task.input.get("title", task.type.replace("_", " ").title())
+        if isinstance(task.input, dict)
+        else task.type.replace("_", " ").title()
+    )
+
+    return TaskAnalyticsOut(
+        task_id=task.id,
+        task_type=task.type,
+        title=title,
+        status=task.status,
+        execution_mode=task.execution_mode,
+        total_assignments=len(rows),
+        approved_count=approved_count,
+        rejected_count=rejected_count,
+        pending_count=pending_count,
+        avg_response_minutes=avg_response_minutes,
+        total_credits_paid=total_credits,
+        is_gold_standard=task.is_gold_standard,
+        accuracy_rate=accuracy_rate,
+        response_distribution=response_distribution,
+        assignments=assignment_rows,
     )
 
 

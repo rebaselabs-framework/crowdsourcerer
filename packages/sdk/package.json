@@ -28,6 +28,16 @@
     "vitest": "^2.1.0"
   },
   "files": ["dist"],
-  "keywords": ["crowdsourcerer", "ai", "crowdsourcing", "task-automation"],
-  "license": "MIT"
+  "keywords": ["crowdsourcerer", "ai", "crowdsourcing", "task-automation", "labeling", "data-annotation"],
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rebaselabs-framework/crowdsourcerer.git",
+    "directory": "packages/sdk"
+  },
+  "homepage": "https://crowdsourcerer.rebaselabs.online"
 }
