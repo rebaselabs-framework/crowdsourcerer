@@ -1,0 +1,204 @@
+---
+/**
+ * SLA Dashboard — monitor task SLA status and priority tiers.
+ */
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Object.fromEntries(
+  Astro.cookies.getAll().map((c) => [c.name, c.value])
+));
+if (!token) return Astro.redirect("/login?next=/dashboard/sla");
+
+const statusFilter = Astro.url.searchParams.get("status") ?? "";
+
+let slaStatuses: any[] = [];
+let priorities: any[] = [];
+let error: string | null = null;
+
+try {
+  const qs = new URLSearchParams({ limit: "100" });
+  if (statusFilter) qs.set("status", statusFilter);
+
+  [slaStatuses, priorities] = await Promise.all([
+    apiFetch<any[]>(`/v1/tasks/sla-status?${qs}`, { token }),
+    apiFetch<any[]>("/v1/sla/priorities", { token }),
+  ]);
+} catch (e: any) {
+  if (e.message?.includes("401")) return Astro.redirect("/login");
+  error = e.message ?? "Failed to load SLA data.";
+}
+
+// Compute summary counts
+const onTrack   = slaStatuses.filter(s => s.status === "on_track").length;
+const breached  = slaStatuses.filter(s => s.status === "breached").length;
+const met       = slaStatuses.filter(s => s.status === "met").length;
+
+const statusColors: Record<string, string> = {
+  on_track: "text-green-400 bg-green-900/20 border-green-800/40",
+  breached:  "text-red-400 bg-red-900/20 border-red-800/40",
+  met:       "text-blue-400 bg-blue-900/20 border-blue-800/40",
+};
+
+const priorityColors: Record<string, string> = {
+  low:    "bg-gray-700 text-gray-300",
+  normal: "bg-blue-900/40 text-blue-300",
+  high:   "bg-amber-900/40 text-amber-300",
+  urgent: "bg-red-900/40 text-red-300",
+};
+---
+
+<Layout title="SLA Dashboard — CrowdSorcerer">
+  <div class="max-w-6xl mx-auto px-6 py-10">
+    <div class="mb-8">
+      <h1 class="text-2xl font-bold mb-1">⏱ SLA Dashboard</h1>
+      <p class="text-gray-400 text-sm">Monitor your tasks against Service Level Agreement deadlines</p>
+    </div>
+
+    {error && (
+      <div class="bg-red-900/30 border border-red-800 text-red-300 p-4 rounded-lg mb-6">{error}</div>
+    )}
+
+    <!-- KPI summary -->
+    <div class="grid grid-cols-3 gap-4 mb-8">
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 text-center">
+        <div class="text-3xl font-bold text-green-400">{onTrack}</div>
+        <div class="text-xs text-gray-400 mt-1">On Track</div>
+      </div>
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 text-center">
+        <div class="text-3xl font-bold text-red-400">{breached}</div>
+        <div class="text-xs text-gray-400 mt-1">SLA Breached</div>
+      </div>
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 text-center">
+        <div class="text-3xl font-bold text-blue-400">{met}</div>
+        <div class="text-xs text-gray-400 mt-1">SLA Met</div>
+      </div>
+    </div>
+
+    <!-- Priority tiers reference -->
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 mb-8">
+      <h2 class="font-semibold mb-4">Priority Tiers</h2>
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+        {priorities.map((p: any) => (
+          <div class="bg-gray-800 rounded-lg p-4">
+            <div class="flex items-center gap-2 mb-2">
+              <span class={`px-2 py-0.5 rounded text-xs font-medium ${priorityColors[p.priority] ?? "bg-gray-700 text-gray-300"}`}>
+                {p.label}
+              </span>
+              <span class="text-xs text-gray-400">{p.credit_multiplier}× credits</span>
+            </div>
+            <p class="text-xs text-gray-400 mb-2">{p.description}</p>
+            <div class="space-y-0.5">
+              {Object.entries(p.sla_hours_by_plan ?? {}).map(([plan, hours]) => (
+                <div class="flex justify-between text-xs">
+                  <span class="text-gray-500 capitalize">{plan}</span>
+                  <span class="text-gray-300">{hours as number}h</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+
+    <!-- SLA status filter + task list -->
+    <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+      <div class="px-6 py-4 border-b border-gray-800 flex items-center gap-4">
+        <h2 class="font-semibold">Task SLA Status</h2>
+        <div class="flex gap-2 ml-auto">
+          {["", "on_track", "breached", "met"].map(s => (
+            <a href={`/dashboard/sla${s ? `?status=${s}` : ""}`}
+              class={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
+                statusFilter === s
+                  ? "bg-violet-600 text-white"
+                  : "bg-gray-800 text-gray-400 hover:text-white"
+              }`}>
+              {s === "" ? "All" : s === "on_track" ? "On Track" : s === "breached" ? "Breached" : "Met"}
+            </a>
+          ))}
+        </div>
+      </div>
+
+      {slaStatuses.length === 0 ? (
+        <div class="text-center py-16 text-gray-500">
+          <div class="text-4xl mb-3">📭</div>
+          <p>No human tasks found{statusFilter ? ` with status "${statusFilter}"` : ""}.</p>
+          <p class="text-sm mt-1">SLA tracking applies to human marketplace tasks.</p>
+        </div>
+      ) : (
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-gray-800/50">
+              <tr>
+                <th class="px-4 py-3 text-left text-xs text-gray-400 font-medium">Task</th>
+                <th class="px-4 py-3 text-left text-xs text-gray-400 font-medium">Priority</th>
+                <th class="px-4 py-3 text-left text-xs text-gray-400 font-medium">Plan</th>
+                <th class="px-4 py-3 text-right text-xs text-gray-400 font-medium">SLA (hrs)</th>
+                <th class="px-4 py-3 text-right text-xs text-gray-400 font-medium">Deadline</th>
+                <th class="px-4 py-3 text-right text-xs text-gray-400 font-medium">Status</th>
+                <th class="px-4 py-3 text-right text-xs text-gray-400 font-medium">Progress</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-800">
+              {slaStatuses.map((s: any) => (
+                <tr class="hover:bg-gray-800/30 transition-colors">
+                  <td class="px-4 py-3">
+                    <a href={`/dashboard/tasks/${s.task_id}`}
+                      class="text-violet-400 hover:text-violet-300 font-mono text-xs">
+                      {s.title ?? s.task_id.split("-")[0]}
+                    </a>
+                  </td>
+                  <td class="px-4 py-3">
+                    <span class={`px-2 py-0.5 rounded text-xs font-medium ${priorityColors[s.priority] ?? "bg-gray-700 text-gray-300"}`}>
+                      {s.priority}
+                    </span>
+                  </td>
+                  <td class="px-4 py-3 text-gray-400 text-xs capitalize">{s.plan}</td>
+                  <td class="px-4 py-3 text-right text-gray-300 text-xs">{s.sla_hours}h</td>
+                  <td class="px-4 py-3 text-right text-xs text-gray-400">
+                    {new Date(s.deadline).toLocaleString()}
+                  </td>
+                  <td class="px-4 py-3 text-right">
+                    <span class={`px-2 py-0.5 rounded-full text-xs font-medium border ${statusColors[s.status] ?? "text-gray-400 bg-gray-800 border-gray-700"}`}>
+                      {s.status === "on_track" ? "✓ On Track" :
+                       s.status === "breached" ? `⚠ Breached${s.overdue_hours ? ` +${s.overdue_hours}h` : ""}` :
+                       "✅ Met"}
+                    </span>
+                  </td>
+                  <td class="px-4 py-3 text-right">
+                    {s.pct_elapsed != null ? (
+                      <div class="flex items-center justify-end gap-2">
+                        <div class="w-16 bg-gray-800 rounded-full h-1.5">
+                          <div
+                            class={`h-1.5 rounded-full ${s.pct_elapsed > 80 ? "bg-red-500" : s.pct_elapsed > 50 ? "bg-amber-500" : "bg-green-500"}`}
+                            style={`width:${Math.min(s.pct_elapsed, 100)}%`}
+                          ></div>
+                        </div>
+                        <span class="text-xs text-gray-400">{s.pct_elapsed}%</span>
+                      </div>
+                    ) : (
+                      <span class="text-xs text-gray-500">—</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+
+    <!-- Info box -->
+    <div class="mt-6 bg-gray-900 border border-gray-800 rounded-xl p-5">
+      <h3 class="text-sm font-semibold mb-2">💡 About SLA & Priority</h3>
+      <ul class="text-xs text-gray-400 space-y-1">
+        <li>• SLA (Service Level Agreement) defines the maximum time for a task to complete in the marketplace.</li>
+        <li>• <strong class="text-gray-300">Urgent</strong> tasks cost 1.75× credits but receive 4× faster SLA and appear first to workers.</li>
+        <li>• <strong class="text-gray-300">High</strong> tasks cost 1.25× credits with 2× faster SLA.</li>
+        <li>• <strong class="text-gray-300">Low</strong> tasks cost 0.75× credits with more relaxed deadlines.</li>
+        <li>• SLA deadlines depend on your plan tier — upgrade for tighter guarantees.</li>
+      </ul>
+      <a href="/pricing" class="text-violet-400 text-xs hover:underline mt-2 inline-block">View plans →</a>
+    </div>
+  </div>
+</Layout>

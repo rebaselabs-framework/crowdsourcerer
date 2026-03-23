@@ -168,6 +168,14 @@ async def get_my_skills(
         if human_score > 0 or ai_score > 0:
             strongest_category = "human" if human_score >= ai_score else "ai"
 
+    # ── Onboarding: mark skills step ─────────────────────────────────────
+    try:
+        from routers.onboarding import mark_onboarding_step
+        await mark_onboarding_step(uid, "skills", db)
+        await db.flush()
+    except Exception:
+        pass
+
     return WorkerSkillsOut(
         skills=skills,
         top_skill=top_skill,

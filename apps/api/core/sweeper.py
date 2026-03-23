@@ -21,7 +21,7 @@ import structlog
 from sqlalchemy import select, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from models.db import TaskDB, TaskAssignmentDB, UserDB
+from models.db import TaskDB, TaskAssignmentDB, UserDB, SLABreachDB
 
 logger = structlog.get_logger()
 
@@ -124,6 +124,73 @@ async def sweep_once(session_factory: async_sessionmaker) -> dict:
     return summary
 
 
+async def _sweep_sla_breaches(session_factory: async_sessionmaker) -> int:
+    """Check all open/assigned human tasks for SLA breaches and log them."""
+    from core.sla import compute_sla_deadline
+    breached = 0
+    now = datetime.now(timezone.utc)
+
+    async with session_factory() as db:
+        try:
+            # Find human tasks still open/assigned
+            res = await db.execute(
+                select(TaskDB).where(
+                    TaskDB.execution_mode == "human",
+                    TaskDB.status.in_(["open", "assigned"]),
+                )
+            )
+            tasks = list(res.scalars().all())
+
+            for task in tasks:
+                priority = task.priority or "normal"
+
+                # Get the requester's plan
+                user_res = await db.execute(select(UserDB).where(UserDB.id == task.user_id))
+                user = user_res.scalar_one_or_none()
+                if not user:
+                    continue
+
+                plan = user.plan or "free"
+                deadline = compute_sla_deadline(task.created_at, plan, priority)
+
+                if now <= deadline:
+                    continue  # still within SLA
+
+                # Check if already recorded
+                existing = await db.scalar(
+                    select(func.count()).where(SLABreachDB.task_id == task.id)
+                )
+                if existing:
+                    continue
+
+                breach = SLABreachDB(
+                    task_id=task.id,
+                    user_id=user.id,
+                    plan=plan,
+                    priority=priority,
+                    sla_hours=(now - task.created_at).total_seconds() / 3600,
+                    task_created_at=task.created_at,
+                    breach_at=deadline,
+                )
+                db.add(breach)
+                breached += 1
+                logger.warning(
+                    "sweeper.sla_breach",
+                    task_id=str(task.id),
+                    plan=plan,
+                    priority=priority,
+                )
+
+            if breached:
+                await db.commit()
+
+        except Exception:  # noqa: BLE001
+            logger.exception("sweeper.sla_breach_error")
+            await db.rollback()
+
+    return breached
+
+
 async def run_sweeper(session_factory: async_sessionmaker, interval: int = SWEEP_INTERVAL_SECONDS):
     """Infinite loop: sweep, sleep, repeat. Designed to run as an asyncio background task."""
     logger.info("sweeper.started", interval_seconds=interval)
@@ -136,6 +203,12 @@ async def run_sweeper(session_factory: async_sessionmaker, interval: int = SWEEP
             await sweep_once(session_factory)
         except Exception:  # noqa: BLE001
             logger.exception("sweeper.unhandled_error")
+
+        # Check SLA breaches on every sweep pass
+        try:
+            await _sweep_sla_breaches(session_factory)
+        except Exception:  # noqa: BLE001
+            logger.exception("sweeper.sla_check_error")
 
         # Check schedule triggers every ~60 seconds (regardless of sweep interval)
         import time

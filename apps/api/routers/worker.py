@@ -417,6 +417,15 @@ async def claim_task(
 
     logger.info("task_claimed", task_id=str(task_id), worker_id=user_id)
 
+    # ── Onboarding: mark explore step on first claim ───────────────────────
+    try:
+        from routers.onboarding import mark_onboarding_step
+        import uuid as _uuid_onboard
+        await mark_onboarding_step(_uuid_onboard.UUID(user_id), "explore", db)
+        await db.flush()
+    except Exception:
+        pass
+
     return WorkerTaskClaimResponse(
         assignment_id=assignment.id,
         task_id=task.id,
@@ -671,6 +680,15 @@ async def submit_task(
             await pay_referral_bonus_on_first_task(user_id, db)
         except Exception:
             pass  # Referral errors never block submission
+
+    # ── Onboarding: mark first_task step ──────────────────────────────────
+    try:
+        from routers.onboarding import mark_onboarding_step
+        import uuid as _uuid_mod2
+        await mark_onboarding_step(_uuid_mod2.UUID(user_id), "first_task", db)
+        await db.flush()
+    except Exception:
+        pass  # Onboarding errors never block submission
 
     # ── Consensus check (for non-any_first strategies) ────────────────────
     if task and task.consensus_strategy != "any_first":

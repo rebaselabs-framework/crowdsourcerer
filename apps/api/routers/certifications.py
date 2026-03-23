@@ -455,6 +455,14 @@ async def attempt_certification(
         except Exception:
             pass
 
+    # ── Onboarding: mark cert step on any attempt ─────────────────────────
+    try:
+        from routers.onboarding import mark_onboarding_step
+        await mark_onboarding_step(uid, "cert", db)
+        await db.flush()
+    except Exception:
+        pass
+
     return CertAttemptResult(
         score=score_pct,
         passed=passed,

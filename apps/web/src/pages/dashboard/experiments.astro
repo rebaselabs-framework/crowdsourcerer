@@ -1,0 +1,381 @@
+---
+/**
+ * A/B Testing Dashboard — create and manage task configuration experiments.
+ */
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Object.fromEntries(
+  Astro.cookies.getAll().map((c) => [c.name, c.value])
+));
+if (!token) return Astro.redirect("/login?next=/dashboard/experiments");
+
+// Handle POST actions (create experiment, update status, delete)
+if (Astro.request.method === "POST") {
+  const form = await Astro.request.formData();
+  const action = form.get("action") as string;
+
+  try {
+    if (action === "create") {
+      const variantNames = (form.getAll("variant_name") as string[]);
+      const variantTraffic = (form.getAll("variant_traffic") as string[]);
+      const variantControl = (form.getAll("variant_control") as string[]);
+      const variantConfigs = (form.getAll("variant_config") as string[]);
+
+      const variants = variantNames.map((name, i) => ({
+        name,
+        traffic_pct: parseFloat(variantTraffic[i] ?? "50"),
+        is_control: variantControl.includes(String(i)),
+        task_config: variantConfigs[i] ? JSON.parse(variantConfigs[i]) : null,
+      }));
+
+      await apiFetch("/v1/experiments", {
+        method: "POST",
+        token,
+        body: JSON.stringify({
+          name: form.get("name"),
+          description: form.get("description") || null,
+          hypothesis: form.get("hypothesis") || null,
+          task_type: form.get("task_type") || null,
+          primary_metric: form.get("primary_metric") || "completion_rate",
+          variants,
+        }),
+      });
+    } else if (action === "status") {
+      const expId = form.get("experiment_id") as string;
+      const status = form.get("status") as string;
+      await apiFetch(`/v1/experiments/${expId}/status?status=${status}`, {
+        method: "PATCH",
+        token,
+      });
+    } else if (action === "delete") {
+      const expId = form.get("experiment_id") as string;
+      await apiFetch(`/v1/experiments/${expId}`, { method: "DELETE", token });
+    }
+  } catch (_) {}
+  return Astro.redirect("/dashboard/experiments");
+}
+
+const statusFilter = Astro.url.searchParams.get("status") ?? "";
+
+let experiments: any[] = [];
+let error: string | null = null;
+
+try {
+  const qs = new URLSearchParams();
+  if (statusFilter) qs.set("status", statusFilter);
+  experiments = await apiFetch<any[]>(`/v1/experiments?${qs}`, { token });
+} catch (e: any) {
+  if (e.message?.includes("401")) return Astro.redirect("/login");
+  error = "Failed to load experiments.";
+}
+
+const statusColors: Record<string, string> = {
+  draft:     "bg-gray-700 text-gray-300",
+  running:   "bg-green-900/40 text-green-400",
+  paused:    "bg-yellow-900/40 text-yellow-400",
+  completed: "bg-blue-900/40 text-blue-400",
+};
+
+const metricLabels: Record<string, string> = {
+  completion_rate: "Completion Rate",
+  accuracy:        "Accuracy",
+  avg_time:        "Avg. Time",
+  credits_used:    "Credits Used",
+};
+
+const taskTypes = [
+  "web_research","entity_lookup","document_parse","data_transform",
+  "llm_generate","screenshot","audio_transcribe","pii_detect",
+  "code_execute","web_intel",
+];
+---
+
+<Layout title="A/B Experiments — CrowdSorcerer">
+  <div class="max-w-6xl mx-auto px-6 py-10">
+    <div class="flex items-center justify-between mb-8">
+      <div>
+        <h1 class="text-2xl font-bold mb-1">🧪 A/B Experiments</h1>
+        <p class="text-gray-400 text-sm">Compare different task configurations and find what works best</p>
+      </div>
+      <button onclick="document.getElementById('create-modal').classList.remove('hidden')"
+        class="bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+        + New Experiment
+      </button>
+    </div>
+
+    <!-- Status filter tabs -->
+    <div class="flex gap-2 mb-6">
+      {["", "draft", "running", "paused", "completed"].map(s => (
+        <a href={`/dashboard/experiments${s ? `?status=${s}` : ""}`}
+          class={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+            statusFilter === s
+              ? "bg-violet-600 text-white"
+              : "bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700"
+          }`}>
+          {s ? s.charAt(0).toUpperCase() + s.slice(1) : "All"}
+        </a>
+      ))}
+    </div>
+
+    {error && (
+      <div class="bg-red-900/30 border border-red-800 text-red-300 p-4 rounded-lg mb-6">{error}</div>
+    )}
+
+    {experiments.length === 0 && !error ? (
+      <div class="text-center py-20 text-gray-500">
+        <div class="text-5xl mb-4">🧪</div>
+        <p class="text-lg font-medium mb-1">No experiments yet</p>
+        <p class="text-sm">Create an A/B experiment to compare different task configs.</p>
+      </div>
+    ) : (
+      <div class="space-y-4">
+        {experiments.map((exp: any) => (
+          <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
+            <div class="flex items-start justify-between gap-4 mb-4">
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-3 mb-1">
+                  <h3 class="font-semibold text-white truncate">{exp.name}</h3>
+                  <span class={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[exp.status] ?? "bg-gray-700 text-gray-300"}`}>
+                    {exp.status}
+                  </span>
+                  {exp.task_type && (
+                    <span class="px-2 py-0.5 bg-gray-800 text-gray-400 rounded text-xs">{exp.task_type}</span>
+                  )}
+                </div>
+                {exp.description && <p class="text-sm text-gray-400 mb-1">{exp.description}</p>}
+                {exp.hypothesis && (
+                  <p class="text-xs text-gray-500 italic">💡 {exp.hypothesis}</p>
+                )}
+              </div>
+              <div class="flex gap-2 shrink-0">
+                <a href={`/dashboard/experiments/${exp.id}`}
+                  class="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white rounded-lg text-xs transition-colors">
+                  Results
+                </a>
+                {exp.status === "draft" && (
+                  <form method="POST">
+                    <input type="hidden" name="action" value="status" />
+                    <input type="hidden" name="experiment_id" value={exp.id} />
+                    <input type="hidden" name="status" value="running" />
+                    <button class="px-3 py-1.5 bg-green-800 hover:bg-green-700 text-green-300 rounded-lg text-xs transition-colors">
+                      ▶ Start
+                    </button>
+                  </form>
+                )}
+                {exp.status === "running" && (
+                  <form method="POST">
+                    <input type="hidden" name="action" value="status" />
+                    <input type="hidden" name="experiment_id" value={exp.id} />
+                    <input type="hidden" name="status" value="paused" />
+                    <button class="px-3 py-1.5 bg-yellow-800 hover:bg-yellow-700 text-yellow-300 rounded-lg text-xs transition-colors">
+                      ⏸ Pause
+                    </button>
+                  </form>
+                )}
+                {(exp.status === "running" || exp.status === "paused") && (
+                  <form method="POST">
+                    <input type="hidden" name="action" value="status" />
+                    <input type="hidden" name="experiment_id" value={exp.id} />
+                    <input type="hidden" name="status" value="completed" />
+                    <button class="px-3 py-1.5 bg-blue-800 hover:bg-blue-700 text-blue-300 rounded-lg text-xs transition-colors">
+                      ✓ Complete
+                    </button>
+                  </form>
+                )}
+                {exp.status === "draft" && (
+                  <form method="POST" onsubmit="return confirm('Delete this experiment?')">
+                    <input type="hidden" name="action" value="delete" />
+                    <input type="hidden" name="experiment_id" value={exp.id} />
+                    <button class="px-3 py-1.5 bg-red-900/50 hover:bg-red-900 text-red-400 rounded-lg text-xs transition-colors">
+                      🗑
+                    </button>
+                  </form>
+                )}
+              </div>
+            </div>
+
+            <!-- Metric + variant summary -->
+            <div class="flex items-center gap-4 text-xs text-gray-500 mb-3">
+              <span>Metric: <span class="text-gray-300">{metricLabels[exp.primary_metric] ?? exp.primary_metric}</span></span>
+              <span>Variants: <span class="text-gray-300">{exp.variants?.length ?? 0}</span></span>
+              {exp.started_at && <span>Started: <span class="text-gray-300">{new Date(exp.started_at).toLocaleDateString()}</span></span>}
+            </div>
+
+            <!-- Variant bars -->
+            {exp.variants?.length > 0 && (
+              <div class="space-y-2">
+                {exp.variants.map((v: any) => {
+                  const totalP = exp.variants.reduce((s: number, x: any) => s + (x.participant_count ?? 0), 0);
+                  const barW = totalP > 0 ? Math.round(v.participant_count / totalP * 100) : Math.round(v.traffic_pct);
+                  return (
+                    <div class="flex items-center gap-3 text-xs">
+                      <span class={`w-28 shrink-0 truncate ${v.is_control ? "text-gray-300 font-medium" : "text-gray-400"}`}>
+                        {v.is_control ? "⚑ " : ""}{v.name}
+                      </span>
+                      <div class="flex-1 bg-gray-800 rounded-full h-1.5">
+                        <div class="bg-violet-500 h-1.5 rounded-full" style={`width:${barW}%`}></div>
+                      </div>
+                      <span class="text-gray-500 w-20 text-right">
+                        {v.participant_count ?? 0} tasks · {v.completion_rate ?? 0}% done
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    )}
+  </div>
+
+  <!-- Create Experiment Modal -->
+  <div id="create-modal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+    <div class="bg-gray-900 border border-gray-800 rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+      <div class="p-6">
+        <div class="flex items-center justify-between mb-6">
+          <h2 class="text-lg font-bold">New A/B Experiment</h2>
+          <button onclick="document.getElementById('create-modal').classList.add('hidden')"
+            class="text-gray-400 hover:text-white text-xl leading-none">×</button>
+        </div>
+
+        <form method="POST" id="create-form">
+          <input type="hidden" name="action" value="create" />
+
+          <div class="space-y-4 mb-6">
+            <div>
+              <label class="block text-sm text-gray-300 mb-1">Experiment Name *</label>
+              <input name="name" required placeholder="e.g. Prompt A vs Prompt B"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-violet-500" />
+            </div>
+            <div>
+              <label class="block text-sm text-gray-300 mb-1">Description</label>
+              <input name="description" placeholder="What are you testing?"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-violet-500" />
+            </div>
+            <div>
+              <label class="block text-sm text-gray-300 mb-1">Hypothesis</label>
+              <input name="hypothesis" placeholder="If we change X, then Y will improve because Z"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-violet-500" />
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="block text-sm text-gray-300 mb-1">Task Type Filter</label>
+                <select name="task_type"
+                  class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-violet-500">
+                  <option value="">All types</option>
+                  {taskTypes.map(t => <option value={t}>{t.replace("_", " ")}</option>)}
+                </select>
+              </div>
+              <div>
+                <label class="block text-sm text-gray-300 mb-1">Primary Metric</label>
+                <select name="primary_metric"
+                  class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-violet-500">
+                  <option value="completion_rate">Completion Rate</option>
+                  <option value="accuracy">Accuracy</option>
+                  <option value="avg_time">Avg. Time</option>
+                  <option value="credits_used">Credits Used</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Variants -->
+          <div class="mb-6">
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="text-sm font-medium text-gray-300">Variants (min 2)</h3>
+              <button type="button" onclick="addVariant()"
+                class="text-xs text-violet-400 hover:text-violet-300">+ Add variant</button>
+            </div>
+            <div id="variants-container" class="space-y-3">
+              <!-- Variant 0: Control -->
+              <div class="bg-gray-800 border border-gray-700 rounded-lg p-3" data-variant="0">
+                <div class="flex items-center gap-2 mb-2">
+                  <input name="variant_name" required value="Control"
+                    class="flex-1 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm focus:outline-none focus:border-violet-500" />
+                  <input type="number" name="variant_traffic" value="50" min="1" max="99" step="1"
+                    class="w-16 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm text-center focus:outline-none focus:border-violet-500" />
+                  <span class="text-xs text-gray-400">%</span>
+                  <label class="flex items-center gap-1 text-xs text-gray-400 cursor-pointer">
+                    <input type="checkbox" name="variant_control" value="0" checked />
+                    Control
+                  </label>
+                </div>
+                <input name="variant_config" placeholder='{"config": "overrides"} (optional JSON)'
+                  class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs text-gray-400 focus:outline-none focus:border-violet-500" />
+              </div>
+              <!-- Variant 1 -->
+              <div class="bg-gray-800 border border-gray-700 rounded-lg p-3" data-variant="1">
+                <div class="flex items-center gap-2 mb-2">
+                  <input name="variant_name" required value="Variant A"
+                    class="flex-1 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm focus:outline-none focus:border-violet-500" />
+                  <input type="number" name="variant_traffic" value="50" min="1" max="99" step="1"
+                    class="w-16 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm text-center focus:outline-none focus:border-violet-500" />
+                  <span class="text-xs text-gray-400">%</span>
+                  <label class="flex items-center gap-1 text-xs text-gray-400 cursor-pointer">
+                    <input type="checkbox" name="variant_control" value="1" />
+                    Control
+                  </label>
+                </div>
+                <input name="variant_config" placeholder='{"config": "overrides"} (optional JSON)'
+                  class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs text-gray-400 focus:outline-none focus:border-violet-500" />
+              </div>
+            </div>
+          </div>
+
+          <div class="flex gap-3 justify-end">
+            <button type="button" onclick="document.getElementById('create-modal').classList.add('hidden')"
+              class="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg text-sm transition-colors">
+              Cancel
+            </button>
+            <button type="submit"
+              class="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-lg text-sm font-medium transition-colors">
+              Create Experiment
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let variantCount = 2;
+
+    function addVariant() {
+      const container = document.getElementById("variants-container")!;
+      const idx = variantCount++;
+      const div = document.createElement("div");
+      div.className = "bg-gray-800 border border-gray-700 rounded-lg p-3";
+      div.dataset.variant = String(idx);
+      div.innerHTML = `
+        <div class="flex items-center gap-2 mb-2">
+          <input name="variant_name" required value="Variant ${String.fromCharCode(64 + idx)}"
+            class="flex-1 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm focus:outline-none focus:border-violet-500" />
+          <input type="number" name="variant_traffic" value="33" min="1" max="99" step="1"
+            class="w-16 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm text-center focus:outline-none focus:border-violet-500" />
+          <span class="text-xs text-gray-400">%</span>
+          <label class="flex items-center gap-1 text-xs text-gray-400 cursor-pointer">
+            <input type="checkbox" name="variant_control" value="${idx}" />
+            Control
+          </label>
+          <button type="button" onclick="this.closest('[data-variant]').remove()"
+            class="text-red-500 hover:text-red-400 text-sm ml-1">✕</button>
+        </div>
+        <input name="variant_config" placeholder='{"config": "overrides"} (optional JSON)'
+          class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs text-gray-400 focus:outline-none focus:border-violet-500" />
+      `;
+      container.appendChild(div);
+    }
+
+    // Validate traffic sums to 100 before submit
+    document.getElementById("create-form")?.addEventListener("submit", (e) => {
+      const inputs = document.querySelectorAll<HTMLInputElement>('input[name="variant_traffic"]');
+      const total = Array.from(inputs).reduce((s, i) => s + parseFloat(i.value || "0"), 0);
+      if (Math.abs(total - 100) > 1) {
+        e.preventDefault();
+        alert(`Traffic percentages must sum to 100 (currently ${total.toFixed(1)})`);
+      }
+    });
+  </script>
+</Layout>

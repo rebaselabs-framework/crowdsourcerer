@@ -1,0 +1,225 @@
+---
+/**
+ * Worker Onboarding — guided 5-step tutorial for new workers.
+ */
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Object.fromEntries(
+  Astro.cookies.getAll().map((c) => [c.name, c.value])
+));
+if (!token) return Astro.redirect("/login?next=/worker/onboarding");
+
+// Handle POST actions
+if (Astro.request.method === "POST") {
+  const form = await Astro.request.formData();
+  const action = form.get("action") as string;
+
+  try {
+    if (action === "skip") {
+      await apiFetch("/v1/onboarding/skip", { method: "POST", token });
+      return Astro.redirect("/worker");
+    } else if (action === "complete_step") {
+      const step = form.get("step") as string;
+      await apiFetch(`/v1/onboarding/steps/${step}/complete`, { method: "POST", token });
+    }
+  } catch (_) {}
+  return Astro.redirect("/worker/onboarding");
+}
+
+let progress: any = null;
+let error: string | null = null;
+
+try {
+  progress = await apiFetch<any>("/v1/onboarding/status", { token });
+} catch (e: any) {
+  if (e.message?.includes("401")) return Astro.redirect("/login");
+  error = e.message ?? "Failed to load onboarding status.";
+}
+
+const stepDetails: Record<string, { icon: string; title: string; desc: string; action: string; href: string }> = {
+  profile: {
+    icon: "👤",
+    title: "Set Up Your Profile",
+    desc: "Add a display name and let requesters know who you are.",
+    action: "Go to Profile",
+    href: "/worker",
+  },
+  explore: {
+    icon: "🛒",
+    title: "Browse the Marketplace",
+    desc: "Explore available tasks to see the kinds of work available.",
+    action: "View Marketplace",
+    href: "/worker/marketplace",
+  },
+  first_task: {
+    icon: "✅",
+    title: "Complete Your First Task",
+    desc: "Claim and complete a task from the marketplace.",
+    action: "Find a Task",
+    href: "/worker/marketplace",
+  },
+  skills: {
+    icon: "🎯",
+    title: "View Your Skills",
+    desc: "Check your proficiency levels and skill radar chart.",
+    action: "View Skills",
+    href: "/worker/skills",
+  },
+  cert: {
+    icon: "🎓",
+    title: "Attempt a Certification",
+    desc: "Take a short quiz to earn a certification badge.",
+    action: "Get Certified",
+    href: "/worker/certifications",
+  },
+};
+---
+
+<Layout title="Onboarding — CrowdSorcerer">
+  <div class="max-w-2xl mx-auto px-6 py-10">
+    <div class="mb-8 text-center">
+      <div class="text-5xl mb-4">🎉</div>
+      <h1 class="text-2xl font-bold mb-2">Welcome to CrowdSorcerer!</h1>
+      <p class="text-gray-400 text-sm">Complete these steps to unlock your full earning potential.</p>
+      {progress?.bonus_claimed ? (
+        <div class="mt-3 inline-flex items-center gap-2 px-4 py-2 bg-green-900/20 border border-green-800/40 text-green-400 rounded-full text-sm">
+          ✅ Onboarding complete — you earned your bonus!
+        </div>
+      ) : progress?.is_complete ? (
+        <div class="mt-3 inline-flex items-center gap-2 px-4 py-2 bg-green-900/20 border border-green-800/40 text-green-400 rounded-full text-sm">
+          ✅ Onboarding complete!
+        </div>
+      ) : null}
+    </div>
+
+    {error ? (
+      <div class="bg-red-900/30 border border-red-800 text-red-300 p-4 rounded-lg">{error}</div>
+    ) : progress && (
+      <>
+        <!-- Progress bar -->
+        <div class="mb-8">
+          <div class="flex justify-between text-sm text-gray-400 mb-2">
+            <span>{progress.completed_steps} of {progress.total_steps} steps completed</span>
+            <span class="text-violet-400 font-medium">{progress.pct_complete}%</span>
+          </div>
+          <div class="w-full bg-gray-800 rounded-full h-3">
+            <div
+              class="bg-gradient-to-r from-violet-600 to-pink-500 h-3 rounded-full transition-all duration-500"
+              style={`width:${progress.pct_complete}%`}
+            ></div>
+          </div>
+        </div>
+
+        <!-- Bonus callout -->
+        {!progress.is_complete && (
+          <div class="mb-6 p-4 bg-amber-900/20 border border-amber-800/40 rounded-xl">
+            <div class="flex items-center gap-3">
+              <div class="text-2xl">🎁</div>
+              <div>
+                <div class="font-medium text-amber-300 text-sm">Complete all steps to earn +100 bonus credits!</div>
+                <div class="text-xs text-gray-400 mt-0.5">That's $1 in free task credits, no payment required.</div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <!-- Steps -->
+        <div class="space-y-3 mb-8">
+          {progress.steps.map((step: any) => {
+            const details = stepDetails[step.key];
+            return (
+              <div class={`border rounded-xl p-5 transition-all ${
+                step.completed
+                  ? "bg-green-900/10 border-green-800/40 opacity-75"
+                  : "bg-gray-900 border-gray-800"
+              }`}>
+                <div class="flex items-center gap-4">
+                  <!-- Step number / check -->
+                  <div class={`w-10 h-10 rounded-full flex items-center justify-center text-lg shrink-0 ${
+                    step.completed
+                      ? "bg-green-900/40 text-green-400"
+                      : "bg-gray-800 text-gray-400"
+                  }`}>
+                    {step.completed ? "✓" : details?.icon ?? step.order}
+                  </div>
+
+                  <!-- Content -->
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2">
+                      <h3 class={`font-medium text-sm ${step.completed ? "text-green-300 line-through opacity-60" : "text-white"}`}>
+                        {details?.title ?? step.label}
+                      </h3>
+                      {step.completed && (
+                        <span class="text-xs text-green-500">Done!</span>
+                      )}
+                    </div>
+                    <p class="text-xs text-gray-400 mt-0.5">{details?.desc ?? ""}</p>
+                  </div>
+
+                  <!-- CTA -->
+                  {!step.completed && details && (
+                    <div class="flex gap-2 shrink-0">
+                      <a href={details.href}
+                        class="px-3 py-1.5 bg-violet-600 hover:bg-violet-700 text-white rounded-lg text-xs font-medium transition-colors">
+                        {details.action}
+                      </a>
+                      <!-- Manual mark as done -->
+                      <form method="POST">
+                        <input type="hidden" name="action" value="complete_step" />
+                        <input type="hidden" name="step" value={step.key} />
+                        <button class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg text-xs transition-colors"
+                          title="Mark as done manually">
+                          ✓
+                        </button>
+                      </form>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <!-- Actions -->
+        <div class="flex items-center justify-between">
+          {!progress.is_complete && !progress.skipped_at && (
+            <form method="POST">
+              <input type="hidden" name="action" value="skip" />
+              <button class="text-xs text-gray-500 hover:text-gray-400 transition-colors">
+                Skip onboarding →
+              </button>
+            </form>
+          )}
+          <div class="ml-auto">
+            <a href="/worker"
+              class="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg text-sm transition-colors">
+              Go to Dashboard →
+            </a>
+          </div>
+        </div>
+
+        <!-- Completion celebration -->
+        {progress.is_complete && !progress.skipped_at && (
+          <div class="mt-8 p-6 bg-gradient-to-br from-violet-900/30 to-pink-900/20 border border-violet-800/40 rounded-xl text-center">
+            <div class="text-4xl mb-3">🏆</div>
+            <h2 class="text-lg font-bold text-violet-300 mb-1">You're all set!</h2>
+            <p class="text-sm text-gray-400 mb-4">
+              You've mastered the basics. Now go earn with your skills!
+            </p>
+            <div class="flex gap-3 justify-center">
+              <a href="/worker/marketplace"
+                class="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-lg text-sm font-medium transition-colors">
+                Browse Tasks
+              </a>
+              <a href="/worker/skills"
+                class="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg text-sm transition-colors">
+                View Skills
+              </a>
+            </div>
+          </div>
+        )}
+      </>
+    )}
+  </div>
+</Layout>

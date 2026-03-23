@@ -729,3 +729,126 @@ class PipelineTriggerDB(Base):
 
     pipeline = relationship("TaskPipelineDB", backref="triggers")
     user = relationship("UserDB", backref="pipeline_triggers")
+
+
+# ─── A/B Experiments ──────────────────────────────────────────────────────────
+
+class ABExperimentDB(Base):
+    """A/B experiment to compare different task configurations."""
+    __tablename__ = "ab_experiments"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    hypothesis = Column(Text, nullable=True)
+    status = Column(
+        SAEnum("draft", "running", "paused", "completed", name="ab_exp_status_enum"),
+        default="draft", nullable=False,
+    )
+    task_type = Column(String(32), nullable=True)   # filter: which task type this tests
+    # Primary metric for determining winner
+    primary_metric = Column(
+        SAEnum("completion_rate", "accuracy", "avg_time", "credits_used",
+               name="ab_metric_enum"),
+        default="completion_rate", nullable=False,
+    )
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    ended_at = Column(DateTime(timezone=True), nullable=True)
+    winner_variant_id = Column(UUID(as_uuid=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+
+    variants = relationship("ABVariantDB", back_populates="experiment", cascade="all, delete-orphan")
+    user = relationship("UserDB", backref="ab_experiments")
+
+
+class ABVariantDB(Base):
+    """A variant (arm) within an A/B experiment."""
+    __tablename__ = "ab_variants"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    experiment_id = Column(UUID(as_uuid=True), ForeignKey("ab_experiments.id", ondelete="CASCADE"),
+                           nullable=False, index=True)
+    name = Column(String(64), nullable=False)          # e.g. "Control", "Variant A"
+    description = Column(Text, nullable=True)
+    traffic_pct = Column(Float, default=50.0, nullable=False)  # % of tasks routed here
+    task_config = Column(JSON, nullable=True)           # config overrides (prompt, settings)
+    is_control = Column(Boolean, default=False, nullable=False)
+    # Rolling stats (updated on task completion)
+    participant_count = Column(Integer, default=0, nullable=False)
+    completion_count = Column(Integer, default=0, nullable=False)
+    failure_count = Column(Integer, default=0, nullable=False)
+    total_accuracy = Column(Float, default=0.0, nullable=False)   # sum for rolling average
+    total_duration_ms = Column(BigInteger, default=0, nullable=False)
+    total_credits_used = Column(Integer, default=0, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    experiment = relationship("ABExperimentDB", back_populates="variants")
+
+
+class ABParticipantDB(Base):
+    """A task that was enrolled in an A/B experiment variant."""
+    __tablename__ = "ab_participants"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    experiment_id = Column(UUID(as_uuid=True), ForeignKey("ab_experiments.id", ondelete="CASCADE"),
+                           nullable=False, index=True)
+    variant_id = Column(UUID(as_uuid=True), ForeignKey("ab_variants.id", ondelete="CASCADE"),
+                        nullable=False, index=True)
+    task_id = Column(UUID(as_uuid=True), ForeignKey("tasks.id", ondelete="SET NULL"),
+                     nullable=True, unique=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"),
+                     nullable=True)
+    assigned_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    outcome = Column(String(16), nullable=True)        # completed / failed / cancelled
+    accuracy = Column(Float, nullable=True)
+    duration_ms = Column(BigInteger, nullable=True)
+    credits_used = Column(Integer, nullable=True)
+
+
+# ─── Worker Onboarding ────────────────────────────────────────────────────────
+
+class OnboardingProgressDB(Base):
+    """Tracks a worker's progress through the onboarding flow."""
+    __tablename__ = "onboarding_progress"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, unique=True, index=True)
+    # Step completion flags
+    step_profile = Column(Boolean, default=False, nullable=False)     # Set display name
+    step_explore = Column(Boolean, default=False, nullable=False)     # Browse marketplace
+    step_first_task = Column(Boolean, default=False, nullable=False)  # Complete first task
+    step_skills = Column(Boolean, default=False, nullable=False)      # View skills page
+    step_cert = Column(Boolean, default=False, nullable=False)        # Attempt any cert
+    # State
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    skipped_at = Column(DateTime(timezone=True), nullable=True)
+    bonus_claimed = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+
+    user = relationship("UserDB", backref="onboarding_progress")
+
+
+# ─── SLA Breaches ─────────────────────────────────────────────────────────────
+
+class SLABreachDB(Base):
+    """Logs tasks that exceeded their SLA (time-to-complete guarantee)."""
+    __tablename__ = "sla_breaches"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    task_id = Column(UUID(as_uuid=True), ForeignKey("tasks.id", ondelete="CASCADE"),
+                     nullable=False, unique=True, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"),
+                     nullable=True)
+    plan = Column(String(16), nullable=False)
+    priority = Column(String(16), nullable=False, default="normal")
+    sla_hours = Column(Float, nullable=False)          # target SLA in hours
+    task_created_at = Column(DateTime(timezone=True), nullable=False)
+    breach_at = Column(DateTime(timezone=True), nullable=False)       # when SLA was first exceeded
+    resolved_at = Column(DateTime(timezone=True), nullable=True)      # when task finally completed
+    credits_refunded = Column(Integer, default=0, nullable=False)     # partial refund on breach
