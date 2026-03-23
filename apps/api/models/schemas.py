@@ -115,6 +115,7 @@ class TaskOut(BaseModel):
     assignments_required: int = 1
     assignments_completed: int = 0
     task_instructions: Optional[str] = None
+    is_gold_standard: bool = False
     created_at: datetime
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None

@@ -1,0 +1,184 @@
+---
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Object.fromEntries(
+  Astro.cookies.getAll().map((c) => [c.name, c.value])
+));
+if (!token) return Astro.redirect("/login");
+
+const page = Number(Astro.url.searchParams.get("page") ?? 1);
+const status = Astro.url.searchParams.get("status") ?? "";
+const type = Astro.url.searchParams.get("type") ?? "";
+
+let tasks: any = { items: [], total: 0, page: 1, page_size: 25, has_next: false };
+let error: string | null = null;
+
+try {
+  const qs = new URLSearchParams({ page: String(page), page_size: "25" });
+  if (status) qs.set("status", status);
+  if (type) qs.set("type", type);
+  tasks = await apiFetch<any>(`/v1/admin/tasks?${qs}`, { token });
+} catch (e: any) {
+  if (e.message?.includes("403")) {
+    error = "forbidden";
+  } else if (e.message?.includes("401")) {
+    return Astro.redirect("/login");
+  } else {
+    error = "Failed to load tasks";
+  }
+}
+
+const STATUS_COLORS: Record<string, string> = {
+  completed: "bg-green-950 text-green-400",
+  failed: "bg-red-950 text-red-400",
+  running: "bg-yellow-950 text-yellow-400",
+  queued: "bg-blue-950 text-blue-400",
+  open: "bg-violet-950 text-violet-400",
+  cancelled: "bg-gray-800 text-gray-500",
+};
+
+const ALL_TASK_TYPES = [
+  "web_research", "entity_lookup", "document_parse", "data_transform",
+  "llm_generate", "screenshot", "audio_transcribe", "pii_detect",
+  "code_execute", "web_intel",
+  "label_image", "label_text", "rate_quality", "verify_fact",
+  "moderate_content", "compare_rank", "answer_question", "transcription_review",
+];
+
+const ALL_STATUSES = [
+  "pending", "queued", "running", "open", "assigned",
+  "completed", "failed", "cancelled",
+];
+---
+
+<Layout title="All Tasks — Admin">
+  <div class="max-w-6xl mx-auto px-6 py-10">
+    <!-- Breadcrumb -->
+    <div class="text-sm text-gray-500 mb-6">
+      <a href="/admin" class="hover:text-gray-300 transition-colors">Admin</a>
+      <span class="mx-2">›</span>
+      <span>All Tasks</span>
+    </div>
+
+    <div class="flex items-start justify-between mb-8">
+      <div>
+        <h1 class="text-2xl font-bold">All Tasks</h1>
+        <p class="text-gray-400 text-sm mt-1">Tasks across all users</p>
+      </div>
+    </div>
+
+    {error === "forbidden" ? (
+      <div class="bg-red-950/30 border border-red-800 rounded-xl p-8 text-center">
+        <div class="text-4xl mb-4">🚫</div>
+        <h2 class="text-xl font-bold mb-2 text-red-400">Access Denied</h2>
+        <p class="text-gray-400 text-sm">Admin privileges required.</p>
+      </div>
+    ) : error ? (
+      <div class="bg-red-950/30 border border-red-800 rounded-xl p-4 text-red-300 text-sm">{error}</div>
+    ) : (
+      <>
+        <!-- Filters -->
+        <form method="GET" class="bg-gray-900 border border-gray-800 rounded-xl p-4 mb-6 flex gap-3 flex-wrap items-center">
+          <select name="status" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none">
+            <option value="">All statuses</option>
+            {ALL_STATUSES.map((s) => (
+              <option value={s} selected={status === s}>{s}</option>
+            ))}
+          </select>
+          <select name="type" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none">
+            <option value="">All types</option>
+            {ALL_TASK_TYPES.map((t) => (
+              <option value={t} selected={type === t}>{t}</option>
+            ))}
+          </select>
+          <button type="submit" class="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white text-sm rounded-lg transition-colors">
+            Filter
+          </button>
+          {(status || type) && (
+            <a href="/admin/tasks" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm rounded-lg transition-colors">
+              Clear
+            </a>
+          )}
+          <span class="ml-auto text-sm text-gray-500">{tasks.total.toLocaleString()} tasks</span>
+        </form>
+
+        <!-- Tasks table -->
+        <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b border-gray-800 text-left">
+                <th class="px-5 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Task ID</th>
+                <th class="px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Type</th>
+                <th class="px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Status</th>
+                <th class="px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Mode</th>
+                <th class="px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Credits</th>
+                <th class="px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">User</th>
+                <th class="px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Created</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-800">
+              {tasks.items.length === 0 ? (
+                <tr>
+                  <td colspan="7" class="px-5 py-12 text-center text-gray-500">No tasks found</td>
+                </tr>
+              ) : tasks.items.map((t: any) => (
+                <tr class="hover:bg-gray-800/40 transition-colors">
+                  <td class="px-5 py-4">
+                    <span class="font-mono text-xs text-gray-400">{t.id.slice(0, 8)}…</span>
+                  </td>
+                  <td class="px-4 py-4">
+                    <span class="font-mono text-sm text-violet-300">{t.type}</span>
+                  </td>
+                  <td class="px-4 py-4">
+                    <span class:list={[
+                      "text-xs px-2 py-0.5 rounded-full",
+                      STATUS_COLORS[t.status] ?? "bg-gray-800 text-gray-400"
+                    ]}>
+                      {t.status}
+                    </span>
+                  </td>
+                  <td class="px-4 py-4 text-xs text-gray-500">{t.execution_mode}</td>
+                  <td class="px-4 py-4 text-gray-300 font-mono text-xs">
+                    {t.credits_used != null ? `${t.credits_used} cr` : "—"}
+                  </td>
+                  <td class="px-4 py-4">
+                    <span class="font-mono text-xs text-gray-500">{t.user_id.slice(0, 8)}…</span>
+                  </td>
+                  <td class="px-4 py-4 text-xs text-gray-500">
+                    {new Date(t.created_at).toLocaleDateString()}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Pagination -->
+        {(tasks.has_next || page > 1) && (
+          <div class="flex items-center justify-between mt-6">
+            <div class="text-sm text-gray-500">Page {tasks.page} · {tasks.total.toLocaleString()} total</div>
+            <div class="flex gap-2">
+              {page > 1 && (
+                <a
+                  href={`/admin/tasks?page=${page - 1}${status ? `&status=${status}` : ""}${type ? `&type=${type}` : ""}`}
+                  class="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-sm text-gray-300 rounded-lg transition-colors"
+                >
+                  ← Previous
+                </a>
+              )}
+              {tasks.has_next && (
+                <a
+                  href={`/admin/tasks?page=${page + 1}${status ? `&status=${status}` : ""}${type ? `&type=${type}` : ""}`}
+                  class="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-sm text-gray-300 rounded-lg transition-colors"
+                >
+                  Next →
+                </a>
+              )}
+            </div>
+          </div>
+        )}
+      </>
+    )}
+  </div>
+</Layout>

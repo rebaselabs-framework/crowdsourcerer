@@ -117,6 +117,43 @@ const duration = task?.completed_at && task?.created_at
           </div>
         )}
 
+        <!-- Human task: gold standard section -->
+        {task.execution_mode === "human" && (
+          <div class="bg-gray-900 border border-gray-800 rounded-xl mb-4">
+            <div class="px-5 py-3 border-b border-gray-800 flex items-center justify-between">
+              <h2 class="text-sm font-semibold text-amber-300">
+                {task.is_gold_standard ? "⭐ Gold Standard Task" : "Quality Control"}
+              </h2>
+              {!task.is_gold_standard && (
+                <a
+                  href={`/dashboard/quality/mark/${task.id}`}
+                  class="text-xs px-3 py-1 bg-amber-600 hover:bg-amber-500 text-white rounded-lg transition-colors"
+                >
+                  Set gold answer
+                </a>
+              )}
+              {task.is_gold_standard && (
+                <a
+                  href={`/dashboard/quality/evaluate/${task.id}`}
+                  class="text-xs px-3 py-1 bg-violet-600 hover:bg-violet-500 text-white rounded-lg transition-colors"
+                >
+                  Evaluate submissions
+                </a>
+              )}
+            </div>
+            <div class="px-5 py-4 text-sm text-gray-400">
+              {task.is_gold_standard ? (
+                <p>This is a gold standard task. Worker submissions will be auto-graded against the expected answer.</p>
+              ) : (
+                <p>
+                  Mark this task as a gold standard to use it for worker quality evaluation.
+                  Provide the correct answer and the system will auto-grade worker submissions.
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+
         <!-- Retry if failed -->
         {task.status === "failed" && (
           <div class="mt-6">

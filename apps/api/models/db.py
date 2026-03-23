@@ -37,6 +37,7 @@ class UserDB(Base):
     credits = Column(Integer, default=100, nullable=False)
     stripe_customer_id = Column(String(255), nullable=True, unique=True)
     is_active = Column(Boolean, default=True, nullable=False)
+    is_admin = Column(Boolean, default=False, nullable=False)
 
     # Worker gamification
     worker_xp = Column(Integer, default=0, nullable=False)
@@ -236,3 +237,21 @@ class DailyChallengeProgressDB(Base):
     bonus_claimed_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class WebhookLogDB(Base):
+    """Log of webhook delivery attempts for a task."""
+    __tablename__ = "webhook_logs"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    task_id = Column(UUID(as_uuid=True), ForeignKey("tasks.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    url = Column(String(2048), nullable=False)
+    attempt = Column(Integer, default=1, nullable=False)  # 1-indexed
+    status_code = Column(Integer, nullable=True)          # HTTP status if response received
+    success = Column(Boolean, default=False, nullable=False)
+    error = Column(Text, nullable=True)                   # Error message if failed
+    duration_ms = Column(Integer, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)

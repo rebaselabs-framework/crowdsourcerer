@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 
 from core.config import get_settings
 from core.database import Base, engine
-from routers import auth, credits, tasks, users, worker, leaderboard, badges, challenges, quality
+from routers import auth, credits, tasks, users, worker, leaderboard, badges, challenges, quality, admin, webhooks
 from workers.base import get_rebasekit_client
 
 settings = get_settings()
@@ -69,6 +69,8 @@ app.include_router(leaderboard.router)
 app.include_router(badges.router)
 app.include_router(challenges.router)
 app.include_router(quality.router)
+app.include_router(webhooks.router)
+app.include_router(admin.router)
 
 # ─── Health ───────────────────────────────────────────────────────────────
 

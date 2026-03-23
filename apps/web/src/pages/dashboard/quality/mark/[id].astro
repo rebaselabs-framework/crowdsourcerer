@@ -1,0 +1,131 @@
+---
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Object.fromEntries(
+  Astro.cookies.getAll().map((c) => [c.name, c.value])
+));
+if (!token) return Astro.redirect("/login");
+
+const { id } = Astro.params;
+
+let task: any = null;
+let success = false;
+let apiError: string | null = null;
+
+// Load task
+try {
+  task = await apiFetch<any>(`/v1/tasks/${id}`, { token });
+} catch (e: any) {
+  if (e.message?.includes("404")) {
+    return Astro.redirect("/dashboard/quality");
+  }
+  return Astro.redirect("/login");
+}
+
+// Handle form submission
+if (Astro.request.method === "POST") {
+  try {
+    const form = await Astro.request.formData();
+    const goldAnswerRaw = form.get("gold_answer")?.toString() ?? "{}";
+    const goldAnswer = JSON.parse(goldAnswerRaw);
+    await apiFetch("/v1/quality/gold-standard", {
+      token,
+      method: "POST",
+      body: JSON.stringify({ task_id: id, gold_answer: goldAnswer }),
+    });
+    return Astro.redirect("/dashboard/quality?marked=1");
+  } catch (e: any) {
+    apiError = e.message?.includes("400") ? "Invalid request. Make sure this is a human task." : "Failed to mark as gold standard";
+  }
+}
+
+// Build a placeholder answer template based on task type
+const ANSWER_TEMPLATES: Record<string, object> = {
+  label_image: { label: "cat" },
+  label_text: { label: "positive" },
+  rate_quality: { rating: 4 },
+  verify_fact: { verdict: "true", confidence: 0.9, notes: "" },
+  moderate_content: { decision: "approve", reason: "" },
+  compare_rank: { ranked_ids: ["id1", "id2", "id3"] },
+  answer_question: { answer: "The correct answer here" },
+  transcription_review: { text: "The corrected transcript here", approved: true },
+};
+
+const template = ANSWER_TEMPLATES[task?.type] ?? {};
+---
+
+<Layout title={`Set Gold Answer — CrowdSorcerer`}>
+  <div class="max-w-2xl mx-auto px-6 py-10">
+    <!-- Breadcrumb -->
+    <div class="text-sm text-gray-500 mb-6">
+      <a href="/dashboard" class="hover:text-gray-300 transition-colors">Dashboard</a>
+      <span class="mx-2">›</span>
+      <a href="/dashboard/quality" class="hover:text-gray-300 transition-colors">Quality Control</a>
+      <span class="mx-2">›</span>
+      <span>Set Gold Answer</span>
+    </div>
+
+    <h1 class="text-2xl font-bold mb-2">Set gold standard answer</h1>
+    <p class="text-gray-400 text-sm mb-8">
+      Provide the correct answer for this task. Workers' submissions will be auto-evaluated against it.
+    </p>
+
+    <!-- Task info -->
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-6">
+      <div class="flex items-center justify-between mb-3">
+        <span class="font-mono text-violet-300 font-semibold">{task?.type}</span>
+        <span class="text-xs text-gray-500 font-mono">{id?.slice(0, 8)}…</span>
+      </div>
+      <div class="text-sm text-gray-400 mb-2 font-medium">Task input:</div>
+      <pre class="text-xs font-mono text-gray-300 bg-gray-950 rounded-lg p-3 overflow-x-auto">
+{JSON.stringify(task?.input, null, 2)}
+      </pre>
+    </div>
+
+    {apiError && (
+      <div class="bg-red-950/30 border border-red-800 rounded-xl p-4 mb-6 text-red-300 text-sm">
+        {apiError}
+      </div>
+    )}
+
+    <form method="POST">
+      <div class="mb-6">
+        <label class="block text-sm font-medium mb-2">
+          Gold standard answer
+          <span class="text-gray-500 font-normal ml-2">(JSON)</span>
+        </label>
+        <p class="text-xs text-gray-500 mb-3">
+          Enter the expected correct answer as JSON. Workers' submissions will be compared to this.
+        </p>
+        <textarea
+          name="gold_answer"
+          rows="8"
+          class="w-full bg-gray-900 border border-gray-700 rounded-xl px-4 py-3 font-mono text-sm text-gray-200 focus:outline-none focus:border-violet-500 transition-colors"
+          placeholder={JSON.stringify(template, null, 2)}
+        >{JSON.stringify(template, null, 2)}</textarea>
+      </div>
+
+      <!-- Answer format hint -->
+      <div class="bg-blue-950/30 border border-blue-800 rounded-xl p-4 mb-6 text-sm text-blue-300">
+        <div class="font-medium mb-1">Answer format for <code class="font-mono">{task?.type}</code>:</div>
+        <pre class="font-mono text-xs mt-2 overflow-x-auto">{JSON.stringify(template, null, 2)}</pre>
+      </div>
+
+      <div class="flex gap-3">
+        <button
+          type="submit"
+          class="px-6 py-2.5 bg-amber-600 hover:bg-amber-500 text-white font-medium rounded-lg transition-colors"
+        >
+          ⭐ Mark as gold standard
+        </button>
+        <a
+          href="/dashboard/quality"
+          class="px-6 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-300 font-medium rounded-lg transition-colors"
+        >
+          Cancel
+        </a>
+      </div>
+    </form>
+  </div>
+</Layout>

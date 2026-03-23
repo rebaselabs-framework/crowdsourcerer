@@ -1,0 +1,147 @@
+---
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Object.fromEntries(
+  Astro.cookies.getAll().map((c) => [c.name, c.value])
+));
+if (!token) return Astro.redirect("/login");
+
+const { id } = Astro.params;
+
+let task: any = null;
+let evalResult: any = null;
+let apiError: string | null = null;
+
+// Load task
+try {
+  task = await apiFetch<any>(`/v1/tasks/${id}`, { token });
+} catch {
+  return Astro.redirect("/dashboard/quality");
+}
+
+// Handle POST — run evaluation
+if (Astro.request.method === "POST") {
+  try {
+    evalResult = await apiFetch<any>(`/v1/quality/evaluate/${id}`, {
+      token,
+      method: "POST",
+    });
+  } catch (e: any) {
+    apiError = "Evaluation failed. Make sure the task is a gold standard with submitted answers.";
+  }
+}
+---
+
+<Layout title={`Evaluate Submissions — CrowdSorcerer`}>
+  <div class="max-w-2xl mx-auto px-6 py-10">
+    <!-- Breadcrumb -->
+    <div class="text-sm text-gray-500 mb-6">
+      <a href="/dashboard" class="hover:text-gray-300 transition-colors">Dashboard</a>
+      <span class="mx-2">›</span>
+      <a href="/dashboard/quality" class="hover:text-gray-300 transition-colors">Quality Control</a>
+      <span class="mx-2">›</span>
+      <span>Evaluate</span>
+    </div>
+
+    <h1 class="text-2xl font-bold mb-2">Evaluate submissions</h1>
+    <p class="text-gray-400 text-sm mb-8">
+      Auto-grade all submitted answers against the gold standard. Worker accuracy scores update automatically.
+    </p>
+
+    <!-- Task info -->
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-6">
+      <div class="flex items-center justify-between mb-2">
+        <div class="flex items-center gap-2">
+          <span class="text-amber-400">⭐</span>
+          <span class="font-mono text-violet-300 font-semibold">{task?.type}</span>
+        </div>
+        <span class="text-xs text-gray-500 font-mono">{id?.slice(0, 8)}…</span>
+      </div>
+      <div class="grid grid-cols-3 gap-4 mt-3">
+        <div class="text-center">
+          <div class="text-xs text-gray-500 mb-1">Assignments</div>
+          <div class="font-bold">{task?.assignments_completed}/{task?.assignments_required}</div>
+        </div>
+        <div class="text-center">
+          <div class="text-xs text-gray-500 mb-1">Status</div>
+          <div class="font-bold capitalize">{task?.status}</div>
+        </div>
+        <div class="text-center">
+          <div class="text-xs text-gray-500 mb-1">Gold standard</div>
+          <div class="font-bold text-amber-400">Yes ⭐</div>
+        </div>
+      </div>
+    </div>
+
+    {apiError && (
+      <div class="bg-red-950/30 border border-red-800 rounded-xl p-4 mb-6 text-red-300 text-sm">
+        {apiError}
+      </div>
+    )}
+
+    {evalResult && (
+      <div class="bg-green-950/30 border border-green-800 rounded-xl p-6 mb-6">
+        <div class="text-green-400 font-semibold mb-4">✅ Evaluation complete</div>
+        <div class="grid grid-cols-2 gap-4">
+          <div class="bg-gray-900 rounded-xl p-4 text-center">
+            <div class="text-xs text-gray-500 mb-1">Total evaluated</div>
+            <div class="text-2xl font-bold">{evalResult.evaluated}</div>
+          </div>
+          <div class="bg-gray-900 rounded-xl p-4 text-center">
+            <div class="text-xs text-gray-500 mb-1">Approval rate</div>
+            <div class="text-2xl font-bold text-green-400">
+              {Math.round((evalResult.approval_rate ?? 0) * 100)}%
+            </div>
+          </div>
+          <div class="bg-gray-900 rounded-xl p-4 text-center">
+            <div class="text-xs text-gray-500 mb-1">Approved</div>
+            <div class="text-2xl font-bold text-green-400">{evalResult.approved}</div>
+          </div>
+          <div class="bg-gray-900 rounded-xl p-4 text-center">
+            <div class="text-xs text-gray-500 mb-1">Rejected</div>
+            <div class="text-2xl font-bold text-red-400">{evalResult.rejected}</div>
+          </div>
+        </div>
+        <p class="text-sm text-gray-400 mt-4">
+          Worker accuracy scores have been updated. View the
+          <a href="/dashboard/quality" class="text-violet-400 hover:text-violet-300 ml-1">quality report →</a>
+        </p>
+      </div>
+    )}
+
+    {!evalResult && (
+      <form method="POST">
+        <div class="bg-amber-950/20 border border-amber-800/50 rounded-xl p-4 mb-6 text-sm text-amber-300">
+          <strong>Note:</strong> This will evaluate all <em>submitted</em> assignments for this task.
+          Already evaluated (approved/rejected) assignments will not be re-evaluated.
+        </div>
+        <div class="flex gap-3">
+          <button
+            type="submit"
+            class="px-6 py-2.5 bg-violet-600 hover:bg-violet-500 text-white font-medium rounded-lg transition-colors"
+          >
+            🎯 Run evaluation
+          </button>
+          <a
+            href="/dashboard/quality"
+            class="px-6 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-300 font-medium rounded-lg transition-colors"
+          >
+            Back
+          </a>
+        </div>
+      </form>
+    )}
+
+    {evalResult && (
+      <div class="mt-6">
+        <a
+          href="/dashboard/quality"
+          class="px-6 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-300 font-medium rounded-lg transition-colors inline-block"
+        >
+          ← Back to quality control
+        </a>
+      </div>
+    )}
+  </div>
+</Layout>

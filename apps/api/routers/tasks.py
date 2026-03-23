@@ -13,7 +13,7 @@ from sqlalchemy import select, func
 
 from core.auth import get_current_user_id
 from core.database import get_db
-from models.db import TaskDB, UserDB, CreditTransactionDB
+from models.db import TaskDB, UserDB, CreditTransactionDB, WebhookLogDB
 from models.schemas import (
     TaskCreateRequest, TaskCreateResponse, TaskOut, PaginatedTasks,
     HUMAN_TASK_TYPES,
@@ -233,7 +233,7 @@ async def _run_task(task_id: str, user_id: str):
 
             # Fire webhook if set
             if task.webhook_url:
-                asyncio.create_task(_send_webhook(task.webhook_url, task_id))
+                asyncio.create_task(_send_webhook(task.webhook_url, task_id, user_id))
 
         except WorkerError as e:
             logger.error("task_failed", task_id=task_id, error=str(e))
@@ -262,32 +262,84 @@ async def _run_task(task_id: str, user_id: str):
                 pass
 
 
-async def _send_webhook(url: str, task_id: str, max_retries: int = 3):
-    """Fire-and-forget webhook notification with exponential backoff."""
+async def _send_webhook(url: str, task_id: str, user_id: str, max_retries: int = 3):
+    """Fire-and-forget webhook notification with exponential backoff + delivery logging."""
     import httpx
+    import time as _time
+    from core.database import AsyncSessionLocal  # avoid circular import
+
     payload = {"task_id": task_id, "event": "task.completed"}
     for attempt in range(max_retries):
+        t0 = _time.perf_counter()
+        status_code = None
+        error_msg = None
+        success = False
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.post(url, json=payload)
+                status_code = resp.status_code
                 if resp.status_code < 500:
-                    if resp.status_code >= 400:
+                    success = resp.status_code < 400
+                    if not success:
                         logger.warning(
                             "webhook_client_error",
                             url=url,
                             status=resp.status_code,
                         )
-                    return
+                        error_msg = f"Client error: HTTP {resp.status_code}"
+                    # log and return — no retry on 4xx
+                    await _log_webhook(task_id, user_id, url, attempt + 1,
+                                       status_code, success, error_msg,
+                                       int((_time.perf_counter() - t0) * 1000))
+                    if success:
+                        return
+                    return  # don't retry 4xx
                 logger.warning(
                     "webhook_server_error",
                     url=url,
                     status=resp.status_code,
                     attempt=attempt + 1,
                 )
+                error_msg = f"Server error: HTTP {resp.status_code}"
         except Exception as e:
+            error_msg = str(e)
             logger.warning("webhook_failed", url=url, error=str(e), attempt=attempt + 1)
+
+        duration_ms = int((_time.perf_counter() - t0) * 1000)
+        await _log_webhook(task_id, user_id, url, attempt + 1,
+                           status_code, False, error_msg, duration_ms)
 
         if attempt < max_retries - 1:
             await asyncio.sleep(2 ** attempt)  # 1s, 2s, 4s
 
     logger.error("webhook_exhausted_retries", url=url, task_id=task_id)
+
+
+async def _log_webhook(
+    task_id: str,
+    user_id: str,
+    url: str,
+    attempt: int,
+    status_code: int | None,
+    success: bool,
+    error: str | None,
+    duration_ms: int,
+) -> None:
+    """Persist a webhook delivery log entry."""
+    from core.database import AsyncSessionLocal
+    try:
+        async with AsyncSessionLocal() as db:
+            log = WebhookLogDB(
+                task_id=task_id,
+                user_id=user_id,
+                url=url,
+                attempt=attempt,
+                status_code=status_code,
+                success=success,
+                error=error,
+                duration_ms=duration_ms,
+            )
+            db.add(log)
+            await db.commit()
+    except Exception:
+        logger.warning("webhook_log_failed", task_id=task_id)

@@ -504,3 +504,65 @@ export interface QualityReport {
   worker_level: number;
   worker_xp: number;
 }
+
+export interface GoldStandardCreateRequest {
+  task_id: string;
+  gold_answer: Record<string, unknown>;
+}
+
+// ─── Webhook Logs ─────────────────────────────────────────────────────────
+
+export interface WebhookLog {
+  id: string;
+  task_id: string;
+  url: string;
+  attempt: number;
+  status_code: number | null;
+  success: boolean;
+  error: string | null;
+  duration_ms: number | null;
+  created_at: string;
+}
+
+export interface WebhookStats {
+  total_deliveries: number;
+  succeeded: number;
+  failed: number;
+  success_rate: number;
+  avg_duration_ms: number | null;
+}
+
+// ─── Admin ────────────────────────────────────────────────────────────────
+
+export interface PlatformStats {
+  users: {
+    total: number;
+    active: number;
+    workers: number;
+    new_this_week: number;
+  };
+  tasks: {
+    total: number;
+    completed: number;
+    failed: number;
+    running: number;
+    open_human: number;
+    this_week: number;
+    success_rate: number;
+    type_breakdown: Array<{ type: string; count: number }>;
+  };
+  worker_assignments: {
+    total: number;
+    submitted: number;
+  };
+  credits: {
+    in_circulation: number;
+    total_purchased: number;
+  };
+  webhooks: {
+    total: number;
+    failed: number;
+    success_rate: number;
+  };
+  generated_at: string;
+}

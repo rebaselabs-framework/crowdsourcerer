@@ -1,0 +1,192 @@
+---
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Object.fromEntries(
+  Astro.cookies.getAll().map((c) => [c.name, c.value])
+));
+if (!token) return Astro.redirect("/login");
+
+const page = Number(Astro.url.searchParams.get("page") ?? 1);
+const search = Astro.url.searchParams.get("search") ?? "";
+const role = Astro.url.searchParams.get("role") ?? "";
+const plan = Astro.url.searchParams.get("plan") ?? "";
+
+let users: any = { items: [], total: 0, page: 1, page_size: 25, has_next: false };
+let error: string | null = null;
+
+try {
+  const qs = new URLSearchParams({ page: String(page), page_size: "25" });
+  if (search) qs.set("search", search);
+  if (role) qs.set("role", role);
+  if (plan) qs.set("plan", plan);
+  users = await apiFetch<any>(`/v1/admin/users?${qs}`, { token });
+} catch (e: any) {
+  if (e.message?.includes("403")) {
+    error = "forbidden";
+  } else if (e.message?.includes("401")) {
+    return Astro.redirect("/login");
+  } else {
+    error = "Failed to load users";
+  }
+}
+---
+
+<Layout title="User Management — Admin">
+  <div class="max-w-6xl mx-auto px-6 py-10">
+    <!-- Breadcrumb -->
+    <div class="text-sm text-gray-500 mb-6">
+      <a href="/admin" class="hover:text-gray-300 transition-colors">Admin</a>
+      <span class="mx-2">›</span>
+      <span>Users</span>
+    </div>
+
+    <div class="flex items-start justify-between mb-8">
+      <div>
+        <h1 class="text-2xl font-bold">User Management</h1>
+        <p class="text-gray-400 text-sm mt-1">{users.total.toLocaleString()} total users</p>
+      </div>
+    </div>
+
+    {error === "forbidden" ? (
+      <div class="bg-red-950/30 border border-red-800 rounded-xl p-8 text-center">
+        <div class="text-4xl mb-4">🚫</div>
+        <h2 class="text-xl font-bold mb-2 text-red-400">Access Denied</h2>
+        <p class="text-gray-400 text-sm">Admin privileges required.</p>
+      </div>
+    ) : error ? (
+      <div class="bg-red-950/30 border border-red-800 rounded-xl p-4 text-red-300 text-sm">{error}</div>
+    ) : (
+      <>
+        <!-- Filters -->
+        <form method="GET" class="bg-gray-900 border border-gray-800 rounded-xl p-4 mb-6 flex gap-3 flex-wrap">
+          <input
+            type="text"
+            name="search"
+            value={search}
+            placeholder="Search by email or name…"
+            class="flex-1 min-w-48 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-violet-500"
+          />
+          <select name="role" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none">
+            <option value="">All roles</option>
+            <option value="requester" selected={role === "requester"}>Requester</option>
+            <option value="worker" selected={role === "worker"}>Worker</option>
+            <option value="both" selected={role === "both"}>Both</option>
+          </select>
+          <select name="plan" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none">
+            <option value="">All plans</option>
+            <option value="free" selected={plan === "free"}>Free</option>
+            <option value="starter" selected={plan === "starter"}>Starter</option>
+            <option value="pro" selected={plan === "pro"}>Pro</option>
+            <option value="enterprise" selected={plan === "enterprise"}>Enterprise</option>
+          </select>
+          <button type="submit" class="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white text-sm rounded-lg transition-colors">
+            Search
+          </button>
+          {(search || role || plan) && (
+            <a href="/admin/users" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm rounded-lg transition-colors">
+              Clear
+            </a>
+          )}
+        </form>
+
+        <!-- Users table -->
+        <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b border-gray-800 text-left">
+                <th class="px-5 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">User</th>
+                <th class="px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Plan</th>
+                <th class="px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Role</th>
+                <th class="px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Credits</th>
+                <th class="px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Worker</th>
+                <th class="px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Joined</th>
+                <th class="px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Status</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-800">
+              {users.items.length === 0 ? (
+                <tr>
+                  <td colspan="7" class="px-5 py-12 text-center text-gray-500">
+                    No users found
+                  </td>
+                </tr>
+              ) : users.items.map((u: any) => (
+                <tr class="hover:bg-gray-800/40 transition-colors">
+                  <td class="px-5 py-4">
+                    <div class="font-medium">{u.email}</div>
+                    {u.name && <div class="text-xs text-gray-500">{u.name}</div>}
+                    {u.is_admin && <span class="text-xs text-amber-400">👑 Admin</span>}
+                  </td>
+                  <td class="px-4 py-4">
+                    <span class:list={[
+                      "text-xs px-2 py-0.5 rounded-full",
+                      u.plan === "pro" ? "bg-violet-950 text-violet-300" :
+                      u.plan === "enterprise" ? "bg-amber-950 text-amber-300" :
+                      u.plan === "starter" ? "bg-blue-950 text-blue-300" :
+                      "bg-gray-800 text-gray-400"
+                    ]}>
+                      {u.plan}
+                    </span>
+                  </td>
+                  <td class="px-4 py-4 text-gray-300">{u.role}</td>
+                  <td class="px-4 py-4 font-mono text-violet-300">{u.credits.toLocaleString()}</td>
+                  <td class="px-4 py-4 text-gray-300">
+                    {u.role !== "requester" ? (
+                      <div>
+                        <div class="text-xs">Lv.{u.worker_level} · {u.worker_tasks_completed} tasks</div>
+                        {u.worker_accuracy != null && (
+                          <div class="text-xs text-gray-500">{Math.round(u.worker_accuracy * 100)}% acc</div>
+                        )}
+                      </div>
+                    ) : (
+                      <span class="text-gray-600">—</span>
+                    )}
+                  </td>
+                  <td class="px-4 py-4 text-gray-500 text-xs">
+                    {new Date(u.created_at).toLocaleDateString()}
+                  </td>
+                  <td class="px-4 py-4">
+                    <span class:list={[
+                      "text-xs px-2 py-0.5 rounded-full",
+                      u.is_active ? "bg-green-950 text-green-400" : "bg-red-950 text-red-400"
+                    ]}>
+                      {u.is_active ? "active" : "disabled"}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Pagination -->
+        {(users.has_next || page > 1) && (
+          <div class="flex items-center justify-between mt-6">
+            <div class="text-sm text-gray-500">
+              Page {users.page} · {users.total.toLocaleString()} total
+            </div>
+            <div class="flex gap-2">
+              {page > 1 && (
+                <a
+                  href={`/admin/users?page=${page - 1}${search ? `&search=${search}` : ""}${role ? `&role=${role}` : ""}${plan ? `&plan=${plan}` : ""}`}
+                  class="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-sm text-gray-300 rounded-lg transition-colors"
+                >
+                  ← Previous
+                </a>
+              )}
+              {users.has_next && (
+                <a
+                  href={`/admin/users?page=${page + 1}${search ? `&search=${search}` : ""}${role ? `&role=${role}` : ""}${plan ? `&plan=${plan}` : ""}`}
+                  class="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-sm text-gray-300 rounded-lg transition-colors"
+                >
+                  Next →
+                </a>
+              )}
+            </div>
+          </div>
+        )}
+      </>
+    )}
+  </div>
+</Layout>
