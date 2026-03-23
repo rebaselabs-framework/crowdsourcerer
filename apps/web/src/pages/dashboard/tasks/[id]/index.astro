@@ -84,6 +84,115 @@ const duration = task?.completed_at && task?.created_at
 
 const isLive = task && ["running", "queued", "pending", "open", "assigned"].includes(task.status);
 const pendingSubmissions = submissions.filter((s: any) => s.status === "submitted").length;
+
+// ── Rich output helpers ───────────────────────────────────────────────────────
+type RichOutput =
+  | { kind: "web_research"; summary: string; sources?: string[]; key_facts?: string[] }
+  | { kind: "web_intel"; report: string; entities?: string[]; sources?: string[] }
+  | { kind: "entity_lookup"; fields: Record<string, any> }
+  | { kind: "document_parse"; sections?: Array<{ title?: string; content: string }>; tables?: any[][]; raw_text?: string }
+  | { kind: "llm_generate"; text: string; model?: string; tokens?: number }
+  | { kind: "audio_transcribe"; transcript: string; language?: string; confidence?: number }
+  | { kind: "pii_detect"; findings: Array<{ type: string; value: string; redacted: string; start: number; end: number }>; redacted_text?: string }
+  | { kind: "code_execute"; stdout?: string; stderr?: string; exit_code?: number; output?: any }
+  | { kind: "screenshot"; url?: string; image_url?: string; image_base64?: string }
+  | { kind: "data_transform"; result: any; rows_processed?: number; rows_output?: number }
+  | { kind: "moderate_content"; verdict: string; confidence?: number; violations?: Array<{ policy: string; confidence: number; excerpt?: string }>; recommended_action?: string }
+  | { kind: "raw"; data: any };
+
+function parseRichOutput(type: string, output: any): RichOutput {
+  if (!output) return { kind: "raw", data: output };
+  const o = typeof output === "string" ? (() => { try { return JSON.parse(output); } catch { return { text: output }; } })() : output;
+
+  if (type === "web_research") {
+    return {
+      kind: "web_research",
+      summary: o.summary ?? o.result ?? o.content ?? JSON.stringify(o),
+      sources: Array.isArray(o.sources) ? o.sources : (o.source ? [o.source] : undefined),
+      key_facts: Array.isArray(o.key_facts) ? o.key_facts : undefined,
+    };
+  }
+  if (type === "web_intel") {
+    return {
+      kind: "web_intel",
+      report: o.report ?? o.summary ?? o.content ?? JSON.stringify(o),
+      entities: Array.isArray(o.entities) ? o.entities : undefined,
+      sources: Array.isArray(o.sources) ? o.sources : undefined,
+    };
+  }
+  if (type === "entity_lookup") {
+    const { type: _t, ...fields } = o;
+    return { kind: "entity_lookup", fields };
+  }
+  if (type === "document_parse") {
+    return {
+      kind: "document_parse",
+      sections: Array.isArray(o.sections) ? o.sections : undefined,
+      tables: Array.isArray(o.tables) ? o.tables : undefined,
+      raw_text: o.raw_text ?? o.text ?? (typeof o === "string" ? o : undefined),
+    };
+  }
+  if (type === "llm_generate") {
+    return {
+      kind: "llm_generate",
+      text: o.text ?? o.content ?? o.result ?? JSON.stringify(o),
+      model: o.model,
+      tokens: o.tokens ?? o.usage?.total_tokens,
+    };
+  }
+  if (type === "audio_transcribe") {
+    return {
+      kind: "audio_transcribe",
+      transcript: o.transcript ?? o.text ?? o.result ?? JSON.stringify(o),
+      language: o.language ?? o.detected_language,
+      confidence: o.confidence,
+    };
+  }
+  if (type === "pii_detect") {
+    return {
+      kind: "pii_detect",
+      findings: Array.isArray(o.findings) ? o.findings : (Array.isArray(o.pii) ? o.pii : []),
+      redacted_text: o.redacted_text ?? o.redacted,
+    };
+  }
+  if (type === "code_execute") {
+    return {
+      kind: "code_execute",
+      stdout: o.stdout,
+      stderr: o.stderr,
+      exit_code: o.exit_code ?? o.returncode,
+      output: o.output ?? o.result,
+    };
+  }
+  if (type === "screenshot") {
+    return {
+      kind: "screenshot",
+      url: o.url,
+      image_url: o.image_url ?? o.screenshot_url,
+      image_base64: o.image_base64,
+    };
+  }
+  if (type === "data_transform") {
+    return {
+      kind: "data_transform",
+      result: o.result ?? o.data ?? o,
+      rows_processed: o.rows_processed ?? o.input_count,
+      rows_output: o.rows_output ?? o.output_count,
+    };
+  }
+  if (type === "moderate_content") {
+    return {
+      kind: "moderate_content",
+      verdict: o.verdict ?? (o.safe ? "safe" : "flag"),
+      confidence: o.confidence,
+      violations: Array.isArray(o.violations) ? o.violations : undefined,
+      recommended_action: o.recommended_action ?? o.action,
+    };
+  }
+  return { kind: "raw", data: o };
+}
+
+const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, task.output) : null;
 ---
 
 <Layout title={task ? `Task ${task.id.slice(0,8)}… — CrowdSorcerer` : "Task Not Found"}>
@@ -202,17 +311,389 @@ const pendingSubmissions = submissions.filter((s: any) => s.status === "submitte
           </div>
         )}
 
-        <!-- Output -->
+        <!-- Output (rich type-aware viewer) -->
         <div id="output-panel" class:list={[!task.output && "hidden"]}>
           <div class="bg-gray-900 border border-gray-800 rounded-xl mb-4">
-            <div class="px-5 py-3 border-b border-gray-800">
+            <div class="px-5 py-3 border-b border-gray-800 flex items-center justify-between">
               <h2 class="text-sm font-semibold text-green-300">Output</h2>
+              {richOutput && richOutput.kind !== "raw" && (
+                <button
+                  id="toggle-raw"
+                  class="text-xs text-gray-500 hover:text-gray-300 transition-colors px-2 py-1 rounded border border-gray-700 hover:border-gray-500"
+                >
+                  View raw JSON
+                </button>
+              )}
             </div>
-            <pre id="output-content" class="px-5 py-4 font-mono text-sm text-gray-300 overflow-x-auto whitespace-pre-wrap">
+
+            {/* ── Rich renderers ── */}
+            {richOutput?.kind === "web_research" && (
+              <div id="rich-view" class="px-5 py-5 space-y-5">
+                <div>
+                  <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Summary</h3>
+                  <p class="text-gray-200 text-sm leading-relaxed whitespace-pre-wrap">{richOutput.summary}</p>
+                </div>
+                {richOutput.key_facts && richOutput.key_facts.length > 0 && (
+                  <div>
+                    <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Key Facts</h3>
+                    <ul class="space-y-1">
+                      {richOutput.key_facts.map((f: string) => (
+                        <li class="flex items-start gap-2 text-sm text-gray-300">
+                          <span class="text-green-400 mt-0.5 flex-shrink-0">✓</span>
+                          <span>{f}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {richOutput.sources && richOutput.sources.length > 0 && (
+                  <div>
+                    <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Sources</h3>
+                    <ul class="space-y-1">
+                      {richOutput.sources.map((s: string) => (
+                        <li class="text-sm">
+                          <a href={s} target="_blank" rel="noopener noreferrer"
+                             class="text-violet-400 hover:text-violet-300 break-all transition-colors">
+                            {s}
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {richOutput?.kind === "web_intel" && (
+              <div id="rich-view" class="px-5 py-5 space-y-5">
+                <div>
+                  <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Intelligence Report</h3>
+                  <p class="text-gray-200 text-sm leading-relaxed whitespace-pre-wrap">{richOutput.report}</p>
+                </div>
+                {richOutput.entities && richOutput.entities.length > 0 && (
+                  <div>
+                    <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Entities Identified</h3>
+                    <div class="flex flex-wrap gap-2">
+                      {richOutput.entities.map((e: string) => (
+                        <span class="px-2 py-1 bg-blue-950/50 border border-blue-800 rounded text-blue-300 text-xs">{e}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {richOutput.sources && richOutput.sources.length > 0 && (
+                  <div>
+                    <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Sources</h3>
+                    <ul class="space-y-1">
+                      {richOutput.sources.map((s: string) => (
+                        <li><a href={s} target="_blank" rel="noopener noreferrer" class="text-violet-400 hover:text-violet-300 text-sm break-all">{s}</a></li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {richOutput?.kind === "entity_lookup" && (
+              <div id="rich-view" class="px-5 py-5">
+                <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Entity Data</h3>
+                <dl class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {Object.entries(richOutput.fields).map(([k, v]: [string, any]) => (
+                    <div class="bg-gray-950/50 rounded-lg p-3">
+                      <dt class="text-xs text-gray-500 mb-1 capitalize">{k.replace(/_/g, " ")}</dt>
+                      <dd class="text-sm text-gray-200 break-words">
+                        {Array.isArray(v) ? v.join(", ") : (v === null || v === undefined ? "—" : String(v))}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>
+            )}
+
+            {richOutput?.kind === "document_parse" && (
+              <div id="rich-view" class="px-5 py-5 space-y-5">
+                {richOutput.sections && richOutput.sections.length > 0 ? (
+                  <div class="space-y-4">
+                    {richOutput.sections.map((s: any) => (
+                      <div>
+                        {s.title && <h3 class="text-sm font-semibold text-gray-300 mb-1">{s.title}</h3>}
+                        <p class="text-sm text-gray-400 whitespace-pre-wrap">{s.content}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : richOutput.raw_text ? (
+                  <p class="text-sm text-gray-300 whitespace-pre-wrap">{richOutput.raw_text}</p>
+                ) : null}
+                {richOutput.tables && richOutput.tables.length > 0 && (
+                  <div>
+                    <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Extracted Tables</h3>
+                    {richOutput.tables.map((table: any[], ti: number) => (
+                      <div class="overflow-x-auto mb-4">
+                        <table class="w-full text-xs border-collapse">
+                          {table.map((row: any[], ri: number) => (
+                            <tr class="border-b border-gray-800">
+                              {row.map((cell: any) => ri === 0 ? (
+                                <th class="px-3 py-2 text-left font-semibold text-gray-400 bg-gray-800/50">{String(cell)}</th>
+                              ) : (
+                                <td class="px-3 py-2 text-gray-300">{String(cell ?? "")}</td>
+                              ))}
+                            </tr>
+                          ))}
+                        </table>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {richOutput?.kind === "llm_generate" && (
+              <div id="rich-view" class="px-5 py-5">
+                {(richOutput.model || richOutput.tokens) && (
+                  <div class="flex items-center gap-3 mb-3">
+                    {richOutput.model && <span class="text-xs px-2 py-0.5 rounded bg-violet-950/50 border border-violet-800 text-violet-300">{richOutput.model}</span>}
+                    {richOutput.tokens && <span class="text-xs text-gray-500">{richOutput.tokens} tokens</span>}
+                  </div>
+                )}
+                <p class="text-sm text-gray-200 leading-relaxed whitespace-pre-wrap">{richOutput.text}</p>
+              </div>
+            )}
+
+            {richOutput?.kind === "audio_transcribe" && (
+              <div id="rich-view" class="px-5 py-5">
+                <div class="flex items-center gap-3 mb-3">
+                  {richOutput.language && (
+                    <span class="text-xs px-2 py-0.5 rounded bg-blue-950/50 border border-blue-800 text-blue-300">
+                      🌍 {richOutput.language}
+                    </span>
+                  )}
+                  {richOutput.confidence != null && (
+                    <span class="text-xs text-gray-500">
+                      {Math.round(richOutput.confidence * 100)}% confidence
+                    </span>
+                  )}
+                </div>
+                <div class="bg-gray-950/50 border border-gray-800 rounded-lg p-4">
+                  <p class="text-sm text-gray-200 leading-relaxed whitespace-pre-wrap font-mono">{richOutput.transcript}</p>
+                </div>
+              </div>
+            )}
+
+            {richOutput?.kind === "pii_detect" && (
+              <div id="rich-view" class="px-5 py-5 space-y-5">
+                <div class="flex items-center gap-3">
+                  <span class:list={[
+                    "px-3 py-1.5 rounded-full text-sm font-medium border",
+                    richOutput.findings.length === 0
+                      ? "bg-green-950/50 border-green-800 text-green-300"
+                      : "bg-red-950/50 border-red-800 text-red-300"
+                  ]}>
+                    {richOutput.findings.length === 0 ? "✓ No PII found" : `⚠ ${richOutput.findings.length} PII finding${richOutput.findings.length > 1 ? "s" : ""}`}
+                  </span>
+                </div>
+                {richOutput.redacted_text && (
+                  <div>
+                    <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Redacted Text</h3>
+                    <div class="bg-gray-950/50 border border-gray-800 rounded-lg p-4">
+                      <p class="text-sm text-gray-300 whitespace-pre-wrap">{richOutput.redacted_text}</p>
+                    </div>
+                  </div>
+                )}
+                {richOutput.findings.length > 0 && (
+                  <div>
+                    <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Findings</h3>
+                    <div class="overflow-x-auto">
+                      <table class="w-full text-xs">
+                        <thead>
+                          <tr class="border-b border-gray-800 text-gray-500">
+                            <th class="px-3 py-2 text-left font-medium">Type</th>
+                            <th class="px-3 py-2 text-left font-medium">Original</th>
+                            <th class="px-3 py-2 text-left font-medium">Redacted</th>
+                          </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-800">
+                          {richOutput.findings.map((f: any) => (
+                            <tr>
+                              <td class="px-3 py-2">
+                                <span class="px-1.5 py-0.5 bg-red-950/40 border border-red-800 rounded text-red-300">{f.type}</span>
+                              </td>
+                              <td class="px-3 py-2 font-mono text-gray-400 line-through">{f.value}</td>
+                              <td class="px-3 py-2 font-mono text-gray-300">{f.redacted}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {richOutput?.kind === "code_execute" && (
+              <div id="rich-view" class="px-5 py-5 space-y-4">
+                {richOutput.exit_code != null && (
+                  <div class="flex items-center gap-2">
+                    <span class:list={[
+                      "text-xs px-2 py-0.5 rounded-full border font-mono",
+                      richOutput.exit_code === 0
+                        ? "bg-green-950/50 border-green-800 text-green-300"
+                        : "bg-red-950/50 border-red-800 text-red-300"
+                    ]}>
+                      exit {richOutput.exit_code}
+                    </span>
+                  </div>
+                )}
+                {richOutput.stdout && (
+                  <div>
+                    <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">stdout</h3>
+                    <pre class="bg-gray-950 border border-gray-800 rounded-lg p-4 text-sm font-mono text-green-300 overflow-x-auto whitespace-pre-wrap">{richOutput.stdout}</pre>
+                  </div>
+                )}
+                {richOutput.stderr && (
+                  <div>
+                    <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">stderr</h3>
+                    <pre class="bg-gray-950 border border-red-900/50 rounded-lg p-4 text-sm font-mono text-red-300 overflow-x-auto whitespace-pre-wrap">{richOutput.stderr}</pre>
+                  </div>
+                )}
+                {richOutput.output != null && (
+                  <div>
+                    <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Return value</h3>
+                    <pre class="bg-gray-950 border border-gray-800 rounded-lg p-4 text-sm font-mono text-gray-300 overflow-x-auto whitespace-pre-wrap">{JSON.stringify(richOutput.output, null, 2)}</pre>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {richOutput?.kind === "screenshot" && (
+              <div id="rich-view" class="px-5 py-5">
+                {richOutput.url && (
+                  <div class="text-xs text-gray-500 mb-3">
+                    URL: <a href={richOutput.url} target="_blank" rel="noopener noreferrer" class="text-violet-400 hover:text-violet-300">{richOutput.url}</a>
+                  </div>
+                )}
+                {(richOutput.image_url || richOutput.image_base64) ? (
+                  <img
+                    src={richOutput.image_url ?? `data:image/png;base64,${richOutput.image_base64}`}
+                    alt="Screenshot"
+                    class="rounded-lg border border-gray-800 max-w-full shadow-lg"
+                    loading="lazy"
+                  />
+                ) : (
+                  <p class="text-gray-500 text-sm">No image available in output.</p>
+                )}
+              </div>
+            )}
+
+            {richOutput?.kind === "data_transform" && (
+              <div id="rich-view" class="px-5 py-5 space-y-4">
+                {(richOutput.rows_processed != null || richOutput.rows_output != null) && (
+                  <div class="flex items-center gap-4 text-xs text-gray-400">
+                    {richOutput.rows_processed != null && <span>Input: <strong class="text-gray-200">{richOutput.rows_processed} rows</strong></span>}
+                    {richOutput.rows_output != null && <span>Output: <strong class="text-gray-200">{richOutput.rows_output} rows</strong></span>}
+                  </div>
+                )}
+                {Array.isArray(richOutput.result) && richOutput.result.length > 0 && typeof richOutput.result[0] === "object" ? (
+                  <div class="overflow-x-auto">
+                    <table class="w-full text-xs">
+                      <thead>
+                        <tr class="border-b border-gray-700 text-gray-500">
+                          {Object.keys(richOutput.result[0]).map((k: string) => (
+                            <th class="px-3 py-2 text-left font-medium">{k}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody class="divide-y divide-gray-800">
+                        {richOutput.result.slice(0, 50).map((row: any) => (
+                          <tr class="hover:bg-gray-800/30">
+                            {Object.values(row).map((v: any) => (
+                              <td class="px-3 py-2 text-gray-300 max-w-xs truncate">{v === null ? "null" : String(v)}</td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {richOutput.result.length > 50 && (
+                      <div class="text-xs text-gray-500 text-center py-2">Showing 50 of {richOutput.result.length} rows</div>
+                    )}
+                  </div>
+                ) : (
+                  <pre class="bg-gray-950 border border-gray-800 rounded-lg p-4 text-sm font-mono text-gray-300 overflow-x-auto whitespace-pre-wrap">{JSON.stringify(richOutput.result, null, 2)}</pre>
+                )}
+              </div>
+            )}
+
+            {richOutput?.kind === "moderate_content" && (
+              <div id="rich-view" class="px-5 py-5 space-y-4">
+                <div class="flex items-center gap-3">
+                  <span class:list={[
+                    "px-4 py-2 rounded-full text-sm font-bold border",
+                    richOutput.verdict === "safe"
+                      ? "bg-green-950/50 border-green-700 text-green-300"
+                      : richOutput.verdict === "flag"
+                      ? "bg-red-950/50 border-red-700 text-red-300"
+                      : "bg-yellow-950/50 border-yellow-700 text-yellow-300"
+                  ]}>
+                    {richOutput.verdict === "safe" ? "✓ SAFE" : richOutput.verdict === "flag" ? "⚠ FLAGGED" : richOutput.verdict?.toUpperCase()}
+                  </span>
+                  {richOutput.confidence != null && (
+                    <span class="text-sm text-gray-400">{Math.round(richOutput.confidence * 100)}% confidence</span>
+                  )}
+                  {richOutput.recommended_action && (
+                    <span class="text-xs px-2 py-0.5 rounded bg-gray-800 border border-gray-700 text-gray-300">
+                      Action: {richOutput.recommended_action}
+                    </span>
+                  )}
+                </div>
+                {richOutput.violations && richOutput.violations.length > 0 && (
+                  <div>
+                    <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Violations</h3>
+                    <div class="space-y-2">
+                      {richOutput.violations.map((v: any) => (
+                        <div class="bg-red-950/20 border border-red-900/50 rounded-lg p-3">
+                          <div class="flex items-center justify-between mb-1">
+                            <span class="text-xs font-semibold text-red-300">{v.policy}</span>
+                            <span class="text-xs text-gray-500">{Math.round(v.confidence * 100)}% confidence</span>
+                          </div>
+                          {v.excerpt && <p class="text-xs text-gray-400 italic">"{v.excerpt}"</p>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {richOutput?.kind === "raw" && (
+              <pre id="output-content" class="px-5 py-4 font-mono text-sm text-gray-300 overflow-x-auto whitespace-pre-wrap">
 {task.output ? JSON.stringify(task.output, null, 2) : ""}
-            </pre>
+              </pre>
+            )}
+
+            {/* Raw JSON view (hidden by default for rich types) */}
+            {richOutput && richOutput.kind !== "raw" && (
+              <div id="raw-view" class="hidden border-t border-gray-800">
+                <pre class="px-5 py-4 font-mono text-sm text-gray-500 overflow-x-auto whitespace-pre-wrap">
+{task.output ? JSON.stringify(task.output, null, 2) : ""}
+                </pre>
+              </div>
+            )}
           </div>
         </div>
+
+        <script is:inline>
+          // Toggle between rich and raw view
+          const toggleBtn = document.getElementById("toggle-raw");
+          const richView = document.getElementById("rich-view");
+          const rawView = document.getElementById("raw-view");
+          if (toggleBtn && richView && rawView) {
+            let showingRaw = false;
+            toggleBtn.addEventListener("click", () => {
+              showingRaw = !showingRaw;
+              richView.classList.toggle("hidden", showingRaw);
+              rawView.classList.toggle("hidden", !showingRaw);
+              toggleBtn.textContent = showingRaw ? "View formatted" : "View raw JSON";
+            });
+          }
+        </script>
 
         <!-- Error -->
         <div id="error-panel" class:list={[!task.error && "hidden"]}>

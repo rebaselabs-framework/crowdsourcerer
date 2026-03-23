@@ -815,3 +815,177 @@ async def trigger_weekly_digest(
         sent += 1
 
     return {"sent": sent, "week": week_label}
+
+
+# ─── Billing Analytics ────────────────────────────────────────────────────────
+
+@router.get("/billing/analytics")
+async def get_billing_analytics(
+    months: int = Query(12, ge=1, le=24),
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(require_admin),
+):
+    """Revenue analytics: MRR, plan distribution, credit purchase history."""
+    from sqlalchemy import extract
+
+    now = datetime.now(timezone.utc)
+
+    # ── Plan distribution (current snapshot) ─────────────────────────────────
+    plan_dist_result = await db.execute(
+        select(UserDB.plan, func.count().label("cnt"))
+        .where(UserDB.is_active == True)
+        .group_by(UserDB.plan)
+    )
+    plan_distribution = {row.plan: row.cnt for row in plan_dist_result.all()}
+
+    # ── Plan prices (credits to USD at $0.01/credit baseline) ────────────────
+    PLAN_MONTHLY_USD = {"free": 0, "starter": 9, "pro": 29, "enterprise": 99}
+    # Derived MRR from active paid plan users
+    mrr_usd = sum(
+        PLAN_MONTHLY_USD.get(plan, 0) * count
+        for plan, count in plan_distribution.items()
+        if plan != "free"
+    )
+
+    # ── Monthly credit purchases (type=credit) ───────────────────────────────
+    start_dt = now - timedelta(days=months * 31)
+    monthly_credits_result = await db.execute(
+        select(
+            extract("year", CreditTransactionDB.created_at).label("yr"),
+            extract("month", CreditTransactionDB.created_at).label("mo"),
+            func.sum(CreditTransactionDB.amount).label("credits"),
+            func.count().label("transactions"),
+        )
+        .where(
+            CreditTransactionDB.created_at >= start_dt,
+            CreditTransactionDB.type == "credit",
+            CreditTransactionDB.amount > 0,
+        )
+        .group_by(
+            extract("year", CreditTransactionDB.created_at),
+            extract("month", CreditTransactionDB.created_at),
+        )
+        .order_by(
+            extract("year", CreditTransactionDB.created_at),
+            extract("month", CreditTransactionDB.created_at),
+        )
+    )
+    monthly_purchases_raw = {
+        (int(r.yr), int(r.mo)): {"credits": int(r.credits or 0), "transactions": r.transactions}
+        for r in monthly_credits_result.all()
+    }
+
+    # ── Monthly charges (credits consumed by tasks) ──────────────────────────
+    monthly_charges_result = await db.execute(
+        select(
+            extract("year", CreditTransactionDB.created_at).label("yr"),
+            extract("month", CreditTransactionDB.created_at).label("mo"),
+            func.sum(func.abs(CreditTransactionDB.amount)).label("credits"),
+        )
+        .where(
+            CreditTransactionDB.created_at >= start_dt,
+            CreditTransactionDB.type == "charge",
+        )
+        .group_by(
+            extract("year", CreditTransactionDB.created_at),
+            extract("month", CreditTransactionDB.created_at),
+        )
+        .order_by(
+            extract("year", CreditTransactionDB.created_at),
+            extract("month", CreditTransactionDB.created_at),
+        )
+    )
+    monthly_charges_raw = {
+        (int(r.yr), int(r.mo)): int(r.credits or 0)
+        for r in monthly_charges_result.all()
+    }
+
+    # ── New paying users per month (plan != free, created in range) ──────────
+    monthly_new_paid_result = await db.execute(
+        select(
+            extract("year", UserDB.created_at).label("yr"),
+            extract("month", UserDB.created_at).label("mo"),
+            func.count().label("cnt"),
+        )
+        .where(
+            UserDB.created_at >= start_dt,
+            UserDB.plan != "free",
+        )
+        .group_by(
+            extract("year", UserDB.created_at),
+            extract("month", UserDB.created_at),
+        )
+        .order_by(
+            extract("year", UserDB.created_at),
+            extract("month", UserDB.created_at),
+        )
+    )
+    monthly_new_paid_raw = {
+        (int(r.yr), int(r.mo)): r.cnt
+        for r in monthly_new_paid_result.all()
+    }
+
+    # ── Build full month array ────────────────────────────────────────────────
+    monthly_data = []
+    for i in range(months - 1, -1, -1):
+        target = now - timedelta(days=i * 30)
+        yr, mo = target.year, target.month
+        key = (yr, mo)
+        label = target.strftime("%b %Y")
+        purch = monthly_purchases_raw.get(key, {"credits": 0, "transactions": 0})
+        monthly_data.append({
+            "month": label,
+            "credits_purchased": purch["credits"],
+            "credits_consumed": monthly_charges_raw.get(key, 0),
+            "new_paid_users": monthly_new_paid_raw.get(key, 0),
+            "estimated_usd": round(purch["credits"] * 0.01, 2),
+        })
+
+    # ── Lifetime totals ───────────────────────────────────────────────────────
+    total_credits_purchased = (await db.scalar(
+        select(func.sum(CreditTransactionDB.amount))
+        .where(CreditTransactionDB.type == "credit", CreditTransactionDB.amount > 0)
+    )) or 0
+    total_credits_consumed = (await db.scalar(
+        select(func.sum(func.abs(CreditTransactionDB.amount)))
+        .where(CreditTransactionDB.type == "charge")
+    )) or 0
+    total_paid_users = (await db.scalar(
+        select(func.count()).select_from(UserDB).where(UserDB.plan != "free")
+    )) or 0
+
+    # ── Top spenders ─────────────────────────────────────────────────────────
+    top_spenders_result = await db.execute(
+        select(
+            UserDB.id, UserDB.email, UserDB.name, UserDB.plan,
+            func.sum(func.abs(CreditTransactionDB.amount)).label("spent"),
+        )
+        .join(CreditTransactionDB, CreditTransactionDB.user_id == UserDB.id)
+        .where(CreditTransactionDB.type == "charge")
+        .group_by(UserDB.id, UserDB.email, UserDB.name, UserDB.plan)
+        .order_by(func.sum(func.abs(CreditTransactionDB.amount)).desc())
+        .limit(10)
+    )
+    top_spenders = [
+        {
+            "id": str(r.id),
+            "email": r.email,
+            "name": r.name or r.email.split("@")[0],
+            "plan": r.plan,
+            "credits_spent": int(r.spent or 0),
+            "usd_spent": round(int(r.spent or 0) * 0.01, 2),
+        }
+        for r in top_spenders_result.all()
+    ]
+
+    return {
+        "mrr_usd": mrr_usd,
+        "plan_distribution": plan_distribution,
+        "total_paid_users": total_paid_users,
+        "total_credits_purchased": int(total_credits_purchased),
+        "total_credits_consumed": int(total_credits_consumed),
+        "estimated_total_revenue_usd": round(int(total_credits_purchased) * 0.01, 2),
+        "monthly_data": monthly_data,
+        "top_spenders": top_spenders,
+        "generated_at": now.isoformat(),
+    }

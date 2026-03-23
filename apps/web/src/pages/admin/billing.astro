@@ -1,0 +1,299 @@
+---
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Object.fromEntries(
+  Astro.cookies.getAll().map((c) => [c.name, c.value])
+));
+if (!token) return Astro.redirect("/login");
+
+let billing: any = null;
+let error: string | null = null;
+
+try {
+  billing = await apiFetch<any>("/v1/admin/billing/analytics?months=12", { token });
+} catch (e: any) {
+  if (e.message?.includes("403")) {
+    error = "forbidden";
+  } else if (e.message?.includes("401")) {
+    return Astro.redirect("/login");
+  } else {
+    error = "Failed to load billing analytics";
+  }
+}
+
+const PLAN_COLORS: Record<string, string> = {
+  free: "#6b7280",
+  starter: "#3b82f6",
+  pro: "#8b5cf6",
+  enterprise: "#f59e0b",
+};
+const PLAN_LABELS: Record<string, string> = {
+  free: "Free",
+  starter: "Starter ($9/mo)",
+  pro: "Pro ($29/mo)",
+  enterprise: "Enterprise ($99/mo)",
+};
+
+const chartData = billing ? {
+  months: billing.monthly_data.map((m: any) => m.month),
+  creditsP: billing.monthly_data.map((m: any) => m.credits_purchased),
+  creditsC: billing.monthly_data.map((m: any) => m.credits_consumed),
+  revenue: billing.monthly_data.map((m: any) => m.estimated_usd),
+  newPaid: billing.monthly_data.map((m: any) => m.new_paid_users),
+  planLabels: Object.keys(billing.plan_distribution).map(p => PLAN_LABELS[p] ?? p),
+  planValues: Object.values(billing.plan_distribution),
+  planColors: Object.keys(billing.plan_distribution).map(p => PLAN_COLORS[p] ?? "#6b7280"),
+} : null;
+---
+
+<Layout title="Billing Analytics — CrowdSorcerer Admin">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" is:inline></script>
+
+  <div class="max-w-7xl mx-auto px-6 py-10">
+    <!-- Header -->
+    <div class="flex items-start justify-between mb-8">
+      <div>
+        <div class="flex items-center gap-2 mb-1">
+          <a href="/admin" class="text-gray-500 hover:text-gray-300 text-sm transition-colors">Admin</a>
+          <span class="text-gray-600">/</span>
+          <span class="text-sm text-gray-300">Billing Analytics</span>
+        </div>
+        <h1 class="text-2xl font-bold">💳 Billing Analytics</h1>
+        <p class="text-gray-400 text-sm mt-1">Revenue, MRR, plan distribution, and top spenders</p>
+      </div>
+      <div class="flex gap-3 items-center">
+        {billing && (
+          <span class="text-xs text-gray-500">
+            Updated {new Date(billing.generated_at).toLocaleString()}
+          </span>
+        )}
+        <a href="/admin/analytics" class="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-sm text-gray-300 rounded-lg transition-colors">
+          📊 Analytics
+        </a>
+        <a href="/admin" class="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-sm text-gray-300 rounded-lg transition-colors">
+          ← Admin
+        </a>
+      </div>
+    </div>
+
+    {error === "forbidden" ? (
+      <div class="bg-red-950/30 border border-red-800 rounded-xl p-8 text-center">
+        <div class="text-4xl mb-4">🚫</div>
+        <h2 class="text-xl font-bold mb-2 text-red-400">Access Denied</h2>
+        <p class="text-gray-400 text-sm">You need admin privileges to view this page.</p>
+        <a href="/dashboard" class="inline-block mt-4 text-violet-400 hover:text-violet-300 text-sm">← Back to dashboard</a>
+      </div>
+    ) : error ? (
+      <div class="bg-red-950/30 border border-red-800 rounded-xl p-4 text-red-300 text-sm">{error}</div>
+    ) : billing && chartData ? (
+      <div>
+        <!-- KPI strip -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
+          {[
+            { label: "MRR (est.)", value: `$${billing.mrr_usd.toLocaleString()}`, sub: "from paid plans", color: "text-emerald-400" },
+            { label: "Total Revenue", value: `$${billing.estimated_total_revenue_usd.toLocaleString()}`, sub: "credits × $0.01", color: "text-violet-400" },
+            { label: "Paid Users", value: billing.total_paid_users.toLocaleString(), sub: "non-free plans", color: "text-blue-400" },
+            { label: "Credits Sold", value: billing.total_credits_purchased.toLocaleString(), sub: "lifetime", color: "text-amber-400" },
+          ].map(({ label, value, sub, color }) => (
+            <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+              <div class="text-xs text-gray-500 mb-1">{label}</div>
+              <div class={`text-2xl font-bold ${color}`}>{value}</div>
+              <div class="text-xs text-gray-500 mt-1">{sub}</div>
+            </div>
+          ))}
+        </div>
+
+        <!-- Charts row -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+          <!-- Revenue chart (2/3 width) -->
+          <div class="lg:col-span-2 bg-gray-900 border border-gray-800 rounded-xl p-5">
+            <h2 class="text-sm font-semibold text-gray-300 mb-4">Monthly Revenue (est.) & Credits</h2>
+            <div class="relative h-56">
+              <canvas id="revenue-chart"></canvas>
+            </div>
+          </div>
+
+          <!-- Plan distribution pie -->
+          <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+            <h2 class="text-sm font-semibold text-gray-300 mb-4">Plan Distribution</h2>
+            <div class="relative h-48 flex items-center justify-center">
+              <canvas id="plan-chart"></canvas>
+            </div>
+            <!-- Legend -->
+            <div class="mt-4 space-y-1.5">
+              {Object.entries(billing.plan_distribution).map(([plan, count]: [string, any]) => (
+                <div class="flex items-center justify-between text-xs">
+                  <div class="flex items-center gap-2">
+                    <span class="w-2.5 h-2.5 rounded-full inline-block" style={`background:${PLAN_COLORS[plan] ?? "#6b7280"}`}></span>
+                    <span class="text-gray-400">{PLAN_LABELS[plan] ?? plan}</span>
+                  </div>
+                  <span class="text-gray-300 font-medium">{count}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <!-- Credits purchased vs consumed + new paid users -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+          <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+            <h2 class="text-sm font-semibold text-gray-300 mb-4">Credits Purchased vs Consumed</h2>
+            <div class="relative h-48">
+              <canvas id="credits-chart"></canvas>
+            </div>
+          </div>
+          <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+            <h2 class="text-sm font-semibold text-gray-300 mb-4">New Paid Users per Month</h2>
+            <div class="relative h-48">
+              <canvas id="paid-users-chart"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- Top spenders table -->
+        <div class="bg-gray-900 border border-gray-800 rounded-xl">
+          <div class="px-5 py-4 border-b border-gray-800 flex items-center justify-between">
+            <h2 class="text-sm font-semibold text-gray-300">Top Spenders (Lifetime)</h2>
+            <span class="text-xs text-gray-500">by credits consumed</span>
+          </div>
+          {billing.top_spenders.length === 0 ? (
+            <div class="px-5 py-10 text-center text-gray-500 text-sm">No spend data yet.</div>
+          ) : (
+            <div class="overflow-x-auto">
+              <table class="w-full text-sm">
+                <thead>
+                  <tr class="border-b border-gray-800 text-xs text-gray-500">
+                    <th class="px-5 py-3 text-left font-medium">#</th>
+                    <th class="px-5 py-3 text-left font-medium">User</th>
+                    <th class="px-5 py-3 text-left font-medium">Plan</th>
+                    <th class="px-5 py-3 text-right font-medium">Credits Used</th>
+                    <th class="px-5 py-3 text-right font-medium">Est. USD</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-800">
+                  {billing.top_spenders.map((s: any, i: number) => (
+                    <tr class="hover:bg-gray-800/40 transition-colors">
+                      <td class="px-5 py-3 text-gray-500 text-xs">{i + 1}</td>
+                      <td class="px-5 py-3">
+                        <div class="font-medium text-gray-200">{s.name}</div>
+                        <div class="text-xs text-gray-500">{s.email}</div>
+                      </td>
+                      <td class="px-5 py-3">
+                        <span class="px-2 py-0.5 rounded-full text-xs font-medium"
+                          style={`background:${PLAN_COLORS[s.plan] ?? "#374151"}22;color:${PLAN_COLORS[s.plan] ?? "#9ca3af"};border:1px solid ${PLAN_COLORS[s.plan] ?? "#374151"}44`}>
+                          {s.plan}
+                        </span>
+                      </td>
+                      <td class="px-5 py-3 text-right font-mono text-amber-300">{s.credits_spent.toLocaleString()}</td>
+                      <td class="px-5 py-3 text-right font-mono text-emerald-300">${s.usd_spent.toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+    ) : (
+      <div class="text-center py-20 text-gray-500">
+        <div class="text-4xl mb-4">📊</div>
+        <p>No billing data available yet.</p>
+      </div>
+    )}
+  </div>
+
+  {chartData && (
+    <script define:vars={{ chartData }}>
+      const CHART_DEFAULTS = {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { labels: { color: "#9ca3af", font: { size: 11 } } } },
+        scales: {
+          x: { ticks: { color: "#6b7280", font: { size: 10 } }, grid: { color: "#1f2937" } },
+          y: { ticks: { color: "#6b7280", font: { size: 10 } }, grid: { color: "#1f2937" }, beginAtZero: true },
+        },
+      };
+
+      // Revenue chart (line)
+      new Chart(document.getElementById("revenue-chart"), {
+        type: "line",
+        data: {
+          labels: chartData.months,
+          datasets: [
+            {
+              label: "Est. Revenue ($)",
+              data: chartData.revenue,
+              borderColor: "#10b981",
+              backgroundColor: "#10b98122",
+              fill: true,
+              tension: 0.3,
+              yAxisID: "y",
+            },
+            {
+              label: "Credits Purchased",
+              data: chartData.creditsP,
+              borderColor: "#8b5cf6",
+              backgroundColor: "transparent",
+              tension: 0.3,
+              yAxisID: "y1",
+            },
+          ],
+        },
+        options: {
+          ...CHART_DEFAULTS,
+          scales: {
+            ...CHART_DEFAULTS.scales,
+            y: { ...CHART_DEFAULTS.scales.y, position: "left", ticks: { color: "#10b981", font: { size: 10 }, callback: v => `$${v}` } },
+            y1: { ...CHART_DEFAULTS.scales.y, position: "right", ticks: { color: "#8b5cf6", font: { size: 10 } }, grid: { drawOnChartArea: false } },
+          },
+        },
+      });
+
+      // Plan distribution pie
+      new Chart(document.getElementById("plan-chart"), {
+        type: "doughnut",
+        data: {
+          labels: chartData.planLabels,
+          datasets: [{
+            data: chartData.planValues,
+            backgroundColor: chartData.planColors,
+            borderColor: "#111827",
+            borderWidth: 2,
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          cutout: "65%",
+        },
+      });
+
+      // Credits purchased vs consumed bar
+      new Chart(document.getElementById("credits-chart"), {
+        type: "bar",
+        data: {
+          labels: chartData.months,
+          datasets: [
+            { label: "Purchased", data: chartData.creditsP, backgroundColor: "#8b5cf688", borderColor: "#8b5cf6", borderWidth: 1 },
+            { label: "Consumed", data: chartData.creditsC, backgroundColor: "#f59e0b88", borderColor: "#f59e0b", borderWidth: 1 },
+          ],
+        },
+        options: { ...CHART_DEFAULTS },
+      });
+
+      // New paid users bar
+      new Chart(document.getElementById("paid-users-chart"), {
+        type: "bar",
+        data: {
+          labels: chartData.months,
+          datasets: [
+            { label: "New Paid Users", data: chartData.newPaid, backgroundColor: "#3b82f688", borderColor: "#3b82f6", borderWidth: 1 },
+          ],
+        },
+        options: { ...CHART_DEFAULTS },
+      });
+    </script>
+  )}
+</Layout>

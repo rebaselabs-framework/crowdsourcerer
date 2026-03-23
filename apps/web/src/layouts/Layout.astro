@@ -4,12 +4,23 @@ import { getToken } from "@/lib/api";
 export interface Props {
   title?: string;
   description?: string;
+  ogImage?: string;
+  ogType?: string;
+  canonicalUrl?: string;
+  noIndex?: boolean;
 }
 
 const {
   title = "CrowdSorcerer — AI Task Platform",
-  description = "Submit any task. CrowdSorcerer routes it to the right AI worker and delivers results.",
+  description = "Submit any task. CrowdSorcerer routes it to the right AI worker and delivers results. Web research, entity lookup, document parsing, code execution — at 1¢ per task.",
+  ogImage = "https://crowdsorcerer.dev/og-default.png",
+  ogType = "website",
+  canonicalUrl,
+  noIndex = false,
 } = Astro.props;
+
+const siteUrl = "https://crowdsorcerer.dev";
+const canonical = canonicalUrl ?? `${siteUrl}${Astro.url.pathname}`;
 
 const token = getToken(Object.fromEntries(
   Astro.cookies.getAll().map((c) => [c.name, c.value])
@@ -42,13 +53,47 @@ const currentPath = Astro.url.pathname;
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content={description} />
+    {noIndex && <meta name="robots" content="noindex,nofollow" />}
+    <link rel="canonical" href={canonical} />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>{title}</title>
+
+    <!-- Open Graph -->
+    <meta property="og:type" content={ogType} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={ogImage} />
+    <meta property="og:site_name" content="CrowdSorcerer" />
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImage} />
+    <meta name="twitter:site" content="@crowdsorcerer" />
+
     <!-- PWA theme color -->
     <meta name="theme-color" content="#0f0f1a" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+    <!-- Structured data (JSON-LD) -->
+    <script type="application/ld+json" set:html={JSON.stringify({
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "CrowdSorcerer",
+      "description": "AI task routing platform — web research, entity lookup, document parsing, code execution and more at 1¢ per task.",
+      "applicationCategory": "BusinessApplication",
+      "url": siteUrl,
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD",
+        "description": "Free tier available. Paid plans from $9/mo."
+      }
+    })} />
   </head>
   <body class="h-full bg-gray-950 text-gray-100 font-sans antialiased">
     <!-- Nav -->
@@ -62,6 +107,9 @@ const currentPath = Astro.url.pathname;
 
         <!-- Desktop nav links -->
         <div class="hidden md:flex items-center gap-5 text-sm">
+          <a href="/use-cases" class:list={["transition-colors", currentPath.startsWith("/use-cases") ? "text-white" : "text-gray-400 hover:text-gray-100"]}>
+            Use Cases
+          </a>
           <a href="/tasks" class:list={["transition-colors", currentPath === "/tasks" ? "text-white" : "text-gray-400 hover:text-gray-100"]}>
             Browse Tasks
           </a>
@@ -148,6 +196,9 @@ const currentPath = Astro.url.pathname;
         class="hidden md:hidden border-t border-gray-800 mt-3 pt-3 pb-2 space-y-1"
         role="menu"
       >
+        <a href="/use-cases" class="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
+          🚀 Use Cases
+        </a>
         <a href="/tasks" class="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
           🌐 Browse Tasks
         </a>
@@ -278,7 +329,8 @@ const currentPath = Astro.url.pathname;
           <span>🔮</span>
           <span>CrowdSorcerer by <a href="https://rebaselabs.online" class="text-violet-400 hover:text-violet-300">RebaseLabs</a></span>
         </div>
-        <div class="flex gap-6">
+        <div class="flex flex-wrap gap-6">
+          <a href="/use-cases" class="hover:text-gray-300 transition-colors">Use Cases</a>
           <a href="/docs" class="hover:text-gray-300 transition-colors">Docs</a>
           <a href="/pricing" class="hover:text-gray-300 transition-colors">Pricing</a>
           <a href="/widget" class="hover:text-gray-300 transition-colors">Widget</a>
