@@ -1,0 +1,396 @@
+---
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Astro.cookies);
+if (!token) return Astro.redirect("/login");
+
+const page = Number(Astro.url.searchParams.get("page") ?? 1);
+const search = Astro.url.searchParams.get("search") ?? "";
+const status = Astro.url.searchParams.get("status") ?? "";
+
+let workers: any = { items: [], total: 0, page: 1, per_page: 25 };
+let error: string | null = null;
+
+try {
+  const qs = new URLSearchParams({ page: String(page), per_page: "25" });
+  if (search) qs.set("search", search);
+  if (status) qs.set("status", status);
+  workers = await apiFetch<any>(`/v1/admin/workers?${qs}`, { token });
+} catch (e: any) {
+  if (e.message?.includes("403")) error = "forbidden";
+  else if (e.message?.includes("401")) return Astro.redirect("/login");
+  else error = "Failed to load workers";
+}
+
+const totalPages = Math.ceil(workers.total / workers.per_page);
+---
+
+<Layout title="Worker Management — Admin">
+  <div class="max-w-7xl mx-auto px-6 py-10">
+    <!-- Breadcrumb -->
+    <div class="text-sm text-gray-500 mb-6">
+      <a href="/admin" class="hover:text-gray-300 transition-colors">Admin</a>
+      <span class="mx-2">›</span>
+      <span>Workers</span>
+    </div>
+
+    <div class="flex items-start justify-between mb-8">
+      <div>
+        <h1 class="text-2xl font-bold">Worker Management</h1>
+        <p class="text-gray-400 text-sm mt-1">{workers.total.toLocaleString()} workers</p>
+      </div>
+    </div>
+
+    {error === "forbidden" ? (
+      <div class="bg-red-950/30 border border-red-800 rounded-xl p-8 text-center">
+        <p class="text-red-400 font-medium">Access denied — admin only</p>
+      </div>
+    ) : error ? (
+      <div class="bg-red-950/30 border border-red-800 rounded-xl p-4 text-red-400 text-sm">{error}</div>
+    ) : (
+      <>
+        {/* Filters */}
+        <form method="GET" class="flex flex-wrap gap-3 mb-6">
+          <input
+            type="text"
+            name="search"
+            value={search}
+            placeholder="Search by name or email…"
+            class="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-violet-600 w-64"
+          />
+          <select name="status" class="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-violet-600">
+            <option value="" selected={status === ""}>All workers</option>
+            <option value="active" selected={status === "active"}>Active only</option>
+            <option value="banned" selected={status === "banned"}>Banned only</option>
+          </select>
+          <button type="submit" class="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium rounded-lg transition-colors">
+            Filter
+          </button>
+          {(search || status) && (
+            <a href="/admin/workers" class="px-4 py-2 border border-gray-700 hover:border-gray-600 text-gray-400 hover:text-gray-200 text-sm font-medium rounded-lg transition-colors">
+              Clear
+            </a>
+          )}
+        </form>
+
+        {/* Table */}
+        <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden mb-6">
+          <table class="w-full text-sm">
+            <thead class="border-b border-gray-800">
+              <tr class="text-left text-gray-500 text-xs uppercase tracking-wide">
+                <th class="px-4 py-3">Worker</th>
+                <th class="px-4 py-3 text-center">Lvl</th>
+                <th class="px-4 py-3 text-center">Tasks</th>
+                <th class="px-4 py-3 text-center">Rep</th>
+                <th class="px-4 py-3 text-center">Strikes</th>
+                <th class="px-4 py-3 text-center">Status</th>
+                <th class="px-4 py-3 text-center">Avail</th>
+                <th class="px-4 py-3 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-800/60">
+              {workers.items.length === 0 ? (
+                <tr>
+                  <td colspan="8" class="px-4 py-10 text-center text-gray-500">No workers found</td>
+                </tr>
+              ) : workers.items.map((w: any) => (
+                <tr class:list={["hover:bg-gray-800/30 transition-colors", w.is_banned ? "bg-red-950/10" : ""]}>
+                  <td class="px-4 py-3">
+                    <div class="font-medium text-gray-200">{w.name ?? "—"}</div>
+                    <div class="text-xs text-gray-500">{w.email}</div>
+                    <div class="text-xs text-gray-600 mt-0.5">{w.plan} plan</div>
+                  </td>
+                  <td class="px-4 py-3 text-center">
+                    <span class="text-violet-400 font-semibold">{w.worker_level}</span>
+                  </td>
+                  <td class="px-4 py-3 text-center text-gray-300">{w.worker_tasks_completed}</td>
+                  <td class="px-4 py-3 text-center">
+                    <span class:list={[
+                      "font-medium",
+                      w.reputation_score >= 80 ? "text-green-400" :
+                      w.reputation_score >= 50 ? "text-yellow-400" : "text-red-400"
+                    ]}>{Math.round(w.reputation_score)}</span>
+                  </td>
+                  <td class="px-4 py-3 text-center">
+                    {w.active_strikes > 0 ? (
+                      <span class="text-orange-400 font-semibold">{w.active_strikes}</span>
+                    ) : (
+                      <span class="text-gray-600">0</span>
+                    )}
+                  </td>
+                  <td class="px-4 py-3 text-center">
+                    {w.is_banned ? (
+                      <span class="text-xs bg-red-950/50 text-red-400 border border-red-800 px-2 py-0.5 rounded-full">Banned</span>
+                    ) : (
+                      <span class="text-xs bg-green-950/50 text-green-400 border border-green-800 px-2 py-0.5 rounded-full">Active</span>
+                    )}
+                  </td>
+                  <td class="px-4 py-3 text-center">
+                    <span class:list={[
+                      "text-xs px-1.5 py-0.5 rounded-full",
+                      w.availability_status === "available" ? "text-green-400" :
+                      w.availability_status === "busy" ? "text-yellow-400" : "text-gray-500"
+                    ]}>
+                      {w.availability_status === "available" ? "🟢" : w.availability_status === "busy" ? "🟡" : "🔴"}
+                    </span>
+                  </td>
+                  <td class="px-4 py-3 text-right">
+                    <div class="flex items-center justify-end gap-2">
+                      {w.is_banned ? (
+                        <button
+                          class="unban-btn text-xs bg-green-950/40 hover:bg-green-900/40 text-green-400 border border-green-800 px-2.5 py-1 rounded-lg transition-colors"
+                          data-worker-id={w.id}
+                          data-worker-name={w.name ?? w.email}
+                        >
+                          Unban
+                        </button>
+                      ) : (
+                        <button
+                          class="ban-btn text-xs bg-red-950/40 hover:bg-red-900/40 text-red-400 border border-red-800 px-2.5 py-1 rounded-lg transition-colors"
+                          data-worker-id={w.id}
+                          data-worker-name={w.name ?? w.email}
+                        >
+                          Ban
+                        </button>
+                      )}
+                      <button
+                        class="strike-btn text-xs bg-orange-950/40 hover:bg-orange-900/40 text-orange-400 border border-orange-800 px-2.5 py-1 rounded-lg transition-colors"
+                        data-worker-id={w.id}
+                        data-worker-name={w.name ?? w.email}
+                      >
+                        + Strike
+                      </button>
+                      <a
+                        href={`/admin/users?search=${encodeURIComponent(w.email)}`}
+                        class="text-xs text-gray-500 hover:text-gray-300 transition-colors"
+                      >
+                        View →
+                      </a>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div class="flex items-center justify-between">
+            <p class="text-sm text-gray-500">
+              Page {page} of {totalPages} · {workers.total} workers
+            </p>
+            <div class="flex gap-2">
+              {page > 1 && (
+                <a
+                  href={`/admin/workers?page=${page - 1}${search ? `&search=${encodeURIComponent(search)}` : ""}${status ? `&status=${status}` : ""}`}
+                  class="px-3 py-1.5 border border-gray-700 rounded-lg text-sm text-gray-400 hover:text-gray-200 hover:border-gray-600 transition-colors"
+                >
+                  ← Prev
+                </a>
+              )}
+              {page < totalPages && (
+                <a
+                  href={`/admin/workers?page=${page + 1}${search ? `&search=${encodeURIComponent(search)}` : ""}${status ? `&status=${status}` : ""}`}
+                  class="px-3 py-1.5 border border-gray-700 rounded-lg text-sm text-gray-400 hover:text-gray-200 hover:border-gray-600 transition-colors"
+                >
+                  Next →
+                </a>
+              )}
+            </div>
+          </div>
+        )}
+      </>
+    )}
+  </div>
+
+  {/* Ban Modal */}
+  <div id="ban-modal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-gray-900 border border-gray-800 rounded-2xl p-6 w-full max-w-md">
+      <h3 class="text-lg font-semibold mb-1">Ban Worker</h3>
+      <p id="ban-modal-name" class="text-gray-400 text-sm mb-4"></p>
+      <div class="space-y-4">
+        <div>
+          <label class="block text-xs text-gray-400 mb-1">Reason <span class="text-red-400">*</span></label>
+          <textarea
+            id="ban-reason"
+            rows="3"
+            maxlength="500"
+            placeholder="Explain why this worker is being banned…"
+            class="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-red-600 resize-none"
+          ></textarea>
+        </div>
+        <div>
+          <label class="block text-xs text-gray-400 mb-1">Expires (leave blank for permanent)</label>
+          <input
+            type="datetime-local"
+            id="ban-expires"
+            class="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-violet-600"
+          />
+        </div>
+        <div id="ban-error" class="hidden text-xs text-red-400"></div>
+        <div class="flex gap-3 pt-2">
+          <button
+            id="ban-confirm"
+            class="flex-1 py-2 bg-red-600 hover:bg-red-500 text-white text-sm font-medium rounded-lg transition-colors"
+          >
+            Ban Worker
+          </button>
+          <button
+            id="ban-cancel"
+            class="flex-1 py-2 border border-gray-700 hover:border-gray-600 text-gray-400 hover:text-gray-200 text-sm font-medium rounded-lg transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {/* Strike Modal */}
+  <div id="strike-modal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-gray-900 border border-gray-800 rounded-2xl p-6 w-full max-w-md">
+      <h3 class="text-lg font-semibold mb-1">Add Strike</h3>
+      <p id="strike-modal-name" class="text-gray-400 text-sm mb-4"></p>
+      <div class="space-y-4">
+        <div>
+          <label class="block text-xs text-gray-400 mb-1">Severity</label>
+          <select
+            id="strike-severity"
+            class="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-violet-600"
+          >
+            <option value="warning">⚠️ Warning</option>
+            <option value="minor" selected>🟠 Minor</option>
+            <option value="major">🔴 Major</option>
+            <option value="critical">💀 Critical</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs text-gray-400 mb-1">Reason <span class="text-red-400">*</span></label>
+          <textarea
+            id="strike-reason"
+            rows="3"
+            maxlength="500"
+            placeholder="Describe the violation…"
+            class="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-orange-600 resize-none"
+          ></textarea>
+        </div>
+        <div id="strike-error" class="hidden text-xs text-red-400"></div>
+        <div class="flex gap-3 pt-2">
+          <button
+            id="strike-confirm"
+            class="flex-1 py-2 bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium rounded-lg transition-colors"
+          >
+            Add Strike
+          </button>
+          <button
+            id="strike-cancel"
+            class="flex-1 py-2 border border-gray-700 hover:border-gray-600 text-gray-400 hover:text-gray-200 text-sm font-medium rounded-lg transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentWorkerId: string | null = null;
+
+    // Ban modal
+    document.querySelectorAll(".ban-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        currentWorkerId = (btn as HTMLElement).dataset.workerId ?? null;
+        const name = (btn as HTMLElement).dataset.workerName ?? "";
+        const nameEl = document.getElementById("ban-modal-name");
+        if (nameEl) nameEl.textContent = name;
+        (document.getElementById("ban-reason") as HTMLTextAreaElement).value = "";
+        (document.getElementById("ban-expires") as HTMLInputElement).value = "";
+        document.getElementById("ban-error")?.classList.add("hidden");
+        document.getElementById("ban-modal")?.classList.remove("hidden");
+      });
+    });
+
+    document.getElementById("ban-cancel")?.addEventListener("click", () => {
+      document.getElementById("ban-modal")?.classList.add("hidden");
+    });
+
+    document.getElementById("ban-confirm")?.addEventListener("click", async () => {
+      const reason = (document.getElementById("ban-reason") as HTMLTextAreaElement)?.value?.trim();
+      const expiresRaw = (document.getElementById("ban-expires") as HTMLInputElement)?.value;
+      const errEl = document.getElementById("ban-error");
+      if (!reason) {
+        if (errEl) { errEl.textContent = "Reason is required."; errEl.classList.remove("hidden"); }
+        return;
+      }
+      const body: any = { reason };
+      if (expiresRaw) body.expires_at = new Date(expiresRaw).toISOString();
+      try {
+        const res = await fetch(`/api/admin/workers/${currentWorkerId}/ban`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? "Failed");
+        location.reload();
+      } catch (e: any) {
+        if (errEl) { errEl.textContent = e.message; errEl.classList.remove("hidden"); }
+      }
+    });
+
+    // Strike modal
+    document.querySelectorAll(".strike-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        currentWorkerId = (btn as HTMLElement).dataset.workerId ?? null;
+        const name = (btn as HTMLElement).dataset.workerName ?? "";
+        const nameEl = document.getElementById("strike-modal-name");
+        if (nameEl) nameEl.textContent = name;
+        (document.getElementById("strike-reason") as HTMLTextAreaElement).value = "";
+        document.getElementById("strike-error")?.classList.add("hidden");
+        document.getElementById("strike-modal")?.classList.remove("hidden");
+      });
+    });
+
+    document.getElementById("strike-cancel")?.addEventListener("click", () => {
+      document.getElementById("strike-modal")?.classList.add("hidden");
+    });
+
+    document.getElementById("strike-confirm")?.addEventListener("click", async () => {
+      const reason = (document.getElementById("strike-reason") as HTMLTextAreaElement)?.value?.trim();
+      const severity = (document.getElementById("strike-severity") as HTMLSelectElement)?.value;
+      const errEl = document.getElementById("strike-error");
+      if (!reason) {
+        if (errEl) { errEl.textContent = "Reason is required."; errEl.classList.remove("hidden"); }
+        return;
+      }
+      try {
+        const res = await fetch(`/api/admin/workers/${currentWorkerId}/strikes`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reason, severity }),
+        });
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? "Failed");
+        location.reload();
+      } catch (e: any) {
+        if (errEl) { errEl.textContent = e.message; errEl.classList.remove("hidden"); }
+      }
+    });
+
+    // Unban handlers
+    document.querySelectorAll(".unban-btn").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const workerId = (btn as HTMLElement).dataset.workerId;
+        const name = (btn as HTMLElement).dataset.workerName ?? "this worker";
+        if (!confirm(`Unban ${name}?`)) return;
+        try {
+          const res = await fetch(`/api/admin/workers/${workerId}/ban`, { method: "DELETE" });
+          if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? "Failed");
+          location.reload();
+        } catch (e: any) {
+          alert(e.message ?? "Failed to unban worker");
+        }
+      });
+    });
+  </script>
+</Layout>

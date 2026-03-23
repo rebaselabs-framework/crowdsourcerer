@@ -79,6 +79,30 @@ const TASK_TYPE_LABELS: Record<string, string> = {
       )}
     </div>
 
+    {/* Availability toggle */}
+    {isWorker && (
+      <div class="bg-gray-900 border border-gray-800 rounded-xl px-5 py-4 mb-6 flex items-center justify-between gap-4">
+        <div class="text-sm text-gray-300 font-medium">Availability</div>
+        <div class="flex items-center gap-2" id="availability-btns">
+          {["available", "busy", "away"].map((s) => (
+            <button
+              class:list={[
+                "availability-btn px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors",
+                (user?.availability_status ?? "available") === s
+                  ? s === "available" ? "bg-green-950/60 text-green-400 border-green-700"
+                    : s === "busy" ? "bg-yellow-950/60 text-yellow-400 border-yellow-700"
+                    : "bg-gray-800 text-gray-400 border-gray-600"
+                  : "text-gray-500 border-gray-700 hover:border-gray-500"
+              ]}
+              data-status={s}
+            >
+              {s === "available" ? "🟢 Available" : s === "busy" ? "🟡 Busy" : "🔴 Away"}
+            </button>
+          ))}
+        </div>
+      </div>
+    )}
+
     {/* Profile completion banner */}
     {showProfileBanner && (
       <div class="bg-amber-950/40 border border-amber-700/60 rounded-xl px-5 py-4 mb-6 flex items-center justify-between gap-4">
@@ -483,6 +507,47 @@ const TASK_TYPE_LABELS: Record<string, string> = {
 </Layout>
 
 <script>
+  // Availability toggle
+  document.querySelectorAll(".availability-btn").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const status = (btn as HTMLElement).dataset.status;
+      if (!status) return;
+      try {
+        const res = await fetch("/api/worker/availability", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status }),
+        });
+        if (res.ok) {
+          // Update button styles
+          document.querySelectorAll(".availability-btn").forEach(b => {
+            const s = (b as HTMLElement).dataset.status;
+            b.className = b.className.replace(
+              /bg-\w+-\d+\/\d+ text-\w+-\d+ border-\w+-\d+/g, ""
+            );
+            if (s === status) {
+              if (s === "available") {
+                b.classList.add("bg-green-950/60", "text-green-400", "border-green-700");
+                b.classList.remove("text-gray-500", "border-gray-700");
+              } else if (s === "busy") {
+                b.classList.add("bg-yellow-950/60", "text-yellow-400", "border-yellow-700");
+                b.classList.remove("text-gray-500", "border-gray-700");
+              } else {
+                b.classList.add("bg-gray-800", "text-gray-400", "border-gray-600");
+                b.classList.remove("text-gray-500", "border-gray-700");
+              }
+            } else {
+              b.classList.add("text-gray-500", "border-gray-700");
+              b.classList.remove("bg-green-950/60", "text-green-400", "border-green-700",
+                "bg-yellow-950/60", "text-yellow-400", "border-yellow-700",
+                "bg-gray-800", "text-gray-400", "border-gray-600");
+            }
+          });
+        }
+      } catch { /* ignore */ }
+    });
+  });
+
   const btn = document.getElementById("enroll-btn");
   const msg = document.getElementById("enroll-msg");
 

@@ -4,18 +4,19 @@ Only accessible by users with is_admin=True.
 """
 from __future__ import annotations
 from datetime import datetime, timezone, timedelta, date
-from typing import Optional
+from typing import Optional, Literal
 from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, cast, Date as SADate, and_
+from sqlalchemy import select, func, cast, Date as SADate, and_, or_
 
 from core.auth import get_current_user_id, require_admin
 from core.database import get_db, AsyncSessionLocal
 from core.sweeper import sweep_once, get_sweeper_task, _sweep_scheduled_tasks
-from models.db import TaskDB, UserDB, CreditTransactionDB, TaskAssignmentDB, WebhookLogDB, PayoutRequestDB
+from models.db import TaskDB, UserDB, CreditTransactionDB, TaskAssignmentDB, WebhookLogDB, PayoutRequestDB, WorkerStrikeDB
 
 logger = structlog.get_logger()
 router = APIRouter(prefix="/v1/admin", tags=["admin"])
@@ -1072,3 +1073,196 @@ async def get_billing_analytics(
         "top_spenders": top_spenders,
         "generated_at": now.isoformat(),
     }
+
+
+# ─── Worker Management ────────────────────────────────────────────────────
+
+class BanWorkerRequest(BaseModel):
+    reason: str = Field(..., min_length=1, max_length=500)
+    expires_at: Optional[datetime] = None  # None = permanent
+
+
+class AddStrikeRequest(BaseModel):
+    reason: str = Field(..., min_length=1, max_length=500)
+    severity: Literal["warning", "minor", "major", "critical"] = "minor"
+    expires_at: Optional[datetime] = None
+
+
+@router.get("/workers")
+async def list_workers(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(25, ge=1, le=100),
+    search: str = Query("", max_length=100),
+    status: str = Query("", description="all | banned | active"),
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(require_admin),
+):
+    """List workers with ban status and strike count for admin management."""
+    query = select(UserDB).where(UserDB.role.in_(["worker", "both"]))
+    if search:
+        query = query.where(
+            or_(
+                UserDB.email.ilike(f"%{search}%"),
+                UserDB.name.ilike(f"%{search}%"),
+            )
+        )
+    if status == "banned":
+        query = query.where(UserDB.is_banned == True)
+    elif status == "active":
+        query = query.where(UserDB.is_banned == False)
+
+    total = (await db.execute(select(func.count()).select_from(query.subquery()))).scalar() or 0
+    result = await db.execute(
+        query.order_by(UserDB.created_at.desc())
+        .offset((page - 1) * per_page)
+        .limit(per_page)
+    )
+    workers = result.scalars().all()
+
+    items = []
+    for w in workers:
+        active_strikes = await db.scalar(
+            select(func.count()).where(
+                WorkerStrikeDB.worker_id == w.id,
+                WorkerStrikeDB.is_active == True,
+            )
+        ) or 0
+        items.append({
+            "id": str(w.id),
+            "email": w.email,
+            "name": w.name,
+            "role": w.role,
+            "plan": w.plan,
+            "is_banned": w.is_banned,
+            "ban_reason": w.ban_reason,
+            "ban_expires_at": w.ban_expires_at.isoformat() if w.ban_expires_at else None,
+            "strike_count": w.strike_count,
+            "active_strikes": active_strikes,
+            "reputation_score": w.reputation_score,
+            "worker_tasks_completed": w.worker_tasks_completed,
+            "worker_level": w.worker_level,
+            "worker_xp": w.worker_xp,
+            "availability_status": getattr(w, "availability_status", "available"),
+            "created_at": w.created_at.isoformat(),
+        })
+
+    return {"items": items, "total": total, "page": page, "per_page": per_page}
+
+
+@router.post("/workers/{worker_id}/ban", status_code=200)
+async def ban_worker(
+    worker_id: UUID,
+    payload: BanWorkerRequest,
+    db: AsyncSession = Depends(get_db),
+    admin_id: str = Depends(require_admin),
+):
+    """Ban a worker."""
+    worker = await db.get(UserDB, worker_id)
+    if not worker:
+        raise HTTPException(404, "Worker not found")
+    if worker.role not in ("worker", "both"):
+        raise HTTPException(400, "User is not a worker")
+    worker.is_banned = True
+    worker.ban_reason = payload.reason
+    worker.ban_expires_at = payload.expires_at
+    await db.commit()
+    logger.info("worker_banned", worker_id=str(worker_id), admin_id=admin_id, reason=payload.reason)
+    return {"banned": True, "worker_id": str(worker_id)}
+
+
+@router.delete("/workers/{worker_id}/ban", status_code=200)
+async def unban_worker(
+    worker_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    admin_id: str = Depends(require_admin),
+):
+    """Unban a worker."""
+    worker = await db.get(UserDB, worker_id)
+    if not worker:
+        raise HTTPException(404, "Worker not found")
+    worker.is_banned = False
+    worker.ban_reason = None
+    worker.ban_expires_at = None
+    await db.commit()
+    logger.info("worker_unbanned", worker_id=str(worker_id), admin_id=admin_id)
+    return {"unbanned": True, "worker_id": str(worker_id)}
+
+
+@router.get("/workers/{worker_id}/strikes")
+async def list_worker_strikes(
+    worker_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(require_admin),
+):
+    """List all strikes for a worker."""
+    worker = await db.get(UserDB, worker_id)
+    if not worker:
+        raise HTTPException(404, "Worker not found")
+    result = await db.execute(
+        select(WorkerStrikeDB)
+        .where(WorkerStrikeDB.worker_id == worker_id)
+        .order_by(WorkerStrikeDB.created_at.desc())
+    )
+    strikes = result.scalars().all()
+    return [
+        {
+            "id": str(s.id),
+            "severity": s.severity,
+            "reason": s.reason,
+            "is_active": s.is_active,
+            "expires_at": s.expires_at.isoformat() if s.expires_at else None,
+            "created_at": s.created_at.isoformat(),
+        }
+        for s in strikes
+    ]
+
+
+@router.post("/workers/{worker_id}/strikes", status_code=201)
+async def add_strike(
+    worker_id: UUID,
+    payload: AddStrikeRequest,
+    db: AsyncSession = Depends(get_db),
+    admin_id: str = Depends(require_admin),
+):
+    """Add a moderation strike to a worker."""
+    worker = await db.get(UserDB, worker_id)
+    if not worker:
+        raise HTTPException(404, "Worker not found")
+    if worker.role not in ("worker", "both"):
+        raise HTTPException(400, "User is not a worker")
+
+    strike = WorkerStrikeDB(
+        worker_id=worker_id,
+        issued_by=UUID(admin_id),
+        severity=payload.severity,
+        reason=payload.reason,
+        expires_at=payload.expires_at,
+    )
+    db.add(strike)
+    worker.strike_count = (worker.strike_count or 0) + 1
+    await db.commit()
+    logger.info("worker_strike_added", worker_id=str(worker_id), admin_id=admin_id, severity=payload.severity)
+    return {"strike_id": str(strike.id), "total_strikes": worker.strike_count}
+
+
+@router.delete("/workers/{worker_id}/strikes/{strike_id}", status_code=200)
+async def pardon_strike(
+    worker_id: UUID,
+    strike_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    admin_id: str = Depends(require_admin),
+):
+    """Pardon (deactivate) a strike."""
+    strike = await db.get(WorkerStrikeDB, strike_id)
+    if not strike or strike.worker_id != worker_id:
+        raise HTTPException(404, "Strike not found")
+    if not strike.is_active:
+        raise HTTPException(400, "Strike is already pardoned")
+    strike.is_active = False
+    # Decrement strike count
+    worker = await db.get(UserDB, worker_id)
+    if worker and worker.strike_count > 0:
+        worker.strike_count -= 1
+    await db.commit()
+    logger.info("worker_strike_pardoned", strike_id=str(strike_id), admin_id=admin_id)
+    return {"pardoned": True, "strike_id": str(strike_id)}

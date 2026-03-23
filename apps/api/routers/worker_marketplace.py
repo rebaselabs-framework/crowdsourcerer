@@ -74,6 +74,7 @@ class WorkerCardOut(BaseModel):
     cert_count: int
     endorsement_count: int
     profile_url: str
+    availability_status: str = "available"
 
     model_config = {"from_attributes": True}
 
@@ -259,6 +260,7 @@ async def browse_workers(
                 cert_count=cert_count,
                 endorsement_count=endorsement_count,
                 profile_url=f"/workers/{w.id}",
+                availability_status=getattr(w, "availability_status", "available"),
             )
         )
 

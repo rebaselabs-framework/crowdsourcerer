@@ -71,6 +71,7 @@ class UserDB(Base):
     profile_public = Column(Boolean, default=True, nullable=False)
     location = Column(String(128), nullable=True)       # e.g. "San Francisco, CA"
     website_url = Column(String(512), nullable=True)    # personal/portfolio URL
+    availability_status = Column(SAEnum("available", "busy", "away", name="availability_status_enum"), default="available", nullable=False)
 
     # Credit burn-rate alerts
     credit_alert_threshold = Column(Integer, nullable=True)          # fire alert when credits drop below this

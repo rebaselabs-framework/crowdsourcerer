@@ -1,12 +1,13 @@
 """Worker marketplace API — browse tasks, claim, submit, release."""
 from __future__ import annotations
 from datetime import datetime, timezone, timedelta
-from typing import Optional
+from typing import Optional, Literal
 import uuid as uuid_mod
 from uuid import UUID, uuid4
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_
 
@@ -153,6 +154,29 @@ async def get_worker_profile(
     if user.role not in ("worker", "both"):
         raise HTTPException(status_code=403, detail="Not enrolled as a worker. POST /v1/worker/enroll first.")
     return WorkerProfileOut.model_validate(user)
+
+
+# ─── Availability ─────────────────────────────────────────────────────────
+
+class AvailabilityUpdate(BaseModel):
+    status: Literal["available", "busy", "away"]
+
+
+@router.patch("/availability")
+async def set_availability(
+    payload: AvailabilityUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
+):
+    """Set worker availability status."""
+    user = await db.get(UserDB, UUID(current_user_id))
+    if not user:
+        raise HTTPException(404, "User not found")
+    if user.role not in ("worker", "both"):
+        raise HTTPException(403, "Only workers can set availability")
+    user.availability_status = payload.status
+    await db.commit()
+    return {"availability_status": payload.status}
 
 
 # ─── Worker stats ──────────────────────────────────────────────────────────

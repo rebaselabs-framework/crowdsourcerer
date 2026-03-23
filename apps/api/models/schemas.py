@@ -36,6 +36,7 @@ class UserOut(BaseModel):
     role: str
     credits: int
     created_at: datetime
+    availability_status: Optional[str] = "available"
 
     model_config = {"from_attributes": True}
 
