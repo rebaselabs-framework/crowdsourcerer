@@ -26,6 +26,45 @@ if (Astro.request.method === "POST") {
     } catch (e: any) {
       rerunError = e.message ?? "Failed to rerun task";
     }
+  } else if (action === "accept_application") {
+    const appId = form.get("app_id") as string;
+    try {
+      await apiFetch<any>(`/v1/tasks/${id}/applications/${appId}/accept`, {
+        method: "POST", token,
+      });
+    } catch (_) {}
+    return Astro.redirect(`/dashboard/tasks/${id}`);
+  } else if (action === "reject_application") {
+    const appId = form.get("app_id") as string;
+    try {
+      await apiFetch<any>(`/v1/tasks/${id}/applications/${appId}/reject`, {
+        method: "POST", token,
+      });
+    } catch (_) {}
+    return Astro.redirect(`/dashboard/tasks/${id}`);
+  } else if (action === "withdraw_application") {
+    try {
+      await apiFetch<any>(`/v1/tasks/${id}/applications`, {
+        method: "DELETE", token,
+      });
+    } catch (_) {}
+    return Astro.redirect(`/dashboard/tasks/${id}`);
+  } else if (action === "assign_team") {
+    const teamId = form.get("team_id") as string;
+    try {
+      await apiFetch<any>(`/v1/tasks/${id}/assign-team`, {
+        method: "POST", token,
+        body: JSON.stringify({ team_id: teamId }),
+      });
+    } catch (_) {}
+    return Astro.redirect(`/dashboard/tasks/${id}`);
+  } else if (action === "remove_team") {
+    try {
+      await apiFetch<any>(`/v1/tasks/${id}/assign-team`, {
+        method: "DELETE", token,
+      });
+    } catch (_) {}
+    return Astro.redirect(`/dashboard/tasks/${id}`);
   } else {
     const assignmentId = form.get("assignment_id") as string;
     const reason = form.get("reason") as string | undefined;
@@ -47,9 +86,16 @@ let task: any = null;
 let submissions: any[] = [];
 let comments: any[] = [];
 let notFound = false;
+let applications: any[] = [];
+let myApplication: any = null;
+let me: any = null;
+let assignedTeam: any = null;
 
 try {
-  task = await apiFetch<any>(`/v1/tasks/${id}`, { token });
+  [task, me] = await Promise.all([
+    apiFetch<any>(`/v1/tasks/${id}`, { token }),
+    apiFetch<any>("/v1/users/me", { token }).catch(() => null),
+  ]);
 } catch (e: any) {
   if (e.message?.includes("404") || e.message?.includes("not found")) {
     notFound = true;
@@ -58,6 +104,9 @@ try {
   }
 }
 
+const isRequester = task && me && String(task.user_id) === String(me.id);
+const isWorker = me && (me.role === "worker" || me.role === "both");
+
 // Load submissions for human tasks
 if (task?.execution_mode === "human") {
   try {
@@ -65,6 +114,28 @@ if (task?.execution_mode === "human") {
   } catch (_) {
     submissions = [];
   }
+}
+
+// Load applications if application_mode
+if (task?.application_mode) {
+  if (isRequester) {
+    try {
+      applications = await apiFetch<any[]>(`/v1/tasks/${id}/applications`, { token });
+    } catch (_) { applications = []; }
+  }
+  if (isWorker && !isRequester) {
+    try {
+      const workerApps = await apiFetch<any[]>("/v1/worker/applications", { token });
+      myApplication = workerApps.find((a: any) => String(a.task_id) === String(id)) ?? null;
+    } catch (_) { myApplication = null; }
+  }
+}
+
+// Load assigned team if any
+if (task?.assigned_team_id) {
+  try {
+    assignedTeam = await apiFetch<any>(`/v1/worker-teams/${task.assigned_team_id}`, { token }).catch(() => null);
+  } catch (_) { assignedTeam = null; }
 }
 
 // Load comments
@@ -1283,6 +1354,193 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
             )}
           </div>
         </div>
+
+        <!-- Applications Section (application_mode tasks) -->
+        {task.application_mode && (
+          <div class="bg-gray-900 border border-gray-800 rounded-xl mb-4">
+            <div class="px-5 py-3 border-b border-gray-800">
+              <h2 class="text-sm font-semibold text-gray-300">
+                📝 Applications
+                {isRequester && applications.length > 0 && (
+                  <span class="ml-2 text-gray-500 font-normal text-xs">({applications.length})</span>
+                )}
+              </h2>
+            </div>
+            <div class="px-5 py-4">
+              {/* Worker view: submit or show own application */}
+              {isWorker && !isRequester && (
+                <>
+                  {myApplication ? (
+                    <div class="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
+                      <div class="flex items-center justify-between mb-2">
+                        <span class="text-sm font-medium text-gray-300">Your Application</span>
+                        <span class:list={[
+                          "text-xs px-2 py-0.5 rounded-full",
+                          myApplication.status === "pending" ? "bg-yellow-900/40 text-yellow-300" :
+                          myApplication.status === "accepted" ? "bg-green-900/40 text-green-300" :
+                          myApplication.status === "rejected" ? "bg-red-900/40 text-red-300" :
+                          "bg-gray-700 text-gray-400"
+                        ]}>{myApplication.status}</span>
+                      </div>
+                      <p class="text-sm text-gray-400 leading-relaxed">{myApplication.proposal}</p>
+                      {myApplication.proposed_reward && (
+                        <p class="text-xs text-violet-400 mt-1">Proposed reward: {myApplication.proposed_reward} credits</p>
+                      )}
+                      {myApplication.status === "pending" && (
+                        <form method="POST" class="mt-3">
+                          <input type="hidden" name="action" value="withdraw_application" />
+                          <button type="submit"
+                            class="px-3 py-1.5 bg-red-900/30 hover:bg-red-900/50 border border-red-800/50 text-red-400 text-xs rounded-lg transition-colors">
+                            Withdraw Application
+                          </button>
+                        </form>
+                      )}
+                    </div>
+                  ) : task.status === "open" ? (
+                    <form method="POST" class="space-y-3">
+                      <input type="hidden" name="action" value="submit_application_redirect" />
+                      <div>
+                        <label class="text-xs text-gray-500 block mb-1">Your Proposal <span class="text-gray-600">(max 1000 chars)</span></label>
+                        <textarea
+                          name="proposal"
+                          rows={4}
+                          maxlength={1000}
+                          required
+                          placeholder="Describe your approach, relevant experience, and why you're a great fit..."
+                          class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-violet-500 resize-none"
+                        ></textarea>
+                      </div>
+                      <div class="flex items-end gap-3">
+                        <div class="w-40">
+                          <label class="text-xs text-gray-500 block mb-1">Counter-offer (credits, optional)</label>
+                          <input type="number" name="proposed_reward" min="1"
+                            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-violet-500"
+                            placeholder="e.g. 50" />
+                        </div>
+                        <a href={`/worker/applications/submit?task_id=${id}`}
+                          class="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm rounded-lg transition-colors">
+                          Apply for this Task
+                        </a>
+                      </div>
+                      <p class="text-xs text-gray-600">You'll be redirected to confirm your application.</p>
+                    </form>
+                  ) : (
+                    <p class="text-sm text-gray-500">This task is no longer accepting applications.</p>
+                  )}
+                </>
+              )}
+
+              {/* Requester view: list applications */}
+              {isRequester && (
+                <>
+                  {applications.length === 0 ? (
+                    <p class="text-sm text-gray-500">No applications yet.</p>
+                  ) : (
+                    <div class="space-y-3">
+                      {applications.map((app: any) => (
+                        <div class="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
+                          <div class="flex items-start justify-between gap-4 mb-2">
+                            <div>
+                              <span class="text-sm font-medium text-white">{app.worker_name || "Worker"}</span>
+                              {app.worker_reputation !== null && (
+                                <span class="ml-2 text-xs text-gray-500">Rep: {app.worker_reputation}</span>
+                              )}
+                            </div>
+                            <div class="flex items-center gap-2">
+                              <span class:list={[
+                                "text-xs px-2 py-0.5 rounded-full",
+                                app.status === "pending" ? "bg-yellow-900/40 text-yellow-300" :
+                                app.status === "accepted" ? "bg-green-900/40 text-green-300" :
+                                app.status === "rejected" ? "bg-red-900/40 text-red-300" :
+                                "bg-gray-700 text-gray-400"
+                              ]}>{app.status}</span>
+                              {app.status === "pending" && (
+                                <div class="flex gap-2">
+                                  <form method="POST" class="inline">
+                                    <input type="hidden" name="action" value="accept_application" />
+                                    <input type="hidden" name="app_id" value={app.id} />
+                                    <button type="submit"
+                                      class="px-3 py-1 bg-green-900/40 hover:bg-green-900/70 border border-green-700/50 text-green-300 text-xs rounded-lg transition-colors">
+                                      Accept
+                                    </button>
+                                  </form>
+                                  <form method="POST" class="inline">
+                                    <input type="hidden" name="action" value="reject_application" />
+                                    <input type="hidden" name="app_id" value={app.id} />
+                                    <button type="submit"
+                                      class="px-3 py-1 bg-red-900/30 hover:bg-red-900/60 border border-red-800/40 text-red-400 text-xs rounded-lg transition-colors">
+                                      Reject
+                                    </button>
+                                  </form>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          <p class="text-sm text-gray-400 leading-relaxed">{app.proposal}</p>
+                          {app.proposed_reward && (
+                            <p class="text-xs text-violet-400 mt-1">Proposed reward: {app.proposed_reward} credits</p>
+                          )}
+                          <p class="text-xs text-gray-600 mt-1">{new Date(app.created_at).toLocaleString()}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
+        <!-- Team Assignment Section (requester only) -->
+        {isRequester && task.execution_mode === "human" && (
+          <div class="bg-gray-900 border border-gray-800 rounded-xl mb-4">
+            <div class="px-5 py-3 border-b border-gray-800">
+              <h2 class="text-sm font-semibold text-gray-300">Team Assignment</h2>
+            </div>
+            <div class="px-5 py-4">
+              {task.assigned_team_id && assignedTeam ? (
+                <div class="flex items-center justify-between">
+                  <div>
+                    <p class="text-sm text-white font-medium">
+                      {assignedTeam.avatar_emoji || ""} {assignedTeam.name}
+                    </p>
+                    <p class="text-xs text-gray-500 mt-0.5">{assignedTeam.member_count} member{assignedTeam.member_count !== 1 ? "s" : ""}</p>
+                  </div>
+                  {task.status in {open:1, pending:1} && (
+                    <form method="POST">
+                      <input type="hidden" name="action" value="remove_team" />
+                      <button type="submit"
+                        class="px-3 py-1.5 bg-red-900/30 hover:bg-red-900/50 border border-red-800/40 text-red-400 text-xs rounded-lg transition-colors">
+                        Remove Team
+                      </button>
+                    </form>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  <p class="text-xs text-gray-500 mb-3">Restrict this task to a specific worker team. Enter the team ID below.</p>
+                  {task.status === "open" || task.status === "pending" ? (
+                    <form method="POST" class="flex gap-3 items-end">
+                      <input type="hidden" name="action" value="assign_team" />
+                      <div class="flex-1">
+                        <label class="text-xs text-gray-500 block mb-1">Team ID</label>
+                        <input type="text" name="team_id" required
+                          placeholder="UUID of the team"
+                          class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-violet-500" />
+                      </div>
+                      <button type="submit"
+                        class="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm rounded-lg transition-colors whitespace-nowrap">
+                        Assign Team
+                      </button>
+                    </form>
+                  ) : (
+                    <p class="text-sm text-gray-500">Task must be open or pending to assign a team.</p>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         <!-- Comments / Discussion -->
         <div id="comments" class="bg-gray-900 border border-gray-800 rounded-xl mb-4">

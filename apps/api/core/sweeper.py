@@ -33,6 +33,9 @@ SWEEP_INTERVAL_SECONDS = 300  # 5 minutes
 _last_digest_date: Optional[dt_module.date] = None
 _last_daily_digest_date: Optional[dt_module.date] = None
 
+# Track last sweep time for health dashboard
+_LAST_SWEEP_AT: Optional[datetime] = None
+
 
 async def sweep_once(session_factory: async_sessionmaker) -> dict:
     """Run a single sweep pass. Returns a summary dict."""
@@ -837,12 +840,14 @@ async def _sweep_watchlist_notifications(session_factory: async_sessionmaker) ->
 
 async def run_sweeper(session_factory: async_sessionmaker, interval: int = SWEEP_INTERVAL_SECONDS):
     """Infinite loop: sweep, sleep, repeat. Designed to run as an asyncio background task."""
+    global _LAST_SWEEP_AT  # noqa: PLW0603
     logger.info("sweeper.started", interval_seconds=interval)
     # Track which cycle we're on so schedule triggers run more frequently (every 60s)
     trigger_check_interval = 60  # seconds
     last_trigger_check = 0.0
 
     while True:
+        _LAST_SWEEP_AT = datetime.now(timezone.utc)
         try:
             await sweep_once(session_factory)
         except Exception:  # noqa: BLE001

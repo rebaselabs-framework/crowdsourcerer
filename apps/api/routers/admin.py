@@ -13,9 +13,11 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, cast, Date as SADate, and_, or_
 
+import time as _time_module
+
 from core.auth import get_current_user_id, require_admin
 from core.database import get_db, AsyncSessionLocal
-from core.sweeper import sweep_once, get_sweeper_task, _sweep_scheduled_tasks
+from core.sweeper import sweep_once, get_sweeper_task, _sweep_scheduled_tasks, _LAST_SWEEP_AT
 from models.db import TaskDB, UserDB, CreditTransactionDB, TaskAssignmentDB, WebhookLogDB, PayoutRequestDB, WorkerStrikeDB
 
 logger = structlog.get_logger()
@@ -1266,3 +1268,105 @@ async def pardon_strike(
     await db.commit()
     logger.info("worker_strike_pardoned", strike_id=str(strike_id), admin_id=admin_id)
     return {"pardoned": True, "strike_id": str(strike_id)}
+
+
+# ─── System Health ──────────────────────────────────────────────────────────
+
+@router.get("/health")
+async def get_system_health(
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(require_admin),
+):
+    """Real-time platform health metrics (admin only)."""
+    now = datetime.now(timezone.utc)
+    hour_ago = now - timedelta(hours=1)
+    day_ago = now - timedelta(hours=24)
+
+    # DB ping
+    t0 = _time_module.perf_counter()
+    await db.execute(select(func.count()).select_from(UserDB).limit(1))
+    db_ping_ms = round((_time_module.perf_counter() - t0) * 1000, 1)
+
+    # Task queue
+    pending = (await db.scalar(select(func.count()).where(TaskDB.status == "pending"))) or 0
+    running = (await db.scalar(select(func.count()).where(TaskDB.status.in_(["running", "queued"])))) or 0
+    open_tasks = (await db.scalar(select(func.count()).where(TaskDB.status == "open"))) or 0
+
+    # Tasks last hour
+    tasks_created_1h = (await db.scalar(
+        select(func.count()).where(TaskDB.created_at >= hour_ago)
+    )) or 0
+    tasks_completed_1h = (await db.scalar(
+        select(func.count()).where(
+            TaskDB.status == "completed",
+            TaskDB.completed_at >= hour_ago,
+        )
+    )) or 0
+    tasks_failed_1h = (await db.scalar(
+        select(func.count()).where(
+            TaskDB.status == "failed",
+            TaskDB.completed_at >= hour_ago,
+        )
+    )) or 0
+
+    # Error rate (failed / (completed + failed)) in last hour
+    terminal_1h = tasks_completed_1h + tasks_failed_1h
+    error_rate_1h = round(tasks_failed_1h / terminal_1h, 4) if terminal_1h > 0 else 0.0
+
+    # Top failing task types
+    failing_types_result = await db.execute(
+        select(TaskDB.type, func.count().label("failures"))
+        .where(TaskDB.status == "failed", TaskDB.completed_at >= hour_ago)
+        .group_by(TaskDB.type)
+        .order_by(func.count().desc())
+        .limit(5)
+    )
+    top_failing_types = [
+        {"type": row.type, "failures": row.failures}
+        for row in failing_types_result.all()
+    ]
+
+    # Total users
+    total_users = (await db.scalar(select(func.count()).select_from(UserDB))) or 0
+
+    # Active workers in last 24h (workers with approved assignments)
+    active_workers_24h = (await db.scalar(
+        select(func.count(TaskAssignmentDB.worker_id.distinct())).where(
+            TaskAssignmentDB.claimed_at >= day_ago
+        )
+    )) or 0
+
+    # Sweeper last run
+    from core.sweeper import _LAST_SWEEP_AT as _sweep_ts
+    sweeper_ago: Optional[float] = None
+    if _sweep_ts is not None:
+        sweeper_ago = round((now - _sweep_ts).total_seconds(), 1)
+
+    # Overall status
+    if db_ping_ms > 500 or error_rate_1h > 0.5:
+        status = "down"
+    elif db_ping_ms > 200 or error_rate_1h > 0.2 or sweeper_ago is None or sweeper_ago > 900:
+        status = "degraded"
+    else:
+        status = "healthy"
+
+    return {
+        "status": status,
+        "db_ping_ms": db_ping_ms,
+        "task_queue": {
+            "pending": pending,
+            "running": running,
+            "open": open_tasks,
+        },
+        "sweeper_last_run_ago_seconds": sweeper_ago,
+        "tasks_last_hour": {
+            "created": tasks_created_1h,
+            "completed": tasks_completed_1h,
+            "failed": tasks_failed_1h,
+        },
+        "error_rate_1h": error_rate_1h,
+        "top_failing_types": top_failing_types,
+        "total_users": total_users,
+        "active_workers_24h": active_workers_24h,
+        "timestamp": now.isoformat(),
+    }

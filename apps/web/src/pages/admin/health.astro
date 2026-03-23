@@ -1,0 +1,255 @@
+---
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Astro.cookies);
+if (!token) return Astro.redirect("/login");
+
+let health: any = null;
+let error: string | null = null;
+
+try {
+  health = await apiFetch<any>("/v1/admin/health", { token });
+} catch (e: any) {
+  if (e.message?.includes("403") || e.message?.includes("401")) {
+    error = "forbidden";
+  } else {
+    error = "Failed to load health data";
+  }
+}
+
+const STATUS_PILL: Record<string, string> = {
+  healthy:  "bg-green-950/40 border-green-700 text-green-300",
+  degraded: "bg-yellow-950/40 border-yellow-700 text-yellow-300",
+  down:     "bg-red-950/40 border-red-700 text-red-300",
+};
+const STATUS_ICON: Record<string, string> = {
+  healthy: "🟢",
+  degraded: "🟡",
+  down: "🔴",
+};
+
+const status: string = health?.status ?? "unknown";
+const errorRatePct = health ? Math.round(health.error_rate_1h * 100) : 0;
+const queueTotal = health
+  ? health.task_queue.pending + health.task_queue.running + health.task_queue.open
+  : 0;
+---
+
+<Layout title="System Health — Admin">
+  <div class="max-w-5xl mx-auto px-6 py-10">
+    <!-- Header -->
+    <div class="flex items-start justify-between mb-8">
+      <div>
+        <div class="flex items-center gap-2 mb-1">
+          <a href="/admin" class="text-gray-500 hover:text-gray-300 text-sm transition-colors">Admin</a>
+          <span class="text-gray-600">/</span>
+          <span class="text-sm text-gray-300">System Health</span>
+        </div>
+        <h1 class="text-2xl font-bold">System Health</h1>
+        <p class="text-gray-400 text-sm mt-1">Real-time platform health monitoring</p>
+      </div>
+      <div class="flex items-center gap-3">
+        {health && (
+          <span id="last-updated" class="text-xs text-gray-500">
+            Updated {new Date(health.timestamp).toLocaleTimeString()}
+          </span>
+        )}
+        <a href="/admin" class="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm rounded-lg transition-colors">
+          ← Admin
+        </a>
+      </div>
+    </div>
+
+    {error === "forbidden" ? (
+      <div class="bg-red-950/30 border border-red-800 rounded-xl p-8 text-center">
+        <div class="text-4xl mb-4">🚫</div>
+        <h2 class="text-xl font-bold mb-2 text-red-400">Access Denied</h2>
+        <p class="text-gray-400 text-sm">You need admin privileges to view this page.</p>
+        <a href="/dashboard" class="inline-block mt-4 text-violet-400 hover:text-violet-300 text-sm">← Back to dashboard</a>
+      </div>
+    ) : error ? (
+      <div class="bg-red-950/30 border border-red-800 rounded-xl p-4 text-red-300 text-sm">
+        {error}
+      </div>
+    ) : health ? (
+      <>
+        <!-- Status pill -->
+        <div class:list={[
+          "flex items-center gap-4 px-6 py-4 rounded-xl border mb-8",
+          STATUS_PILL[status] ?? "bg-gray-800 border-gray-700 text-gray-300"
+        ]}>
+          <span class="text-3xl">{STATUS_ICON[status] ?? "⚪"}</span>
+          <div>
+            <div class="text-xl font-bold capitalize">{status}</div>
+            <div class="text-xs opacity-70 mt-0.5">
+              {status === "healthy" ? "All systems operational" :
+               status === "degraded" ? "Some metrics are outside normal range" :
+               "Platform is experiencing critical issues"}
+            </div>
+          </div>
+          <div class="ml-auto text-xs opacity-60">
+            {new Date(health.timestamp).toISOString()}
+          </div>
+        </div>
+
+        <!-- KPI Grid -->
+        <div class="grid grid-cols-4 gap-4 mb-8">
+          <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+            <div class="text-xs text-gray-500 mb-1">DB Ping</div>
+            <div class:list={[
+              "text-3xl font-bold",
+              health.db_ping_ms < 50 ? "text-green-400" :
+              health.db_ping_ms < 200 ? "text-yellow-400" : "text-red-400"
+            ]}>{health.db_ping_ms}<span class="text-lg text-gray-500 ml-1">ms</span></div>
+          </div>
+          <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+            <div class="text-xs text-gray-500 mb-1">Active Workers (24h)</div>
+            <div class="text-3xl font-bold text-violet-400">{health.active_workers_24h.toLocaleString()}</div>
+          </div>
+          <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+            <div class="text-xs text-gray-500 mb-1">Tasks Created (1h)</div>
+            <div class="text-3xl font-bold text-blue-400">{health.tasks_last_hour.created}</div>
+          </div>
+          <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+            <div class="text-xs text-gray-500 mb-1">Error Rate (1h)</div>
+            <div class:list={[
+              "text-3xl font-bold",
+              errorRatePct < 5 ? "text-green-400" :
+              errorRatePct < 20 ? "text-yellow-400" : "text-red-400"
+            ]}>{errorRatePct}<span class="text-lg text-gray-500 ml-1">%</span></div>
+          </div>
+        </div>
+
+        <!-- Two-col: Task Queue + Recent Activity -->
+        <div class="grid grid-cols-2 gap-6 mb-8">
+          <!-- Task Queue -->
+          <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+            <div class="px-5 py-4 border-b border-gray-800">
+              <h2 class="font-semibold text-sm">Task Queue</h2>
+            </div>
+            <div class="p-5 space-y-4">
+              {[
+                { label: "Pending", value: health.task_queue.pending, color: "bg-gray-500" },
+                { label: "Running", value: health.task_queue.running, color: "bg-yellow-500" },
+                { label: "Open", value: health.task_queue.open, color: "bg-violet-500" },
+              ].map(({ label, value, color }) => {
+                const pct = queueTotal > 0 ? Math.round(value / queueTotal * 100) : 0;
+                return (
+                  <div>
+                    <div class="flex justify-between text-sm mb-1">
+                      <span class="text-gray-400">{label}</span>
+                      <span class="font-medium">{value.toLocaleString()}</span>
+                    </div>
+                    <div class="w-full h-2 bg-gray-800 rounded-full overflow-hidden">
+                      <div class:list={["h-full rounded-full transition-all", color]} style={`width: ${pct}%`}></div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <!-- Recent Activity -->
+          <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+            <div class="px-5 py-4 border-b border-gray-800">
+              <h2 class="font-semibold text-sm">Activity (Last Hour)</h2>
+            </div>
+            <div class="divide-y divide-gray-800">
+              {[
+                { label: "Created", value: health.tasks_last_hour.created, color: "text-blue-400" },
+                { label: "Completed", value: health.tasks_last_hour.completed, color: "text-green-400" },
+                { label: "Failed", value: health.tasks_last_hour.failed, color: "text-red-400" },
+              ].map(({ label, value, color }) => (
+                <div class="flex items-center justify-between px-5 py-4">
+                  <span class="text-sm text-gray-400">{label}</span>
+                  <span class:list={["text-xl font-bold", color]}>{value}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <!-- Bottom row: Top failing types + System info -->
+        <div class="grid grid-cols-2 gap-6">
+          <!-- Top failing task types -->
+          <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+            <div class="px-5 py-4 border-b border-gray-800">
+              <h2 class="font-semibold text-sm">Top Failing Types (1h)</h2>
+            </div>
+            {health.top_failing_types.length === 0 ? (
+              <div class="px-5 py-6 text-center text-gray-500 text-sm">No failures in the last hour</div>
+            ) : (
+              <div class="divide-y divide-gray-800">
+                {health.top_failing_types.map((item: any) => (
+                  <div class="flex items-center justify-between px-5 py-3">
+                    <span class="font-mono text-sm text-red-400">{item.type}</span>
+                    <span class="text-sm text-gray-400">{item.failures} failure{item.failures !== 1 ? "s" : ""}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <!-- System info -->
+          <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+            <div class="px-5 py-4 border-b border-gray-800">
+              <h2 class="font-semibold text-sm">System Info</h2>
+            </div>
+            <div class="divide-y divide-gray-800">
+              <div class="flex items-center justify-between px-5 py-3">
+                <span class="text-sm text-gray-400">Total Users</span>
+                <span class="text-sm font-medium">{health.total_users.toLocaleString()}</span>
+              </div>
+              <div class="flex items-center justify-between px-5 py-3">
+                <span class="text-sm text-gray-400">Sweeper last run</span>
+                <span class:list={[
+                  "text-sm font-medium",
+                  health.sweeper_last_run_ago_seconds === null ? "text-red-400" :
+                  health.sweeper_last_run_ago_seconds > 600 ? "text-yellow-400" : "text-green-400"
+                ]}>
+                  {health.sweeper_last_run_ago_seconds === null
+                    ? "Never"
+                    : `${Math.round(health.sweeper_last_run_ago_seconds)}s ago`}
+                </span>
+              </div>
+              <div class="flex items-center justify-between px-5 py-3">
+                <span class="text-sm text-gray-400">DB Ping</span>
+                <span class="text-sm font-medium">{health.db_ping_ms}ms</span>
+              </div>
+              <div class="flex items-center justify-between px-5 py-3">
+                <span class="text-sm text-gray-400">Timestamp</span>
+                <span class="text-xs text-gray-500">{new Date(health.timestamp).toLocaleString()}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </>
+    ) : null}
+  </div>
+</Layout>
+
+<script is:inline>
+  // Auto-refresh every 30 seconds
+  (function() {
+    var INTERVAL = 30000;
+    var refreshTimer = null;
+
+    function scheduleRefresh() {
+      refreshTimer = setTimeout(function() {
+        fetch('/api/admin/health')
+          .then(function(r) { return r.json(); })
+          .then(function(data) {
+            if (data && data.timestamp) {
+              var el = document.getElementById('last-updated');
+              if (el) el.textContent = 'Updated ' + new Date(data.timestamp).toLocaleTimeString();
+            }
+            scheduleRefresh();
+          })
+          .catch(function() { scheduleRefresh(); });
+      }, INTERVAL);
+    }
+
+    scheduleRefresh();
+  })();
+</script>

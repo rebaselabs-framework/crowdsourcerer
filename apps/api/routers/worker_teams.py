@@ -16,14 +16,16 @@ from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_
 
 from core.auth import get_current_user_id
 from core.database import get_db
+from core.notify import create_notification, NotifType
 from models.db import (
     WorkerTeamDB, WorkerTeamMemberDB, WorkerTeamInviteDB,
-    UserDB,
+    UserDB, TaskDB,
 )
 from models.schemas import (
     WorkerTeamOut, WorkerTeamDetailOut, WorkerTeamMemberOut,
@@ -485,3 +487,119 @@ async def remove_member(
 
     await db.delete(target_membership)
     await db.commit()
+
+
+# ── Team Task Routing ──────────────────────────────────────────────────────────
+
+class AssignTeamRequest(BaseModel):
+    team_id: UUID
+
+
+@router.post("/v1/tasks/{task_id}/assign-team", status_code=200)
+async def assign_team_to_task(
+    task_id: UUID,
+    req: AssignTeamRequest,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Requester assigns a task to a specific worker team."""
+    # Load task, verify ownership
+    task_result = await db.execute(select(TaskDB).where(TaskDB.id == task_id))
+    task = task_result.scalar_one_or_none()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if str(task.user_id) != user_id:
+        raise HTTPException(status_code=403, detail="Only the task owner can assign teams")
+    if task.status not in ("open", "pending"):
+        raise HTTPException(status_code=400, detail="Task must be open or pending to assign a team")
+
+    # Verify team exists
+    team = await _get_team(req.team_id, db)
+
+    task.assigned_team_id = req.team_id
+    await db.flush()
+
+    # Notify all team members
+    members_result = await db.execute(
+        select(WorkerTeamMemberDB).where(WorkerTeamMemberDB.team_id == req.team_id)
+    )
+    members = members_result.scalars().all()
+    for member in members:
+        try:
+            await create_notification(
+                db,
+                member.user_id,
+                NotifType.TEAM_TASK_ASSIGNED,
+                "New team task available",
+                f"A task has been assigned to your team '{team.name}'.",
+                link=f"/worker/marketplace",
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
+    await db.commit()
+    logger.info("team_task.assigned", task_id=str(task_id), team_id=str(req.team_id))
+    return {"task_id": str(task_id), "assigned_team_id": str(req.team_id), "team_name": team.name}
+
+
+@router.delete("/v1/tasks/{task_id}/assign-team", status_code=204)
+async def remove_team_from_task(
+    task_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Requester removes team assignment from a task."""
+    task_result = await db.execute(select(TaskDB).where(TaskDB.id == task_id))
+    task = task_result.scalar_one_or_none()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if str(task.user_id) != user_id:
+        raise HTTPException(status_code=403, detail="Only the task owner can remove team assignments")
+
+    task.assigned_team_id = None
+    await db.commit()
+    logger.info("team_task.unassigned", task_id=str(task_id))
+
+
+@router.get("/{team_id}/tasks")
+async def list_team_tasks(
+    team_id: UUID,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=50),
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """List tasks assigned to this team (members only)."""
+    await _require_worker(user_id, db)
+
+    # Verify membership
+    membership = await _get_membership(team_id, UUID(user_id), db)
+    if not membership:
+        raise HTTPException(status_code=403, detail="You are not a member of this team")
+
+    total = (await db.scalar(
+        select(func.count()).where(TaskDB.assigned_team_id == team_id)
+    )) or 0
+
+    tasks_result = await db.execute(
+        select(TaskDB)
+        .where(TaskDB.assigned_team_id == team_id)
+        .order_by(TaskDB.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+    tasks = tasks_result.scalars().all()
+
+    items = [
+        {
+            "id": str(t.id),
+            "type": t.type,
+            "status": t.status,
+            "priority": t.priority,
+            "worker_reward_credits": t.worker_reward_credits,
+            "task_instructions": t.task_instructions,
+            "created_at": t.created_at.isoformat(),
+        }
+        for t in tasks
+    ]
+    return {"items": items, "total": total, "page": page, "page_size": page_size}

@@ -453,6 +453,28 @@ async def claim_task(
     if not task:
         raise HTTPException(status_code=404, detail="Task not found or not available")
 
+    # Application mode check — block direct claiming
+    if task.application_mode:
+        raise HTTPException(
+            status_code=400,
+            detail="This task requires an application. Please submit a proposal instead.",
+        )
+
+    # Team assignment check — only team members can claim
+    if task.assigned_team_id is not None:
+        from models.db import WorkerTeamMemberDB
+        membership = await db.scalar(
+            select(func.count()).where(
+                WorkerTeamMemberDB.team_id == task.assigned_team_id,
+                WorkerTeamMemberDB.user_id == user.id,
+            )
+        )
+        if not membership:
+            raise HTTPException(
+                status_code=403,
+                detail="This task is reserved for a specific worker team. You must be a team member to claim it.",
+            )
+
     # Reputation gate check
     if task.min_reputation_score is not None:
         if (user.reputation_score or 0.0) < task.min_reputation_score:

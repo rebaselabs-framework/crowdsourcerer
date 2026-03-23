@@ -48,6 +48,9 @@ if (Astro.request.method === "POST") {
 let team: any = null;
 let me: any = null;
 let error: string | null = null;
+let teamTasks: any[] = [];
+
+const activeTab = Astro.url.searchParams.get("tab") || "members";
 
 try {
   [team, me] = await Promise.all([
@@ -59,6 +62,14 @@ try {
   if (e.message?.includes("403")) error = "You are not a member of this team";
   else if (e.message?.includes("404")) error = "Team not found";
   else error = "Failed to load team";
+}
+
+// Load team tasks if on tasks tab
+if (team && activeTab === "tasks") {
+  try {
+    const tasksData = await apiFetch<any>(`/v1/worker-teams/${teamId}/tasks`, { token });
+    teamTasks = tasksData?.items ?? [];
+  } catch (_) { teamTasks = []; }
 }
 
 const isOwner = team?.my_role === "owner";
@@ -114,6 +125,25 @@ const pendingInvites: any[] = team?.pending_invites ?? [];
       </div>
     )}
 
+    {/* Tab Navigation */}
+    {team && (
+      <div class="flex gap-1 mb-6 border-b border-gray-800">
+        {["members", "tasks"].map((tab) => (
+          <a
+            href={`/worker/teams/${teamId}?tab=${tab}`}
+            class:list={[
+              "px-4 py-2.5 text-sm font-medium transition-colors -mb-px border-b-2",
+              activeTab === tab
+                ? "text-violet-400 border-violet-500"
+                : "text-gray-400 border-transparent hover:text-gray-300"
+            ]}
+          >
+            {tab === "members" ? "Members" : "Tasks"}
+          </a>
+        ))}
+      </div>
+    )}
+
     {error ? (
       <div class="bg-red-950/30 border border-red-800 rounded-xl p-8 text-center">
         <div class="text-4xl mb-4">⚠️</div>
@@ -123,13 +153,59 @@ const pendingInvites: any[] = team?.pending_invites ?? [];
     ) : team && (
       <div class="space-y-6">
         {/* Description */}
-        {team.description && (
+        {team.description && activeTab === "members" && (
           <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
             <p class="text-gray-300 text-sm leading-relaxed">{team.description}</p>
           </div>
         )}
 
+        {/* Tasks tab */}
+        {activeTab === "tasks" && (
+          <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+            <div class="px-5 py-4 border-b border-gray-800">
+              <h2 class="font-semibold text-sm">Tasks Assigned to This Team</h2>
+            </div>
+            {teamTasks.length === 0 ? (
+              <div class="px-5 py-8 text-center text-gray-500 text-sm">
+                No tasks assigned to this team yet.
+              </div>
+            ) : (
+              <div class="divide-y divide-gray-800">
+                {teamTasks.map((t: any) => (
+                  <div class="px-5 py-4 flex items-center justify-between gap-4">
+                    <div>
+                      <div class="flex items-center gap-2 mb-0.5">
+                        <span class="font-mono text-sm text-violet-400">{t.type}</span>
+                        <span class:list={[
+                          "text-xs px-2 py-0.5 rounded-full",
+                          t.status === "open" ? "bg-violet-900/40 text-violet-300" :
+                          t.status === "assigned" ? "bg-amber-900/40 text-amber-300" :
+                          t.status === "completed" ? "bg-green-900/40 text-green-300" :
+                          "bg-gray-700 text-gray-400"
+                        ]}>{t.status}</span>
+                      </div>
+                      {t.task_instructions && (
+                        <p class="text-xs text-gray-500 line-clamp-1 mt-0.5">{t.task_instructions}</p>
+                      )}
+                    </div>
+                    <div class="flex items-center gap-4 text-xs text-gray-500 shrink-0">
+                      {t.worker_reward_credits && (
+                        <span class="text-violet-400">{t.worker_reward_credits} cr</span>
+                      )}
+                      <a href={`/worker/marketplace`}
+                        class="text-violet-400 hover:text-violet-300 transition-colors">
+                        View →
+                      </a>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Invite a member (any member can invite) */}
+        {activeTab === "members" && (
         <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
           <h2 class="font-semibold text-sm mb-4">✉️ Invite a Worker</h2>
           <form method="POST" class="flex gap-3 items-end">
@@ -162,9 +238,10 @@ const pendingInvites: any[] = team?.pending_invites ?? [];
             </button>
           </form>
         </div>
+        )}
 
         {/* Pending invites (owner only) */}
-        {isOwner && pendingInvites.length > 0 && (
+        {activeTab === "members" && isOwner && pendingInvites.length > 0 && (
           <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
             <div class="px-5 py-4 border-b border-gray-800">
               <h2 class="font-semibold text-sm">📬 Pending Invitations ({pendingInvites.length})</h2>
@@ -192,6 +269,7 @@ const pendingInvites: any[] = team?.pending_invites ?? [];
         )}
 
         {/* Members list */}
+        {activeTab === "members" && (
         <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
           <div class="px-5 py-4 border-b border-gray-800">
             <h2 class="font-semibold text-sm">👤 Members ({members.length})</h2>
@@ -244,9 +322,10 @@ const pendingInvites: any[] = team?.pending_invites ?? [];
             ))}
           </div>
         </div>
+        )}
 
         {/* Danger zone (owner only) */}
-        {isOwner && (
+        {activeTab === "members" && isOwner && (
           <div class="bg-red-950/10 border border-red-900/30 rounded-xl p-5">
             <h2 class="font-semibold text-sm text-red-400 mb-3">⚠️ Danger Zone</h2>
             <div class="flex items-center justify-between">

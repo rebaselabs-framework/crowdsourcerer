@@ -45,7 +45,11 @@ class NotifType:
     INVITE_ACCEPTED      = "invite_accepted"  # Worker accepted an invite
     INVITE_DECLINED      = "invite_declined"  # Worker declined an invite
     WATCHLIST_ALERT      = "watchlist_alert"  # Watched task became available again
-    RATING_RECEIVED      = "rating_received"  # Requester rated worker's output
+    RATING_RECEIVED          = "rating_received"        # Requester rated worker's output
+    APPLICATION_RECEIVED     = "application_received"   # Requester got a new application
+    APPLICATION_ACCEPTED     = "application_accepted"   # Worker's application was accepted
+    APPLICATION_REJECTED     = "application_rejected"   # Worker's application was rejected
+    TEAM_TASK_ASSIGNED       = "team_task_assigned"     # A task was assigned to a worker team
 
 
 async def create_notification(

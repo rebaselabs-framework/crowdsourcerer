@@ -31,6 +31,9 @@ try {
         <p class="text-gray-400 text-sm mt-1">Platform overview and user management</p>
       </div>
       <div class="flex gap-3">
+        <a href="/admin/health" class="px-4 py-2 bg-green-900/50 hover:bg-green-900/70 text-sm text-green-300 rounded-lg transition-colors border border-green-800/50">
+          System Health →
+        </a>
         <a href="/admin/analytics" class="px-4 py-2 bg-violet-900/50 hover:bg-violet-900/70 text-sm text-violet-300 rounded-lg transition-colors border border-violet-800/50">
           📊 Analytics →
         </a>
@@ -280,6 +283,11 @@ try {
             <div class="text-2xl mb-2">⏳</div>
             <div class="font-semibold text-sm mb-1">Task Queue</div>
             <div class="text-xs text-gray-500">Live queue by priority + ETA estimates</div>
+          </a>
+          <a href="/admin/health" class="bg-gray-900 border border-green-800/30 hover:border-green-600/50 rounded-xl p-5 transition-colors">
+            <div class="text-2xl mb-2">🏥</div>
+            <div class="font-semibold text-sm mb-1">System Health</div>
+            <div class="text-xs text-gray-500">DB ping, error rate, queue depth</div>
           </a>
         </div>
       </>

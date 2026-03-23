@@ -1,0 +1,181 @@
+---
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Astro.cookies);
+if (!token) return Astro.redirect("/login?next=/worker/applications");
+
+// Handle withdraw action
+let actionError: string | null = null;
+let actionSuccess: string | null = null;
+if (Astro.request.method === "POST") {
+  const form = await Astro.request.formData();
+  const action = form.get("action") as string;
+  if (action === "withdraw") {
+    const taskId = form.get("task_id") as string;
+    try {
+      await apiFetch<any>(`/v1/tasks/${taskId}/applications`, {
+        method: "DELETE",
+        token,
+      });
+      actionSuccess = "Application withdrawn";
+    } catch (e: any) {
+      actionError = e.message || "Failed to withdraw";
+    }
+  }
+}
+
+const statusParam = Astro.url.searchParams.get("status") || "";
+const page = parseInt(Astro.url.searchParams.get("page") || "1");
+
+let applications: any[] = [];
+let error: string | null = null;
+let me: any = null;
+
+try {
+  [applications, me] = await Promise.all([
+    apiFetch<any[]>(`/v1/worker/applications?page=${page}&page_size=20${statusParam ? `&status=${statusParam}` : ""}`, { token }),
+    apiFetch<any>("/v1/users/me", { token }),
+  ]);
+} catch (e: any) {
+  if (e.message?.includes("401")) return Astro.redirect("/login");
+  error = "Failed to load applications";
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  "": "All",
+  pending: "Pending",
+  accepted: "Accepted",
+  rejected: "Rejected",
+  withdrawn: "Withdrawn",
+};
+
+const STATUS_BADGE: Record<string, string> = {
+  pending:   "bg-yellow-900/40 text-yellow-300 border border-yellow-800/40",
+  accepted:  "bg-green-900/40 text-green-300 border border-green-800/40",
+  rejected:  "bg-red-900/40 text-red-300 border border-red-800/40",
+  withdrawn: "bg-gray-800 text-gray-500 border border-gray-700",
+};
+---
+
+<Layout title="My Applications — CrowdSorcerer">
+  <div class="max-w-4xl mx-auto px-6 py-10">
+    <!-- Header -->
+    <div class="flex items-start justify-between mb-8">
+      <div>
+        <div class="flex items-center gap-2 mb-1">
+          <a href="/worker" class="text-gray-500 hover:text-gray-300 text-sm transition-colors">Worker</a>
+          <span class="text-gray-600">/</span>
+          <span class="text-sm text-gray-300">My Applications</span>
+        </div>
+        <h1 class="text-2xl font-bold">My Applications</h1>
+        <p class="text-gray-400 text-sm mt-1">Track your task proposals and their status</p>
+      </div>
+      <a href="/worker/marketplace"
+        class="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm rounded-lg transition-colors">
+        Browse Tasks
+      </a>
+    </div>
+
+    <!-- Feedback -->
+    {actionSuccess && (
+      <div class="mb-6 bg-green-950/30 border border-green-800 rounded-lg px-4 py-3 text-green-300 text-sm">
+        {actionSuccess}
+      </div>
+    )}
+    {actionError && (
+      <div class="mb-6 bg-red-950/30 border border-red-800 rounded-lg px-4 py-3 text-red-300 text-sm">
+        {actionError}
+      </div>
+    )}
+
+    <!-- Status filter -->
+    <div class="flex gap-2 mb-6 flex-wrap">
+      {Object.entries(STATUS_LABELS).map(([val, label]) => (
+        <a
+          href={val ? `/worker/applications?status=${val}` : "/worker/applications"}
+          class:list={[
+            "px-3 py-1.5 rounded-full text-sm transition-colors border",
+            statusParam === val
+              ? "bg-violet-900/60 border-violet-700 text-violet-300"
+              : "bg-gray-900 border-gray-700 text-gray-400 hover:border-gray-500 hover:text-gray-300"
+          ]}
+        >
+          {label}
+        </a>
+      ))}
+    </div>
+
+    {error ? (
+      <div class="bg-red-950/30 border border-red-800 rounded-xl p-8 text-center">
+        <p class="text-red-400">{error}</p>
+      </div>
+    ) : applications.length === 0 ? (
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-12 text-center">
+        <div class="text-4xl mb-4">📝</div>
+        <h2 class="text-lg font-semibold mb-2">No applications yet</h2>
+        <p class="text-gray-400 text-sm mb-4">
+          {statusParam
+            ? `No ${statusParam} applications found.`
+            : "You haven't applied to any tasks yet."}
+        </p>
+        <a href="/worker/marketplace" class="text-violet-400 hover:text-violet-300 text-sm">Browse application tasks →</a>
+      </div>
+    ) : (
+      <div class="space-y-4">
+        {applications.map((app: any) => (
+          <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 hover:border-gray-700 transition-colors">
+            <div class="flex items-start justify-between gap-4 mb-3">
+              <div>
+                <div class="flex items-center gap-2 mb-1">
+                  <a href={`/dashboard/tasks/${app.task_id}`}
+                    class="text-sm font-medium text-violet-400 hover:text-violet-300 transition-colors font-mono">
+                    {app.task_id.slice(0, 8)}…
+                  </a>
+                  <span class:list={["text-xs px-2 py-0.5 rounded-full", STATUS_BADGE[app.status] || "bg-gray-700 text-gray-400"]}>
+                    {app.status}
+                  </span>
+                </div>
+                <p class="text-xs text-gray-500">
+                  Applied {new Date(app.created_at).toLocaleDateString()}
+                </p>
+              </div>
+              {app.status === "pending" && (
+                <form method="POST">
+                  <input type="hidden" name="action" value="withdraw" />
+                  <input type="hidden" name="task_id" value={app.task_id} />
+                  <button type="submit"
+                    class="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-400 text-xs rounded-lg transition-colors">
+                    Withdraw
+                  </button>
+                </form>
+              )}
+            </div>
+            <p class="text-sm text-gray-300 leading-relaxed line-clamp-3">{app.proposal}</p>
+            {app.proposed_reward && (
+              <p class="text-xs text-violet-400 mt-2">
+                Proposed reward: {app.proposed_reward} credits
+              </p>
+            )}
+          </div>
+        ))}
+      </div>
+    )}
+
+    <!-- Pagination -->
+    {applications.length >= 20 && (
+      <div class="flex justify-center gap-3 mt-8">
+        {page > 1 && (
+          <a href={`/worker/applications?page=${page - 1}${statusParam ? `&status=${statusParam}` : ""}`}
+            class="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm rounded-lg transition-colors">
+            ← Previous
+          </a>
+        )}
+        <a href={`/worker/applications?page=${page + 1}${statusParam ? `&status=${statusParam}` : ""}`}
+          class="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm rounded-lg transition-colors">
+          Next →
+        </a>
+      </div>
+    )}
+  </div>
+</Layout>

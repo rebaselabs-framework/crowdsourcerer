@@ -231,6 +231,14 @@ class TaskDB(Base):
     # Priority auto-escalation — set once when priority is bumped by the sweeper
     priority_escalated_at = Column(DateTime(timezone=True), nullable=True)
 
+    # Application mode — if True, workers must apply; direct claiming is blocked
+    application_mode = Column(Boolean, default=False, nullable=False)
+
+    # Team task routing — if set, only team members can claim the task
+    assigned_team_id = Column(UUID(as_uuid=True),
+                              ForeignKey("worker_teams.id", ondelete="SET NULL"),
+                              nullable=True, index=True)
+
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     started_at = Column(DateTime(timezone=True), nullable=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)
@@ -1490,3 +1498,28 @@ class WorkerTeamInviteDB(Base):
     team = relationship("WorkerTeamDB", foreign_keys=[team_id], back_populates="invites")
     invitee = relationship("UserDB", foreign_keys=[invitee_id], backref="worker_team_invites_received")
     inviter = relationship("UserDB", foreign_keys=[invited_by], backref="worker_team_invites_sent")
+
+
+class TaskApplicationDB(Base):
+    """A worker's application/proposal to work on a task.
+
+    Used when the task has application_mode=True.  Workers submit proposals
+    and the requester accepts one (which auto-assigns the task).
+    """
+    __tablename__ = "task_applications"
+    __table_args__ = (UniqueConstraint("task_id", "worker_id", name="uq_task_application"),)
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    task_id = Column(UUID(as_uuid=True), ForeignKey("tasks.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    worker_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
+                       nullable=False, index=True)
+    proposal = Column(Text, nullable=False)          # max 1000 chars enforced in router
+    proposed_reward = Column(Integer, nullable=True)  # optional credit counter-offer
+    status = Column(String(20), nullable=False, default="pending")
+    # status values: pending | accepted | rejected | withdrawn
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+
+    task = relationship("TaskDB", backref="applications", foreign_keys=[task_id])
+    worker = relationship("UserDB", backref="task_applications", foreign_keys=[worker_id])
