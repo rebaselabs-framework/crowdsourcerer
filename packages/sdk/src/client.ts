@@ -27,6 +27,11 @@ import type {
   TemplateUseResponse,
   TemplateRateResponse,
   QuotaStatus,
+  MarketplaceTask,
+  WebhookLog,
+  WebhookStats,
+  WebhookEventInfo,
+  WebhookEventType,
 } from "@crowdsourcerer/types";
 import {
   CrowdSorcererError,
@@ -356,6 +361,80 @@ export class CrowdSorcerer {
   async listTemplateCategories(): Promise<Array<{ category: string; count: number }>> {
     return this.fetch<Array<{ category: string; count: number }>>(
       "/v1/marketplace/categories"
+    );
+  }
+
+  // ─── Worker marketplace ──────────────────────────────────────────────────
+
+  /**
+   * Browse open human tasks (chronological order, supports filters).
+   */
+  async listMarketplaceTasks(params?: {
+    type?: string;
+    priority?: string;
+    page?: number;
+    page_size?: number;
+  }): Promise<PaginatedResponse<MarketplaceTask>> {
+    const qs = new URLSearchParams();
+    if (params?.type) qs.set("type", params.type);
+    if (params?.priority) qs.set("priority", params.priority);
+    if (params?.page) qs.set("page", String(params.page));
+    if (params?.page_size) qs.set("page_size", String(params.page_size));
+    return this.fetch<PaginatedResponse<MarketplaceTask>>(
+      `/v1/worker/tasks${qs.size ? `?${qs}` : ""}`
+    );
+  }
+
+  /**
+   * Get a skill-ranked feed of tasks personalised for the authenticated worker.
+   * Each task includes a `match_score` (0.0–1.0) field.
+   */
+  async getPersonalisedFeed(params?: {
+    page?: number;
+    page_size?: number;
+  }): Promise<PaginatedResponse<MarketplaceTask>> {
+    const qs = new URLSearchParams();
+    if (params?.page) qs.set("page", String(params.page));
+    if (params?.page_size) qs.set("page_size", String(params.page_size));
+    return this.fetch<PaginatedResponse<MarketplaceTask>>(
+      `/v1/worker/tasks/feed${qs.size ? `?${qs}` : ""}`
+    );
+  }
+
+  // ─── Webhooks ────────────────────────────────────────────────────────────
+
+  /**
+   * List all supported webhook event types.
+   */
+  async listWebhookEvents(): Promise<{ events: WebhookEventInfo[]; default_events: WebhookEventType[] }> {
+    return this.fetch("/v1/webhooks/events");
+  }
+
+  /**
+   * Get webhook delivery stats for the authenticated user.
+   */
+  async getWebhookStats(): Promise<WebhookStats> {
+    return this.fetch<WebhookStats>("/v1/webhooks/stats");
+  }
+
+  /**
+   * List webhook delivery logs.
+   */
+  async listWebhookLogs(params?: {
+    task_id?: string;
+    event_type?: WebhookEventType;
+    success?: boolean;
+    page?: number;
+    page_size?: number;
+  }): Promise<PaginatedResponse<WebhookLog>> {
+    const qs = new URLSearchParams();
+    if (params?.task_id) qs.set("task_id", params.task_id);
+    if (params?.event_type) qs.set("event_type", params.event_type);
+    if (params?.success != null) qs.set("success", String(params.success));
+    if (params?.page) qs.set("page", String(params.page));
+    if (params?.page_size) qs.set("page_size", String(params.page_size));
+    return this.fetch<PaginatedResponse<WebhookLog>>(
+      `/v1/webhooks/logs${qs.size ? `?${qs}` : ""}`
     );
   }
 }

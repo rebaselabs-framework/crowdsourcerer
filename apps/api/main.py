@@ -7,6 +7,7 @@ import structlog
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.openapi.utils import get_openapi
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -24,12 +25,87 @@ logger = structlog.get_logger()
 
 limiter = Limiter(key_func=get_remote_address, default_limits=["200/minute"])
 
+_DESCRIPTION = """
+## CrowdSorcerer API
+
+**CrowdSorcerer** is an AI-native task crowdsourcing platform that combines
+human intelligence with AI automation to complete any task at scale.
+
+### Key concepts
+
+| Concept | Description |
+|---------|-------------|
+| **Task** | A unit of work — either run by AI workers or posted for human workers |
+| **Credits** | Platform currency. 1 USD = 100 credits |
+| **Worker** | A user who completes human tasks and earns credits |
+| **Requester** | A user who creates tasks and spends credits |
+| **Pipeline** | A sequence of tasks that chain together |
+| **Webhook** | HTTP callback fired on task lifecycle events |
+
+### Authentication
+
+All endpoints (except `/health` and `/v1/tasks/public`) require a
+`Bearer` token obtained from `POST /v1/auth/token` or an API key set in
+`X-API-Key` header.
+
+### Webhook events
+
+Subscribe your task to lifecycle events via the `webhook_events` field:
+- `task.created` `task.assigned` `task.submission_received`
+- `task.completed` `task.failed` `task.approved` `task.rejected`
+- `sla.breach`
+
+Full catalogue: `GET /v1/webhooks/events`
+
+### SDKs
+
+- **Python**: `pip install crowdsourcerer-sdk`
+- **TypeScript/JS**: `npm install @crowdsourcerer/sdk`
+"""
+
+_TAGS_METADATA = [
+    {"name": "auth", "description": "Registration, login, and API key management"},
+    {"name": "tasks", "description": "Create and manage AI and human tasks"},
+    {"name": "worker", "description": "Worker marketplace — browse, claim, and submit tasks"},
+    {"name": "credits", "description": "Credit balance, top-up, and transaction history"},
+    {"name": "webhooks", "description": "Webhook delivery logs and event type catalogue"},
+    {"name": "pipelines", "description": "Multi-step task pipelines with AI/human chaining"},
+    {"name": "certifications", "description": "Worker skill certifications for quality assurance"},
+    {"name": "experiments", "description": "A/B testing framework for task configuration"},
+    {"name": "sla", "description": "SLA (Service Level Agreement) monitoring and breach alerts"},
+    {"name": "leaderboard", "description": "Worker leaderboard by XP, tasks, and earnings"},
+    {"name": "notifications", "description": "In-app notification center"},
+    {"name": "orgs", "description": "Team and organization management with shared credits"},
+    {"name": "analytics", "description": "Requester-facing task cost and completion analytics"},
+    {"name": "marketplace", "description": "Community template marketplace for reusable task configs"},
+    {"name": "reputation", "description": "Worker reputation scores and moderation strikes"},
+    {"name": "payouts", "description": "Worker payout requests and admin review"},
+    {"name": "referrals", "description": "Referral/invite system with credit rewards"},
+    {"name": "admin", "description": "Platform administration (admin only)"},
+    {"name": "search", "description": "Global and advanced search across tasks, pipelines, templates"},
+    {"name": "health", "description": "Health check and version info"},
+]
+
 app = FastAPI(
     title="CrowdSorcerer API",
-    description="AI-native task crowdsourcing platform powered by RebaseKit",
+    description=_DESCRIPTION,
     version=settings.app_version,
     docs_url="/docs",
     redoc_url="/redoc",
+    openapi_tags=_TAGS_METADATA,
+    contact={
+        "name": "RebaseLabs",
+        "url": "https://rebaselabs.online",
+        "email": "support@rebaselabs.online",
+    },
+    license_info={
+        "name": "MIT",
+        "url": "https://opensource.org/licenses/MIT",
+    },
+    servers=[
+        {"url": "https://api.rebaselabs.online", "description": "Production"},
+        {"url": "http://localhost:8100", "description": "Local development"},
+    ],
 )
 
 app.state.limiter = limiter
@@ -117,7 +193,19 @@ async def root():
         "name": "CrowdSorcerer API",
         "version": settings.app_version,
         "docs": "/docs",
+        "redoc": "/redoc",
+        "openapi_spec": "/openapi.json",
+        "sdks": {
+            "python": "pip install crowdsourcerer-sdk",
+            "typescript": "npm install @crowdsourcerer/sdk",
+        },
     }
+
+
+@app.get("/openapi.json", include_in_schema=False)
+async def get_openapi_spec():
+    """Download the raw OpenAPI 3.x spec as JSON."""
+    return app.openapi()
 
 # ─── Startup / Shutdown ───────────────────────────────────────────────────
 

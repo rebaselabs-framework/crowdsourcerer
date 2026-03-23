@@ -539,3 +539,51 @@ async def get_sweeper_status(
         "timed_out_last_24h": recent_timeouts,
         "checked_at": now.isoformat(),
     }
+
+
+# ─── Worker Matching Stats ────────────────────────────────────────────────
+
+@router.get("/matching/stats")
+async def get_matching_stats(
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(require_admin),
+):
+    """Return platform-wide skill matching statistics."""
+    from models.db import WorkerSkillDB
+    from sqlalchemy import distinct
+
+    # Total worker skill rows
+    total_skills = await db.scalar(select(func.count()).select_from(WorkerSkillDB)) or 0
+
+    # Workers with at least one skill profile
+    skilled_workers = await db.scalar(
+        select(func.count(distinct(WorkerSkillDB.worker_id)))
+    ) or 0
+
+    # Average proficiency per task type
+    prof_rows = (await db.execute(
+        select(
+            WorkerSkillDB.task_type,
+            func.avg(WorkerSkillDB.proficiency_level).label("avg_prof"),
+            func.count().label("workers"),
+        ).group_by(WorkerSkillDB.task_type).order_by(func.count().desc())
+    )).all()
+
+    # Tasks with a min_skill_level set
+    gated_tasks = await db.scalar(
+        select(func.count()).select_from(TaskDB).where(TaskDB.min_skill_level != None)  # noqa: E711
+    ) or 0
+
+    return {
+        "total_skill_profiles": total_skills,
+        "workers_with_skills": skilled_workers,
+        "gated_tasks": gated_tasks,
+        "proficiency_by_type": [
+            {
+                "task_type": r.task_type,
+                "avg_proficiency": round(r.avg_prof, 2),
+                "worker_count": r.workers,
+            }
+            for r in prof_rows
+        ],
+    }

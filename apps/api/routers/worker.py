@@ -10,9 +10,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_
 
+import asyncio as _asyncio_wh
 from core.auth import get_current_user_id
 from core.database import get_db
 from core.reputation import refresh_worker_reputation
+from core.webhooks import fire_webhook_for_task
 from models.db import (
     TaskDB, UserDB, TaskAssignmentDB, CreditTransactionDB,
     DailyChallengeDB, DailyChallengeProgressDB,
@@ -213,6 +215,85 @@ async def get_worker_stats(
     )
 
 
+# ─── Skill-based task feed ────────────────────────────────────────────────
+
+@router.get("/tasks/feed", response_model=PaginatedMarketplaceTasks)
+async def skill_matched_task_feed(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Return open tasks ranked by skill match for this worker.
+
+    Tasks the worker is ineligible for (skill/reputation requirements not met)
+    are excluded. Each item includes a ``match_score`` (0.0–1.0) field so the
+    frontend can show a match indicator.
+    """
+    from core.matching import rank_tasks_for_worker
+
+    result = await db.execute(select(UserDB).where(UserDB.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user or user.role not in ("worker", "both"):
+        raise HTTPException(status_code=403, detail="Not enrolled as a worker.")
+
+    if user.is_banned:
+        raise HTTPException(status_code=403, detail="Your worker account has been suspended.")
+
+    worker_rep = user.reputation_score or 0.0
+
+    # Fetch a large pool of open tasks for scoring (up to 500 at a time)
+    pool_size = min(500, page_size * 25)
+    q = select(TaskDB).where(
+        TaskDB.status == "open",
+        TaskDB.execution_mode == "human",
+        TaskDB.assignments_completed < TaskDB.assignments_required,
+        ~TaskDB.id.in_(
+            select(TaskAssignmentDB.task_id).where(
+                TaskAssignmentDB.worker_id == user_id,
+                TaskAssignmentDB.status.in_(["active", "submitted", "approved"]),
+            )
+        ),
+        TaskDB.user_id != user_id,
+        (TaskDB.min_reputation_score == None) | (TaskDB.min_reputation_score <= worker_rep),  # noqa: E711
+    ).order_by(TaskDB.created_at.asc()).limit(pool_size)
+
+    pool_tasks = list((await db.execute(q)).scalars().all())
+
+    # Score and rank
+    ranked = await rank_tasks_for_worker(db, worker=user, tasks=pool_tasks)
+
+    total = len(ranked)
+    offset = (page - 1) * page_size
+    page_items = ranked[offset: offset + page_size]
+
+    items = [
+        MarketplaceTaskOut(
+            id=t.id,
+            type=t.type,
+            priority=t.priority,
+            reward_credits=t.worker_reward_credits or 2,
+            estimated_minutes=TASK_ESTIMATED_MINUTES.get(t.type, 3),
+            assignments_required=t.assignments_required,
+            assignments_completed=t.assignments_completed,
+            slots_available=t.assignments_required - t.assignments_completed,
+            task_instructions=t.task_instructions,
+            created_at=t.created_at,
+            match_score=round(score, 3),
+            min_skill_level=t.min_skill_level,
+        )
+        for t, score in page_items
+    ]
+
+    return PaginatedMarketplaceTasks(
+        items=items,
+        total=total,
+        page=page,
+        page_size=page_size,
+        has_next=(offset + page_size) < total,
+    )
+
+
 # ─── Marketplace ──────────────────────────────────────────────────────────
 
 @router.get("/tasks", response_model=PaginatedMarketplaceTasks)
@@ -281,6 +362,7 @@ async def list_marketplace_tasks(
             slots_available=t.assignments_required - t.assignments_completed,
             task_instructions=t.task_instructions,
             created_at=t.created_at,
+            min_skill_level=t.min_skill_level,
         )
         for t in tasks
     ]
@@ -356,6 +438,24 @@ async def claim_task(
                        f"Your current score is {user.reputation_score:.0f}.",
             )
 
+    # Skill level gate check
+    if task.min_skill_level is not None:
+        from models.db import WorkerSkillDB
+        skill_res = await db.execute(
+            select(WorkerSkillDB).where(
+                WorkerSkillDB.worker_id == user_id,
+                WorkerSkillDB.task_type == task.type,
+            )
+        )
+        skill = skill_res.scalar_one_or_none()
+        worker_prof = skill.proficiency_level if skill else 1
+        if worker_prof < task.min_skill_level:
+            raise HTTPException(
+                status_code=403,
+                detail=f"This task requires proficiency level {task.min_skill_level}+ "
+                       f"in {task.type}. Your level: {worker_prof}.",
+            )
+
     # Check worker hasn't already claimed this task
     existing = await db.scalar(
         select(func.count()).where(
@@ -416,6 +516,15 @@ async def claim_task(
     await db.refresh(assignment)
 
     logger.info("task_claimed", task_id=str(task_id), worker_id=user_id)
+
+    # Fire task.assigned webhook to the task owner
+    if task.webhook_url:
+        _asyncio_wh.create_task(fire_webhook_for_task(
+            task=task,
+            event_type="task.assigned",
+            extra={"type": task.type, "worker_id": str(user_id),
+                   "assignment_id": str(assignment.id)},
+        ))
 
     # ── Onboarding: mark explore step on first claim ───────────────────────
     try:
@@ -669,6 +778,15 @@ async def submit_task(
                     str(task_id),
                     task.type,
                     worker_name=worker_display,
+                ))
+
+            # Webhook: task.submission_received → requester
+            if task.webhook_url:
+                _asyncio_wh.create_task(fire_webhook_for_task(
+                    task=task,
+                    event_type="task.submission_received",
+                    extra={"type": task.type, "worker_id": str(user_id),
+                           "assignment_id": str(assignment.id)},
                 ))
         except Exception:
             pass  # Notification errors never block submission response

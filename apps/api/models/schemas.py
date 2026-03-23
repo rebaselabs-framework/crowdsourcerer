@@ -88,6 +88,8 @@ class TaskCreateRequest(BaseModel):
     priority: Literal["low", "normal", "high", "urgent"] = "normal"
     metadata: Optional[dict[str, Any]] = None
     webhook_url: Optional[str] = None
+    # Which events to subscribe to. NULL/empty → ["task.completed"]
+    webhook_events: Optional[list[str]] = None
     org_id: Optional[UUID] = None  # Create task under an org's credit pool
     # Human task fields (optional; only used when type is a human task type)
     worker_reward_credits: Optional[int] = Field(None, ge=1, le=10000)
@@ -96,6 +98,8 @@ class TaskCreateRequest(BaseModel):
     task_instructions: Optional[str] = None
     # Consensus strategy (only relevant when assignments_required > 1)
     consensus_strategy: CONSENSUS_STRATEGIES = "any_first"
+    # Minimum worker skill level (1–5) required to claim this task
+    min_skill_level: Optional[int] = Field(None, ge=1, le=5)
 
 
 class TaskCreateResponse(BaseModel):
@@ -287,6 +291,9 @@ class MarketplaceTaskOut(BaseModel):
     slots_available: int
     task_instructions: Optional[str] = None
     created_at: datetime
+    # Skill-based matching fields (populated when using /v1/worker/tasks/feed)
+    match_score: Optional[float] = None     # 0.0–1.0; None = not yet computed
+    min_skill_level: Optional[int] = None   # Required proficiency (1–5) set by requester
 
 
 class PaginatedMarketplaceTasks(BaseModel):

@@ -1,0 +1,35 @@
+---
+// Full-page API reference using Scalar — no Layout wrapper needed (scalar handles its own UI)
+const apiUrl = import.meta.env.PUBLIC_API_URL || "https://crowdsourcerer.rebaselabs.online";
+const specUrl = `${apiUrl}/openapi.json`;
+---
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CrowdSorcerer — API Reference</title>
+  <meta name="description" content="Complete API reference for the CrowdSorcerer crowdsourcing platform. Browse all endpoints, schemas, and webhook events." />
+  <!-- Scalar API Reference CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference@latest/dist/browser/standalone.min.js" defer></script>
+  <style>
+    body { margin: 0; padding: 0; }
+  </style>
+</head>
+<body>
+  <script id="api-reference" data-url={specUrl} data-configuration={JSON.stringify({
+    theme: "purple",
+    layout: "modern",
+    defaultHttpClient: { targetKey: "node", clientKey: "fetch" },
+    metaData: {
+      title: "CrowdSorcerer API Reference",
+      description: "AI-native task crowdsourcing platform",
+      ogDescription: "Complete REST API reference for CrowdSorcerer",
+      ogTitle: "CrowdSorcerer API Reference",
+    },
+    hiddenClients: [],
+    showSidebar: true,
+    searchHotKey: "k",
+  })}></script>
+</body>
+</html>

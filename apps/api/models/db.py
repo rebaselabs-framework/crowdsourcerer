@@ -139,6 +139,8 @@ class TaskDB(Base):
     credits_used = Column(Integer, nullable=True)
     duration_ms = Column(BigInteger, nullable=True)
     webhook_url = Column(String(2048), nullable=True)
+    # Subscribed webhook events. NULL/empty → default ["task.completed"]
+    webhook_events = Column(JSON, nullable=True)
     metadata = Column(JSON, nullable=True)
 
     # Human task fields
@@ -152,6 +154,7 @@ class TaskDB(Base):
     is_gold_standard = Column(Boolean, default=False, nullable=False)  # Hidden QC task
     gold_answer = Column(JSON, nullable=True)                          # Expected answer for QC
     min_reputation_score = Column(Float, nullable=True)                # Only workers with rep >= this can claim
+    min_skill_level = Column(Integer, nullable=True)                    # 1–5; require worker proficiency >= this
 
     # Dispute / consensus fields (for multi-worker human tasks)
     # Strategies: any_first | majority_vote | unanimous | requester_review
@@ -280,6 +283,7 @@ class WebhookLogDB(Base):
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
                      nullable=False, index=True)
     url = Column(String(2048), nullable=False)
+    event_type = Column(String(64), nullable=True, default="task.completed")  # e.g. task.created
     attempt = Column(Integer, default=1, nullable=False)  # 1-indexed
     status_code = Column(Integer, nullable=True)          # HTTP status if response received
     success = Column(Boolean, default=False, nullable=False)
@@ -355,6 +359,7 @@ class WorkerSkillDB(Base):
     avg_response_minutes = Column(Float, nullable=True)   # avg time from claim to submit
     credits_earned = Column(Integer, default=0, nullable=False)
     proficiency_level = Column(Integer, default=1, nullable=False)  # 1–5
+    match_weight = Column(Float, default=1.0, nullable=True)         # routing weight modifier
     last_task_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)

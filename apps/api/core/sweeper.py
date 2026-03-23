@@ -22,6 +22,7 @@ from sqlalchemy import select, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from models.db import TaskDB, TaskAssignmentDB, UserDB, SLABreachDB
+from core.webhooks import fire_webhook_for_task
 
 logger = structlog.get_logger()
 
@@ -180,6 +181,16 @@ async def _sweep_sla_breaches(session_factory: async_sessionmaker) -> int:
                     plan=plan,
                     priority=priority,
                 )
+                # Fire sla.breach webhook if task has one
+                if task.webhook_url:
+                    asyncio.create_task(fire_webhook_for_task(
+                        task=task,
+                        event_type="sla.breach",
+                        extra={"plan": plan, "priority": priority,
+                               "breach_at": deadline.isoformat(),
+                               "overdue_hours": round(
+                                   (now - deadline).total_seconds() / 3600, 2)},
+                    ))
 
             if breached:
                 await db.commit()

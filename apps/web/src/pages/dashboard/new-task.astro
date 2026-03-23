@@ -57,11 +57,15 @@ if (Astro.request.method === "POST") {
   const inputRaw = form.get("input") as string;
   const priority = form.get("priority") as string || "normal";
   const webhookUrl = form.get("webhook_url") as string;
+  const webhookEventsRaw = form.getAll("webhook_events") as string[];
 
   try {
     const input = JSON.parse(inputRaw);
     const body: any = { type, input, priority };
-    if (webhookUrl) body.webhook_url = webhookUrl;
+    if (webhookUrl) {
+      body.webhook_url = webhookUrl;
+      body.webhook_events = webhookEventsRaw.length > 0 ? webhookEventsRaw : ["task.completed"];
+    }
 
     if (HUMAN_TASK_TYPES.has(type)) {
       const workerReward = Number(form.get("worker_reward_credits") || 0);
@@ -69,11 +73,14 @@ if (Astro.request.method === "POST") {
       const claimTimeout = Number(form.get("claim_timeout_minutes") || 30);
       const instructions = form.get("task_instructions") as string;
       const consensusStrategy = form.get("consensus_strategy") as string || "any_first";
+      const minSkillLevelRaw = form.get("min_skill_level") as string;
+      const minSkillLevel = minSkillLevelRaw ? Number(minSkillLevelRaw) : null;
       if (workerReward > 0) body.worker_reward_credits = workerReward;
       body.assignments_required = Math.max(1, Math.min(10, assignmentsRequired));
       body.claim_timeout_minutes = Math.max(5, Math.min(480, claimTimeout));
       if (instructions) body.task_instructions = instructions;
       body.consensus_strategy = consensusStrategy;
+      if (minSkillLevel && minSkillLevel >= 1 && minSkillLevel <= 5) body.min_skill_level = minSkillLevel;
     }
 
     const task = await apiFetch<any>("/v1/tasks", {
@@ -218,6 +225,28 @@ if (Astro.request.method === "POST") {
             class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-gray-100 focus:outline-none focus:border-violet-500 transition-colors"
             placeholder="https://your-app.com/webhook"
           />
+          <p class="text-xs text-gray-500 mt-1.5">
+            Choose which events to receive:
+          </p>
+          <div class="mt-2 flex flex-wrap gap-x-4 gap-y-1.5">
+            {[
+              ["task.created","Created"],["task.assigned","Assigned"],
+              ["task.submission_received","Submitted"],["task.completed","Completed"],
+              ["task.failed","Failed"],["task.approved","Approved"],
+              ["task.rejected","Rejected"],["sla.breach","SLA Breach"],
+            ].map(([val, label]) => (
+              <label class="flex items-center gap-1.5 text-xs text-gray-400 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  name="webhook_events"
+                  value={val}
+                  checked={val === "task.completed"}
+                  class="rounded border-gray-600 bg-gray-800 text-violet-500 focus:ring-0"
+                />
+                {label}
+              </label>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -278,6 +307,27 @@ if (Astro.request.method === "POST") {
           </select>
           <p class="text-xs text-gray-500 mt-1">
             With Majority Vote or Unanimous, disagreements are flagged for your resolution.
+          </p>
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-gray-400 mb-1.5">
+            Minimum Skill Level
+            <span class="text-gray-600">(optional, 1–5)</span>
+          </label>
+          <select
+            name="min_skill_level"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-violet-500"
+          >
+            <option value="">Any skill level</option>
+            <option value="1">1 — Novice (default)</option>
+            <option value="2">2 — Beginner</option>
+            <option value="3">3 — Intermediate</option>
+            <option value="4">4 — Advanced</option>
+            <option value="5">5 — Expert only</option>
+          </select>
+          <p class="text-xs text-gray-500 mt-1">
+            Only workers who have reached this proficiency in {"{task type}"} can claim this task.
           </p>
         </div>
 

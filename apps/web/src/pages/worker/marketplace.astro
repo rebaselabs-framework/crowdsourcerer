@@ -17,6 +17,8 @@ const url = new URL(Astro.request.url);
 const page = parseInt(url.searchParams.get("page") ?? "1");
 const filterType = url.searchParams.get("type") ?? "";
 const filterPriority = url.searchParams.get("priority") ?? "";
+// "feed" mode = skill-ranked; "browse" mode = chronological with filters
+const mode = url.searchParams.get("mode") ?? "feed";
 
 let user: any = null;
 let tasks: any = null;
@@ -29,14 +31,19 @@ try {
     return Astro.redirect("/worker");
   }
 
-  const params = new URLSearchParams({
-    page: String(page),
-    page_size: "20",
-    ...(filterType ? { type: filterType } : {}),
-    ...(filterPriority ? { priority: filterPriority } : {}),
-  });
-
-  tasks = await apiFetch(`/v1/worker/tasks?${params}`, { token });
+  if (mode === "feed") {
+    // Skill-ranked personalised feed
+    const params = new URLSearchParams({ page: String(page), page_size: "20" });
+    tasks = await apiFetch(`/v1/worker/tasks/feed?${params}`, { token });
+  } else {
+    const params = new URLSearchParams({
+      page: String(page),
+      page_size: "20",
+      ...(filterType ? { type: filterType } : {}),
+      ...(filterPriority ? { priority: filterPriority } : {}),
+    });
+    tasks = await apiFetch(`/v1/worker/tasks?${params}`, { token });
+  }
 } catch (e: any) {
   if ((e as Error).message?.includes("403")) {
     return Astro.redirect("/worker");
@@ -73,13 +80,41 @@ const HUMAN_TASK_TYPES = Object.keys(TASK_TYPE_META);
         <h1 class="text-2xl font-bold">Task Marketplace</h1>
         <p class="text-gray-400 text-sm mt-0.5">
           {tasks?.total ?? 0} task{tasks?.total !== 1 ? "s" : ""} available
+          {mode === "feed" && <span class="ml-2 text-violet-400 text-xs">· ranked by your skills</span>}
         </p>
       </div>
       <a href="/worker" class="text-sm text-gray-400 hover:text-gray-200">← Worker hub</a>
     </div>
 
-    <!-- Filters -->
-    <form method="get" class="flex flex-wrap gap-3 mb-8">
+    <!-- Mode toggle -->
+    <div class="flex gap-2 mb-6">
+      <a
+        href="/worker/marketplace?mode=feed"
+        class:list={[
+          "px-4 py-2 rounded-lg text-sm font-medium transition-colors",
+          mode === "feed"
+            ? "bg-violet-600 text-white"
+            : "bg-gray-800 text-gray-400 hover:text-gray-200 hover:bg-gray-700"
+        ]}
+      >
+        🎯 For You
+      </a>
+      <a
+        href="/worker/marketplace?mode=browse"
+        class:list={[
+          "px-4 py-2 rounded-lg text-sm font-medium transition-colors",
+          mode === "browse"
+            ? "bg-violet-600 text-white"
+            : "bg-gray-800 text-gray-400 hover:text-gray-200 hover:bg-gray-700"
+        ]}
+      >
+        🌐 Browse All
+      </a>
+    </div>
+
+    <!-- Filters (browse mode only) -->
+    {mode === "browse" && <form method="get" class="flex flex-wrap gap-3 mb-8">
+      <input type="hidden" name="mode" value="browse" />
       <select
         name="type"
         class="bg-gray-900 border border-gray-700 text-sm rounded-lg px-3 py-2 text-gray-200 focus:outline-none focus:border-violet-500"
@@ -117,7 +152,7 @@ const HUMAN_TASK_TYPES = Object.keys(TASK_TYPE_META);
           Clear
         </a>
       )}
-    </form>
+    </form>}
 
     <!-- Error -->
     {error && (
@@ -174,6 +209,18 @@ const HUMAN_TASK_TYPES = Object.keys(TASK_TYPE_META);
                       <span>👥 {task.assignments_completed}/{task.assignments_required}</span>
                       {slotsLeft <= 2 && slotsLeft > 0 && (
                         <span class="text-orange-400 font-medium">Only {slotsLeft} left!</span>
+                      )}
+                      {task.min_skill_level && (
+                        <span class="text-purple-400">Lv{task.min_skill_level}+ required</span>
+                      )}
+                      {task.match_score != null && (
+                        <span class:list={[
+                          "font-medium",
+                          task.match_score >= 0.7 ? "text-green-400" :
+                          task.match_score >= 0.4 ? "text-yellow-400" : "text-gray-500"
+                        ]}>
+                          🎯 {Math.round(task.match_score * 100)}% match
+                        </span>
                       )}
                     </div>
                     <span class="shrink-0 px-3 py-1.5 bg-emerald-700 group-hover:bg-emerald-600 text-white text-xs font-medium rounded-lg transition-colors">

@@ -245,17 +245,46 @@ export interface Task {
   task_instructions?: string;
 }
 
+/** Supported webhook event types */
+export type WebhookEventType =
+  | "task.created"
+  | "task.assigned"
+  | "task.submission_received"
+  | "task.completed"
+  | "task.failed"
+  | "task.approved"
+  | "task.rejected"
+  | "sla.breach";
+
+export const WEBHOOK_EVENTS: WebhookEventType[] = [
+  "task.created",
+  "task.assigned",
+  "task.submission_received",
+  "task.completed",
+  "task.failed",
+  "task.approved",
+  "task.rejected",
+  "sla.breach",
+];
+
+export const DEFAULT_WEBHOOK_EVENTS: WebhookEventType[] = ["task.completed"];
+
 export interface TaskCreateRequest {
   type: TaskType;
   input: TaskInput;
   priority?: TaskPriority;
   metadata?: Record<string, unknown>;
   webhook_url?: string;
+  /** Which webhook events to subscribe to. Defaults to ["task.completed"] */
+  webhook_events?: WebhookEventType[];
   // Human task options
   worker_reward_credits?: number;
   assignments_required?: number;
   claim_timeout_minutes?: number;
   task_instructions?: string;
+  consensus_strategy?: "any_first" | "majority_vote" | "unanimous" | "requester_review";
+  /** Minimum worker proficiency level (1–5) required to claim this task */
+  min_skill_level?: number;
 }
 
 export interface TaskCreateResponse {
@@ -293,6 +322,10 @@ export interface MarketplaceTask {
   slots_available: number;
   task_instructions?: string;
   created_at: string;
+  /** Skill match score 0.0–1.0 (present in /v1/worker/tasks/feed responses) */
+  match_score?: number;
+  /** Required proficiency level for this task type (1–5) */
+  min_skill_level?: number;
 }
 
 export interface WorkerStats {
@@ -516,6 +549,7 @@ export interface WebhookLog {
   id: string;
   task_id: string;
   url: string;
+  event_type: WebhookEventType;
   attempt: number;
   status_code: number | null;
   success: boolean;
@@ -524,12 +558,19 @@ export interface WebhookLog {
   created_at: string;
 }
 
+export interface WebhookEventInfo {
+  type: WebhookEventType;
+  description: string;
+  is_default: boolean;
+}
+
 export interface WebhookStats {
   total_deliveries: number;
   succeeded: number;
   failed: number;
   success_rate: number;
   avg_duration_ms: number | null;
+  by_event_type: Record<WebhookEventType, number>;
 }
 
 // ─── Admin ────────────────────────────────────────────────────────────────

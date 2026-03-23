@@ -15,6 +15,7 @@ from sqlalchemy import select, func
 
 from core.auth import get_current_user_id
 from core.database import get_db
+from core.webhooks import fire_webhook_for_task, ALL_EVENTS, DEFAULT_EVENTS
 from models.db import TaskDB, UserDB, CreditTransactionDB, TaskAssignmentDB, WebhookLogDB
 from models.schemas import (
     TaskCreateRequest, TaskCreateResponse, TaskOut, PaginatedTasks,
@@ -130,12 +131,14 @@ async def create_task(
             input=req.input,
             metadata=req.metadata,
             webhook_url=req.webhook_url,
+            webhook_events=req.webhook_events or DEFAULT_EVENTS,
             worker_reward_credits=worker_reward,
             assignments_required=req.assignments_required,
             claim_timeout_minutes=req.claim_timeout_minutes,
             task_instructions=req.task_instructions,
             consensus_strategy=consensus_strategy,
             org_id=req.org_id,
+            min_skill_level=req.min_skill_level,
         )
     else:
         # AI tasks go straight to the processing queue
@@ -148,6 +151,7 @@ async def create_task(
             input=req.input,
             metadata=req.metadata,
             webhook_url=req.webhook_url,
+            webhook_events=req.webhook_events or DEFAULT_EVENTS,
         )
 
     db.add(task)
@@ -171,6 +175,14 @@ async def create_task(
     if not is_human:
         # Run AI task in background
         background_tasks.add_task(_run_task, str(task.id), str(user_id))
+
+    # Fire task.created webhook
+    if task.webhook_url:
+        asyncio.create_task(fire_webhook_for_task(
+            task=task,
+            event_type="task.created",
+            extra={"type": task.type, "status": task.status, "priority": task.priority},
+        ))
 
     return TaskCreateResponse(
         task_id=task.id,
@@ -247,11 +259,13 @@ async def create_tasks_batch(
                     input=task_req.input,
                     metadata=task_req.metadata,
                     webhook_url=task_req.webhook_url,
+                    webhook_events=task_req.webhook_events or DEFAULT_EVENTS,
                     worker_reward_credits=worker_reward,
                     assignments_required=task_req.assignments_required,
                     claim_timeout_minutes=task_req.claim_timeout_minutes,
                     task_instructions=task_req.task_instructions,
                     credits_used=est,
+                    min_skill_level=task_req.min_skill_level,
                 )
             else:
                 task = TaskDB(
@@ -263,6 +277,7 @@ async def create_tasks_batch(
                     input=task_req.input,
                     metadata=task_req.metadata,
                     webhook_url=task_req.webhook_url,
+                    webhook_events=task_req.webhook_events or DEFAULT_EVENTS,
                     credits_used=est,
                 )
 
@@ -768,6 +783,21 @@ async def approve_submission(
         except Exception:
             pass
 
+    # Webhook: task.approved / task.completed
+    if task.webhook_url:
+        asyncio.create_task(fire_webhook_for_task(
+            task=task,
+            event_type="task.approved",
+            extra={"type": task.type, "assignment_id": str(assignment_id),
+                   "worker_id": str(assignment.worker_id)},
+        ))
+        if task.status == "completed":
+            asyncio.create_task(fire_webhook_for_task(
+                task=task,
+                event_type="task.completed",
+                extra={"type": task.type, "execution_mode": "human"},
+            ))
+
     return SubmissionReviewResponse(
         assignment_id=assignment.id,
         status="approved",
@@ -873,6 +903,16 @@ async def reject_submission(
         requester_id=user_id,
         refund=refund_amount,
     )
+
+    # Webhook: task.rejected
+    if task.webhook_url:
+        asyncio.create_task(fire_webhook_for_task(
+            task=task,
+            event_type="task.rejected",
+            extra={"type": task.type, "assignment_id": str(assignment_id),
+                   "worker_id": str(assignment.worker_id), "refund_credits": refund_amount},
+        ))
+
     return SubmissionReviewResponse(
         assignment_id=assignment.id,
         status="rejected",
@@ -1121,7 +1161,12 @@ async def _run_task(task_id: str, user_id: str):
 
             # Fire webhook if set
             if task.webhook_url:
-                asyncio.create_task(_send_webhook(task.webhook_url, task_id, user_id))
+                asyncio.create_task(fire_webhook_for_task(
+                    task=task,
+                    event_type="task.completed",
+                    extra={"type": task.type, "duration_ms": duration_ms,
+                           "credits_used": task.credits_used},
+                ))
 
             # Email notification
             if owner and owner.email:
@@ -1149,12 +1194,18 @@ async def _run_task(task_id: str, user_id: str):
                     )
                     await db.commit()
 
-                    # Email notification
+                    # Email notification + webhook
                     user_result = await db.execute(select(UserDB).where(UserDB.id == user_id))
                     owner = user_result.scalar_one_or_none()
                     if owner and owner.email:
                         asyncio.create_task(notify_task_failed(
                             owner.email, task_id, task.type, str(e)
+                        ))
+                    if task.webhook_url:
+                        asyncio.create_task(fire_webhook_for_task(
+                            task=task,
+                            event_type="task.failed",
+                            extra={"type": task.type, "error": str(e)},
                         ))
             except Exception:
                 pass
@@ -1179,95 +1230,21 @@ async def _run_task(task_id: str, user_id: str):
                     )
                     await db.commit()
 
-                    # Email notification
+                    # Email notification + webhook
                     user_result = await db.execute(select(UserDB).where(UserDB.id == user_id))
                     owner = user_result.scalar_one_or_none()
                     if owner and owner.email:
                         asyncio.create_task(notify_task_failed(
                             owner.email, task_id, task.type, f"Unexpected error: {type(e).__name__}"
                         ))
+                    if task.webhook_url:
+                        asyncio.create_task(fire_webhook_for_task(
+                            task=task,
+                            event_type="task.failed",
+                            extra={"type": task.type, "error": f"Unexpected error: {type(e).__name__}"},
+                        ))
             except Exception:
                 pass
 
 
-async def _send_webhook(url: str, task_id: str, user_id: str, max_retries: int = 3):
-    """Fire-and-forget webhook notification with exponential backoff + delivery logging."""
-    import httpx
-    import time as _time
-    from core.database import AsyncSessionLocal  # avoid circular import
-
-    payload = {"task_id": task_id, "event": "task.completed"}
-    for attempt in range(max_retries):
-        t0 = _time.perf_counter()
-        status_code = None
-        error_msg = None
-        success = False
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.post(url, json=payload)
-                status_code = resp.status_code
-                if resp.status_code < 500:
-                    success = resp.status_code < 400
-                    if not success:
-                        logger.warning(
-                            "webhook_client_error",
-                            url=url,
-                            status=resp.status_code,
-                        )
-                        error_msg = f"Client error: HTTP {resp.status_code}"
-                    # log and return — no retry on 4xx
-                    await _log_webhook(task_id, user_id, url, attempt + 1,
-                                       status_code, success, error_msg,
-                                       int((_time.perf_counter() - t0) * 1000))
-                    if success:
-                        return
-                    return  # don't retry 4xx
-                logger.warning(
-                    "webhook_server_error",
-                    url=url,
-                    status=resp.status_code,
-                    attempt=attempt + 1,
-                )
-                error_msg = f"Server error: HTTP {resp.status_code}"
-        except Exception as e:
-            error_msg = str(e)
-            logger.warning("webhook_failed", url=url, error=str(e), attempt=attempt + 1)
-
-        duration_ms = int((_time.perf_counter() - t0) * 1000)
-        await _log_webhook(task_id, user_id, url, attempt + 1,
-                           status_code, False, error_msg, duration_ms)
-
-        if attempt < max_retries - 1:
-            await asyncio.sleep(2 ** attempt)  # 1s, 2s, 4s
-
-    logger.error("webhook_exhausted_retries", url=url, task_id=task_id)
-
-
-async def _log_webhook(
-    task_id: str,
-    user_id: str,
-    url: str,
-    attempt: int,
-    status_code: int | None,
-    success: bool,
-    error: str | None,
-    duration_ms: int,
-) -> None:
-    """Persist a webhook delivery log entry."""
-    from core.database import AsyncSessionLocal
-    try:
-        async with AsyncSessionLocal() as db:
-            log = WebhookLogDB(
-                task_id=task_id,
-                user_id=user_id,
-                url=url,
-                attempt=attempt,
-                status_code=status_code,
-                success=success,
-                error=error,
-                duration_ms=duration_ms,
-            )
-            db.add(log)
-            await db.commit()
-    except Exception:
-        logger.warning("webhook_log_failed", task_id=task_id)
+# _send_webhook / _log_webhook removed — logic moved to core/webhooks.py

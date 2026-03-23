@@ -81,6 +81,8 @@ class CrowdSorcerer:
         self.users = _UsersResource(self)
         self.api_keys = _ApiKeysResource(self)
         self.marketplace = _MarketplaceResource(self)
+        self.worker = _WorkerResource(self)
+        self.webhooks = _WebhooksResource(self)
 
     def _request(self, method: str, path: str, **kwargs) -> Any:
         """Make an authenticated HTTP request with retries."""
@@ -394,3 +396,87 @@ class _MarketplaceResource:
     def quota(self) -> Dict[str, Any]:
         """Get current user's plan quota usage and limits."""
         return self._c._request("GET", "/v1/users/quota")
+
+
+class _WorkerResource:
+    """Worker marketplace and skill-ranked feed."""
+
+    def __init__(self, client: CrowdSorcerer) -> None:
+        self._c = client
+
+    def list_tasks(
+        self,
+        task_type: Optional[str] = None,
+        priority: Optional[str] = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> Dict[str, Any]:
+        """Browse open human tasks (chronological)."""
+        params: Dict[str, Any] = {"page": page, "page_size": page_size}
+        if task_type:
+            params["type"] = task_type
+        if priority:
+            params["priority"] = priority
+        return self._c._request("GET", "/v1/worker/tasks", params=params)
+
+    def get_feed(self, page: int = 1, page_size: int = 20) -> Dict[str, Any]:
+        """Get a skill-ranked personalised task feed.
+
+        Each item includes a ``match_score`` (0.0–1.0) field.
+        """
+        return self._c._request(
+            "GET", "/v1/worker/tasks/feed",
+            params={"page": page, "page_size": page_size},
+        )
+
+    def claim(self, task_id: Union[str, UUID]) -> Dict[str, Any]:
+        """Claim a human task from the marketplace."""
+        return self._c._request("POST", f"/v1/worker/tasks/{task_id}/claim")
+
+    def submit(self, task_id: Union[str, UUID], response: Any) -> Dict[str, Any]:
+        """Submit your work for a claimed task."""
+        return self._c._request(
+            "POST", f"/v1/worker/tasks/{task_id}/submit",
+            json={"response": response},
+        )
+
+    def release(self, task_id: Union[str, UUID]) -> None:
+        """Release a claimed task back to the marketplace."""
+        self._c._request("DELETE", f"/v1/worker/tasks/{task_id}/release")
+
+    def my_skills(self) -> Dict[str, Any]:
+        """Get the authenticated worker's skill proficiency profile."""
+        return self._c._request("GET", "/v1/workers/me/skills")
+
+
+class _WebhooksResource:
+    """Webhook delivery logs and event type catalogue."""
+
+    def __init__(self, client: CrowdSorcerer) -> None:
+        self._c = client
+
+    def events(self) -> Dict[str, Any]:
+        """List all supported webhook event types with descriptions."""
+        return self._c._request("GET", "/v1/webhooks/events")
+
+    def stats(self) -> Dict[str, Any]:
+        """Get webhook delivery stats (success rate, by event type, etc.)."""
+        return self._c._request("GET", "/v1/webhooks/stats")
+
+    def logs(
+        self,
+        task_id: Optional[Union[str, UUID]] = None,
+        event_type: Optional[str] = None,
+        success: Optional[bool] = None,
+        page: int = 1,
+        page_size: int = 25,
+    ) -> Dict[str, Any]:
+        """List webhook delivery logs."""
+        params: Dict[str, Any] = {"page": page, "page_size": page_size}
+        if task_id:
+            params["task_id"] = str(task_id)
+        if event_type:
+            params["event_type"] = event_type
+        if success is not None:
+            params["success"] = str(success).lower()
+        return self._c._request("GET", "/v1/webhooks/logs", params=params)

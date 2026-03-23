@@ -68,6 +68,9 @@ const currentPath = Astro.url.pathname;
           <a href="/docs" class:list={["transition-colors", currentPath.startsWith("/docs") ? "text-white" : "text-gray-400 hover:text-gray-100"]}>
             Docs
           </a>
+          <a href="/docs/api-reference" class:list={["transition-colors", currentPath === "/docs/api-reference" ? "text-white" : "text-gray-400 hover:text-gray-100"]}>
+            API Reference
+          </a>
           <a href="/pricing" class:list={["transition-colors", currentPath === "/pricing" ? "text-white" : "text-gray-400 hover:text-gray-100"]}>
             Pricing
           </a>
@@ -150,6 +153,9 @@ const currentPath = Astro.url.pathname;
         </a>
         <a href="/docs" class="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
           📚 Docs
+        </a>
+        <a href="/docs/api-reference" class="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
+          📖 API Reference
         </a>
         <a href="/pricing" class="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
           💵 Pricing
