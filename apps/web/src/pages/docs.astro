@@ -1,40 +1,253 @@
 ---
 import Layout from "@/layouts/Layout.astro";
+
+const taskTypes = [
+  {
+    id: "web-research",
+    name: "Web Research",
+    slug: "web_research",
+    credits: 10,
+    description: "Scrape and summarize any URL. Supports JavaScript-rendered pages, table extraction, and link discovery.",
+    fields: [
+      { name: "url", type: "string", required: true, desc: "URL to scrape" },
+      { name: "instruction", type: "string", required: false, desc: "What to extract (default: main content)" },
+      { name: "extract_tables", type: "boolean", required: false, desc: "Extract tables (default: false)" },
+      { name: "extract_links", type: "boolean", required: false, desc: "Extract links (default: false)" },
+      { name: "wait_for_selector", type: "string", required: false, desc: "CSS selector to wait for before scraping" },
+    ],
+    example: `{
+  "type": "web_research",
+  "input": {
+    "url": "https://news.ycombinator.com",
+    "instruction": "List the top 5 story titles and their scores"
+  }
+}`,
+  },
+  {
+    id: "entity-lookup",
+    name: "Entity Lookup",
+    slug: "entity_lookup",
+    credits: 5,
+    description: "Enrich company or person data: description, tech stack, headcount, funding, social profiles.",
+    fields: [
+      { name: "entity_type", type: "\"company\" | \"person\"", required: true, desc: "Type of entity to enrich" },
+      { name: "name", type: "string", required: false, desc: "Company or person name" },
+      { name: "domain", type: "string", required: false, desc: "Company domain (e.g. stripe.com)" },
+      { name: "linkedin_url", type: "string", required: false, desc: "LinkedIn profile URL" },
+      { name: "enrich_fields", type: "string[]", required: false, desc: "Specific fields to include" },
+    ],
+    example: `{
+  "type": "entity_lookup",
+  "input": {
+    "entity_type": "company",
+    "domain": "stripe.com"
+  }
+}`,
+  },
+  {
+    id: "document-parse",
+    name: "Document Parse",
+    slug: "document_parse",
+    credits: 3,
+    description: "Extract text, tables, and metadata from PDFs, Word docs, images, and other documents.",
+    fields: [
+      { name: "url", type: "string", required: false, desc: "URL to a document file" },
+      { name: "base64_content", type: "string", required: false, desc: "Base64-encoded file content" },
+      { name: "mime_type", type: "string", required: false, desc: "MIME type when using base64 (e.g. application/pdf)" },
+      { name: "extract_tables", type: "boolean", required: false, desc: "Extract tables (default: true)" },
+      { name: "extract_images", type: "boolean", required: false, desc: "Extract images (default: false)" },
+    ],
+    example: `{
+  "type": "document_parse",
+  "input": {
+    "url": "https://example.com/report.pdf",
+    "extract_tables": true
+  }
+}`,
+  },
+  {
+    id: "data-transform",
+    name: "Data Transform",
+    slug: "data_transform",
+    credits: 2,
+    description: "Transform data between formats: CSV↔JSON, clean/normalize, filter, reshape.",
+    fields: [
+      { name: "data", type: "any", required: true, desc: "Input data (JSON, CSV string, array, etc.)" },
+      { name: "transform", type: "string", required: true, desc: "Natural language description of the transformation" },
+      { name: "output_format", type: "string", required: false, desc: "Desired output format: json, csv, markdown (default: json)" },
+    ],
+    example: `{
+  "type": "data_transform",
+  "input": {
+    "data": [{"name": "Alice", "score": "87"}, {"name": "Bob", "score": "92"}],
+    "transform": "Sort by score descending and add a rank column",
+    "output_format": "json"
+  }
+}`,
+  },
+  {
+    id: "llm-generate",
+    name: "LLM Generate",
+    slug: "llm_generate",
+    credits: 1,
+    description: "Route to the best LLM for the job. Supports Claude, GPT-4, Gemini, Mistral, and more via the RebaseKit LLM router.",
+    fields: [
+      { name: "messages", type: "Message[]", required: true, desc: "Array of {role, content} messages" },
+      { name: "system_prompt", type: "string", required: false, desc: "System prompt (prepended if no system message in messages)" },
+      { name: "model", type: "string", required: false, desc: "Model ID (default: claude-3-5-haiku-20241022)" },
+      { name: "temperature", type: "number", required: false, desc: "Temperature 0–2 (default: 0.7)" },
+      { name: "max_tokens", type: "number", required: false, desc: "Max output tokens (default: 2048)" },
+    ],
+    example: `{
+  "type": "llm_generate",
+  "input": {
+    "messages": [{"role": "user", "content": "Summarize the pros and cons of microservices in 3 bullet points each."}],
+    "model": "claude-3-5-haiku-20241022"
+  }
+}`,
+  },
+  {
+    id: "screenshot",
+    name: "Screenshot",
+    slug: "screenshot",
+    credits: 2,
+    description: "Capture a full-page or viewport screenshot of any URL. Returns a base64-encoded image.",
+    fields: [
+      { name: "url", type: "string", required: true, desc: "URL to screenshot" },
+      { name: "width", type: "number", required: false, desc: "Viewport width in px (default: 1280)" },
+      { name: "height", type: "number", required: false, desc: "Viewport height in px (default: 800)" },
+      { name: "full_page", type: "boolean", required: false, desc: "Capture full scrollable page (default: false)" },
+      { name: "format", type: "\"png\" | \"jpeg\"", required: false, desc: "Image format (default: png)" },
+      { name: "wait_for_selector", type: "string", required: false, desc: "CSS selector to wait for before capturing" },
+    ],
+    example: `{
+  "type": "screenshot",
+  "input": {
+    "url": "https://example.com",
+    "full_page": true,
+    "format": "jpeg"
+  }
+}`,
+  },
+  {
+    id: "audio-transcribe",
+    name: "Audio Transcribe",
+    slug: "audio_transcribe",
+    credits: 8,
+    description: "Transcribe audio files with speaker diarization. Supports MP3, WAV, M4A, and more.",
+    fields: [
+      { name: "url", type: "string", required: false, desc: "URL to an audio file" },
+      { name: "base64_audio", type: "string", required: false, desc: "Base64-encoded audio content" },
+      { name: "language", type: "string", required: false, desc: "BCP-47 language code (auto-detected if omitted)" },
+      { name: "diarize", type: "boolean", required: false, desc: "Speaker diarization (default: false)" },
+    ],
+    example: `{
+  "type": "audio_transcribe",
+  "input": {
+    "url": "https://example.com/interview.mp3",
+    "diarize": true
+  }
+}`,
+  },
+  {
+    id: "pii-detect",
+    name: "PII Detect",
+    slug: "pii_detect",
+    credits: 2,
+    description: "Detect, mask, or vault 30+ PII types (names, emails, SSNs, credit cards, etc.).",
+    fields: [
+      { name: "text", type: "string", required: true, desc: "Text to analyze" },
+      { name: "entities", type: "string[]", required: false, desc: "Specific PII types to detect (default: all)" },
+      { name: "mask", type: "boolean", required: false, desc: "Replace PII with [TYPE] tokens (default: false)" },
+      { name: "vault", type: "boolean", required: false, desc: "Store PII in vault, return placeholder tokens (default: false)" },
+    ],
+    example: `{
+  "type": "pii_detect",
+  "input": {
+    "text": "Call John Smith at john@example.com or 555-123-4567",
+    "mask": true
+  }
+}`,
+  },
+  {
+    id: "code-execute",
+    name: "Code Execute",
+    slug: "code_execute",
+    credits: 3,
+    description: "Run Python, JavaScript, TypeScript, or Bash code in a sandboxed environment.",
+    fields: [
+      { name: "code", type: "string", required: true, desc: "Code to execute" },
+      { name: "language", type: "\"python\" | \"javascript\" | \"typescript\" | \"bash\"", required: false, desc: "Language (default: python)" },
+      { name: "timeout_seconds", type: "number", required: false, desc: "Execution timeout (default: 30)" },
+      { name: "stdin", type: "string", required: false, desc: "Standard input to pass to the program" },
+    ],
+    example: `{
+  "type": "code_execute",
+  "input": {
+    "code": "import json\\ndata = [1, 2, 3, 4, 5]\\nprint(json.dumps({'sum': sum(data), 'mean': sum(data)/len(data)}))",
+    "language": "python"
+  }
+}`,
+  },
+  {
+    id: "web-intel",
+    name: "Web Intel",
+    slug: "web_intel",
+    credits: 5,
+    description: "AI-powered web intelligence gathering. Search the web and synthesize results into structured insights.",
+    fields: [
+      { name: "query", type: "string", required: true, desc: "Research query or question" },
+      { name: "sources", type: "string[]", required: false, desc: "Specific domains or URLs to prioritize" },
+      { name: "max_results", type: "number", required: false, desc: "Max search results to process (default: 10)" },
+    ],
+    example: `{
+  "type": "web_intel",
+  "input": {
+    "query": "Latest AI coding assistants launched in 2025 — compare features and pricing",
+    "max_results": 15
+  }
+}`,
+  },
+];
 ---
 
 <Layout title="Docs — CrowdSorcerer">
-  <div class="max-w-4xl mx-auto px-6 py-20">
+  <div class="max-w-5xl mx-auto px-6 py-20">
     <h1 class="text-4xl font-bold mb-3">Documentation</h1>
     <p class="text-gray-400 mb-12">Everything you need to integrate CrowdSorcerer.</p>
 
     <div class="grid md:grid-cols-4 gap-8">
       <!-- Sidebar -->
-      <nav class="text-sm space-y-1">
+      <nav class="text-sm space-y-1 md:sticky md:top-8 self-start">
         <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Get started</div>
-        <a href="#quickstart" class="block py-1 text-gray-400 hover:text-gray-200">Quickstart</a>
-        <a href="#authentication" class="block py-1 text-gray-400 hover:text-gray-200">Authentication</a>
-        <a href="#tasks" class="block py-1 text-gray-400 hover:text-gray-200">Tasks</a>
+        <a href="#quickstart" class="block py-1 text-gray-400 hover:text-gray-200 transition-colors">Quickstart</a>
+        <a href="#authentication" class="block py-1 text-gray-400 hover:text-gray-200 transition-colors">Authentication</a>
+        <a href="#tasks" class="block py-1 text-gray-400 hover:text-gray-200 transition-colors">Task lifecycle</a>
+        <a href="#sdk" class="block py-1 text-gray-400 hover:text-gray-200 transition-colors">TypeScript SDK</a>
+        <a href="#webhooks" class="block py-1 text-gray-400 hover:text-gray-200 transition-colors">Webhooks</a>
         <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mt-4 mb-2">Task types</div>
-        <a href="#web-research" class="block py-1 text-gray-400 hover:text-gray-200">Web Research</a>
-        <a href="#entity-lookup" class="block py-1 text-gray-400 hover:text-gray-200">Entity Lookup</a>
-        <a href="#llm-generate" class="block py-1 text-gray-400 hover:text-gray-200">LLM Generate</a>
-        <a href="#more" class="block py-1 text-gray-400 hover:text-gray-200">+ 7 more</a>
+        {taskTypes.map((t) => (
+          <a href={`#${t.id}`} class="block py-1 text-gray-400 hover:text-gray-200 transition-colors">
+            {t.name} <span class="text-gray-600 text-xs">{t.credits}cr</span>
+          </a>
+        ))}
         <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mt-4 mb-2">Reference</div>
-        <a href="/docs/api" class="block py-1 text-gray-400 hover:text-gray-200">API Reference</a>
-        <a href="#sdk" class="block py-1 text-gray-400 hover:text-gray-200">SDK</a>
-        <a href="#webhooks" class="block py-1 text-gray-400 hover:text-gray-200">Webhooks</a>
+        <a href="/docs/api" class="block py-1 text-gray-400 hover:text-gray-200 transition-colors" target="_blank">
+          API Reference ↗
+        </a>
       </nav>
 
       <!-- Content -->
       <div class="md:col-span-3 space-y-16 text-gray-300">
+
         <!-- Quickstart -->
         <section id="quickstart">
           <h2 class="text-2xl font-bold text-gray-100 mb-4">Quickstart</h2>
           <p class="mb-4">Get your first task result in under 2 minutes.</p>
           <ol class="list-decimal list-inside space-y-2 text-sm mb-6">
-            <li><a href="/register" class="text-violet-400">Create an account</a> — get 100 free credits</li>
-            <li>Generate an API key from the dashboard</li>
-            <li>Submit your first task</li>
+            <li><a href="/register" class="text-violet-400 hover:text-violet-300">Create an account</a> — get 100 free credits instantly</li>
+            <li>Generate an API key from the <a href="/dashboard/api-keys" class="text-violet-400 hover:text-violet-300">API Keys page</a></li>
+            <li>Submit your first task via the REST API or SDK</li>
           </ol>
           <pre class="bg-gray-900 border border-gray-800 rounded-lg p-4 text-sm font-mono overflow-x-auto"><code class="text-gray-300"># Install the SDK
 npm install @crowdsourcerer/sdk
@@ -43,80 +256,168 @@ npm install @crowdsourcerer/sdk
 curl -X POST https://crowdsourcerer.rebaselabs.online/v1/tasks \
   -H "Authorization: Bearer csk_YOUR_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"{"}
+  -d '{
     "type": "web_research",
-    "input": {"{"}
+    "input": {
       "url": "https://example.com",
       "instruction": "Extract the main heading and description"
-    {"}"}
-  {"}"}'</code></pre>
+    }
+  }'</code></pre>
         </section>
 
         <!-- Authentication -->
         <section id="authentication">
           <h2 class="text-2xl font-bold text-gray-100 mb-4">Authentication</h2>
           <p class="mb-4">
-            All API requests require a Bearer token in the <code class="text-violet-300">Authorization</code> header.
-            Two token types are accepted:
+            All API requests require a Bearer token in the <code class="text-violet-300 bg-gray-900 px-1 rounded">Authorization</code> header.
           </p>
-          <ul class="list-disc list-inside space-y-2 text-sm mb-4">
-            <li><strong class="text-gray-200">API Keys</strong> (<code class="text-violet-300">csk_...</code>) — recommended for production. Create in the dashboard.</li>
-            <li><strong class="text-gray-200">JWT tokens</strong> — returned from <code class="text-violet-300">POST /v1/auth/login</code>. Use for user sessions.</li>
+          <pre class="bg-gray-900 border border-gray-800 rounded-lg p-4 text-sm font-mono mb-4">Authorization: Bearer csk_YOUR_API_KEY</pre>
+          <p class="text-sm mb-4">Two token types are accepted:</p>
+          <ul class="list-disc list-inside space-y-2 text-sm">
+            <li>
+              <strong class="text-gray-200">API Keys</strong> (<code class="text-violet-300">csk_...</code>) —
+              recommended for production. Create in the <a href="/dashboard/api-keys" class="text-violet-400 hover:text-violet-300">dashboard</a>.
+            </li>
+            <li>
+              <strong class="text-gray-200">JWT tokens</strong> —
+              returned from <code class="text-violet-300">POST /v1/auth/login</code>. Use for short-lived user sessions.
+            </li>
           </ul>
         </section>
 
-        <!-- Tasks -->
+        <!-- Task lifecycle -->
         <section id="tasks">
           <h2 class="text-2xl font-bold text-gray-100 mb-4">Task lifecycle</h2>
-          <p class="mb-4 text-sm">Tasks go through these states:</p>
+          <p class="mb-4 text-sm">Tasks execute asynchronously. States:</p>
           <div class="flex items-center gap-2 text-sm mb-6 flex-wrap">
-            {["pending", "queued", "running", "completed", "failed"].map((s, i) => (
+            {["queued", "running", "completed", "failed", "cancelled"].map((s, i, arr) => (
               <>
-                <span class="px-2 py-1 rounded-full bg-gray-800 text-gray-300 font-mono text-xs">{s}</span>
-                {i < 4 && <span class="text-gray-600">→</span>}
+                <span class:list={[
+                  "px-2 py-1 rounded-full font-mono text-xs",
+                  s === "completed" ? "bg-green-950 text-green-400" :
+                  s === "failed" ? "bg-red-950 text-red-400" :
+                  s === "running" ? "bg-yellow-950 text-yellow-400" :
+                  "bg-gray-800 text-gray-300"
+                ]}>{s}</span>
+                {i < arr.length - 1 && <span class="text-gray-600">→</span>}
               </>
             ))}
           </div>
           <p class="text-sm mb-4">
-            Tasks are executed asynchronously. Submit a task, get a <code class="text-violet-300">task_id</code>,
-            then poll <code class="text-violet-300">GET /v1/tasks/{"{task_id}"}</code> for the result.
-            Or use webhooks for push notifications.
+            Submit a task → get a <code class="text-violet-300">task_id</code> →
+            poll <code class="text-violet-300">GET /v1/tasks/{"{task_id}"}</code> or use webhooks.
+            Credits are charged immediately on submission (refunded automatically if the task fails).
           </p>
+
+          <h3 class="text-lg font-semibold text-gray-200 mb-3 mt-6">Submit a task</h3>
+          <pre class="bg-gray-900 border border-gray-800 rounded-lg p-4 text-sm font-mono overflow-x-auto mb-4"><code>POST /v1/tasks
+{`{
+  "type": "web_research",
+  "input": { "url": "https://example.com" },
+  "priority": "normal",           // optional: low | normal | high
+  "webhook_url": "https://..."    // optional
+}`}</code></pre>
+
+          <h3 class="text-lg font-semibold text-gray-200 mb-3 mt-6">Poll for result</h3>
+          <pre class="bg-gray-900 border border-gray-800 rounded-lg p-4 text-sm font-mono overflow-x-auto"><code>GET /v1/tasks/{"{task_id}"}
+
+// Response when completed:
+{`{
+  "id": "uuid",
+  "type": "web_research",
+  "status": "completed",
+  "output": { "summary": "...", "raw": {...} },
+  "credits_used": 10,
+  "duration_ms": 3420,
+  "created_at": "2025-01-01T00:00:00Z",
+  "completed_at": "2025-01-01T00:00:03Z"
+}`}</code></pre>
         </section>
 
         <!-- SDK -->
         <section id="sdk">
           <h2 class="text-2xl font-bold text-gray-100 mb-4">TypeScript SDK</h2>
-          <pre class="bg-gray-900 border border-gray-800 rounded-lg p-4 text-sm font-mono overflow-x-auto mb-4"><code class="text-gray-300">import {"{ CrowdSorcerer }"} from "@crowdsourcerer/sdk";
+          <pre class="bg-gray-900 border border-gray-800 rounded-lg p-4 text-sm font-mono overflow-x-auto mb-6"><code>npm install @crowdsourcerer/sdk</code></pre>
+          <pre class="bg-gray-900 border border-gray-800 rounded-lg p-4 text-sm font-mono overflow-x-auto"><code class="text-gray-300">{`import { CrowdSorcerer } from "@crowdsourcerer/sdk";
 
-const crowd = new CrowdSorcerer({"{ apiKey: process.env.CROWDSOURCERER_API_KEY! }"});
+const crowd = new CrowdSorcerer({ apiKey: process.env.CROWDSOURCERER_API_KEY! });
 
-// Typed helpers for each task type
-const result = await crowd.webResearch({"{"} url: "https://news.ycombinator.com" {"}"});
-const entity = await crowd.entityLookup({"{"} entity_type: "company", name: "Stripe" {"}"});
-const transcript = await crowd.audioTranscribe({"{"} url: "https://..." {"}"});
-const llm = await crowd.llmGenerate({"{"} messages: [{"{"} role: "user", content: "Explain monads" {"}"}] {"}"});
+// Typed helpers — submit + wait for result
+const result = await crowd.webResearch({ url: "https://news.ycombinator.com" });
+const entity = await crowd.entityLookup({ entity_type: "company", name: "Stripe" });
+const llm    = await crowd.llmGenerate({ messages: [{ role: "user", content: "Hello!" }] });
 
 // Or submit async + poll manually
-const {"{ task_id }"} = await crowd.submitTask({"{"} type: "screenshot", input: {"{"} url: "https://example.com" {"}"} {"}"});
+const { task_id } = await crowd.submitTask({ type: "screenshot", input: { url: "..." } });
 const task = await crowd.getTask(task_id);
-</code></pre>
+
+// Credits
+const balance = await crowd.getCredits();
+console.log(balance.available); // → 87`}</code></pre>
         </section>
 
         <!-- Webhooks -->
         <section id="webhooks">
           <h2 class="text-2xl font-bold text-gray-100 mb-4">Webhooks</h2>
           <p class="text-sm mb-4">
-            Set <code class="text-violet-300">webhook_url</code> on a task to receive a POST notification when it completes:
+            Set <code class="text-violet-300">webhook_url</code> when creating a task.
+            On completion we POST to that URL with retries (up to 3, exponential backoff):
           </p>
-          <pre class="bg-gray-900 border border-gray-800 rounded-lg p-4 text-sm font-mono overflow-x-auto"><code class="text-gray-300">{`{
-  "task_id": "uuid-here",
+          <pre class="bg-gray-900 border border-gray-800 rounded-lg p-4 text-sm font-mono overflow-x-auto mb-4"><code>{`{
+  "task_id": "3f4a1b2c-...",
   "event": "task.completed"
 }`}</code></pre>
-          <p class="text-sm mt-4 text-gray-500">
-            Then fetch the task details from <code class="text-violet-300">/v1/tasks/{"{task_id}"}</code> to get the full output.
+          <p class="text-sm text-gray-400">
+            Then fetch full details from <code class="text-violet-300">GET /v1/tasks/{"{task_id}"}</code>.
           </p>
         </section>
+
+        <!-- Task type reference -->
+        <section>
+          <h2 class="text-2xl font-bold text-gray-100 mb-2">Task type reference</h2>
+          <p class="text-gray-400 text-sm mb-10">Detailed input schemas for all 10 task types.</p>
+
+          {taskTypes.map((t) => (
+            <div id={t.id} class="mb-12 scroll-mt-8">
+              <div class="flex items-center gap-3 mb-3">
+                <h3 class="text-xl font-bold text-gray-100">{t.name}</h3>
+                <code class="text-violet-300 bg-gray-900 px-2 py-0.5 rounded text-sm">{t.slug}</code>
+                <span class="text-xs text-gray-500">{t.credits} credits</span>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">{t.description}</p>
+
+              <!-- Input schema -->
+              <h4 class="text-sm font-semibold text-gray-300 mb-2">Input schema</h4>
+              <div class="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden mb-4">
+                <table class="w-full text-xs">
+                  <thead>
+                    <tr class="border-b border-gray-800">
+                      <th class="text-left px-4 py-2 text-gray-500 font-medium">Field</th>
+                      <th class="text-left px-4 py-2 text-gray-500 font-medium">Type</th>
+                      <th class="text-left px-4 py-2 text-gray-500 font-medium">Req?</th>
+                      <th class="text-left px-4 py-2 text-gray-500 font-medium">Description</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {t.fields.map((f) => (
+                      <tr class="border-b border-gray-800/50">
+                        <td class="px-4 py-2 font-mono text-violet-300">{f.name}</td>
+                        <td class="px-4 py-2 font-mono text-gray-400">{f.type}</td>
+                        <td class="px-4 py-2 text-gray-500">{f.required ? "✓" : ""}</td>
+                        <td class="px-4 py-2 text-gray-400">{f.desc}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <!-- Example -->
+              <h4 class="text-sm font-semibold text-gray-300 mb-2">Example</h4>
+              <pre class="bg-gray-900 border border-gray-800 rounded-lg p-4 text-xs font-mono overflow-x-auto"><code class="text-gray-300">{t.example}</code></pre>
+            </div>
+          ))}
+        </section>
+
       </div>
     </div>
   </div>

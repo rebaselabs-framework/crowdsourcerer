@@ -218,11 +218,34 @@ async def _run_task(task_id: str, user_id: str):
                 pass
 
 
-async def _send_webhook(url: str, task_id: str):
-    """Fire-and-forget webhook notification."""
+async def _send_webhook(url: str, task_id: str, max_retries: int = 3):
+    """Fire-and-forget webhook notification with exponential backoff."""
     import httpx
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            await client.post(url, json={"task_id": task_id, "event": "task.completed"})
-    except Exception as e:
-        logger.warning("webhook_failed", url=url, error=str(e))
+    payload = {"task_id": task_id, "event": "task.completed"}
+    for attempt in range(max_retries):
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(url, json=payload)
+                if resp.status_code < 500:
+                    # 2xx/3xx/4xx — don't retry (client errors are not transient)
+                    if resp.status_code >= 400:
+                        logger.warning(
+                            "webhook_client_error",
+                            url=url,
+                            status=resp.status_code,
+                        )
+                    return
+                # 5xx — server error, retry
+                logger.warning(
+                    "webhook_server_error",
+                    url=url,
+                    status=resp.status_code,
+                    attempt=attempt + 1,
+                )
+        except Exception as e:
+            logger.warning("webhook_failed", url=url, error=str(e), attempt=attempt + 1)
+
+        if attempt < max_retries - 1:
+            await asyncio.sleep(2 ** attempt)  # 1s, 2s, 4s
+
+    logger.error("webhook_exhausted_retries", url=url, task_id=task_id)

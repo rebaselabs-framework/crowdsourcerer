@@ -1,0 +1,204 @@
+---
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Object.fromEntries(
+  Astro.cookies.getAll().map((c) => [c.name, c.value])
+));
+
+if (!token) {
+  return Astro.redirect("/login");
+}
+
+let credits: any = null;
+let transactions: any = null;
+
+try {
+  [credits, transactions] = await Promise.all([
+    apiFetch("/v1/credits", { token }),
+    apiFetch("/v1/credits/transactions?page_size=20", { token }),
+  ]);
+} catch (e) {
+  return Astro.redirect("/login");
+}
+
+const PACKS = [
+  { credits: 500, price: 5, label: "Starter", note: "Good for 50 web researches" },
+  { credits: 1000, price: 10, label: "Developer", note: "Most popular" },
+  { credits: 5000, price: 45, label: "Team", note: "10% discount" },
+  { credits: 10000, price: 80, label: "Pro", note: "20% discount" },
+];
+---
+
+<Layout title="Credits — CrowdSorcerer">
+  <div class="max-w-4xl mx-auto px-6 py-10">
+    <div class="flex items-center justify-between mb-8">
+      <div>
+        <h1 class="text-2xl font-bold">Credits</h1>
+        <p class="text-gray-400 text-sm mt-0.5">Manage your balance and purchase history</p>
+      </div>
+      <a href="/dashboard" class="text-sm text-gray-400 hover:text-gray-200">← Back to dashboard</a>
+    </div>
+
+    <!-- Balance -->
+    <div class="grid grid-cols-3 gap-4 mb-10">
+      <div class="bg-gray-900 border border-violet-800/50 rounded-xl p-5">
+        <div class="text-sm text-gray-400 mb-1">Available</div>
+        <div class="text-3xl font-bold text-violet-300">{credits?.available?.toLocaleString() ?? 0}</div>
+        <div class="text-xs text-gray-500 mt-1">≈ ${((credits?.available ?? 0) / 100).toFixed(2)} USD</div>
+      </div>
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+        <div class="text-sm text-gray-400 mb-1">Credits used</div>
+        <div class="text-3xl font-bold">{credits?.total_used?.toLocaleString() ?? 0}</div>
+      </div>
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+        <div class="text-sm text-gray-400 mb-1">Plan</div>
+        <div class="text-2xl font-bold capitalize">{credits?.plan ?? "free"}</div>
+      </div>
+    </div>
+
+    <!-- Buy credits -->
+    <h2 class="text-xl font-bold mb-4">Buy credits</h2>
+    <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-10" id="packs">
+      {PACKS.map(({ credits: cr, price, label, note }) => (
+        <button
+          class="buy-pack bg-gray-900 border border-gray-800 hover:border-violet-600 rounded-xl p-5 text-left transition-colors cursor-pointer"
+          data-credits={cr}
+          data-price={price}
+        >
+          <div class="text-sm text-gray-400 mb-1">{label}</div>
+          <div class="text-2xl font-bold mb-1">${price}</div>
+          <div class="text-violet-300 font-medium text-sm mb-2">{cr.toLocaleString()} credits</div>
+          <div class="text-xs text-gray-500">{note}</div>
+        </button>
+      ))}
+    </div>
+
+    <!-- Crypto option -->
+    <div class="bg-gray-900/50 border border-gray-800 rounded-xl p-5 mb-10">
+      <div class="flex items-start gap-3">
+        <span class="text-xl">💎</span>
+        <div>
+          <h3 class="font-medium mb-1">Pay with crypto</h3>
+          <p class="text-sm text-gray-400 mb-3">
+            Send to any of the wallets below, then email
+            <a href="mailto:crowdsource@rebaselabs.online" class="text-violet-400">crowdsource@rebaselabs.online</a>
+            with your transaction hash and account email. Credits added within 24h.
+          </p>
+          <div class="grid sm:grid-cols-3 gap-3 text-xs font-mono">
+            <div>
+              <div class="text-gray-500 mb-0.5">Bitcoin</div>
+              <div class="text-gray-300 break-all">bc1qvzvwjcvpcztwcuv5ef42frzlq2xn46g7usxfcm</div>
+            </div>
+            <div>
+              <div class="text-gray-500 mb-0.5">Solana</div>
+              <div class="text-gray-300 break-all">8tGVz7wUr89bVQVR4MbiUQPfnEHeGPzSgjWqjorsZ91o</div>
+            </div>
+            <div>
+              <div class="text-gray-500 mb-0.5">EVM (ETH/Base)</div>
+              <div class="text-gray-300 break-all">0x16F086e2292eA895B0eC3a4DeBb255e3d6fD9E01</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Transaction history -->
+    <h2 class="text-xl font-bold mb-4">Transaction history</h2>
+    <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+      {!transactions?.items?.length ? (
+        <div class="px-6 py-10 text-center text-gray-500 text-sm">No transactions yet.</div>
+      ) : (
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-gray-800 text-left">
+              <th class="px-6 py-3 text-gray-400 font-medium">Description</th>
+              <th class="px-6 py-3 text-gray-400 font-medium text-right">Amount</th>
+              <th class="px-6 py-3 text-gray-400 font-medium text-right">Date</th>
+            </tr>
+          </thead>
+          <tbody>
+            {transactions.items.map((t: any) => (
+              <tr class="border-b border-gray-800/50 hover:bg-gray-800/20 transition-colors">
+                <td class="px-6 py-3 text-gray-300">{t.description}</td>
+                <td class:list={[
+                  "px-6 py-3 text-right font-mono font-medium",
+                  t.amount > 0 ? "text-green-400" : "text-red-400"
+                ]}>
+                  {t.amount > 0 ? "+" : ""}{t.amount}
+                </td>
+                <td class="px-6 py-3 text-right text-gray-500">
+                  {new Date(t.created_at).toLocaleDateString()}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  </div>
+</Layout>
+
+<script define:vars={{ apiUrl: import.meta.env.PUBLIC_API_URL ?? "" }}>
+  // Client-side: clicking a pack calls /v1/credits/checkout
+  document.querySelectorAll(".buy-pack").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const credits = Number(btn.dataset.credits);
+      const price = Number(btn.dataset.price);
+
+      // Get JWT from cookie (for client-side call)
+      const token = document.cookie
+        .split("; ")
+        .find((r) => r.startsWith("cs_token="))
+        ?.split("=")[1];
+
+      if (!token) {
+        window.location.href = "/login";
+        return;
+      }
+
+      btn.textContent = "Redirecting…";
+      btn.disabled = true;
+
+      try {
+        const res = await fetch(`${apiUrl || "https://crowdsourcerer.rebaselabs.online"}/v1/credits/checkout`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            credits,
+            success_url: `${window.location.origin}/dashboard/credits?success=1`,
+            cancel_url: `${window.location.origin}/dashboard/credits`,
+          }),
+        });
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          alert(err.detail ?? "Checkout failed. Please try again.");
+          btn.disabled = false;
+          // Restore label
+          btn.textContent = null;
+          return;
+        }
+
+        const { checkout_url } = await res.json();
+        window.location.href = checkout_url;
+      } catch (e) {
+        alert("Failed to create checkout session.");
+        btn.disabled = false;
+      }
+    });
+  });
+
+  // Show success banner
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("success") === "1") {
+    const banner = document.createElement("div");
+    banner.className = "fixed top-4 right-4 bg-green-900 border border-green-700 text-green-300 px-4 py-3 rounded-lg text-sm z-50";
+    banner.textContent = "✅ Payment successful! Credits have been added to your account.";
+    document.body.appendChild(banner);
+    setTimeout(() => banner.remove(), 5000);
+  }
+</script>

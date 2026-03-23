@@ -45,7 +45,10 @@ try {
     <!-- Stats -->
     <div class="grid grid-cols-3 gap-4 mb-8">
       <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
-        <div class="text-sm text-gray-400 mb-1">Credits available</div>
+        <div class="flex items-center justify-between mb-1">
+          <div class="text-sm text-gray-400">Credits available</div>
+          <a href="/dashboard/credits" class="text-xs text-violet-400 hover:text-violet-300">Buy more →</a>
+        </div>
         <div class="text-3xl font-bold text-violet-300">{credits?.available?.toLocaleString() ?? 0}</div>
       </div>
       <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
