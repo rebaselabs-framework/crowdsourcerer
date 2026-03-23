@@ -61,26 +61,62 @@ async def create_task(
     else:
         estimated_credits = TASK_CREDITS.get(req.type, 5)
 
-    # Check credits
+    # Check credits — may come from personal account or org pool
     result = await db.execute(select(UserDB).where(UserDB.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    if user.credits < estimated_credits:
-        raise HTTPException(
-            status_code=402,
-            detail={
-                "error": "insufficient_credits",
-                "required": estimated_credits,
-                "available": user.credits,
-            },
-        )
 
-    # Deduct credits (reserve)
-    user.credits -= estimated_credits
+    # Org billing: if org_id specified, check membership and deduct from org pool
+    org = None
+    if req.org_id:
+        from models.db import OrganizationDB, OrgMemberDB
+        org_result = await db.execute(
+            select(OrganizationDB).where(OrganizationDB.id == req.org_id)
+        )
+        org = org_result.scalar_one_or_none()
+        if not org:
+            raise HTTPException(status_code=404, detail="Organization not found")
+        # Verify user is a member
+        mem_result = await db.execute(
+            select(OrgMemberDB).where(
+                OrgMemberDB.org_id == req.org_id,
+                OrgMemberDB.user_id == user_id,
+            )
+        )
+        member = mem_result.scalar_one_or_none()
+        if not member:
+            raise HTTPException(status_code=403, detail="You are not a member of this organization")
+        if org.credits < estimated_credits:
+            raise HTTPException(
+                status_code=402,
+                detail={
+                    "error": "insufficient_org_credits",
+                    "required": estimated_credits,
+                    "available": org.credits,
+                },
+            )
+        org.credits -= estimated_credits
+    else:
+        if user.credits < estimated_credits:
+            raise HTTPException(
+                status_code=402,
+                detail={
+                    "error": "insufficient_credits",
+                    "required": estimated_credits,
+                    "available": user.credits,
+                },
+            )
+        user.credits -= estimated_credits
 
     if is_human:
         # Human tasks go to the worker marketplace immediately
+        # Determine effective consensus strategy
+        consensus_strategy = req.consensus_strategy
+        if req.assignments_required == 1 and consensus_strategy in ("majority_vote", "unanimous"):
+            # Single-assignment tasks can't vote — fall back
+            consensus_strategy = "any_first"
+
         task = TaskDB(
             user_id=user_id,
             type=req.type,
@@ -94,6 +130,8 @@ async def create_task(
             assignments_required=req.assignments_required,
             claim_timeout_minutes=req.claim_timeout_minutes,
             task_instructions=req.task_instructions,
+            consensus_strategy=consensus_strategy,
+            org_id=req.org_id,
         )
     else:
         # AI tasks go straight to the processing queue

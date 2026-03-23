@@ -43,12 +43,21 @@ const STATUS_COLORS: Record<string, string> = {
         </div>
         <h1 class="text-2xl font-bold">All tasks</h1>
       </div>
-      <a
-        href="/dashboard/new-task"
-        class="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium rounded-lg transition-colors"
-      >
-        + New task
-      </a>
+      <div class="flex gap-2">
+        <a
+          href="/v1/tasks/export?format=csv"
+          target="_blank"
+          class="px-4 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 text-sm font-medium rounded-lg transition-colors flex items-center gap-1.5"
+        >
+          <span>⬇️</span> Export CSV
+        </a>
+        <a
+          href="/dashboard/new-task"
+          class="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium rounded-lg transition-colors"
+        >
+          + New task
+        </a>
+      </div>
     </div>
 
     <!-- Filters -->

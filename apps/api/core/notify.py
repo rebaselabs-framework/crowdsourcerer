@@ -32,6 +32,10 @@ class NotifType:
     PAYOUT_REJECTED      = "payout_rejected"
     CHALLENGE_COMPLETED  = "challenge_completed"
     BADGE_EARNED         = "badge_earned"
+    DISPUTE_FLAGGED      = "dispute_flagged"
+    DISPUTE_RESOLVED     = "dispute_resolved"
+    ORG_INVITE           = "org_invite"
+    ORG_MEMBER_JOINED    = "org_member_joined"
 
 
 async def create_notification(

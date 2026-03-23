@@ -41,6 +41,11 @@ class UserDB(Base):
 
     # Referral system
     referral_code = Column(String(16), unique=True, nullable=True, index=True)  # User's own code
+
+    # Active org context (which org this user is currently "acting as")
+    active_org_id = Column(UUID(as_uuid=True),
+                           ForeignKey("organizations.id", ondelete="SET NULL"),
+                           nullable=True)
     # Pending credits = earned credits not yet confirmed (paid after first task completion)
     credits_pending = Column(Integer, default=0, nullable=False)
 
@@ -140,12 +145,25 @@ class TaskDB(Base):
     is_gold_standard = Column(Boolean, default=False, nullable=False)  # Hidden QC task
     gold_answer = Column(JSON, nullable=True)                          # Expected answer for QC
 
+    # Dispute / consensus fields (for multi-worker human tasks)
+    # Strategies: any_first | majority_vote | unanimous | requester_review
+    consensus_strategy = Column(String(32), default="any_first", nullable=False)
+    dispute_status = Column(String(32), nullable=True)  # None | disputed | resolved
+    winning_assignment_id = Column(UUID(as_uuid=True),
+                                   ForeignKey("task_assignments.id", ondelete="SET NULL"),
+                                   nullable=True)
+
+    # Org scoping (optional — tasks can belong to an org's shared pool)
+    org_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="SET NULL"),
+                    nullable=True, index=True)
+
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     started_at = Column(DateTime(timezone=True), nullable=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)
 
     user = relationship("UserDB", back_populates="tasks")
-    assignments = relationship("TaskAssignmentDB", back_populates="task", lazy="dynamic")
+    assignments = relationship("TaskAssignmentDB", back_populates="task", lazy="dynamic",
+                               foreign_keys="TaskAssignmentDB.task_id")
 
 
 class TaskAssignmentDB(Base):
@@ -172,7 +190,7 @@ class TaskAssignmentDB(Base):
     released_at = Column(DateTime(timezone=True), nullable=True)
     timeout_at = Column(DateTime(timezone=True), nullable=True)  # When the claim expires
 
-    task = relationship("TaskDB", back_populates="assignments")
+    task = relationship("TaskDB", back_populates="assignments", foreign_keys=[task_id])
     worker = relationship("UserDB", back_populates="assignments", foreign_keys=[worker_id])
 
 
@@ -334,6 +352,66 @@ class WorkerSkillDB(Base):
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     worker = relationship("UserDB", backref="skills", foreign_keys=[worker_id])
+
+
+class OrganizationDB(Base):
+    """An organization / team that groups users and shares a credits pool."""
+    __tablename__ = "organizations"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String(255), nullable=False)
+    slug = Column(String(64), unique=True, nullable=False, index=True)
+    owner_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
+                      nullable=False, index=True)
+    credits = Column(Integer, default=0, nullable=False)
+    plan = Column(String(32), default="free", nullable=False)
+    description = Column(Text, nullable=True)
+    avatar_url = Column(String(2048), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    owner = relationship("UserDB", backref="owned_orgs", foreign_keys=[owner_id])
+    members = relationship("OrgMemberDB", back_populates="org", lazy="dynamic")
+    invites = relationship("OrgInviteDB", back_populates="org", lazy="dynamic")
+
+
+class OrgMemberDB(Base):
+    """Membership of a user in an organization."""
+    __tablename__ = "org_members"
+    __table_args__ = (
+        UniqueConstraint("org_id", "user_id", name="uq_org_member"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    org_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"),
+                    nullable=False, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    role = Column(String(32), default="member", nullable=False)  # owner | admin | member | viewer
+    joined_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    org = relationship("OrganizationDB", back_populates="members")
+    user = relationship("UserDB", backref="org_memberships", foreign_keys=[user_id])
+
+
+class OrgInviteDB(Base):
+    """Pending invitation to join an organization."""
+    __tablename__ = "org_invites"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    org_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"),
+                    nullable=False, index=True)
+    email = Column(String(255), nullable=False)
+    role = Column(String(32), default="member", nullable=False)
+    token = Column(String(64), unique=True, nullable=False, index=True)
+    invited_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"),
+                        nullable=True)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    accepted_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    org = relationship("OrganizationDB", back_populates="invites")
+    inviter = relationship("UserDB", backref="org_invites_sent", foreign_keys=[invited_by])
 
 
 class NotificationDB(Base):

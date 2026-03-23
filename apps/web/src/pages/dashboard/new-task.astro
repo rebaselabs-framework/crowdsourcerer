@@ -19,7 +19,7 @@ try {
   // non-fatal
 }
 
-const TASK_TYPES = [
+const AI_TASK_TYPES = [
   { type: "web_research", label: "Web Research", icon: "🌐", placeholder: '{\n  "url": "https://example.com/article",\n  "instruction": "Extract the main content and key points"\n}' },
   { type: "entity_lookup", label: "Entity Lookup", icon: "🏢", placeholder: '{\n  "entity_type": "company",\n  "name": "OpenAI",\n  "domain": "openai.com"\n}' },
   { type: "document_parse", label: "Doc Parse", icon: "📄", placeholder: '{\n  "url": "https://example.com/doc.pdf",\n  "extract_tables": true\n}' },
@@ -32,6 +32,25 @@ const TASK_TYPES = [
   { type: "web_intel", label: "Web Intel", icon: "🕵️", placeholder: '{\n  "query": "OpenAI funding history",\n  "max_results": 10\n}' },
 ];
 
+const HUMAN_TASK_TYPE_LIST = [
+  { type: "label_image",         label: "Label Image",    icon: "🖼️", placeholder: '{\n  "image_url": "https://example.com/image.jpg",\n  "labels": ["cat", "dog", "bird"],\n  "question": "What animal is in this image?"\n}' },
+  { type: "label_text",          label: "Label Text",     icon: "🏷️", placeholder: '{\n  "text": "The new iPhone 15 is amazing!",\n  "categories": ["positive", "negative", "neutral"],\n  "question": "What is the sentiment of this text?"\n}' },
+  { type: "rate_quality",        label: "Rate Quality",   icon: "⭐", placeholder: '{\n  "content": "AI-generated summary text here...",\n  "scale": [1, 2, 3, 4, 5],\n  "criteria": "Rate the overall quality of this summary"\n}' },
+  { type: "verify_fact",         label: "Verify Fact",    icon: "✅", placeholder: '{\n  "claim": "The Eiffel Tower is 330 meters tall.",\n  "context": "Optional supporting context here"\n}' },
+  { type: "moderate_content",    label: "Moderate",       icon: "🛡️", placeholder: '{\n  "content": "User-submitted text or image URL",\n  "guidelines": "Mark as safe/unsafe based on community guidelines"\n}' },
+  { type: "compare_rank",        label: "Compare & Rank", icon: "📊", placeholder: '{\n  "items": ["Option A description", "Option B description"],\n  "criteria": "Which option is more creative?"\n}' },
+  { type: "answer_question",     label: "Answer Q",       icon: "💬", placeholder: '{\n  "question": "What year was the French Revolution?",\n  "context": "Optional background information"\n}' },
+  { type: "transcription_review","label": "Review Transcript", icon: "📝", placeholder: '{\n  "audio_url": "https://example.com/audio.mp3",\n  "draft_transcript": "Auto-generated transcript to review and correct"\n}' },
+];
+
+// Keep backwards compat alias
+const TASK_TYPES = AI_TASK_TYPES;
+
+const HUMAN_TASK_TYPES = new Set([
+  "label_image","label_text","rate_quality","verify_fact",
+  "moderate_content","compare_rank","answer_question","transcription_review"
+]);
+
 if (Astro.request.method === "POST") {
   const form = await Astro.request.formData();
   const type = form.get("type") as string;
@@ -43,6 +62,19 @@ if (Astro.request.method === "POST") {
     const input = JSON.parse(inputRaw);
     const body: any = { type, input, priority };
     if (webhookUrl) body.webhook_url = webhookUrl;
+
+    if (HUMAN_TASK_TYPES.has(type)) {
+      const workerReward = Number(form.get("worker_reward_credits") || 0);
+      const assignmentsRequired = Number(form.get("assignments_required") || 1);
+      const claimTimeout = Number(form.get("claim_timeout_minutes") || 30);
+      const instructions = form.get("task_instructions") as string;
+      const consensusStrategy = form.get("consensus_strategy") as string || "any_first";
+      if (workerReward > 0) body.worker_reward_credits = workerReward;
+      body.assignments_required = Math.max(1, Math.min(10, assignmentsRequired));
+      body.claim_timeout_minutes = Math.max(5, Math.min(480, claimTimeout));
+      if (instructions) body.task_instructions = instructions;
+      body.consensus_strategy = consensusStrategy;
+    }
 
     const task = await apiFetch<any>("/v1/tasks", {
       method: "POST",
@@ -111,9 +143,11 @@ if (Astro.request.method === "POST") {
     <form method="POST" class="space-y-6">
       <!-- Task type picker -->
       <div>
-        <label class="block text-sm font-medium text-gray-300 mb-3">Task type</label>
+        <label class="block text-sm font-medium text-gray-300 mb-3">
+          AI Task Types <span class="text-xs text-gray-500">(executed instantly by AI)</span>
+        </label>
         <div class="grid grid-cols-2 sm:grid-cols-5 gap-2">
-          {TASK_TYPES.map(({ type, label, icon }) => (
+          {AI_TASK_TYPES.map(({ type, label, icon }) => (
             <label class="cursor-pointer">
               <input type="radio" name="type" value={type} required class="peer sr-only"
                 checked={type === "web_research"} />
@@ -122,6 +156,26 @@ if (Astro.request.method === "POST") {
                 <div class="text-xl mb-1">{icon}</div>
                 <div class="text-xs font-medium text-gray-300">{label}</div>
                 <div class="text-xs text-gray-500 mt-0.5">{(TASK_CREDITS as any)[type]}cr</div>
+              </div>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <!-- Human task type picker -->
+      <div>
+        <label class="block text-sm font-medium text-gray-300 mb-3">
+          Human Task Types <span class="text-xs text-gray-500">(completed by workers in the marketplace)</span>
+        </label>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {HUMAN_TASK_TYPE_LIST.map(({ type, label, icon }) => (
+            <label class="cursor-pointer">
+              <input type="radio" name="type" value={type} required class="peer sr-only" />
+              <div class="bg-gray-900 border border-gray-800 rounded-lg p-3 text-center
+                peer-checked:border-violet-500 peer-checked:bg-violet-950/30 hover:border-gray-600 transition-colors">
+                <div class="text-xl mb-1">{icon}</div>
+                <div class="text-xs font-medium text-gray-300">{label}</div>
+                <div class="text-xs text-indigo-400 mt-0.5">👥 Human</div>
               </div>
             </label>
           ))}
@@ -167,6 +221,77 @@ if (Astro.request.method === "POST") {
         </div>
       </div>
 
+      <!-- Human task options (shown/hidden by JS based on selected type) -->
+      <div id="human-task-options" class="hidden bg-gray-900 border border-gray-700 rounded-xl p-5 space-y-4">
+        <h3 class="text-sm font-semibold text-gray-300 border-b border-gray-700 pb-2">
+          👥 Human Task Options
+        </h3>
+        <div class="grid grid-cols-3 gap-4">
+          <div>
+            <label class="block text-xs font-medium text-gray-400 mb-1.5">Worker Reward (credits)</label>
+            <input
+              type="number"
+              name="worker_reward_credits"
+              min="1"
+              max="10000"
+              placeholder="auto"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-violet-500"
+            />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-400 mb-1.5">Workers Required</label>
+            <input
+              type="number"
+              name="assignments_required"
+              min="1"
+              max="10"
+              value="1"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-violet-500"
+            />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-400 mb-1.5">Timeout (minutes)</label>
+            <input
+              type="number"
+              name="claim_timeout_minutes"
+              min="5"
+              max="480"
+              value="30"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-violet-500"
+            />
+          </div>
+        </div>
+
+        <div id="consensus-section">
+          <label class="block text-xs font-medium text-gray-400 mb-1.5">
+            Consensus Strategy
+            <span class="text-gray-600">(for multiple workers)</span>
+          </label>
+          <select
+            name="consensus_strategy"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-violet-500"
+          >
+            <option value="any_first">First Wins — first submission completes the task</option>
+            <option value="majority_vote">Majority Vote — &gt;50% must agree (for 3+ workers)</option>
+            <option value="unanimous">Unanimous — all workers must agree</option>
+            <option value="requester_review">Your Review — you always pick the best answer</option>
+          </select>
+          <p class="text-xs text-gray-500 mt-1">
+            With Majority Vote or Unanimous, disagreements are flagged for your resolution.
+          </p>
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-gray-400 mb-1.5">Task Instructions</label>
+          <textarea
+            name="task_instructions"
+            rows={3}
+            placeholder="Optional guidance for workers: what to look for, format of answer, etc."
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-violet-500 resize-y"
+          />
+        </div>
+      </div>
+
       <button
         type="submit"
         class="w-full bg-violet-600 hover:bg-violet-500 text-white font-semibold py-3 rounded-lg transition-colors"
@@ -178,6 +303,37 @@ if (Astro.request.method === "POST") {
 </Layout>
 
 <script>
+  // Human task options toggle
+  const HUMAN_TYPES = new Set([
+    "label_image","label_text","rate_quality","verify_fact",
+    "moderate_content","compare_rank","answer_question","transcription_review"
+  ]);
+  const humanOptions = document.getElementById("human-task-options");
+  const assignmentsInput = document.querySelector<HTMLInputElement>('[name="assignments_required"]');
+  const consensusSection = document.getElementById("consensus-section");
+
+  function updateHumanOptions() {
+    const checked = document.querySelector<HTMLInputElement>('input[name="type"]:checked');
+    if (!checked) return;
+    const isHuman = HUMAN_TYPES.has(checked.value);
+    humanOptions?.classList.toggle("hidden", !isHuman);
+  }
+
+  function updateConsensusVisibility() {
+    const count = Number(assignmentsInput?.value ?? 1);
+    consensusSection?.classList.toggle("hidden", count <= 1);
+  }
+
+  document.querySelectorAll('input[name="type"]').forEach((radio) => {
+    radio.addEventListener("change", updateHumanOptions);
+  });
+
+  assignmentsInput?.addEventListener("input", updateConsensusVisibility);
+
+  // Run on load
+  updateHumanOptions();
+  updateConsensusVisibility();
+
   // Template pre-fill
   document.querySelectorAll<HTMLButtonElement>(".template-btn").forEach((btn) => {
     btn.addEventListener("click", () => {

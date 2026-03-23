@@ -79,17 +79,23 @@ HUMAN_TASK_TYPES = {
 }
 
 
+CONSENSUS_STRATEGIES = Literal["any_first", "majority_vote", "unanimous", "requester_review"]
+
+
 class TaskCreateRequest(BaseModel):
     type: ALL_TASK_TYPES
     input: dict[str, Any]
     priority: Literal["low", "normal", "high", "urgent"] = "normal"
     metadata: Optional[dict[str, Any]] = None
     webhook_url: Optional[str] = None
+    org_id: Optional[UUID] = None  # Create task under an org's credit pool
     # Human task fields (optional; only used when type is a human task type)
     worker_reward_credits: Optional[int] = Field(None, ge=1, le=10000)
-    assignments_required: int = Field(1, ge=1, le=5)
+    assignments_required: int = Field(1, ge=1, le=10)
     claim_timeout_minutes: int = Field(30, ge=5, le=480)
     task_instructions: Optional[str] = None
+    # Consensus strategy (only relevant when assignments_required > 1)
+    consensus_strategy: CONSENSUS_STRATEGIES = "any_first"
 
 
 class TaskCreateResponse(BaseModel):
@@ -127,6 +133,10 @@ class TaskOut(BaseModel):
     assignments_completed: int = 0
     task_instructions: Optional[str] = None
     is_gold_standard: bool = False
+    consensus_strategy: str = "any_first"
+    dispute_status: Optional[str] = None
+    winning_assignment_id: Optional[UUID] = None
+    org_id: Optional[UUID] = None
     created_at: datetime
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
@@ -544,6 +554,125 @@ class TaskAnalyticsOut(BaseModel):
     accuracy_rate: Optional[float]   # % accurate vs gold answer
     response_distribution: dict      # {answer_value: count}
     assignments: list[AssignmentAnalyticsRow]
+
+
+# ─── Disputes / Consensus ─────────────────────────────────────────────────
+
+class ConsensusVoteOut(BaseModel):
+    """Vote breakdown for a specific answer in a majority-vote task."""
+    response_key: str    # JSON representation of the response value
+    count: int
+    percentage: float
+    assignment_ids: list[UUID]
+
+
+class ConsensusStateOut(BaseModel):
+    """Consensus status for a multi-worker task."""
+    task_id: UUID
+    strategy: str
+    assignments_required: int
+    assignments_submitted: int
+    consensus_reached: bool
+    dispute_status: Optional[str]      # None | "disputed" | "resolved"
+    winning_assignment_id: Optional[UUID]
+    votes: list[ConsensusVoteOut]      # Vote breakdown (for majority_vote / unanimous)
+
+
+class DisputeResolveRequest(BaseModel):
+    winning_assignment_id: UUID
+    resolution_note: Optional[str] = None
+
+
+class DisputeResolveResponse(BaseModel):
+    task_id: UUID
+    winning_assignment_id: UUID
+    status: str
+    message: str
+
+
+# ─── Task Export ──────────────────────────────────────────────────────────
+
+class TaskExportRow(BaseModel):
+    """Single row in a task export."""
+    task_id: str
+    type: str
+    status: str
+    execution_mode: str
+    priority: str
+    created_at: str
+    completed_at: Optional[str]
+    credits_used: Optional[int]
+    input_summary: str
+    output_summary: Optional[str]
+    assignments_required: int
+    assignments_completed: int
+    dispute_status: Optional[str]
+    org_id: Optional[str]
+
+
+# ─── Organizations ────────────────────────────────────────────────────────
+
+class OrgCreateRequest(BaseModel):
+    name: str = Field(min_length=2, max_length=255)
+    slug: str = Field(min_length=2, max_length=64, pattern=r"^[a-z0-9\-]+$")
+    description: Optional[str] = None
+
+
+class OrgOut(BaseModel):
+    id: UUID
+    name: str
+    slug: str
+    owner_id: UUID
+    credits: int
+    plan: str
+    description: Optional[str]
+    avatar_url: Optional[str]
+    member_count: int = 0
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class OrgMemberOut(BaseModel):
+    id: UUID
+    org_id: UUID
+    user_id: UUID
+    name: Optional[str]
+    email: Optional[str]
+    role: str
+    joined_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class OrgInviteRequest(BaseModel):
+    email: EmailStr
+    role: Literal["admin", "member", "viewer"] = "member"
+
+
+class OrgInviteOut(BaseModel):
+    id: UUID
+    org_id: UUID
+    email: str
+    role: str
+    token: str
+    expires_at: datetime
+    accepted_at: Optional[datetime]
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class OrgCreditsTransferRequest(BaseModel):
+    """Transfer credits between personal account and org pool."""
+    amount: int = Field(ge=1, le=100_000)
+    direction: Literal["to_org", "from_org"]
+
+
+class OrgUpdateRequest(BaseModel):
+    name: Optional[str] = Field(None, min_length=2, max_length=255)
+    description: Optional[str] = None
+    avatar_url: Optional[str] = None
 
 
 # ─── Health ───────────────────────────────────────────────────────────────

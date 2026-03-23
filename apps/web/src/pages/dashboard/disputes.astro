@@ -1,0 +1,273 @@
+---
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Object.fromEntries(
+  Astro.cookies.getAll().map((c) => [c.name, c.value])
+));
+if (!token) return Astro.redirect("/login");
+
+// Handle dispute resolution POST
+if (Astro.request.method === "POST") {
+  const form = await Astro.request.formData();
+  const action = form.get("action") as string;
+  const taskId = form.get("task_id") as string;
+  const assignmentId = form.get("winning_assignment_id") as string;
+  const note = form.get("resolution_note") as string | undefined;
+
+  if (action === "resolve" && taskId && assignmentId) {
+    try {
+      await apiFetch(`/v1/disputes/tasks/${taskId}/resolve`, {
+        method: "POST",
+        token,
+        body: JSON.stringify({
+          winning_assignment_id: assignmentId,
+          resolution_note: note || null,
+        }),
+      });
+    } catch (_) {
+      // fall through
+    }
+  }
+  return Astro.redirect("/dashboard/disputes");
+}
+
+const statusFilter = Astro.url.searchParams.get("status") ?? "disputed";
+const page = Number(Astro.url.searchParams.get("page") ?? 1);
+
+let disputedTasks: any = { items: [], total: 0, has_next: false };
+let error: string | null = null;
+
+try {
+  disputedTasks = await apiFetch<any>(
+    `/v1/disputes/tasks?status=${statusFilter}&page=${page}&page_size=20`,
+    { token }
+  );
+} catch (e: any) {
+  if (e.message?.includes("401") || e.message?.includes("403")) {
+    return Astro.redirect("/login");
+  }
+  error = "Failed to load disputed tasks";
+}
+
+// Fetch consensus state for each disputed task
+const tasksWithConsensus: Array<{ task: any; consensus: any; submissions: any[] }> = [];
+for (const task of disputedTasks.items) {
+  let consensus = null;
+  let submissions: any[] = [];
+  try {
+    consensus = await apiFetch<any>(`/v1/disputes/tasks/${task.id}/consensus`, { token });
+  } catch (_) {}
+  try {
+    const subsData = await apiFetch<any>(`/v1/tasks/${task.id}/submissions`, { token });
+    submissions = subsData?.submissions ?? [];
+  } catch (_) {}
+  tasksWithConsensus.push({ task, consensus, submissions });
+}
+
+const TASK_TYPE_LABELS: Record<string, string> = {
+  label_image: "Label Image", label_text: "Label Text", rate_quality: "Rate Quality",
+  verify_fact: "Verify Fact", moderate_content: "Moderate Content", compare_rank: "Compare & Rank",
+  answer_question: "Answer Question", transcription_review: "Review Transcription",
+};
+
+function strategyBadge(strategy: string) {
+  const map: Record<string, { label: string; cls: string }> = {
+    majority_vote:    { label: "Majority Vote", cls: "bg-blue-100 text-blue-800" },
+    unanimous:        { label: "Unanimous",     cls: "bg-purple-100 text-purple-800" },
+    requester_review: { label: "Your Review",   cls: "bg-amber-100 text-amber-800" },
+    any_first:        { label: "First Wins",    cls: "bg-gray-100 text-gray-700" },
+  };
+  return map[strategy] ?? { label: strategy, cls: "bg-gray-100 text-gray-700" };
+}
+---
+
+<Layout title="Dispute Resolution — CrowdSorcerer" active="dashboard">
+  <div class="max-w-5xl mx-auto px-4 py-10">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-6">
+      <div>
+        <h1 class="text-2xl font-bold text-gray-900">⚖️ Dispute Resolution</h1>
+        <p class="text-gray-500 mt-1">
+          Review conflicting worker submissions and pick the best answer.
+        </p>
+      </div>
+      <div class="flex gap-2">
+        {["disputed", "resolved", "all"].map((s) => (
+          <a
+            href={`/dashboard/disputes?status=${s}`}
+            class={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+              statusFilter === s
+                ? "bg-indigo-600 text-white"
+                : "bg-white border border-gray-200 text-gray-600 hover:bg-gray-50"
+            }`}
+          >
+            {s.charAt(0).toUpperCase() + s.slice(1)}
+          </a>
+        ))}
+      </div>
+    </div>
+
+    {error && (
+      <div class="bg-red-50 border border-red-200 text-red-700 rounded-xl p-4 mb-6">{error}</div>
+    )}
+
+    {tasksWithConsensus.length === 0 && !error && (
+      <div class="text-center py-20 text-gray-400">
+        <div class="text-5xl mb-4">🎉</div>
+        <p class="text-lg font-medium">No disputes to resolve</p>
+        <p class="text-sm mt-1">
+          {statusFilter === "disputed"
+            ? "All your multi-worker tasks have reached consensus."
+            : "No tasks match this filter."}
+        </p>
+      </div>
+    )}
+
+    <div class="space-y-6">
+      {tasksWithConsensus.map(({ task, consensus, submissions }) => {
+        const badge = strategyBadge(task.consensus_strategy);
+        const isResolved = task.dispute_status === "resolved";
+        return (
+          <div class={`bg-white rounded-2xl border shadow-sm p-6 ${isResolved ? "opacity-75" : ""}`}>
+
+            <!-- Task header -->
+            <div class="flex items-start justify-between gap-4 mb-4">
+              <div>
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="font-semibold text-gray-900">
+                    {TASK_TYPE_LABELS[task.type] ?? task.type.replace("_", " ")}
+                  </span>
+                  <span class={`px-2 py-0.5 rounded-full text-xs font-medium ${badge.cls}`}>
+                    {badge.label}
+                  </span>
+                  {isResolved ? (
+                    <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">✅ Resolved</span>
+                  ) : (
+                    <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">⚠️ Disputed</span>
+                  )}
+                </div>
+                <p class="text-xs text-gray-400 mt-1 font-mono">{task.id}</p>
+              </div>
+              <div class="text-right text-sm text-gray-500">
+                <div>{task.assignments_required} workers required</div>
+                <div>{task.assignments_completed} submitted</div>
+              </div>
+            </div>
+
+            <!-- Task input summary -->
+            <div class="bg-gray-50 rounded-xl p-3 mb-4 text-sm text-gray-700 font-mono max-h-32 overflow-auto">
+              {JSON.stringify(task.input, null, 2)}
+            </div>
+
+            <!-- Consensus vote breakdown -->
+            {consensus && consensus.votes?.length > 0 && (
+              <div class="mb-4">
+                <h3 class="text-sm font-semibold text-gray-700 mb-2">
+                  Vote Breakdown ({consensus.assignments_submitted}/{consensus.assignments_required})
+                </h3>
+                <div class="space-y-2">
+                  {consensus.votes.map((vote: any, i: number) => (
+                    <div class={`flex items-center gap-3 p-2 rounded-lg ${i === 0 ? "bg-indigo-50 border border-indigo-200" : "bg-gray-50"}`}>
+                      <div class="flex-1 min-w-0">
+                        <div class="text-xs font-mono text-gray-600 truncate">
+                          {vote.response_key.length > 120
+                            ? vote.response_key.slice(0, 120) + "…"
+                            : vote.response_key}
+                        </div>
+                      </div>
+                      <div class="text-sm font-medium text-gray-700 shrink-0">
+                        {vote.count} vote{vote.count !== 1 ? "s" : ""} ({vote.percentage}%)
+                      </div>
+                      <div class="w-20 h-2 bg-gray-200 rounded-full overflow-hidden shrink-0">
+                        <div
+                          class={`h-full rounded-full ${i === 0 ? "bg-indigo-500" : "bg-gray-400"}`}
+                          style={`width: ${vote.percentage}%`}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <!-- Submissions list with resolve action -->
+            {!isResolved && submissions.length > 0 && (
+              <div>
+                <h3 class="text-sm font-semibold text-gray-700 mb-2">Pick the Best Answer</h3>
+                <div class="space-y-3">
+                  {submissions.map((sub: any) => (
+                    <div class={`border rounded-xl p-4 ${task.winning_assignment_id === sub.id ? "border-green-400 bg-green-50" : "border-gray-200"}`}>
+                      <div class="flex items-start justify-between gap-4">
+                        <div class="flex-1 min-w-0">
+                          <div class="text-xs text-gray-500 mb-1">
+                            Worker #{sub.id.slice(0, 8)} · Level {sub.worker?.worker_level ?? "?"} ·
+                            {sub.worker?.worker_tasks_completed ?? 0} tasks done
+                          </div>
+                          <div class="bg-white border border-gray-100 rounded-lg p-2 text-xs font-mono text-gray-700 max-h-24 overflow-auto">
+                            {JSON.stringify(sub.response, null, 2)}
+                          </div>
+                          {sub.worker_note && (
+                            <p class="text-xs text-gray-500 mt-1 italic">Note: {sub.worker_note}</p>
+                          )}
+                        </div>
+                        <form method="POST" class="shrink-0">
+                          <input type="hidden" name="action" value="resolve" />
+                          <input type="hidden" name="task_id" value={task.id} />
+                          <input type="hidden" name="winning_assignment_id" value={sub.id} />
+                          <button
+                            type="submit"
+                            class="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition"
+                          >
+                            Select Winner
+                          </button>
+                        </form>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {isResolved && task.output && (
+              <div class="mt-2 bg-green-50 border border-green-200 rounded-xl p-3">
+                <h3 class="text-sm font-semibold text-green-800 mb-1">✅ Resolved Answer</h3>
+                <div class="text-xs font-mono text-green-700 max-h-24 overflow-auto">
+                  {JSON.stringify(task.output, null, 2)}
+                </div>
+              </div>
+            )}
+
+            <div class="mt-3 flex gap-3">
+              <a href={`/dashboard/tasks/${task.id}`} class="text-xs text-indigo-600 hover:underline">
+                View full task →
+              </a>
+              {consensus && (
+                <span class="text-xs text-gray-400">
+                  Consensus: {consensus.strategy.replace("_", " ")}
+                </span>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+
+    <!-- Pagination -->
+    {(page > 1 || disputedTasks.has_next) && (
+      <div class="flex justify-center gap-4 mt-8">
+        {page > 1 && (
+          <a href={`?status=${statusFilter}&page=${page - 1}`} class="px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm hover:bg-gray-50">
+            ← Previous
+          </a>
+        )}
+        {disputedTasks.has_next && (
+          <a href={`?status=${statusFilter}&page=${page + 1}`} class="px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm hover:bg-gray-50">
+            Next →
+          </a>
+        )}
+      </div>
+    )}
+  </div>
+</Layout>

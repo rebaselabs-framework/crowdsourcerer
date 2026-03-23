@@ -447,10 +447,20 @@ async def submit_task(
     if task:
         xp = compute_xp_for_task(task.type)
         task.assignments_completed += 1
-        # If all required assignments are submitted, complete the task
+
+        # Determine task lifecycle based on consensus strategy
         if task.assignments_completed >= task.assignments_required:
-            task.status = "completed"
-            task.completed_at = now
+            if task.consensus_strategy == "any_first":
+                # any_first: first submission that fills the slot wins → auto-complete
+                task.status = "completed"
+                task.completed_at = now
+                task.winning_assignment_id = assignment.id
+                task.output = req.response
+            else:
+                # For majority_vote / unanimous / requester_review:
+                # All assignments are in — run consensus check below.
+                # check_and_apply_consensus will set status and output.
+                pass  # handled after commit via check_and_apply_consensus
         elif task.status == "assigned":
             # Reopen for more workers if needed
             task.status = "open"
@@ -636,6 +646,16 @@ async def submit_task(
             await pay_referral_bonus_on_first_task(user_id, db)
         except Exception:
             pass  # Referral errors never block submission
+
+    # ── Consensus check (for non-any_first strategies) ────────────────────
+    if task and task.consensus_strategy != "any_first":
+        if task.assignments_completed >= task.assignments_required:
+            try:
+                from routers.disputes import check_and_apply_consensus
+                await check_and_apply_consensus(task, db)
+                await db.commit()
+            except Exception:
+                logger.exception("consensus_check_failed", task_id=str(task_id))
 
     msg = f"Submitted! You earned {earnings} credits and {xp} XP."
     if new_badge_ids:

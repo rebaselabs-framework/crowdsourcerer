@@ -1,0 +1,416 @@
+---
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Object.fromEntries(
+  Astro.cookies.getAll().map((c) => [c.name, c.value])
+));
+if (!token) return Astro.redirect("/login");
+
+// Handle POST actions
+if (Astro.request.method === "POST") {
+  const form = await Astro.request.formData();
+  const action = form.get("action") as string;
+
+  try {
+    if (action === "create_org") {
+      const name = form.get("name") as string;
+      const slug = form.get("slug") as string;
+      const description = form.get("description") as string | null;
+      await apiFetch("/v1/orgs", {
+        method: "POST",
+        token,
+        body: JSON.stringify({ name, slug, description }),
+      });
+    } else if (action === "invite") {
+      const orgId = form.get("org_id") as string;
+      const email = form.get("email") as string;
+      const role = form.get("role") as string;
+      await apiFetch(`/v1/orgs/${orgId}/invites`, {
+        method: "POST",
+        token,
+        body: JSON.stringify({ email, role }),
+      });
+    } else if (action === "remove_member") {
+      const orgId = form.get("org_id") as string;
+      const userId = form.get("user_id") as string;
+      await apiFetch(`/v1/orgs/${orgId}/members/${userId}`, {
+        method: "DELETE",
+        token,
+      });
+    } else if (action === "transfer_credits") {
+      const orgId = form.get("org_id") as string;
+      const amount = Number(form.get("amount"));
+      const direction = form.get("direction") as string;
+      await apiFetch(`/v1/orgs/${orgId}/credits/transfer`, {
+        method: "POST",
+        token,
+        body: JSON.stringify({ amount, direction }),
+      });
+    } else if (action === "activate_org") {
+      const orgId = form.get("org_id") as string;
+      await apiFetch(`/v1/orgs/${orgId}/activate`, {
+        method: "POST",
+        token,
+      });
+    } else if (action === "deactivate_org") {
+      await apiFetch("/v1/orgs/deactivate", {
+        method: "POST",
+        token,
+      });
+    }
+  } catch (e: any) {
+    // Fall through on error
+  }
+  return Astro.redirect("/dashboard/team");
+}
+
+let orgs: any[] = [];
+let me: any = null;
+let error: string | null = null;
+
+try {
+  [orgs, me] = await Promise.all([
+    apiFetch<any[]>("/v1/orgs", { token }),
+    apiFetch<any>("/v1/users/me", { token }),
+  ]);
+} catch (e: any) {
+  if (e.message?.includes("401")) return Astro.redirect("/login");
+  error = "Failed to load teams";
+}
+
+// Fetch members + invites for each org
+type OrgDetail = {
+  org: any;
+  members: any[];
+  invites: any[];
+};
+const orgDetails: OrgDetail[] = [];
+for (const org of orgs) {
+  let members: any[] = [];
+  let invites: any[] = [];
+  try {
+    [members, invites] = await Promise.all([
+      apiFetch<any[]>(`/v1/orgs/${org.id}/members`, { token }),
+      apiFetch<any[]>(`/v1/orgs/${org.id}/invites`, { token }),
+    ]);
+  } catch (_) {}
+  orgDetails.push({ org, members, invites });
+}
+
+const ROLE_COLORS: Record<string, string> = {
+  owner:  "bg-purple-100 text-purple-800",
+  admin:  "bg-indigo-100 text-indigo-800",
+  member: "bg-blue-100 text-blue-700",
+  viewer: "bg-gray-100 text-gray-700",
+};
+---
+
+<Layout title="Teams — CrowdSorcerer" active="dashboard">
+  <div class="max-w-4xl mx-auto px-4 py-10">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-6">
+      <div>
+        <h1 class="text-2xl font-bold text-gray-900">🏢 Teams</h1>
+        <p class="text-gray-500 mt-1">Manage your organizations and shared credit pools.</p>
+      </div>
+      <button
+        onclick="document.getElementById('create-org-modal').classList.remove('hidden')"
+        class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-xl transition text-sm"
+      >
+        + New Team
+      </button>
+    </div>
+
+    {error && (
+      <div class="bg-red-50 border border-red-200 text-red-700 rounded-xl p-4 mb-6">{error}</div>
+    )}
+
+    <!-- Active org banner -->
+    {me?.active_org_id && (
+      <div class="bg-indigo-50 border border-indigo-200 rounded-xl p-4 mb-6 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <span class="text-indigo-600 font-medium">🏢 Active org:</span>
+          <span class="text-indigo-800 font-semibold">
+            {orgs.find((o: any) => o.id === me.active_org_id)?.name ?? "Unknown"}
+          </span>
+          <span class="text-xs text-indigo-500">— Tasks you create will use the org credit pool</span>
+        </div>
+        <form method="POST">
+          <input type="hidden" name="action" value="deactivate_org" />
+          <button type="submit" class="text-xs text-indigo-600 hover:underline">Switch to personal</button>
+        </form>
+      </div>
+    )}
+
+    {orgDetails.length === 0 && !error && (
+      <div class="text-center py-20 text-gray-400">
+        <div class="text-5xl mb-4">🏢</div>
+        <p class="text-lg font-medium">No teams yet</p>
+        <p class="text-sm mt-1">Create a team to share credits and collaborate with others.</p>
+        <button
+          onclick="document.getElementById('create-org-modal').classList.remove('hidden')"
+          class="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-medium hover:bg-indigo-700"
+        >
+          Create your first team
+        </button>
+      </div>
+    )}
+
+    <!-- Org cards -->
+    <div class="space-y-8">
+      {orgDetails.map(({ org, members, invites }) => {
+        const myMembership = members.find((m: any) => m.user_id === me?.id);
+        const isOwnerOrAdmin = ["owner", "admin"].includes(myMembership?.role ?? "");
+        const isActive = me?.active_org_id === org.id;
+
+        return (
+          <div class={`bg-white rounded-2xl border shadow-sm overflow-hidden ${isActive ? "ring-2 ring-indigo-400" : ""}`}>
+
+            <!-- Org header -->
+            <div class="p-6 border-b bg-gradient-to-r from-indigo-50 to-white">
+              <div class="flex items-start justify-between gap-4">
+                <div>
+                  <div class="flex items-center gap-2">
+                    <h2 class="text-lg font-bold text-gray-900">{org.name}</h2>
+                    {isActive && (
+                      <span class="px-2 py-0.5 bg-indigo-600 text-white text-xs rounded-full">Active</span>
+                    )}
+                    <span class="text-xs text-gray-400 font-mono">@{org.slug}</span>
+                  </div>
+                  {org.description && (
+                    <p class="text-sm text-gray-500 mt-1">{org.description}</p>
+                  )}
+                  <div class="flex items-center gap-4 mt-2 text-sm text-gray-600">
+                    <span>💳 <strong>{org.credits.toLocaleString()}</strong> credits</span>
+                    <span>👥 <strong>{org.member_count}</strong> members</span>
+                    <span class={`px-2 py-0.5 rounded-full text-xs font-medium ${ROLE_COLORS[myMembership?.role ?? "member"]}`}>
+                      {myMembership?.role ?? "member"}
+                    </span>
+                  </div>
+                </div>
+                <div class="flex gap-2">
+                  {!isActive ? (
+                    <form method="POST">
+                      <input type="hidden" name="action" value="activate_org" />
+                      <input type="hidden" name="org_id" value={org.id} />
+                      <button type="submit" class="px-3 py-1.5 border border-indigo-300 text-indigo-700 text-sm font-medium rounded-lg hover:bg-indigo-50 transition">
+                        Set Active
+                      </button>
+                    </form>
+                  ) : (
+                    <form method="POST">
+                      <input type="hidden" name="action" value="deactivate_org" />
+                      <button type="submit" class="px-3 py-1.5 border border-gray-200 text-gray-600 text-sm font-medium rounded-lg hover:bg-gray-50 transition">
+                        Deactivate
+                      </button>
+                    </form>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <!-- Credits transfer (admin+) -->
+            {isOwnerOrAdmin && (
+              <div class="px-6 py-4 border-b bg-gray-50">
+                <h3 class="text-sm font-semibold text-gray-700 mb-2">💳 Transfer Credits</h3>
+                <form method="POST" class="flex items-end gap-3 flex-wrap">
+                  <input type="hidden" name="action" value="transfer_credits" />
+                  <input type="hidden" name="org_id" value={org.id} />
+                  <div>
+                    <label class="block text-xs text-gray-500 mb-1">Amount</label>
+                    <input
+                      type="number"
+                      name="amount"
+                      min="1"
+                      max="100000"
+                      placeholder="100"
+                      required
+                      class="w-28 px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                    />
+                  </div>
+                  <div>
+                    <label class="block text-xs text-gray-500 mb-1">Direction</label>
+                    <select name="direction" class="px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
+                      <option value="to_org">Personal → Org</option>
+                      <option value="from_org">Org → Personal</option>
+                    </select>
+                  </div>
+                  <button type="submit" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition">
+                    Transfer
+                  </button>
+                </form>
+              </div>
+            )}
+
+            <!-- Members list -->
+            <div class="px-6 py-4">
+              <div class="flex items-center justify-between mb-3">
+                <h3 class="text-sm font-semibold text-gray-700">👥 Members ({members.length})</h3>
+                {isOwnerOrAdmin && (
+                  <button
+                    onclick={`document.getElementById('invite-modal-${org.id}').classList.remove('hidden')`}
+                    class="text-xs text-indigo-600 hover:underline"
+                  >
+                    + Invite
+                  </button>
+                )}
+              </div>
+              <div class="divide-y divide-gray-100">
+                {members.map((member: any) => (
+                  <div class="flex items-center justify-between py-2">
+                    <div class="flex items-center gap-3">
+                      <div class="w-7 h-7 rounded-full bg-gradient-to-br from-indigo-400 to-purple-500 flex items-center justify-center text-white text-xs font-bold">
+                        {(member.name || member.email || "?")[0].toUpperCase()}
+                      </div>
+                      <div>
+                        <div class="text-sm font-medium text-gray-800">{member.name || "Unknown"}</div>
+                        <div class="text-xs text-gray-400">{member.email}</div>
+                      </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <span class={`px-2 py-0.5 rounded-full text-xs font-medium ${ROLE_COLORS[member.role]}`}>
+                        {member.role}
+                      </span>
+                      {isOwnerOrAdmin && member.user_id !== me?.id && member.role !== "owner" && (
+                        <form method="POST">
+                          <input type="hidden" name="action" value="remove_member" />
+                          <input type="hidden" name="org_id" value={org.id} />
+                          <input type="hidden" name="user_id" value={member.user_id} />
+                          <button
+                            type="submit"
+                            class="text-xs text-red-500 hover:text-red-700"
+                            onclick="return confirm('Remove this member?')"
+                          >
+                            Remove
+                          </button>
+                        </form>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <!-- Pending invites -->
+              {invites.length > 0 && (
+                <div class="mt-3 pt-3 border-t">
+                  <h4 class="text-xs font-semibold text-gray-500 uppercase mb-2">Pending Invites</h4>
+                  <div class="space-y-1">
+                    {invites.map((inv: any) => (
+                      <div class="flex items-center justify-between text-sm py-1">
+                        <span class="text-gray-600">{inv.email}</span>
+                        <span class={`px-2 py-0.5 rounded-full text-xs ${ROLE_COLORS[inv.role]}`}>{inv.role}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <!-- Invite modal for this org -->
+            <div id={`invite-modal-${org.id}`} class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+              <div class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-md">
+                <h2 class="text-lg font-bold mb-4">Invite to {org.name}</h2>
+                <form method="POST" class="space-y-4">
+                  <input type="hidden" name="action" value="invite" />
+                  <input type="hidden" name="org_id" value={org.id} />
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
+                    <input
+                      type="email"
+                      name="email"
+                      required
+                      placeholder="colleague@example.com"
+                      class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                    />
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Role</label>
+                    <select name="role" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
+                      <option value="member">Member — can create tasks, use shared credits</option>
+                      <option value="admin">Admin — can also invite/remove members</option>
+                      <option value="viewer">Viewer — read-only access</option>
+                    </select>
+                  </div>
+                  <div class="flex gap-3">
+                    <button
+                      type="button"
+                      onclick={`document.getElementById('invite-modal-${org.id}').classList.add('hidden')`}
+                      class="flex-1 px-4 py-2 border border-gray-200 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-50"
+                    >
+                      Cancel
+                    </button>
+                    <button type="submit" class="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-medium hover:bg-indigo-700">
+                      Send Invite
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+
+    <!-- Create org modal -->
+    <div id="create-org-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-md">
+        <h2 class="text-lg font-bold mb-4">Create New Team</h2>
+        <form method="POST" class="space-y-4">
+          <input type="hidden" name="action" value="create_org" />
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Team Name</label>
+            <input
+              type="text"
+              name="name"
+              required
+              minlength="2"
+              maxlength="255"
+              placeholder="Acme Research Team"
+              class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+            />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">
+              Slug <span class="text-gray-400 font-normal">(unique URL identifier)</span>
+            </label>
+            <input
+              type="text"
+              name="slug"
+              required
+              minlength="2"
+              maxlength="64"
+              pattern="[a-z0-9\-]+"
+              placeholder="acme-research"
+              class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 font-mono"
+            />
+            <p class="text-xs text-gray-400 mt-1">Lowercase letters, numbers, and hyphens only</p>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Description <span class="text-gray-400 font-normal">(optional)</span></label>
+            <textarea
+              name="description"
+              rows={3}
+              placeholder="What does this team work on?"
+              class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+            />
+          </div>
+          <div class="flex gap-3">
+            <button
+              type="button"
+              onclick="document.getElementById('create-org-modal').classList.add('hidden')"
+              class="flex-1 px-4 py-2 border border-gray-200 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+            <button type="submit" class="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-medium hover:bg-indigo-700">
+              Create Team
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+  </div>
+</Layout>
