@@ -14,15 +14,17 @@ const statusFilter = Astro.url.searchParams.get("status") ?? "";
 
 let slaStatuses: any[] = [];
 let priorities: any[] = [];
+let completionTimes: any = null;
 let error: string | null = null;
 
 try {
   const qs = new URLSearchParams({ limit: "100" });
   if (statusFilter) qs.set("status", statusFilter);
 
-  [slaStatuses, priorities] = await Promise.all([
+  [slaStatuses, priorities, completionTimes] = await Promise.all([
     apiFetch<any[]>(`/v1/tasks/sla-status?${qs}`, { token }),
     apiFetch<any[]>("/v1/sla/priorities", { token }),
+    apiFetch<any>("/v1/analytics/completion-times?days=30", { token }).catch(() => null),
   ]);
 } catch (e: any) {
   if (e.message?.includes("401")) return Astro.redirect("/login");
@@ -49,6 +51,7 @@ const priorityColors: Record<string, string> = {
 ---
 
 <Layout title="SLA Dashboard — CrowdSorcerer">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
   <div class="max-w-6xl mx-auto px-6 py-10">
     <div class="mb-8">
       <h1 class="text-2xl font-bold mb-1">⏱ SLA Dashboard</h1>
@@ -200,5 +203,114 @@ const priorityColors: Record<string, string> = {
       </ul>
       <a href="/pricing" class="text-violet-400 text-xs hover:underline mt-2 inline-block">View plans →</a>
     </div>
+
+    <!-- Completion Time Analytics -->
+    {completionTimes && completionTimes.task_types?.length > 0 && (
+      <div class="mt-6 bg-gray-900 border border-gray-800 rounded-xl p-5">
+        <h3 class="text-sm font-semibold mb-1">📊 Completion Time Analytics <span class="text-gray-400 font-normal text-xs">(last 30 days)</span></h3>
+        <p class="text-xs text-gray-400 mb-4">p50 = median completion time · p95 = 95th percentile (slowest 5%)</p>
+
+        <!-- Chart canvas -->
+        <canvas id="completionChart" height="200" class="w-full"
+                data-stats={JSON.stringify(completionTimes.task_types)}></canvas>
+
+        <!-- Stats table -->
+        <div class="overflow-x-auto mt-4">
+          <table class="w-full text-xs">
+            <thead>
+              <tr class="text-gray-400 border-b border-gray-700">
+                <th class="text-left py-2">Task Type</th>
+                <th class="text-right py-2">Count</th>
+                <th class="text-right py-2">Avg (min)</th>
+                <th class="text-right py-2">p50 (min)</th>
+                <th class="text-right py-2">p95 (min)</th>
+                <th class="text-right py-2">Max (min)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {completionTimes.task_types.map((tt: any) => (
+                <tr class="border-b border-gray-800 hover:bg-gray-800/50">
+                  <td class="py-2 font-medium">{tt.task_type.replace(/_/g, " ")}</td>
+                  <td class="py-2 text-right text-gray-400">{tt.count}</td>
+                  <td class="py-2 text-right text-gray-300">{tt.avg_minutes?.toFixed(1) ?? "—"}</td>
+                  <td class="py-2 text-right text-blue-400 font-medium">{tt.p50_minutes ?? "—"}</td>
+                  <td class="py-2 text-right text-amber-400 font-medium">{tt.p95_minutes ?? "—"}</td>
+                  <td class="py-2 text-right text-gray-500">{tt.max_minutes?.toFixed(1) ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    )}
   </div>
+
+  <script is:inline>
+    // Completion time chart (Chart.js)
+    (function() {
+      const canvas = document.getElementById("completionChart");
+      if (!canvas) return;
+
+      const rawData = JSON.parse(canvas.dataset.stats || "[]");
+      if (!rawData.length) return;
+
+      const labels = rawData.map(t => t.task_type.replace(/_/g, " "));
+      const p50    = rawData.map(t => t.p50_minutes ?? 0);
+      const p95    = rawData.map(t => t.p95_minutes ?? 0);
+      const avg    = rawData.map(t => t.avg_minutes ?? 0);
+
+      const isDark = document.documentElement.classList.contains("dark");
+      const gridColor = isDark ? "rgba(255,255,255,0.07)" : "rgba(0,0,0,0.07)";
+      const textColor = isDark ? "#9ca3af" : "#6b7280";
+
+      new Chart(canvas, {
+        type: "bar",
+        data: {
+          labels,
+          datasets: [
+            {
+              label: "Avg",
+              data: avg,
+              backgroundColor: "rgba(107,114,128,0.5)",
+              borderColor: "#6b7280",
+              borderWidth: 1,
+            },
+            {
+              label: "p50 (median)",
+              data: p50,
+              backgroundColor: "rgba(59,130,246,0.7)",
+              borderColor: "#3b82f6",
+              borderWidth: 1,
+            },
+            {
+              label: "p95",
+              data: p95,
+              backgroundColor: "rgba(245,158,11,0.7)",
+              borderColor: "#f59e0b",
+              borderWidth: 1,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { labels: { color: textColor, font: { size: 11 } } },
+            tooltip: {
+              callbacks: {
+                label: ctx => ` ${ctx.dataset.label}: ${Number(ctx.raw).toFixed(1)} min`,
+              },
+            },
+          },
+          scales: {
+            x: { ticks: { color: textColor, font: { size: 10 } }, grid: { color: gridColor } },
+            y: {
+              ticks: { color: textColor, font: { size: 10 }, callback: v => `${v}m` },
+              grid: { color: gridColor },
+              title: { display: true, text: "Minutes", color: textColor, font: { size: 11 } },
+            },
+          },
+        },
+      });
+    })();
+  </script>
 </Layout>

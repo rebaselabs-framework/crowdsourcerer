@@ -1,0 +1,371 @@
+---
+/**
+ * Worker Skill Marketplace — browse workers by skill, reputation, and certifications.
+ * Requesters can browse and invite workers to their open tasks.
+ */
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Object.fromEntries(
+  Astro.cookies.getAll().map((c) => [c.name, c.value])
+));
+
+if (!token) {
+  return Astro.redirect("/login?next=/workers/browse");
+}
+
+const url = new URL(Astro.request.url);
+const page       = parseInt(url.searchParams.get("page") ?? "1");
+const skill      = url.searchParams.get("skill") ?? "";
+const verified   = url.searchParams.get("verified") === "true";
+const minRep     = url.searchParams.get("min_rep") ?? "0";
+const minTasks   = url.searchParams.get("min_tasks") ?? "0";
+const cert       = url.searchParams.get("cert") ?? "";
+const sort       = url.searchParams.get("sort") ?? "reputation";
+
+let workers: any  = null;
+let userTasks: any = null;
+let error = "";
+
+const params = new URLSearchParams({
+  page: String(page),
+  limit: "18",
+  sort,
+  min_reputation: minRep,
+  min_tasks: minTasks,
+  ...(skill      ? { skill }             : {}),
+  ...(verified   ? { verified_only: "true" } : {}),
+  ...(cert       ? { cert }              : {}),
+});
+
+try {
+  workers = await apiFetch(`/v1/workers/browse?${params}`, { token });
+  // Load requester's open tasks for the invite modal
+  const taskResp = await apiFetch("/v1/tasks?execution_mode=human&status=open&page_size=50", { token }).catch(() => null);
+  userTasks = taskResp?.items ?? [];
+} catch (e: any) {
+  error = e.message ?? "Failed to load workers";
+}
+
+const TASK_TYPES = [
+  "label_image", "label_text", "rate_quality", "verify_fact",
+  "moderate_content", "compare_rank", "answer_question", "transcription_review",
+];
+const SORT_OPTIONS = [
+  { value: "reputation", label: "Top Reputation" },
+  { value: "tasks",      label: "Most Tasks" },
+  { value: "accuracy",   label: "Best Accuracy" },
+];
+---
+
+<Layout title="Worker Marketplace — CrowdSorcerer">
+  <div class="max-w-7xl mx-auto px-4 py-8">
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-6">
+      <div>
+        <h1 class="text-2xl font-bold">👷 Worker Marketplace</h1>
+        <p class="text-sm text-gray-500 mt-1">Browse skilled workers and invite them to your tasks</p>
+      </div>
+      <a href="/workers" class="text-sm text-blue-500 hover:underline">← All workers</a>
+    </div>
+
+    <!-- Filter bar -->
+    <form method="GET" class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 mb-6 flex flex-wrap gap-3 items-end">
+      <!-- Skill -->
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1">Skill</label>
+        <select name="skill" class="border dark:border-gray-600 dark:bg-gray-700 rounded px-2 py-1.5 text-sm">
+          <option value="">All skills</option>
+          {TASK_TYPES.map(t => (
+            <option value={t} selected={skill === t}>{t.replace(/_/g, " ")}</option>
+          ))}
+        </select>
+      </div>
+
+      <!-- Sort -->
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1">Sort by</label>
+        <select name="sort" class="border dark:border-gray-600 dark:bg-gray-700 rounded px-2 py-1.5 text-sm">
+          {SORT_OPTIONS.map(s => (
+            <option value={s.value} selected={sort === s.value}>{s.label}</option>
+          ))}
+        </select>
+      </div>
+
+      <!-- Min reputation -->
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1">Min reputation</label>
+        <input type="number" name="min_rep" min="0" max="100" value={minRep}
+               class="border dark:border-gray-600 dark:bg-gray-700 rounded px-2 py-1.5 text-sm w-20" />
+      </div>
+
+      <!-- Min tasks -->
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1">Min tasks done</label>
+        <input type="number" name="min_tasks" min="0" value={minTasks}
+               class="border dark:border-gray-600 dark:bg-gray-700 rounded px-2 py-1.5 text-sm w-20" />
+      </div>
+
+      <!-- Verified only -->
+      <label class="flex items-center gap-2 text-sm cursor-pointer">
+        <input type="checkbox" name="verified" value="true" checked={verified}
+               class="rounded" />
+        Verified skills only
+      </label>
+
+      <button type="submit"
+              class="bg-blue-600 text-white px-4 py-1.5 rounded text-sm hover:bg-blue-700">
+        🔍 Filter
+      </button>
+      <a href="/workers/browse" class="text-sm text-gray-500 hover:underline self-center">Clear</a>
+    </form>
+
+    {error && (
+      <div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 mb-6 text-red-700 dark:text-red-300">
+        {error}
+      </div>
+    )}
+
+    {workers && (
+      <>
+        <!-- Result count -->
+        <p class="text-sm text-gray-500 mb-4">
+          {workers.total} worker{workers.total !== 1 ? "s" : ""} found
+          {skill ? ` with ${skill.replace(/_/g, " ")} skill` : ""}
+          — page {workers.page} of {workers.pages}
+        </p>
+
+        <!-- Worker grid -->
+        {workers.items.length === 0 ? (
+          <div class="text-center py-16 text-gray-400">
+            <p class="text-4xl mb-3">🔍</p>
+            <p class="text-lg font-medium">No workers match your filters</p>
+            <p class="text-sm mt-1">Try adjusting your search criteria</p>
+          </div>
+        ) : (
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {workers.items.map((w: any) => (
+              <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 hover:shadow-md transition-shadow">
+                <!-- Worker header -->
+                <div class="flex items-start gap-3 mb-3">
+                  <div class="w-12 h-12 rounded-full overflow-hidden bg-gradient-to-br from-indigo-400 to-purple-600 flex items-center justify-center flex-shrink-0">
+                    {w.avatar_url ? (
+                      <img src={w.avatar_url} alt={w.name || "Worker"} class="w-full h-full object-cover" />
+                    ) : (
+                      <span class="text-white font-bold text-lg">
+                        {(w.name || "?")[0].toUpperCase()}
+                      </span>
+                    )}
+                  </div>
+                  <div class="min-w-0">
+                    <a href={w.profile_url} class="font-semibold hover:text-blue-500 truncate block">
+                      {w.name || "Anonymous Worker"}
+                    </a>
+                    <div class="flex items-center gap-2 text-xs text-gray-500 mt-0.5">
+                      <span>Lv.{w.worker_level}</span>
+                      <span>·</span>
+                      <span>{w.worker_tasks_completed} tasks</span>
+                      {w.worker_accuracy != null && (
+                        <>
+                          <span>·</span>
+                          <span>{w.worker_accuracy}% acc.</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  <!-- Reputation badge -->
+                  <div class={`ml-auto text-center px-2 py-1 rounded-lg text-xs font-bold flex-shrink-0 ${
+                    w.reputation_score >= 80 ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300" :
+                    w.reputation_score >= 60 ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300" :
+                    w.reputation_score >= 40 ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300" :
+                    "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300"
+                  }`}>
+                    ⭐ {w.reputation_score}
+                  </div>
+                </div>
+
+                <!-- Bio -->
+                {w.bio && (
+                  <p class="text-xs text-gray-500 dark:text-gray-400 mb-3 line-clamp-2">{w.bio}</p>
+                )}
+
+                <!-- Skills -->
+                {w.skills.length > 0 && (
+                  <div class="mb-3">
+                    <p class="text-xs font-medium text-gray-400 mb-1.5">Skills</p>
+                    <div class="flex flex-wrap gap-1">
+                      {w.skills.slice(0, 4).map((s: any) => (
+                        <span class={`text-xs px-2 py-0.5 rounded-full border ${
+                          s.verified
+                            ? "bg-amber-50 border-amber-300 text-amber-700 dark:bg-amber-900/20 dark:border-amber-700 dark:text-amber-300"
+                            : "bg-gray-50 border-gray-200 text-gray-600 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300"
+                        }`}>
+                          {s.verified ? "🏅 " : ""}{s.task_type.replace(/_/g, " ")} L{s.proficiency_level}
+                        </span>
+                      ))}
+                      {w.skills.length > 4 && (
+                        <span class="text-xs text-gray-400">+{w.skills.length - 4} more</span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <!-- Stats row -->
+                <div class="flex items-center gap-3 text-xs text-gray-500 border-t dark:border-gray-700 pt-3 mb-3">
+                  {w.verified_skill_count > 0 && (
+                    <span title="Verified skills">🏅 {w.verified_skill_count} verified</span>
+                  )}
+                  {w.cert_count > 0 && (
+                    <span title="Certifications">🎓 {w.cert_count} certs</span>
+                  )}
+                  {w.endorsement_count > 0 && (
+                    <span title="Endorsements">👍 {w.endorsement_count}</span>
+                  )}
+                </div>
+
+                <!-- Actions -->
+                <div class="flex gap-2">
+                  <a href={w.profile_url}
+                     class="flex-1 text-center text-xs border border-gray-200 dark:border-gray-600 rounded-lg py-1.5 hover:bg-gray-50 dark:hover:bg-gray-700">
+                    View Profile
+                  </a>
+                  <button
+                    onclick={`openInviteModal('${w.id}', '${(w.name || "this worker").replace(/'/g, "\\'")}' )`}
+                    class="flex-1 text-xs bg-indigo-600 text-white rounded-lg py-1.5 hover:bg-indigo-700">
+                    ✉️ Invite
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <!-- Pagination -->
+        {workers.pages > 1 && (
+          <div class="flex items-center justify-center gap-2 mt-8">
+            {workers.page > 1 && (
+              <a href={`?${new URLSearchParams({ ...Object.fromEntries(url.searchParams), page: String(workers.page - 1) })}`}
+                 class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700">
+                ← Prev
+              </a>
+            )}
+            <span class="text-sm text-gray-500">Page {workers.page} of {workers.pages}</span>
+            {workers.page < workers.pages && (
+              <a href={`?${new URLSearchParams({ ...Object.fromEntries(url.searchParams), page: String(workers.page + 1) })}`}
+                 class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700">
+                Next →
+              </a>
+            )}
+          </div>
+        )}
+      </>
+    )}
+  </div>
+
+  <!-- Invite Modal -->
+  <div id="inviteModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50">
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-md mx-4 p-6">
+      <h2 class="text-lg font-bold mb-1">✉️ Invite Worker</h2>
+      <p class="text-sm text-gray-500 mb-4">Invite <span id="inviteWorkerName" class="font-medium"></span> to one of your open tasks</p>
+
+      <input type="hidden" id="inviteWorkerId" />
+
+      <!-- Task selector -->
+      <div class="mb-4">
+        <label class="block text-sm font-medium mb-1">Task</label>
+        <select id="inviteTaskSelect" class="w-full border dark:border-gray-600 dark:bg-gray-700 rounded-lg px-3 py-2 text-sm">
+          <option value="">-- Select a task --</option>
+          {(userTasks ?? []).map((t: any) => (
+            <option value={t.id}>{t.title || t.task_type} ({t.status})</option>
+          ))}
+        </select>
+        {(userTasks ?? []).length === 0 && (
+          <p class="text-xs text-amber-600 mt-1">No open human tasks. <a href="/dashboard/new-task" class="underline">Create one first.</a></p>
+        )}
+      </div>
+
+      <!-- Optional message -->
+      <div class="mb-5">
+        <label class="block text-sm font-medium mb-1">Message <span class="text-gray-400 font-normal">(optional)</span></label>
+        <textarea id="inviteMessage" rows="3"
+                  placeholder="Hi! I think you'd be great for this task..."
+                  class="w-full border dark:border-gray-600 dark:bg-gray-700 rounded-lg px-3 py-2 text-sm resize-none"></textarea>
+      </div>
+
+      <div id="inviteError" class="hidden text-red-600 text-sm mb-3"></div>
+      <div id="inviteSuccess" class="hidden text-green-600 text-sm mb-3"></div>
+
+      <div class="flex gap-3">
+        <button onclick="closeInviteModal()"
+                class="flex-1 border dark:border-gray-600 rounded-lg py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700">
+          Cancel
+        </button>
+        <button onclick="submitInvite()"
+                class="flex-1 bg-indigo-600 text-white rounded-lg py-2 text-sm font-medium hover:bg-indigo-700">
+          Send Invite
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function openInviteModal(workerId: string, workerName: string) {
+      document.getElementById("inviteWorkerId")!.value = workerId;
+      document.getElementById("inviteWorkerName")!.textContent = workerName;
+      document.getElementById("inviteError")!.classList.add("hidden");
+      document.getElementById("inviteSuccess")!.classList.add("hidden");
+      (document.getElementById("inviteMessage") as HTMLTextAreaElement).value = "";
+      const modal = document.getElementById("inviteModal")!;
+      modal.classList.remove("hidden");
+      modal.classList.add("flex");
+    }
+
+    function closeInviteModal() {
+      const modal = document.getElementById("inviteModal")!;
+      modal.classList.add("hidden");
+      modal.classList.remove("flex");
+    }
+
+    async function submitInvite() {
+      const workerId = (document.getElementById("inviteWorkerId") as HTMLInputElement).value;
+      const taskId   = (document.getElementById("inviteTaskSelect") as HTMLSelectElement).value;
+      const message  = (document.getElementById("inviteMessage") as HTMLTextAreaElement).value.trim();
+      const errEl    = document.getElementById("inviteError")!;
+      const okEl     = document.getElementById("inviteSuccess")!;
+
+      errEl.classList.add("hidden");
+      okEl.classList.add("hidden");
+
+      if (!taskId) {
+        errEl.textContent = "Please select a task.";
+        errEl.classList.remove("hidden");
+        return;
+      }
+
+      try {
+        const res = await fetch(`/api/tasks/${taskId}/invite`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ worker_id: workerId, message: message || null }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          errEl.textContent = data.detail ?? "Failed to send invite";
+          errEl.classList.remove("hidden");
+          return;
+        }
+        okEl.textContent = "✅ Invite sent! The worker will be notified.";
+        okEl.classList.remove("hidden");
+        setTimeout(() => closeInviteModal(), 2000);
+      } catch {
+        errEl.textContent = "Network error. Please try again.";
+        errEl.classList.remove("hidden");
+      }
+    }
+
+    // Close modal on backdrop click
+    document.getElementById("inviteModal")?.addEventListener("click", (e) => {
+      if (e.target === e.currentTarget) closeInviteModal();
+    });
+  </script>
+</Layout>

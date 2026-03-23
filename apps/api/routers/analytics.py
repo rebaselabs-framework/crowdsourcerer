@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import statistics
 from datetime import datetime, timezone, timedelta, date
 from typing import Optional
 from uuid import UUID
@@ -10,6 +11,7 @@ from uuid import UUID
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, text, case
 
@@ -429,3 +431,112 @@ async def export_analytics(
         media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="analytics_{days}d.csv"'},
     )
+
+
+# ── Completion-time percentiles ────────────────────────────────────────────────
+
+class CompletionTimeStats(BaseModel):
+    task_type: str
+    count: int
+    avg_minutes: Optional[float] = None
+    p50_minutes: Optional[float] = None
+    p95_minutes: Optional[float] = None
+    min_minutes: Optional[float] = None
+    max_minutes: Optional[float] = None
+
+
+class CompletionTimesOut(BaseModel):
+    days: int
+    task_types: list[CompletionTimeStats]
+
+
+def _percentile(data: list[float], pct: float) -> float:
+    """Compute the p-th percentile of a sorted list using linear interpolation."""
+    if not data:
+        return 0.0
+    sorted_data = sorted(data)
+    n = len(sorted_data)
+    idx = pct / 100.0 * (n - 1)
+    lo = int(idx)
+    hi = lo + 1
+    if hi >= n:
+        return round(sorted_data[-1], 2)
+    frac = idx - lo
+    return round(sorted_data[lo] + frac * (sorted_data[hi] - sorted_data[lo]), 2)
+
+
+@router.get("/completion-times", response_model=CompletionTimesOut)
+async def completion_times(
+    days: int = Query(30, ge=1, le=365),
+    org_id: Optional[UUID] = None,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(require_scope(SCOPE_ANALYTICS_READ)),
+):
+    """Return p50/p95 completion time statistics per task type.
+
+    Completion time = ``completed_at - created_at`` for all completed tasks
+    that belong to the authenticated requester (or org) within the window.
+    This powers the SLA Analytics dashboard for latency percentile charts.
+    """
+    uid = UUID(user_id)
+    since = utcnow() - timedelta(days=days)
+
+    filters = [
+        TaskDB.user_id == uid,
+        TaskDB.status == "completed",
+        TaskDB.completed_at.isnot(None),
+        TaskDB.created_at >= since,
+    ]
+    if org_id:
+        mem = await db.execute(
+            select(OrgMemberDB).where(
+                OrgMemberDB.org_id == org_id,
+                OrgMemberDB.user_id == uid,
+            )
+        )
+        if not mem.scalar_one_or_none():
+            raise HTTPException(status_code=403, detail="Not a member of this organization")
+        filters = [
+            TaskDB.org_id == org_id,
+            TaskDB.status == "completed",
+            TaskDB.completed_at.isnot(None),
+            TaskDB.created_at >= since,
+        ]
+
+    result = await db.execute(
+        select(TaskDB.type, TaskDB.created_at, TaskDB.completed_at)
+        .where(*filters)
+        .order_by(TaskDB.type)
+    )
+    rows = result.fetchall()
+
+    # Bucket durations by task_type
+    from collections import defaultdict
+    buckets: dict[str, list[float]] = defaultdict(list)
+    for row in rows:
+        task_type, created, completed = row
+        if created and completed:
+            delta_minutes = (
+                completed.replace(tzinfo=timezone.utc)
+                - created.replace(tzinfo=timezone.utc)
+            ).total_seconds() / 60.0
+            if delta_minutes >= 0:
+                buckets[task_type].append(delta_minutes)
+
+    task_types: list[CompletionTimeStats] = []
+    for tt, durations in sorted(buckets.items()):
+        if not durations:
+            continue
+        task_types.append(
+            CompletionTimeStats(
+                task_type=tt,
+                count=len(durations),
+                avg_minutes=round(statistics.mean(durations), 2),
+                p50_minutes=_percentile(durations, 50),
+                p95_minutes=_percentile(durations, 95),
+                min_minutes=round(min(durations), 2),
+                max_minutes=round(max(durations), 2),
+            )
+        )
+
+    return CompletionTimesOut(days=days, task_types=task_types)

@@ -223,9 +223,19 @@ const HUMAN_TASK_TYPES = Object.keys(TASK_TYPE_META);
                         </span>
                       )}
                     </div>
-                    <span class="shrink-0 px-3 py-1.5 bg-emerald-700 group-hover:bg-emerald-600 text-white text-xs font-medium rounded-lg transition-colors">
-                      Claim →
-                    </span>
+                    <div class="flex items-center gap-2 flex-shrink-0">
+                      <button
+                        class="watchlist-btn p-1.5 rounded-lg text-gray-500 hover:text-amber-400 hover:bg-gray-800 transition-colors"
+                        data-task-id={task.id}
+                        title="Bookmark task"
+                        onclick="event.preventDefault(); toggleWatchlist(this, event)"
+                      >
+                        🔖
+                      </button>
+                      <span class="px-3 py-1.5 bg-emerald-700 group-hover:bg-emerald-600 text-white text-xs font-medium rounded-lg transition-colors">
+                        Claim →
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -260,4 +270,38 @@ const HUMAN_TASK_TYPES = Object.keys(TASK_TYPE_META);
       </div>
     )}
   </div>
+
+  <script>
+    // Watchlist toggle — bookmark/unbookmark a task
+    async function toggleWatchlist(btn: HTMLButtonElement, event: MouseEvent) {
+      event.preventDefault();
+      event.stopPropagation();
+      const taskId = btn.dataset.taskId;
+      if (!taskId) return;
+
+      const isBookmarked = btn.dataset.bookmarked === "true";
+      const method = isBookmarked ? "DELETE" : "POST";
+
+      try {
+        const res = await fetch(`/api/worker/watchlist/${taskId}`, { method });
+        if (res.ok) {
+          btn.dataset.bookmarked = isBookmarked ? "false" : "true";
+          btn.title = isBookmarked ? "Bookmark task" : "Remove from watchlist";
+          btn.style.color = isBookmarked ? "" : "#f59e0b"; // amber when bookmarked
+          const msg = isBookmarked ? "Removed from watchlist" : "Added to watchlist ✅";
+          showToast(msg);
+        }
+      } catch {
+        // silent fail
+      }
+    }
+
+    function showToast(msg: string) {
+      const el = document.createElement("div");
+      el.textContent = msg;
+      el.className = "fixed bottom-20 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-sm px-4 py-2 rounded-full shadow-lg z-50";
+      document.body.appendChild(el);
+      setTimeout(() => el.remove(), 2500);
+    }
+  </script>
 </Layout>

@@ -41,6 +41,10 @@ class NotifType:
     PLAN_UPDATED         = "plan_updated"     # Subscription plan changed
     PAYMENT_RECEIVED     = "payment_received" # Successful payment / credits added
     PAYMENT_FAILED       = "payment_failed"   # Failed payment
+    WORKER_INVITED       = "worker_invited"   # Requester invited worker to a task
+    INVITE_ACCEPTED      = "invite_accepted"  # Worker accepted an invite
+    INVITE_DECLINED      = "invite_declined"  # Worker declined an invite
+    WATCHLIST_ALERT      = "watchlist_alert"  # Watched task became available again
 
 
 async def create_notification(

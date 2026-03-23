@@ -1,0 +1,176 @@
+---
+/**
+ * Worker Invites — pending task invitations from requesters.
+ */
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Object.fromEntries(
+  Astro.cookies.getAll().map((c) => [c.name, c.value])
+));
+
+if (!token) {
+  return Astro.redirect("/login?next=/worker/invites");
+}
+
+let invites: any[] = [];
+let user: any = null;
+let error = "";
+
+try {
+  user = await apiFetch("/v1/users/me", { token });
+  if (user?.role !== "worker" && user?.role !== "both") {
+    return Astro.redirect("/dashboard");
+  }
+  invites = await apiFetch("/v1/worker/invites", { token }).catch(() => []);
+} catch (e: any) {
+  error = e.message ?? "Failed to load invites";
+}
+
+const pending  = invites.filter((i: any) => i.status === "pending");
+const past     = invites.filter((i: any) => i.status !== "pending");
+
+const statusColor: Record<string, string> = {
+  pending:  "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300",
+  accepted: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300",
+  declined: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300",
+  expired:  "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400",
+};
+const statusIcon: Record<string, string> = {
+  pending:  "⏳", accepted: "✅", declined: "❌", expired: "⌛",
+};
+---
+
+<Layout title="My Invites — CrowdSorcerer">
+  <div class="max-w-3xl mx-auto px-4 py-8">
+    <div class="flex items-center justify-between mb-6">
+      <div>
+        <h1 class="text-2xl font-bold">✉️ Task Invitations</h1>
+        <p class="text-sm text-gray-500 mt-1">Requesters can invite you directly to their tasks</p>
+      </div>
+      <a href="/worker" class="text-sm text-blue-500 hover:underline">← Dashboard</a>
+    </div>
+
+    {error && (
+      <div class="bg-red-50 dark:bg-red-900/20 border border-red-200 rounded-lg p-4 mb-6 text-red-700 dark:text-red-300">
+        {error}
+      </div>
+    )}
+
+    <!-- Pending invites -->
+    <section class="mb-8">
+      <h2 class="text-lg font-semibold mb-3">
+        Pending <span class="ml-1 px-2 py-0.5 text-xs bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300 rounded-full">
+          {pending.length}
+        </span>
+      </h2>
+
+      {pending.length === 0 ? (
+        <div class="text-center py-10 text-gray-400">
+          <p class="text-3xl mb-2">📬</p>
+          <p>No pending invites. Browse the <a href="/worker/marketplace" class="text-blue-500 hover:underline">task marketplace</a> to find work.</p>
+        </div>
+      ) : (
+        <div class="space-y-4">
+          {pending.map((inv: any) => (
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-yellow-200 dark:border-yellow-700 p-5"
+                 id={`invite-${inv.id}`}>
+              <div class="flex items-start justify-between gap-3 mb-3">
+                <div>
+                  <p class="font-semibold">{inv.task_title || "Untitled task"}</p>
+                  <p class="text-xs text-gray-500 mt-0.5">
+                    Invited {new Date(inv.created_at).toLocaleDateString()} — expires 48h from invite
+                  </p>
+                </div>
+                <span class={`px-2 py-1 rounded-full text-xs font-medium flex-shrink-0 ${statusColor[inv.status]}`}>
+                  {statusIcon[inv.status]} {inv.status}
+                </span>
+              </div>
+
+              {inv.message && (
+                <blockquote class="text-sm text-gray-600 dark:text-gray-300 border-l-4 border-yellow-300 pl-3 mb-3 italic">
+                  "{inv.message}"
+                </blockquote>
+              )}
+
+              <div class="flex gap-3">
+                <button
+                  onclick={`respondToInvite('${inv.id}', 'accept')`}
+                  class="flex-1 bg-green-600 text-white rounded-lg py-2 text-sm font-medium hover:bg-green-700">
+                  ✅ Accept & Claim
+                </button>
+                <button
+                  onclick={`respondToInvite('${inv.id}', 'decline')`}
+                  class="flex-1 border border-gray-200 dark:border-gray-600 rounded-lg py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700">
+                  ❌ Decline
+                </button>
+              </div>
+              <div id={`invite-${inv.id}-status`} class="hidden text-sm mt-2 text-center"></div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+
+    <!-- Past invites -->
+    {past.length > 0 && (
+      <section>
+        <h2 class="text-lg font-semibold mb-3 text-gray-500">Past Invites</h2>
+        <div class="space-y-3">
+          {past.map((inv: any) => (
+            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 opacity-75">
+              <div class="flex items-center justify-between gap-3">
+                <p class="font-medium text-sm">{inv.task_title || "Untitled task"}</p>
+                <span class={`px-2 py-0.5 rounded-full text-xs font-medium flex-shrink-0 ${statusColor[inv.status]}`}>
+                  {statusIcon[inv.status]} {inv.status}
+                </span>
+              </div>
+              <p class="text-xs text-gray-400 mt-1">
+                Responded {inv.responded_at ? new Date(inv.responded_at).toLocaleDateString() : "—"}
+              </p>
+            </div>
+          ))}
+        </div>
+      </section>
+    )}
+  </div>
+
+  <script>
+    async function respondToInvite(inviteId: string, action: "accept" | "decline") {
+      const statusEl = document.getElementById(`invite-${inviteId}-status`)!;
+      const card     = document.getElementById(`invite-${inviteId}`)!;
+
+      statusEl.textContent = action === "accept" ? "Processing…" : "Declining…";
+      statusEl.className = "text-sm mt-2 text-center text-gray-500";
+      statusEl.classList.remove("hidden");
+
+      try {
+        const res = await fetch(`/api/worker/invites/${inviteId}/respond`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action }),
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          statusEl.textContent = data.detail ?? "Something went wrong";
+          statusEl.className = "text-sm mt-2 text-center text-red-600";
+          return;
+        }
+
+        if (action === "accept") {
+          statusEl.textContent = "✅ Accepted! Redirecting to marketplace…";
+          statusEl.className = "text-sm mt-2 text-center text-green-600";
+          setTimeout(() => { window.location.href = "/worker/marketplace"; }, 1500);
+        } else {
+          statusEl.textContent = "❌ Declined.";
+          statusEl.className = "text-sm mt-2 text-center text-gray-500";
+          setTimeout(() => { card.classList.add("opacity-50"); }, 500);
+        }
+      } catch {
+        statusEl.textContent = "Network error. Please try again.";
+        statusEl.className = "text-sm mt-2 text-center text-red-600";
+      }
+    }
+  </script>
+</Layout>

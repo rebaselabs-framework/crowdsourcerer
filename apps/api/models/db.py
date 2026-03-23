@@ -1247,3 +1247,60 @@ class WorkerEndorsementDB(Base):
     skill_tag = Column(String(100), nullable=True)   # e.g. "data labeling", "fast turnaround"
     note = Column(Text, nullable=True)               # max 500 chars
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+class WorkerInviteDB(Base):
+    """Direct invite from a requester to a specific worker for a task.
+
+    After a requester browses the worker marketplace they can invite a worker
+    to a specific open/pending task.  The worker can accept (auto-claiming the
+    task) or decline.  Pending invites expire after 48 hours.
+    """
+    __tablename__ = "worker_invites"
+    __table_args__ = (
+        UniqueConstraint("task_id", "worker_id", name="uq_worker_invite"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    task_id = Column(UUID(as_uuid=True), ForeignKey("tasks.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    worker_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
+                       nullable=False, index=True)
+    requester_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
+                          nullable=False)
+    message = Column(Text, nullable=True)            # optional personal message (≤500 chars)
+    status = Column(
+        SAEnum("pending", "accepted", "declined", "expired", name="invite_status_enum"),
+        default="pending",
+        nullable=False,
+        index=True,
+    )
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    responded_at = Column(DateTime(timezone=True), nullable=True)
+
+    task = relationship("TaskDB", backref="invites")
+    worker = relationship("UserDB", backref="received_invites", foreign_keys=[worker_id])
+    requester = relationship("UserDB", backref="sent_invites", foreign_keys=[requester_id])
+
+
+class TaskWatchlistDB(Base):
+    """Worker bookmarks an open task to watch / come back to later.
+
+    When a watchlisted task is re-opened (e.g. after timeout) the sweeper
+    fires an in-app notification to the bookmarking worker.
+    """
+    __tablename__ = "task_watchlist"
+    __table_args__ = (
+        UniqueConstraint("worker_id", "task_id", name="uq_task_watchlist"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    worker_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
+                       nullable=False, index=True)
+    task_id = Column(UUID(as_uuid=True), ForeignKey("tasks.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    notified_at = Column(DateTime(timezone=True), nullable=True)  # last notification sent
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    worker = relationship("UserDB", backref="watchlist")
+    task = relationship("TaskDB", backref="watchers")

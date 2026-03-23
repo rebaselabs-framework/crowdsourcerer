@@ -22,7 +22,7 @@ import structlog
 from sqlalchemy import select, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from models.db import TaskDB, TaskAssignmentDB, UserDB, SLABreachDB, TaskDependencyDB, NotificationDB
+from models.db import TaskDB, TaskAssignmentDB, UserDB, SLABreachDB, TaskDependencyDB, NotificationDB, TaskWatchlistDB
 from core.webhooks import fire_webhook_for_task
 
 logger = structlog.get_logger()
@@ -658,6 +658,70 @@ async def _sweep_priority_escalation(session_factory: async_sessionmaker) -> int
     return escalated
 
 
+async def _sweep_watchlist_notifications(session_factory: async_sessionmaker) -> int:
+    """Notify workers when tasks they bookmarked have become open/pending again.
+
+    Fires once per (worker, task) pair — won't re-notify if already sent within 24 h.
+    """
+    notified = 0
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(hours=24)
+
+    async with session_factory() as db:
+        try:
+            # Find watchlist items pointing to open/pending tasks
+            result = await db.execute(
+                select(TaskWatchlistDB)
+                .join(TaskDB, TaskDB.id == TaskWatchlistDB.task_id)
+                .where(
+                    TaskDB.status.in_(["open", "pending"]),
+                    # Either never notified or notified > 24 h ago
+                    (
+                        (TaskWatchlistDB.notified_at == None)  # noqa: E711
+                        | (TaskWatchlistDB.notified_at < cutoff)
+                    ),
+                )
+            )
+            items = result.scalars().all()
+
+            for item in items:
+                try:
+                    task_r = await db.execute(
+                        select(TaskDB).where(TaskDB.id == item.task_id)
+                    )
+                    task = task_r.scalar_one_or_none()
+                    if not task:
+                        continue
+
+                    notif = NotificationDB(
+                        user_id=item.worker_id,
+                        type="watchlist_alert",
+                        title="A task on your watchlist is available!",
+                        body=(
+                            f"'{task.type.replace('_', ' ').title()}' is now "
+                            f"{task.status} and ready to claim."
+                        ),
+                        link=f"/worker/marketplace",
+                        is_read=False,
+                    )
+                    db.add(notif)
+                    item.notified_at = now
+                    notified += 1
+                except Exception:
+                    logger.exception(
+                        "sweeper.watchlist_notify_error",
+                        watchlist_id=str(item.id),
+                    )
+
+            if notified:
+                await db.commit()
+        except Exception:
+            logger.exception("sweeper.watchlist_sweep_error")
+            await db.rollback()
+
+    return notified
+
+
 async def run_sweeper(session_factory: async_sessionmaker, interval: int = SWEEP_INTERVAL_SECONDS):
     """Infinite loop: sweep, sleep, repeat. Designed to run as an asyncio background task."""
     logger.info("sweeper.started", interval_seconds=interval)
@@ -700,6 +764,14 @@ async def run_sweeper(session_factory: async_sessionmaker, interval: int = SWEEP
                 logger.info("sweeper.priority_escalated_total", count=escalated)
         except Exception:  # noqa: BLE001
             logger.exception("sweeper.priority_escalation_check_error")
+
+        # Notify workers about watchlisted tasks becoming available
+        try:
+            watched = await _sweep_watchlist_notifications(session_factory)
+            if watched:
+                logger.info("sweeper.watchlist_notified", count=watched)
+        except Exception:  # noqa: BLE001
+            logger.exception("sweeper.watchlist_check_error")
 
         # Send weekly digest on Monday mornings
         try:

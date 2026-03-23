@@ -1,0 +1,159 @@
+---
+/**
+ * Task Watchlist — tasks the worker has bookmarked.
+ * Shows open/pending tasks and fires alerts when they become claimable.
+ */
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Object.fromEntries(
+  Astro.cookies.getAll().map((c) => [c.name, c.value])
+));
+
+if (!token) {
+  return Astro.redirect("/login?next=/worker/watchlist");
+}
+
+const url = new URL(Astro.request.url);
+const includeAll = url.searchParams.get("all") === "true";
+
+let watchlist: any  = null;
+let user: any       = null;
+let error           = "";
+
+try {
+  user = await apiFetch("/v1/users/me", { token });
+  if (user?.role !== "worker" && user?.role !== "both") {
+    return Astro.redirect("/dashboard");
+  }
+  const params = includeAll ? "?include_all=true" : "";
+  watchlist = await apiFetch(`/v1/worker/watchlist${params}`, { token });
+} catch (e: any) {
+  error = e.message ?? "Failed to load watchlist";
+}
+
+const statusColor: Record<string, string> = {
+  open:     "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300",
+  pending:  "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300",
+  assigned: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
+  completed:"bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400",
+  cancelled:"bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300",
+};
+---
+
+<Layout title="My Watchlist — CrowdSorcerer">
+  <div class="max-w-3xl mx-auto px-4 py-8">
+    <div class="flex items-center justify-between mb-6">
+      <div>
+        <h1 class="text-2xl font-bold">🔖 My Watchlist</h1>
+        <p class="text-sm text-gray-500 mt-1">Bookmarked tasks — you'll be notified when they're available</p>
+      </div>
+      <div class="flex items-center gap-3">
+        <a href={includeAll ? "/worker/watchlist" : "/worker/watchlist?all=true"}
+           class="text-sm text-blue-500 hover:underline">
+          {includeAll ? "Show open only" : "Show all"}
+        </a>
+        <a href="/worker/marketplace" class="text-sm text-blue-500 hover:underline">← Marketplace</a>
+      </div>
+    </div>
+
+    {error && (
+      <div class="bg-red-50 dark:bg-red-900/20 border border-red-200 rounded-lg p-4 mb-6 text-red-700 dark:text-red-300">
+        {error}
+      </div>
+    )}
+
+    {watchlist && (
+      <>
+        <div class="flex items-center gap-3 mb-4">
+          <p class="text-sm text-gray-500">
+            {watchlist.total} task{watchlist.total !== 1 ? "s" : ""} bookmarked
+            {!includeAll && watchlist.items.length < watchlist.total
+              ? ` (${watchlist.items.length} open)`
+              : ""}
+          </p>
+          {watchlist.items.length === 0 && watchlist.total === 0 && (
+            <a href="/worker/marketplace"
+               class="text-xs bg-blue-600 text-white px-3 py-1 rounded-full hover:bg-blue-700">
+              Browse tasks →
+            </a>
+          )}
+        </div>
+
+        {watchlist.items.length === 0 ? (
+          <div class="text-center py-16 text-gray-400">
+            <p class="text-5xl mb-3">🔖</p>
+            <p class="text-lg font-medium">
+              {watchlist.total === 0
+                ? "Your watchlist is empty"
+                : "No open tasks on your watchlist right now"}
+            </p>
+            <p class="text-sm mt-2">
+              {watchlist.total === 0
+                ? "Bookmark tasks from the marketplace to track them here."
+                : "All watched tasks are closed. Switch to \"Show all\" to see them."}
+            </p>
+            <a href="/worker/marketplace"
+               class="inline-block mt-4 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700">
+              Browse Marketplace
+            </a>
+          </div>
+        ) : (
+          <div class="space-y-3">
+            {watchlist.items.map((item: any) => (
+              <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 flex items-start gap-4"
+                   id={`watch-${item.task_id}`}>
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-2 mb-1">
+                    <p class="font-medium truncate">{item.task_title || item.task_type}</p>
+                    <span class={`px-2 py-0.5 rounded-full text-xs flex-shrink-0 ${statusColor[item.task_status] ?? "bg-gray-100 text-gray-500"}`}>
+                      {item.task_status}
+                    </span>
+                  </div>
+                  <div class="flex items-center gap-3 text-xs text-gray-500">
+                    <span>{item.task_type.replace(/_/g, " ")}</span>
+                    {item.reward && <span>· 💰 {item.reward} cr</span>}
+                    <span>· added {new Date(item.created_at).toLocaleDateString()}</span>
+                  </div>
+                </div>
+                <div class="flex items-center gap-2 flex-shrink-0">
+                  {item.task_status === "open" && (
+                    <a href={`/worker/marketplace`}
+                       class="text-xs bg-green-600 text-white px-3 py-1.5 rounded-lg hover:bg-green-700">
+                      Claim
+                    </a>
+                  )}
+                  <button
+                    onclick={`removeFromWatchlist('${item.task_id}')`}
+                    class="text-xs text-gray-400 hover:text-red-500 px-2 py-1.5 rounded border dark:border-gray-600 hover:border-red-300"
+                    title="Remove from watchlist">
+                    🗑
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </>
+    )}
+  </div>
+
+  <script>
+    async function removeFromWatchlist(taskId: string) {
+      const card = document.getElementById(`watch-${taskId}`)!;
+      try {
+        const res = await fetch(`/api/worker/watchlist/${taskId}`, { method: "DELETE" });
+        if (res.ok) {
+          card.style.opacity = "0";
+          card.style.transition = "opacity 0.3s";
+          setTimeout(() => card.remove(), 300);
+        } else {
+          const d = await res.json().catch(() => ({}));
+          alert(d.detail ?? "Failed to remove");
+        }
+      } catch {
+        alert("Network error. Please try again.");
+      }
+    }
+  </script>
+</Layout>
