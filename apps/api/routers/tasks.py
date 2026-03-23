@@ -1,22 +1,25 @@
 """Task CRUD + execution endpoints."""
 from __future__ import annotations
 import asyncio
+import json
 import time
 from datetime import datetime, timezone
-from typing import Optional
+from typing import AsyncIterator, Optional
 from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
 from core.auth import get_current_user_id
 from core.database import get_db
-from models.db import TaskDB, UserDB, CreditTransactionDB, WebhookLogDB
+from models.db import TaskDB, UserDB, CreditTransactionDB, TaskAssignmentDB, WebhookLogDB
 from models.schemas import (
     TaskCreateRequest, TaskCreateResponse, TaskOut, PaginatedTasks,
     HUMAN_TASK_TYPES,
+    SubmissionOut, SubmissionWorkerOut, SubmissionReviewRequest, SubmissionReviewResponse,
 )
 from workers.base import get_rebasekit_client, WorkerError
 from workers.router import execute_task, TASK_CREDITS
@@ -133,6 +136,8 @@ async def create_task(
 async def list_tasks(
     status: Optional[str] = Query(None),
     type: Optional[str] = Query(None),
+    execution_mode: Optional[str] = Query(None),
+    has_submissions: Optional[bool] = Query(None, description="Filter for human tasks that have worker submissions pending review"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
@@ -143,6 +148,17 @@ async def list_tasks(
         q = q.where(TaskDB.status == status)
     if type:
         q = q.where(TaskDB.type == type)
+    if execution_mode:
+        q = q.where(TaskDB.execution_mode == execution_mode)
+    if has_submissions is True:
+        # Only tasks that have at least one submitted/approved assignment
+        q = q.where(
+            TaskDB.id.in_(
+                select(TaskAssignmentDB.task_id).where(
+                    TaskAssignmentDB.status.in_(["submitted", "approved", "rejected"])
+                ).distinct()
+            )
+        )
 
     total_result = await db.execute(
         select(func.count()).select_from(q.subquery())
@@ -193,6 +209,259 @@ async def cancel_task(
         raise HTTPException(status_code=409, detail="Task cannot be cancelled")
     task.status = "cancelled"
     await db.commit()
+
+
+# ─── Submission review (requester approves/rejects worker submissions) ─────
+
+@router.get("/{task_id}/submissions", response_model=list[SubmissionOut])
+async def list_submissions(
+    task_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """List all worker submissions for a human task owned by the requester."""
+    task_result = await db.execute(
+        select(TaskDB).where(TaskDB.id == task_id, TaskDB.user_id == user_id)
+    )
+    task = task_result.scalar_one_or_none()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if task.execution_mode != "human":
+        raise HTTPException(status_code=400, detail="This task has no human submissions")
+
+    # Load assignments with worker info
+    result = await db.execute(
+        select(TaskAssignmentDB).where(TaskAssignmentDB.task_id == task_id)
+        .order_by(TaskAssignmentDB.submitted_at.desc().nullslast())
+    )
+    assignments = result.scalars().all()
+
+    out: list[SubmissionOut] = []
+    for a in assignments:
+        worker_result = await db.execute(select(UserDB).where(UserDB.id == a.worker_id))
+        worker = worker_result.scalar_one_or_none()
+        if not worker:
+            continue
+        out.append(SubmissionOut(
+            id=a.id,
+            task_id=a.task_id,
+            worker=SubmissionWorkerOut(
+                id=worker.id,
+                name=worker.name,
+                worker_level=worker.worker_level,
+                worker_accuracy=worker.worker_accuracy,
+                worker_tasks_completed=worker.worker_tasks_completed,
+            ),
+            status=a.status,
+            response=a.response,
+            worker_note=a.worker_note,
+            earnings_credits=a.earnings_credits,
+            xp_earned=a.xp_earned,
+            claimed_at=a.claimed_at,
+            submitted_at=a.submitted_at,
+        ))
+    return out
+
+
+@router.post("/{task_id}/submissions/{assignment_id}/approve",
+             response_model=SubmissionReviewResponse)
+async def approve_submission(
+    task_id: UUID,
+    assignment_id: UUID,
+    req: SubmissionReviewRequest,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Approve a worker submission. Marks it approved and confirms worker earnings."""
+    # Verify requester owns the task
+    task_result = await db.execute(
+        select(TaskDB).where(TaskDB.id == task_id, TaskDB.user_id == user_id)
+    )
+    task = task_result.scalar_one_or_none()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    # Load assignment
+    a_result = await db.execute(
+        select(TaskAssignmentDB).where(
+            TaskAssignmentDB.id == assignment_id,
+            TaskAssignmentDB.task_id == task_id,
+        )
+    )
+    assignment = a_result.scalar_one_or_none()
+    if not assignment:
+        raise HTTPException(status_code=404, detail="Submission not found")
+    if assignment.status not in ("submitted", "approved"):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot approve submission with status '{assignment.status}'",
+        )
+    if assignment.status == "approved":
+        return SubmissionReviewResponse(
+            assignment_id=assignment.id,
+            status="approved",
+            message="Already approved.",
+        )
+
+    assignment.status = "approved"
+    await db.commit()
+
+    logger.info(
+        "submission_approved",
+        task_id=str(task_id),
+        assignment_id=str(assignment_id),
+        requester_id=user_id,
+    )
+    return SubmissionReviewResponse(
+        assignment_id=assignment.id,
+        status="approved",
+        message="Submission approved. Worker earnings confirmed.",
+    )
+
+
+@router.post("/{task_id}/submissions/{assignment_id}/reject",
+             response_model=SubmissionReviewResponse)
+async def reject_submission(
+    task_id: UUID,
+    assignment_id: UUID,
+    req: SubmissionReviewRequest,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Reject a worker submission. Refunds the worker's reward credits to the requester."""
+    # Verify requester owns the task
+    task_result = await db.execute(
+        select(TaskDB).where(TaskDB.id == task_id, TaskDB.user_id == user_id)
+    )
+    task = task_result.scalar_one_or_none()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    # Load assignment
+    a_result = await db.execute(
+        select(TaskAssignmentDB).where(
+            TaskAssignmentDB.id == assignment_id,
+            TaskAssignmentDB.task_id == task_id,
+        )
+    )
+    assignment = a_result.scalar_one_or_none()
+    if not assignment:
+        raise HTTPException(status_code=404, detail="Submission not found")
+    if assignment.status not in ("submitted",):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot reject submission with status '{assignment.status}'",
+        )
+
+    assignment.status = "rejected"
+
+    # Refund worker reward to requester
+    refund_amount = assignment.earnings_credits
+    requester_result = await db.execute(select(UserDB).where(UserDB.id == user_id))
+    requester = requester_result.scalar_one_or_none()
+    if requester and refund_amount > 0:
+        requester.credits += refund_amount
+        txn = CreditTransactionDB(
+            user_id=user_id,
+            task_id=task_id,
+            amount=refund_amount,
+            type="refund",
+            description=f"Rejected submission for task {task.type}",
+        )
+        db.add(txn)
+
+    # Reopen the task if it was completed but now has a rejected slot
+    if task.status == "completed" and task.assignments_completed > 0:
+        task.assignments_completed = max(0, task.assignments_completed - 1)
+        task.status = "open"
+        task.completed_at = None
+
+    await db.commit()
+
+    logger.info(
+        "submission_rejected",
+        task_id=str(task_id),
+        assignment_id=str(assignment_id),
+        requester_id=user_id,
+        refund=refund_amount,
+    )
+    return SubmissionReviewResponse(
+        assignment_id=assignment.id,
+        status="rejected",
+        message=f"Submission rejected. {refund_amount} credits refunded to your account.",
+    )
+
+
+# ─── SSE — real-time task status stream ────────────────────────────────────
+
+@router.get("/{task_id}/status-stream")
+async def task_status_stream(
+    task_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Server-Sent Events stream for real-time task status updates.
+
+    Emits an event whenever the task status changes, then closes once terminal.
+    Clients should reconnect if the connection drops.
+    """
+    # Verify the task belongs to the user
+    result = await db.execute(
+        select(TaskDB).where(TaskDB.id == task_id, TaskDB.user_id == user_id)
+    )
+    task = result.scalar_one_or_none()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    async def event_generator() -> AsyncIterator[str]:
+        TERMINAL = {"completed", "failed", "cancelled"}
+        last_status: str | None = None
+        last_assignments_completed: int | None = None
+        poll_interval = 1.5  # seconds
+        max_polls = 300       # 7.5 minutes max before closing stream
+
+        from core.database import AsyncSessionLocal
+
+        for _ in range(max_polls):
+            async with AsyncSessionLocal() as session:
+                r = await session.execute(select(TaskDB).where(TaskDB.id == task_id))
+                t = r.scalar_one_or_none()
+                if t is None:
+                    break
+
+                status_changed = t.status != last_status
+                assignments_changed = t.assignments_completed != last_assignments_completed
+
+                if status_changed or assignments_changed:
+                    last_status = t.status
+                    last_assignments_completed = t.assignments_completed
+                    payload = {
+                        "task_id": str(task_id),
+                        "status": t.status,
+                        "assignments_completed": t.assignments_completed,
+                        "assignments_required": t.assignments_required,
+                        "completed_at": t.completed_at.isoformat() if t.completed_at else None,
+                        "error": t.error,
+                    }
+                    yield f"data: {json.dumps(payload)}\n\n"
+
+                    if t.status in TERMINAL:
+                        break
+
+            await asyncio.sleep(poll_interval)
+
+        # Send a final heartbeat/close event
+        yield "data: {\"event\": \"stream_end\"}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 # ─── Background task runner ────────────────────────────────────────────────

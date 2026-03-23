@@ -337,6 +337,45 @@ class DailyChallengeProgressOut(BaseModel):
     tasks_remaining: int
 
 
+# ─── Submission Review ────────────────────────────────────────────────────
+
+class SubmissionWorkerOut(BaseModel):
+    """Minimal worker info attached to a submission."""
+    id: UUID
+    name: Optional[str]
+    worker_level: int
+    worker_accuracy: Optional[float]
+    worker_tasks_completed: int
+
+    model_config = {"from_attributes": True}
+
+
+class SubmissionOut(BaseModel):
+    """Worker submission as seen by the requester."""
+    id: UUID
+    task_id: UUID
+    worker: SubmissionWorkerOut
+    status: str
+    response: Optional[dict[str, Any]] = None
+    worker_note: Optional[str] = None
+    earnings_credits: int
+    xp_earned: int
+    claimed_at: datetime
+    submitted_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
+class SubmissionReviewRequest(BaseModel):
+    reason: Optional[str] = None  # Optional rejection reason or approval note
+
+
+class SubmissionReviewResponse(BaseModel):
+    assignment_id: UUID
+    status: str
+    message: str
+
+
 # ─── Quality Control ──────────────────────────────────────────────────────
 
 class GoldStandardCreateRequest(BaseModel):
