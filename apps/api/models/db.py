@@ -74,6 +74,13 @@ class UserDB(Base):
     credit_alert_threshold = Column(Integer, nullable=True)          # fire alert when credits drop below this
     credit_alert_fired = Column(Boolean, default=False, nullable=False)  # reset when topped up
 
+    # Worker feedback scores (populated from task ratings)
+    avg_feedback_score = Column(Float, nullable=True)   # 1.0–5.0 star average
+    total_ratings_received = Column(Integer, default=0, nullable=False)
+
+    # Notification digest tracking
+    last_digest_sent_at = Column(DateTime(timezone=True), nullable=True)
+
     # TOTP 2FA
     totp_secret = Column(String(64), nullable=True)
     totp_enabled = Column(Boolean, default=False, nullable=False)
@@ -936,6 +943,13 @@ class NotificationPreferencesDB(Base):
     notif_gamification = Column(Boolean, default=True, nullable=False)  # badges, challenges, streaks
     notif_system = Column(Boolean, default=True, nullable=False)        # announcements, referrals
 
+    # ── Digest preferences ───────────────────────────────────────────────────
+    digest_frequency = Column(
+        SAEnum("none", "daily", "weekly", name="digest_frequency_enum"),
+        default="weekly",
+        nullable=False,
+    )  # none = off, daily = every morning, weekly = Monday summary
+
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
@@ -1304,3 +1318,55 @@ class TaskWatchlistDB(Base):
 
     worker = relationship("UserDB", backref="watchlist")
     task = relationship("TaskDB", backref="watchers")
+
+class TaskRatingDB(Base):
+    """Requester rates worker output quality after approving a submission.
+
+    One rating per (task, requester) pair.  Score is 1–5 stars.  Workers see
+    their aggregate avg_feedback_score on their profile.
+    """
+    __tablename__ = "task_ratings"
+    __table_args__ = (
+        UniqueConstraint("task_id", "requester_id", name="uq_task_rating"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    task_id = Column(UUID(as_uuid=True), ForeignKey("tasks.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    requester_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
+                          nullable=False, index=True)
+    worker_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
+                       nullable=False, index=True)
+    submission_id = Column(UUID(as_uuid=True), ForeignKey("task_submissions.id", ondelete="SET NULL"),
+                           nullable=True)
+    score = Column(Integer, nullable=False)          # 1–5 stars
+    comment = Column(Text, nullable=True)            # up to 1000 chars
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    task = relationship("TaskDB", backref="ratings")
+    requester = relationship("UserDB", backref="ratings_given", foreign_keys=[requester_id])
+    worker = relationship("UserDB", backref="ratings_received", foreign_keys=[worker_id])
+
+
+class WorkerPortfolioItemDB(Base):
+    """Worker pins a completed task to their public portfolio.
+
+    Workers can pin up to 10 tasks as showcase items.  Each pin can have a
+    custom caption.  Order is user-controlled via display_order.
+    """
+    __tablename__ = "worker_portfolio"
+    __table_args__ = (
+        UniqueConstraint("worker_id", "task_id", name="uq_portfolio_task"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    worker_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
+                       nullable=False, index=True)
+    task_id = Column(UUID(as_uuid=True), ForeignKey("tasks.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    caption = Column(Text, nullable=True)            # optional description (≤500 chars)
+    display_order = Column(Integer, default=0, nullable=False)
+    pinned_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    worker = relationship("UserDB", backref="portfolio_items")
+    task = relationship("TaskDB", backref="portfolio_pins")

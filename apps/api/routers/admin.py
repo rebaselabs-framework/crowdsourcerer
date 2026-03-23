@@ -818,6 +818,88 @@ async def trigger_weekly_digest(
     return {"sent": sent, "week": week_label}
 
 
+@router.post("/digest/send-daily", tags=["admin"])
+async def trigger_daily_digest(
+    db: AsyncSession = Depends(get_db),
+    current_user: UserDB = Depends(require_admin),
+):
+    """Manually trigger the daily digest to users who opted in (admin only)."""
+    from core.sweeper import send_daily_digests
+    from core.database import AsyncSessionLocal
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    factory = async_sessionmaker(
+        AsyncSessionLocal.bind if hasattr(AsyncSessionLocal, "bind") else None,
+        expire_on_commit=False,
+    ) if False else None  # Use direct approach below
+
+    # Direct implementation using current session
+    from core.email import send_daily_digest
+    from models.db import NotificationPreferencesDB, NotificationDB
+    from sqlalchemy import func as sqlfunc
+
+    now = datetime.now(timezone.utc)
+    date_label = now.strftime("%A, %B %d, %Y")
+    since = now - timedelta(hours=24)
+    sent = 0
+
+    prefs_res = await db.execute(
+        select(NotificationPreferencesDB).where(
+            NotificationPreferencesDB.digest_frequency == "daily"
+        )
+    )
+    all_prefs = prefs_res.scalars().all()
+
+    for prefs in all_prefs:
+        user_res = await db.execute(
+            select(UserDB).where(
+                UserDB.id == prefs.user_id,
+                UserDB.is_active == True,
+                UserDB.is_banned == False,
+            )
+        )
+        user = user_res.scalar_one_or_none()
+        if not user:
+            continue
+
+        unread_count = await db.scalar(
+            select(sqlfunc.count(NotificationDB.id)).where(
+                NotificationDB.user_id == user.id,
+                NotificationDB.is_read == False,
+                NotificationDB.created_at >= since,
+            )
+        ) or 0
+
+        notifs_res = await db.execute(
+            select(NotificationDB)
+            .where(
+                NotificationDB.user_id == user.id,
+                NotificationDB.is_read == False,
+                NotificationDB.created_at >= since,
+            )
+            .order_by(NotificationDB.created_at.desc())
+            .limit(8)
+        )
+        notifs = notifs_res.scalars().all()
+        highlights = [
+            {"title": n.title or n.notif_type, "body": n.body or "", "link": n.link or ""}
+            for n in notifs
+        ]
+
+        user_name = user.name or user.email.split("@")[0]
+        await send_daily_digest(
+            to_email=user.email,
+            user_name=user_name,
+            date_label=date_label,
+            unread_count=unread_count,
+            highlights=highlights,
+            credits_balance=user.credits,
+        )
+        sent += 1
+
+    return {"sent": sent, "date": date_label}
+
+
 # ─── Billing Analytics ────────────────────────────────────────────────────────
 
 @router.get("/billing/analytics")

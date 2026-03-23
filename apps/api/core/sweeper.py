@@ -22,7 +22,7 @@ import structlog
 from sqlalchemy import select, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from models.db import TaskDB, TaskAssignmentDB, UserDB, SLABreachDB, TaskDependencyDB, NotificationDB, TaskWatchlistDB
+from models.db import TaskDB, TaskAssignmentDB, UserDB, SLABreachDB, TaskDependencyDB, NotificationDB, TaskWatchlistDB, NotificationPreferencesDB
 from core.webhooks import fire_webhook_for_task
 
 logger = structlog.get_logger()
@@ -31,6 +31,7 @@ SWEEP_INTERVAL_SECONDS = 300  # 5 minutes
 
 # Module-level state for digest tracking
 _last_digest_date: Optional[dt_module.date] = None
+_last_daily_digest_date: Optional[dt_module.date] = None
 
 
 async def sweep_once(session_factory: async_sessionmaker) -> dict:
@@ -254,16 +255,18 @@ async def send_weekly_digests(session_factory) -> int:
             for user in users:
                 try:
                     # Check if user has opted out of weekly digest
-                    from models.db import NotificationPreferencesDB
                     prefs_res = await db.execute(
                         select(NotificationPreferencesDB).where(
                             NotificationPreferencesDB.user_id == user.id
                         )
                     )
                     prefs = prefs_res.scalar_one_or_none()
-                    # Use email_task_completed as proxy: if all email notifications are off, skip
-                    if prefs and not prefs.email_task_completed and not prefs.email_task_failed:
-                        continue  # All emails off, skip
+                    # Skip if digest is disabled or set to daily (daily users get their own digest)
+                    if prefs:
+                        if prefs.digest_frequency in ("none", "daily"):
+                            continue
+                    else:
+                        # No prefs row means default (weekly) — proceed
 
                     # User's tasks this week
                     tasks_created = await db.scalar(
@@ -338,6 +341,116 @@ async def send_weekly_digests(session_factory) -> int:
             logger.info("digest.sent", count=sent, week=week_label)
         except Exception:
             logger.exception("digest.error")
+
+    return sent
+
+
+async def send_daily_digests(session_factory) -> int:
+    """Send daily digest emails to users who opted in. Returns count sent.
+
+    Runs every day between 8:00–9:00 UTC.
+    Only sent if the user has ``digest_frequency='daily'`` and has unread
+    notifications from the past 24 hours.
+    """
+    global _last_daily_digest_date
+    now = datetime.now(timezone.utc)
+    today = now.date()
+
+    # Only run during 8:00–9:00 UTC
+    if now.hour != 8:
+        return 0
+    if _last_daily_digest_date == today:
+        return 0  # Already sent today
+
+    from core.email import send_daily_digest
+    sent = 0
+    since = now - timedelta(hours=24)
+    date_label = now.strftime("%A, %B %d, %Y")
+
+    async with session_factory() as db:
+        try:
+            from sqlalchemy import func as sqlfunc
+
+            # Get users with digest_frequency='daily' who have unread notifs
+            prefs_res = await db.execute(
+                select(NotificationPreferencesDB).where(
+                    NotificationPreferencesDB.digest_frequency == "daily"
+                )
+            )
+            all_daily_prefs = prefs_res.scalars().all()
+
+            for prefs in all_daily_prefs:
+                try:
+                    user_res = await db.execute(
+                        select(UserDB).where(
+                            UserDB.id == prefs.user_id,
+                            UserDB.is_active == True,
+                            UserDB.is_banned == False,
+                        )
+                    )
+                    user = user_res.scalar_one_or_none()
+                    if not user:
+                        continue
+
+                    # Check unread notifications in last 24h
+                    unread_count = await db.scalar(
+                        select(sqlfunc.count(NotificationDB.id)).where(
+                            NotificationDB.user_id == user.id,
+                            NotificationDB.is_read == False,
+                            NotificationDB.created_at >= since,
+                        )
+                    ) or 0
+
+                    if unread_count == 0:
+                        continue  # Nothing to report
+
+                    # Get top 8 unread notifications as highlights
+                    notifs_res = await db.execute(
+                        select(NotificationDB)
+                        .where(
+                            NotificationDB.user_id == user.id,
+                            NotificationDB.is_read == False,
+                            NotificationDB.created_at >= since,
+                        )
+                        .order_by(NotificationDB.created_at.desc())
+                        .limit(8)
+                    )
+                    notifs = notifs_res.scalars().all()
+                    highlights = [
+                        {
+                            "title": n.title or n.notif_type,
+                            "body": n.body or "",
+                            "link": n.link or "/dashboard/notifications",
+                        }
+                        for n in notifs
+                    ]
+
+                    user_name = user.name or user.email.split("@")[0]
+
+                    # Update last_digest_sent_at on user
+                    await db.execute(
+                        __import__("sqlalchemy").update(UserDB)
+                        .where(UserDB.id == user.id)
+                        .values(last_digest_sent_at=now)
+                    )
+
+                    await send_daily_digest(
+                        to_email=user.email,
+                        user_name=user_name,
+                        date_label=date_label,
+                        unread_count=unread_count,
+                        highlights=highlights,
+                        credits_balance=user.credits,
+                    )
+                    sent += 1
+                except Exception:
+                    logger.exception("daily_digest.user_error", user_id=str(prefs.user_id))
+
+            await db.commit()
+            _last_daily_digest_date = today
+            logger.info("daily_digest.sent", count=sent, date=date_label)
+        except Exception:
+            logger.exception("daily_digest.error")
 
     return sent
 
@@ -780,6 +893,14 @@ async def run_sweeper(session_factory: async_sessionmaker, interval: int = SWEEP
                 logger.info("digest.weekly_sent", count=digest_count)
         except Exception:
             logger.exception("digest.weekly_error")
+
+        # Send daily digest every morning at 8am UTC
+        try:
+            daily_count = await send_daily_digests(session_factory)
+            if daily_count:
+                logger.info("digest.daily_sent", count=daily_count)
+        except Exception:
+            logger.exception("digest.daily_error")
 
         # Check schedule triggers every ~60 seconds (regardless of sweep interval)
         import time

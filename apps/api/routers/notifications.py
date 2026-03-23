@@ -242,6 +242,8 @@ class NotificationPreferencesUpdate(BaseModel):
     notif_payouts: Optional[bool] = None
     notif_gamification: Optional[bool] = None
     notif_system: Optional[bool] = None
+    # Digest
+    digest_frequency: Optional[str] = None  # none | daily | weekly
 
 
 def _prefs_to_dict(prefs: NotificationPreferencesDB) -> dict:
@@ -259,6 +261,7 @@ def _prefs_to_dict(prefs: NotificationPreferencesDB) -> dict:
         "notif_payouts": prefs.notif_payouts,
         "notif_gamification": prefs.notif_gamification,
         "notif_system": prefs.notif_system,
+        "digest_frequency": prefs.digest_frequency,
         "updated_at": prefs.updated_at.isoformat() if prefs.updated_at else None,
     }
 
@@ -279,6 +282,7 @@ def _default_prefs_dict() -> dict:
         "notif_payouts": True,
         "notif_gamification": True,
         "notif_system": True,
+        "digest_frequency": "weekly",
         "updated_at": None,
     }
 
@@ -321,6 +325,8 @@ async def update_notification_preferences(
 
     # Apply only the fields that were explicitly sent
     for field, value in body.model_dump(exclude_none=True).items():
+        if field == "digest_frequency" and value not in ("none", "daily", "weekly"):
+            continue  # ignore invalid values
         setattr(prefs, field, value)
 
     await db.commit()

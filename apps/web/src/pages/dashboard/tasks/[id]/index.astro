@@ -1026,6 +1026,66 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
           </div>
         </div>
 
+        <!-- Rate Worker — shown for any completed task (human or AI) -->
+        {task.status === "completed" && (
+          <div class="bg-gray-900 border border-gray-800 rounded-xl mb-4 px-5 py-4">
+            <div class="flex items-center justify-between">
+              <div>
+                <h3 class="text-sm font-semibold text-gray-300">⭐ Rate This Task</h3>
+                <p class="text-xs text-gray-500 mt-0.5">Leave feedback for the worker who completed this task</p>
+              </div>
+              <button
+                id="rate-open-btn"
+                class="px-4 py-2 bg-yellow-600 hover:bg-yellow-500 text-white text-sm rounded-lg transition-colors"
+              >
+                Leave Rating
+              </button>
+            </div>
+          </div>
+        )}
+
+        <!-- Rate Worker modal -->
+        <div id="rate-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div class="bg-gray-900 border border-gray-700 rounded-xl p-6 w-full max-w-md shadow-xl">
+            <h2 class="text-lg font-bold mb-4">⭐ Rate Worker Output</h2>
+            <div class="mb-4">
+              <label class="text-xs text-gray-400 mb-2 block">Star Rating</label>
+              <div class="flex gap-2" id="star-picker">
+                {[1, 2, 3, 4, 5].map(n => (
+                  <button
+                    type="button"
+                    class="star-btn w-10 h-10 text-2xl text-gray-600 hover:text-yellow-400 transition-colors"
+                    data-score={n}
+                  >★</button>
+                ))}
+              </div>
+              <input type="hidden" id="rating-score" value="0" />
+            </div>
+            <div class="mb-5">
+              <label class="text-xs text-gray-400 mb-1 block">Comment <span class="text-gray-600">(optional)</span></label>
+              <textarea
+                id="rating-comment"
+                rows="3"
+                maxlength="1000"
+                placeholder="Describe the quality of the worker's output…"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-yellow-500 resize-none"
+              ></textarea>
+            </div>
+            <div id="rate-error" class="hidden mb-3 text-sm text-red-400"></div>
+            <div class="flex gap-2 justify-end">
+              <button id="rate-close-btn" class="px-4 py-2 text-sm text-gray-400 hover:text-gray-200 transition-colors">
+                Cancel
+              </button>
+              <button
+                id="rate-submit-btn"
+                class="px-4 py-2 bg-yellow-600 hover:bg-yellow-500 text-white text-sm rounded-lg transition-colors"
+              >
+                Submit Rating
+              </button>
+            </div>
+          </div>
+        </div>
+
         <!-- Human task: gold standard section -->
         {task.execution_mode === "human" && (
           <div class="bg-gray-900 border border-gray-800 rounded-xl mb-4">
@@ -1575,6 +1635,83 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
       } finally {
         (endorseSubmitBtn as HTMLButtonElement).disabled = false;
         endorseSubmitBtn.textContent = "Submit Endorsement";
+      }
+    });
+  </script>
+
+  {/* Rate Worker modal script */}
+  <script>
+    const rateOpenBtn = document.getElementById("rate-open-btn");
+    const rateModal = document.getElementById("rate-modal");
+    const rateCloseBtn = document.getElementById("rate-close-btn");
+    const rateSubmitBtn = document.getElementById("rate-submit-btn");
+    const rateError = document.getElementById("rate-error");
+    let selectedScore = 0;
+
+    rateOpenBtn?.addEventListener("click", () => rateModal?.classList.remove("hidden"));
+    rateCloseBtn?.addEventListener("click", () => rateModal?.classList.add("hidden"));
+    rateModal?.addEventListener("click", (e) => { if (e.target === rateModal) rateModal.classList.add("hidden"); });
+
+    // Star picker interaction
+    document.querySelectorAll<HTMLButtonElement>(".star-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        selectedScore = parseInt(btn.dataset.score ?? "0");
+        (document.getElementById("rating-score") as HTMLInputElement).value = String(selectedScore);
+        document.querySelectorAll<HTMLButtonElement>(".star-btn").forEach((b, i) => {
+          b.classList.toggle("text-yellow-400", i < selectedScore);
+          b.classList.toggle("text-gray-600", i >= selectedScore);
+        });
+      });
+      btn.addEventListener("mouseenter", () => {
+        const hoverScore = parseInt(btn.dataset.score ?? "0");
+        document.querySelectorAll<HTMLButtonElement>(".star-btn").forEach((b, i) => {
+          b.classList.toggle("text-yellow-300", i < hoverScore);
+        });
+      });
+      btn.addEventListener("mouseleave", () => {
+        document.querySelectorAll<HTMLButtonElement>(".star-btn").forEach((b, i) => {
+          b.classList.toggle("text-yellow-400", i < selectedScore);
+          b.classList.toggle("text-yellow-300", false);
+        });
+      });
+    });
+
+    rateSubmitBtn?.addEventListener("click", async () => {
+      if (selectedScore === 0) {
+        if (rateError) { rateError.textContent = "Please select a star rating."; rateError.classList.remove("hidden"); }
+        return;
+      }
+      const comment = (document.getElementById("rating-comment") as HTMLTextAreaElement)?.value.trim();
+      const taskId = window.location.pathname.split("/").filter(Boolean).pop();
+
+      if (rateError) rateError.classList.add("hidden");
+      (rateSubmitBtn as HTMLButtonElement).disabled = true;
+      rateSubmitBtn.textContent = "Submitting…";
+
+      try {
+        const res = await fetch(`/api/tasks/${taskId}/rate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ score: selectedScore, comment: comment || null }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          rateModal?.classList.add("hidden");
+          const toast = document.createElement("div");
+          toast.className = "fixed bottom-4 right-4 z-50 bg-yellow-900 border border-yellow-700 text-yellow-200 px-4 py-3 rounded-lg text-sm shadow-lg";
+          toast.textContent = `⭐ ${"★".repeat(selectedScore)} Rating submitted!`;
+          document.body.appendChild(toast);
+          setTimeout(() => toast.remove(), 4000);
+          // Hide the rate button since it's now submitted
+          rateOpenBtn?.closest(".bg-gray-900")?.classList.add("hidden");
+        } else {
+          if (rateError) { rateError.textContent = data.detail ?? "Failed to submit rating"; rateError.classList.remove("hidden"); }
+        }
+      } catch {
+        if (rateError) { rateError.textContent = "Network error"; rateError.classList.remove("hidden"); }
+      } finally {
+        (rateSubmitBtn as HTMLButtonElement).disabled = false;
+        rateSubmitBtn.textContent = "Submit Rating";
       }
     });
   </script>

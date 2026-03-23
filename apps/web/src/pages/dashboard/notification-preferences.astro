@@ -140,6 +140,40 @@ const NOTIF_PREFS = [
         </div>
       </div>
 
+      <!-- Digest Frequency -->
+      <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-800">
+          <h2 class="font-semibold text-base">📬 Email Digest</h2>
+          <p class="text-xs text-gray-500 mt-0.5">
+            A summary of your activity delivered by email. Daily digests arrive every morning around 8 AM UTC when you have unread notifications.
+          </p>
+        </div>
+        <div class="px-6 py-5">
+          <label class="block text-sm font-medium text-gray-300 mb-3">Digest frequency</label>
+          <div class="flex flex-wrap gap-3">
+            {[
+              { value: "none",   label: "🚫 Off",    desc: "No digest emails" },
+              { value: "daily",  label: "☀️ Daily",  desc: "Every morning (if unread notifs exist)" },
+              { value: "weekly", label: "📅 Weekly", desc: "Every Monday with weekly summary" },
+            ].map(opt => (
+              <label class="flex-1 min-w-[130px] cursor-pointer">
+                <input
+                  type="radio"
+                  name="digest_frequency"
+                  value={opt.value}
+                  class="sr-only peer digest-radio"
+                  checked={prefs.digest_frequency === opt.value || (!prefs.digest_frequency && opt.value === "weekly")}
+                />
+                <div class="border-2 border-gray-700 peer-checked:border-violet-500 rounded-xl px-4 py-3 transition-colors peer-checked:bg-violet-950/30">
+                  <div class="text-sm font-semibold text-gray-200">{opt.label}</div>
+                  <div class="text-xs text-gray-500 mt-0.5">{opt.desc}</div>
+                </div>
+              </label>
+            ))}
+          </div>
+        </div>
+      </div>
+
       <!-- Save -->
       <div class="flex items-center gap-4">
         <button
@@ -173,11 +207,14 @@ const NOTIF_PREFS = [
       saveBtn.disabled = true;
       saveBtn.textContent = "Saving…";
 
-      const updates: Record<string, boolean> = {};
+      const updates: Record<string, boolean | string> = {};
       form.querySelectorAll<HTMLInputElement>(".pref-toggle").forEach((input) => {
         const key = input.dataset.key;
         if (key) updates[key] = input.checked;
       });
+      // Digest frequency radio
+      const digestRadio = form.querySelector<HTMLInputElement>('input[name="digest_frequency"]:checked');
+      if (digestRadio) updates["digest_frequency"] = digestRadio.value;
 
       try {
         const res = await fetch("/api/notifications/preferences", {

@@ -515,3 +515,78 @@ async def send_weekly_digest(
             is_worker=is_worker,
         ),
     )
+
+
+# ─── Daily Digest ─────────────────────────────────────────────────────────────
+
+def _daily_digest_html(
+    user_name: str,
+    date_label: str,
+    unread_count: int,
+    highlights: list[dict],  # [{"title": str, "body": str, "link": str}]
+    credits_balance: int,
+) -> str:
+    """Compact daily digest: show today's unread notifications."""
+    rows = ""
+    for h in highlights[:8]:
+        rows += (
+            f'<tr><td style="padding:10px;border-bottom:1px solid #f3f4f6">'
+            f'<a href="https://crowdsourcerer.rebaselabs.online{h.get("link","")}" '
+            f'style="color:#6366f1;text-decoration:none;font-weight:500">{h["title"]}</a>'
+            f'<div style="font-size:12px;color:#6b7280;margin-top:2px">{h["body"][:120]}</div>'
+            f'</td></tr>'
+        )
+
+    return f"""
+<html><body style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px;color:#111827">
+<div style="background:linear-gradient(135deg,#0ea5e9,#6366f1);padding:20px;border-radius:12px;margin-bottom:24px">
+  <h1 style="color:white;margin:0;font-size:20px">☀️ Daily Digest</h1>
+  <p style="color:#bae6fd;margin:6px 0 0;font-size:14px">{date_label}</p>
+</div>
+<p>Hi {user_name}, you have <strong>{unread_count} unread notification{"s" if unread_count != 1 else ""}</strong> today.</p>
+
+<h3 style="color:#374151;font-size:15px;margin:20px 0 8px">Recent Activity</h3>
+<table style="width:100%;border-collapse:collapse;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden">
+  {rows if rows else '<tr><td style="padding:16px;text-align:center;color:#9ca3af">No new notifications</td></tr>'}
+</table>
+
+<p style="color:#6b7280;font-size:13px;margin-top:16px">
+  Current balance: <strong style="color:#111">{credits_balance} credits</strong>
+</p>
+
+<div style="margin-top:20px">
+  <a href="https://crowdsourcerer.rebaselabs.online/dashboard/notifications"
+     style="background:#6366f1;color:white;padding:10px 20px;border-radius:6px;text-decoration:none;display:inline-block">
+     View All Notifications →</a>
+  <a href="https://crowdsourcerer.rebaselabs.online/dashboard/notification-preferences"
+     style="color:#6b7280;font-size:13px;text-decoration:none;margin-left:16px">
+     Manage digest</a>
+</div>
+<hr style="margin:24px 0;border:none;border-top:1px solid #e5e7eb">
+<p style="color:#9ca3af;font-size:12px">
+  CrowdSorcerer Daily Digest ·
+  <a href="https://crowdsourcerer.rebaselabs.online/dashboard/notification-preferences">Unsubscribe</a>
+</p>
+</body></html>
+"""
+
+
+async def send_daily_digest(
+    to_email: str,
+    user_name: str,
+    date_label: str,
+    unread_count: int,
+    highlights: list,
+    credits_balance: int,
+) -> None:
+    await send_email(
+        to_email=to_email,
+        subject=f"☀️ CrowdSorcerer Daily Digest — {date_label}",
+        html_body=_daily_digest_html(
+            user_name=user_name,
+            date_label=date_label,
+            unread_count=unread_count,
+            highlights=highlights,
+            credits_balance=credits_balance,
+        ),
+    )

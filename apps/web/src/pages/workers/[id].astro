@@ -12,6 +12,7 @@ let profile: any = null;
 let verifiedSkills: any[] = [];
 let endorsements: any[] = [];
 let endorsementCount = 0;
+let portfolioItems: any[] = [];
 let error = "";
 
 try {
@@ -25,15 +26,18 @@ try {
 
 if (profile) {
   try {
-    const [endorsementsData, countData] = await Promise.all([
+    const [endorsementsData, countData, portfolioData] = await Promise.all([
       apiFetch<any>(`/v1/workers/${id}/endorsements?limit=20`).catch(() => ({ items: [], total: 0 })),
       apiFetch<any>(`/v1/workers/${id}/endorsements/count`).catch(() => ({ count: 0 })),
+      apiFetch<any>(`/v1/workers/${id}/portfolio`).catch(() => ({ items: [] })),
     ]);
     endorsements = endorsementsData.items ?? [];
     endorsementCount = countData.count ?? 0;
+    portfolioItems = portfolioData.items ?? [];
   } catch (_) {
     endorsements = [];
     endorsementCount = 0;
+    portfolioItems = [];
   }
 }
 
@@ -281,6 +285,58 @@ const title = profile ? `${profile.name ?? "Worker"} — CrowdSorcerer` : "Worke
             </div>
           )}
         </div>
+
+        {/* ── Ratings ──────────────────────────────────────── */}
+        {(profile.avg_feedback_score != null || profile.total_ratings_received > 0) && (
+          <div class="bg-gray-800 border border-gray-700 rounded-xl p-6 mb-4">
+            <h2 class="text-base font-semibold mb-3">⭐ Feedback Ratings</h2>
+            <div class="flex items-center gap-4">
+              <div class="text-center">
+                <div class="text-3xl font-bold text-yellow-400">
+                  {profile.avg_feedback_score != null ? profile.avg_feedback_score.toFixed(1) : "—"}
+                </div>
+                <div class="text-xs text-gray-500 mt-1">Avg Score</div>
+              </div>
+              <div class="text-center">
+                <div class="text-3xl font-bold text-indigo-400">{profile.total_ratings_received}</div>
+                <div class="text-xs text-gray-500 mt-1">Ratings</div>
+              </div>
+              {profile.avg_feedback_score != null && (
+                <div class="text-2xl text-yellow-400">
+                  {"★".repeat(Math.round(profile.avg_feedback_score))}
+                  {"☆".repeat(5 - Math.round(profile.avg_feedback_score))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── Portfolio Showcase ────────────────────────────── */}
+        {portfolioItems.length > 0 && (
+          <div class="bg-gray-800 border border-gray-700 rounded-xl p-6 mb-4">
+            <h2 class="text-base font-semibold mb-4">🗂️ Portfolio Showcase</h2>
+            <div class="grid sm:grid-cols-2 gap-3">
+              {portfolioItems.map((item: any) => (
+                <div class="bg-gray-900 border border-gray-700 rounded-lg p-4">
+                  <div class="flex items-center gap-2 mb-2">
+                    <span class="text-xs font-medium bg-indigo-900/50 text-indigo-300 px-2 py-0.5 rounded-full uppercase">
+                      {item.task_type?.replace("_", " ")}
+                    </span>
+                  </div>
+                  {item.caption && (
+                    <p class="text-sm text-gray-300 italic mb-2">"{item.caption}"</p>
+                  )}
+                  {item.result_snippet && (
+                    <p class="text-xs text-gray-500 line-clamp-2">{item.result_snippet}</p>
+                  )}
+                  <div class="text-xs text-gray-600 mt-2">
+                    Pinned {new Date(item.pinned_at).toLocaleDateString()}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* ── No content placeholder ────────────────────────── */}
         {profile.skills?.length === 0 && profile.badges?.length === 0 && endorsementCount === 0 && (
