@@ -14,7 +14,7 @@ from sqlalchemy import select, func, cast, Date as SADate, and_
 
 from core.auth import get_current_user_id, require_admin
 from core.database import get_db, AsyncSessionLocal
-from core.sweeper import sweep_once, get_sweeper_task
+from core.sweeper import sweep_once, get_sweeper_task, _sweep_scheduled_tasks
 from models.db import TaskDB, UserDB, CreditTransactionDB, TaskAssignmentDB, WebhookLogDB, PayoutRequestDB
 
 logger = structlog.get_logger()
@@ -321,9 +321,10 @@ async def trigger_sweep(
     Useful for testing or recovering from a period when the sweeper was down.
     """
     result = await sweep_once(AsyncSessionLocal)
+    activated = await _sweep_scheduled_tasks(AsyncSessionLocal)
     return {
         "ok": True,
-        "summary": result,
+        "summary": {**result, "scheduled_activated": activated},
     }
 
 

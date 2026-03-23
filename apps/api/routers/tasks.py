@@ -25,6 +25,7 @@ from models.schemas import (
     HUMAN_TASK_TYPES,
     SubmissionOut, SubmissionWorkerOut, SubmissionReviewRequest, SubmissionReviewResponse,
     TaskAnalyticsOut, AssignmentAnalyticsRow,
+    TaskTagsUpdate, TagStats,
 )
 from workers.base import get_rebasekit_client, WorkerError
 from workers.router import execute_task, TASK_CREDITS
@@ -119,8 +120,18 @@ async def create_task(
         from core.credit_alerts import maybe_fire_credit_alert
         await maybe_fire_credit_alert(db, user)
 
+    # Validate tags
+    validated_tags = None
+    if req.tags:
+        cleaned = [t.strip()[:50] for t in req.tags if t.strip()]
+        validated_tags = list(dict.fromkeys(cleaned))[:20]  # dedup + cap
+
+    # Determine if task should be scheduled (deferred)
+    now_utc = datetime.now(timezone.utc)
+    is_scheduled = req.scheduled_at is not None and req.scheduled_at > now_utc
+
     if is_human:
-        # Human tasks go to the worker marketplace immediately
+        # Human tasks go to the worker marketplace immediately (or deferred)
         # Determine effective consensus strategy
         consensus_strategy = req.consensus_strategy
         if req.assignments_required == 1 and consensus_strategy in ("majority_vote", "unanimous"):
@@ -130,7 +141,7 @@ async def create_task(
         task = TaskDB(
             user_id=user_id,
             type=req.type,
-            status="open",
+            status="pending" if is_scheduled else "open",
             execution_mode="human",
             priority=req.priority,
             input=req.input,
@@ -144,19 +155,23 @@ async def create_task(
             consensus_strategy=consensus_strategy,
             org_id=req.org_id,
             min_skill_level=req.min_skill_level,
+            tags=validated_tags,
+            scheduled_at=req.scheduled_at,
         )
     else:
-        # AI tasks go straight to the processing queue
+        # AI tasks go straight to the processing queue (or deferred)
         task = TaskDB(
             user_id=user_id,
             type=req.type,
-            status="queued",
+            status="pending" if is_scheduled else "queued",
             execution_mode="ai",
             priority=req.priority,
             input=req.input,
             metadata=req.metadata,
             webhook_url=req.webhook_url,
             webhook_events=req.webhook_events or DEFAULT_EVENTS,
+            tags=validated_tags,
+            scheduled_at=req.scheduled_at,
         )
 
     db.add(task)
@@ -177,8 +192,11 @@ async def create_task(
     # Record quota usage
     await record_task_creation(db, user_id)
 
-    if not is_human:
-        # Run AI task in background
+    # Hook requester onboarding: create_task step
+    asyncio.create_task(_mark_requester_onboarding(user_id, "create_task"))
+
+    if not is_human and not is_scheduled:
+        # Run AI task in background (scheduled tasks wait for the sweeper)
         background_tasks.add_task(_run_task, str(task.id), str(user_id))
 
     # Fire task.created webhook (per-task + persistent endpoints)
@@ -224,6 +242,17 @@ async def _trigger_saved_search_alerts(
             await notify_matching_saved_searches(task_type, priority, reward_credits, db)
         except Exception:
             pass  # Never crash task creation
+
+
+async def _mark_requester_onboarding(user_id: str, step: str) -> None:
+    """Background task: advance requester onboarding step."""
+    from core.database import AsyncSessionLocal
+    from routers.requester_onboarding import complete_step_internal
+    async with AsyncSessionLocal() as db:
+        try:
+            await complete_step_internal(user_id, step, db)
+        except Exception:
+            pass
 
 
 def _calc_credits(req: TaskCreateRequest) -> int:
@@ -581,12 +610,37 @@ async def public_task_feed(
     return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
+@router.get("/tags", response_model=list[TagStats])
+async def list_task_tags(
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(require_scope(SCOPE_TASKS_READ)),
+):
+    """Return all unique tags used by this user's tasks with usage counts."""
+    from sqlalchemy import cast, String, func as sqlfunc
+    from sqlalchemy.dialects.postgresql import JSONB
+    # PostgreSQL: unnest JSON array of tags, group + count
+    result = await db.execute(
+        select(TaskDB.tags, TaskDB.id).where(
+            TaskDB.user_id == user_id,
+            TaskDB.tags.isnot(None),
+        )
+    )
+    rows = result.all()
+    tag_counts: dict[str, int] = {}
+    for row in rows:
+        tags_list = row[0] or []
+        for tag in tags_list:
+            tag_counts[tag] = tag_counts.get(tag, 0) + 1
+    return [TagStats(tag=t, count=c) for t, c in sorted(tag_counts.items(), key=lambda x: -x[1])]
+
+
 @router.get("", response_model=PaginatedTasks)
 async def list_tasks(
     status: Optional[str] = Query(None),
     type: Optional[str] = Query(None),
     execution_mode: Optional[str] = Query(None),
     has_submissions: Optional[bool] = Query(None, description="Filter for human tasks that have worker submissions pending review"),
+    tag: Optional[str] = Query(None, description="Filter tasks by tag label"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
@@ -599,6 +653,9 @@ async def list_tasks(
         q = q.where(TaskDB.type == type)
     if execution_mode:
         q = q.where(TaskDB.execution_mode == execution_mode)
+    if tag:
+        # JSON array contains this tag
+        q = q.where(TaskDB.tags.contains([tag]))
     if has_submissions is True:
         # Only tasks that have at least one submitted/approved assignment
         q = q.where(
@@ -698,6 +755,27 @@ async def get_task(
     task = result.scalar_one_or_none()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+    return task
+
+
+@router.put("/{task_id}/tags", response_model=TaskOut)
+async def update_task_tags(
+    task_id: UUID,
+    req: TaskTagsUpdate,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(require_scope(SCOPE_TASKS_WRITE)),
+):
+    """Replace the labels/tags on a task (max 20 tags, max 50 chars each)."""
+    result = await db.execute(
+        select(TaskDB).where(TaskDB.id == task_id, TaskDB.user_id == user_id)
+    )
+    task = result.scalar_one_or_none()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    cleaned = [t.strip()[:50] for t in req.tags if t.strip()]
+    task.tags = list(dict.fromkeys(cleaned))[:20]
+    await db.commit()
+    await db.refresh(task)
     return task
 
 

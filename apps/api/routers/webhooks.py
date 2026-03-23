@@ -142,6 +142,18 @@ async def create_endpoint(
     await db.refresh(ep)
     logger.info("webhook_endpoint_created", endpoint_id=str(ep.id), user_id=str(user_id))
 
+    # Advance requester onboarding: set_webhook step
+    import asyncio as _asyncio
+    async def _adv_onboarding():
+        from core.database import AsyncSessionLocal
+        from routers.requester_onboarding import complete_step_internal
+        async with AsyncSessionLocal() as _db:
+            try:
+                await complete_step_internal(str(user_id), "set_webhook", _db)
+            except Exception:
+                pass
+    _asyncio.create_task(_adv_onboarding())
+
     data = {
         "id": str(ep.id),
         "url": ep.url,

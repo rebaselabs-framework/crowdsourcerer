@@ -77,6 +77,13 @@ try {
   comments = [];
 }
 
+// Advance requester onboarding: view_results step (fire-and-forget, non-blocking)
+if (task?.status === "completed") {
+  apiFetch("/v1/requester-onboarding/steps/view_results/complete", {
+    method: "POST", token
+  }).catch(() => {});
+}
+
 const STATUS_COLORS: Record<string, string> = {
   completed: "bg-green-950/50 border-green-800 text-green-300",
   failed:    "bg-red-950/50 border-red-800 text-red-300",
@@ -321,6 +328,60 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
               <div class="font-medium text-sm" id={elId ?? undefined}>{value}</div>
             </div>
           ))}
+        </div>
+
+        <!-- Tags + Scheduled -->
+        <div class="flex flex-wrap items-center gap-3 mb-6">
+          {/* Scheduled badge */}
+          {task.scheduled_at && (
+            <div class="flex items-center gap-2 px-3 py-1.5 bg-amber-900/20 border border-amber-800/40 rounded-lg text-xs text-amber-300">
+              <span>⏰</span>
+              <span>Scheduled: {new Date(task.scheduled_at).toLocaleString()}</span>
+            </div>
+          )}
+          {/* Tags section */}
+          {task.tags && (task.tags as string[]).length > 0 && (
+            <div class="flex flex-wrap gap-1.5 items-center">
+              {(task.tags as string[]).map((tg: string) => (
+                <a
+                  href={`/dashboard/tasks?tag=${encodeURIComponent(tg)}`}
+                  class="px-2 py-0.5 bg-gray-800 hover:bg-gray-700 text-gray-400 text-xs rounded transition-colors"
+                >
+                  🏷️ {tg}
+                </a>
+              ))}
+            </div>
+          )}
+          {/* Tag editor button */}
+          <button
+            id="edit-tags-btn"
+            class="text-xs text-gray-600 hover:text-gray-400 transition-colors px-2 py-1 rounded border border-gray-800 hover:border-gray-600"
+          >
+            {task.tags?.length ? "✏️ Edit tags" : "🏷️ Add tags"}
+          </button>
+        </div>
+
+        <!-- Inline tag editor (hidden by default) -->
+        <div id="tag-editor" class="hidden mb-6 bg-gray-900 border border-gray-800 rounded-xl p-4">
+          <h3 class="text-xs font-semibold text-gray-400 mb-2">Edit labels / tags</h3>
+          <div class="flex gap-2">
+            <input
+              type="text"
+              id="tag-input"
+              placeholder="e.g. billing, v2, prod (comma-separated)"
+              value={(task.tags as string[] | null)?.join(", ") ?? ""}
+              class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-violet-500"
+            />
+            <button
+              id="save-tags-btn"
+              class="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm rounded-lg transition-colors"
+            >Save</button>
+            <button
+              id="cancel-tags-btn"
+              class="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm rounded-lg transition-colors"
+            >Cancel</button>
+          </div>
+          <p id="tag-save-msg" class="text-xs mt-2 text-gray-600"></p>
         </div>
 
         <!-- Input -->
@@ -1057,6 +1118,51 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
     document.getElementById("comment-body")?.addEventListener("keydown", (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
         document.getElementById("submit-comment")?.click();
+      }
+    });
+  </script>
+
+  {/* Tag editor script */}
+  <script define:vars={{ taskId: id }}>
+    const editBtn = document.getElementById("edit-tags-btn");
+    const tagEditor = document.getElementById("tag-editor");
+    const cancelBtn = document.getElementById("cancel-tags-btn");
+    const saveBtn = document.getElementById("save-tags-btn");
+    const tagInput = document.getElementById("tag-input");
+    const saveMsg = document.getElementById("tag-save-msg");
+
+    editBtn?.addEventListener("click", () => {
+      tagEditor?.classList.toggle("hidden");
+      tagInput?.focus();
+    });
+    cancelBtn?.addEventListener("click", () => {
+      tagEditor?.classList.add("hidden");
+    });
+    saveBtn?.addEventListener("click", async () => {
+      const raw = tagInput?.value ?? "";
+      const tags = raw.split(",").map(t => t.trim()).filter(Boolean).slice(0, 20);
+      saveBtn.disabled = true;
+      saveBtn.textContent = "Saving…";
+      try {
+        const res = await fetch(`/api/tasks/${taskId}/tags`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tags }),
+        });
+        if (res.ok) {
+          saveMsg.textContent = "✓ Tags saved";
+          saveMsg.className = "text-xs mt-2 text-green-400";
+          setTimeout(() => location.reload(), 800);
+        } else {
+          saveMsg.textContent = "Failed to save tags.";
+          saveMsg.className = "text-xs mt-2 text-red-400";
+        }
+      } catch {
+        saveMsg.textContent = "Network error.";
+        saveMsg.className = "text-xs mt-2 text-red-400";
+      } finally {
+        saveBtn.disabled = false;
+        saveBtn.textContent = "Save";
       }
     });
   </script>

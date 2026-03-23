@@ -10,14 +10,20 @@ if (!token) return Astro.redirect("/login");
 const page = Number(Astro.url.searchParams.get("page") ?? 1);
 const status = Astro.url.searchParams.get("status") ?? "";
 const type = Astro.url.searchParams.get("type") ?? "";
+const tag = Astro.url.searchParams.get("tag") ?? "";
 
 let tasks: any = { items: [], total: 0, page: 1, page_size: 20, has_next: false };
+let userTags: any[] = [];
 
 try {
   const qs = new URLSearchParams({ page: String(page), page_size: "20" });
   if (status) qs.set("status", status);
   if (type) qs.set("type", type);
-  tasks = await apiFetch<any>(`/v1/tasks?${qs}`, { token });
+  if (tag) qs.set("tag", tag);
+  [tasks, userTags] = await Promise.all([
+    apiFetch<any>(`/v1/tasks?${qs}`, { token }),
+    apiFetch<any[]>("/v1/tasks/tags", { token }).catch(() => []),
+  ]);
 } catch (e) {
   return Astro.redirect("/login");
 }
@@ -62,7 +68,7 @@ const STATUS_COLORS: Record<string, string> = {
     </div>
 
     <!-- Filters -->
-    <form class="flex gap-3 mb-6">
+    <form class="flex flex-wrap gap-3 mb-4">
       <select name="status" class="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-violet-500">
         <option value="" selected={!status}>All statuses</option>
         {["pending","queued","running","completed","failed","cancelled","open"].map(s => (
@@ -75,15 +81,41 @@ const STATUS_COLORS: Record<string, string> = {
           <option value={t} selected={type === t}>{t}</option>
         ))}
       </select>
+      {userTags.length > 0 && (
+        <select name="tag" class="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-violet-500">
+          <option value="" selected={!tag}>All tags</option>
+          {userTags.map((tg: any) => (
+            <option value={tg.tag} selected={tag === tg.tag}>{tg.tag} ({tg.count})</option>
+          ))}
+        </select>
+      )}
       <button type="submit" class="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-sm text-gray-300 rounded-lg transition-colors">
         Filter
       </button>
-      {(status || type) && (
+      {(status || type || tag) && (
         <a href="/dashboard/tasks" class="px-4 py-2 text-sm text-gray-500 hover:text-gray-300 transition-colors self-center">
           Clear
         </a>
       )}
     </form>
+
+    <!-- Tag pills (quick filter) -->
+    {userTags.length > 0 && (
+      <div class="flex flex-wrap gap-2 mb-6">
+        {userTags.slice(0, 15).map((tg: any) => (
+          <a
+            href={`/dashboard/tasks?tag=${encodeURIComponent(tg.tag)}`}
+            class={`px-2.5 py-1 rounded-full text-xs transition-colors ${
+              tag === tg.tag
+                ? "bg-violet-600 text-white"
+                : "bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-200"
+            }`}
+          >
+            🏷️ {tg.tag} <span class="opacity-60">{tg.count}</span>
+          </a>
+        ))}
+      </div>
+    )}
 
     <!-- Bulk action toolbar (hidden until tasks are selected) -->
     <div
@@ -155,34 +187,54 @@ const STATUS_COLORS: Record<string, string> = {
               ? Math.round((new Date(t.completed_at).getTime() - new Date(t.created_at).getTime()) / 1000)
               : null;
             return (
-              <div class="grid grid-cols-12 gap-4 px-6 py-4 hover:bg-gray-800/50 transition-colors items-center task-row" data-id={t.id} data-status={t.status}>
-                <div class="col-span-1" onclick="event.stopPropagation()">
-                  <input
-                    type="checkbox"
-                    class="task-checkbox w-4 h-4 rounded border-gray-600 bg-gray-800 text-violet-500 focus:ring-violet-500 cursor-pointer"
-                    data-id={t.id}
-                    data-status={t.status}
-                  />
+              <div class="px-6 py-4 hover:bg-gray-800/50 transition-colors task-row" data-id={t.id} data-status={t.status}>
+                <div class="flex items-center gap-3">
+                  <!-- Checkbox -->
+                  <div onclick="event.stopPropagation()" class="shrink-0">
+                    <input
+                      type="checkbox"
+                      class="task-checkbox w-4 h-4 rounded border-gray-600 bg-gray-800 text-violet-500 focus:ring-violet-500 cursor-pointer"
+                      data-id={t.id}
+                      data-status={t.status}
+                    />
+                  </div>
+                  <!-- Row content -->
+                  <a href={`/dashboard/tasks/${t.id}`} class="flex-1 grid grid-cols-12 gap-3 items-center min-w-0">
+                    <div class="col-span-4">
+                      <span class="font-mono text-sm text-violet-300">{t.type}</span>
+                      {/* Tags */}
+                      {t.tags && t.tags.length > 0 && (
+                        <div class="flex flex-wrap gap-1 mt-1">
+                          {(t.tags as string[]).slice(0, 5).map((tg: string) => (
+                            <span class="px-1.5 py-0.5 bg-gray-800 text-gray-500 text-xs rounded">🏷️ {tg}</span>
+                          ))}
+                        </div>
+                      )}
+                      {/* Scheduled badge */}
+                      {t.scheduled_at && t.status === "pending" && (
+                        <div class="mt-1">
+                          <span class="text-xs text-amber-400 bg-amber-900/20 px-1.5 py-0.5 rounded">
+                            ⏰ {new Date(t.scheduled_at).toLocaleString()}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                    <div class="col-span-2">
+                      <span class:list={["text-xs px-2 py-0.5 rounded-full", STATUS_COLORS[t.status] ?? "bg-gray-800 text-gray-400"]}>
+                        {t.status}
+                      </span>
+                    </div>
+                    <div class="col-span-2 text-sm text-gray-400">
+                      {t.credits_used != null ? `${t.credits_used} cr` : "—"}
+                    </div>
+                    <div class="col-span-2 text-sm text-gray-500 truncate">
+                      {new Date(t.created_at).toLocaleString()}
+                    </div>
+                    <div class="col-span-2 text-sm text-gray-500">
+                      {duration != null ? `${duration}s` : "—"}
+                    </div>
+                  </a>
                 </div>
-                <a href={`/dashboard/tasks/${t.id}`} class="col-span-11 grid grid-cols-11 gap-4 items-center">
-                  <div class="col-span-3">
-                    <span class="font-mono text-sm text-violet-300">{t.type}</span>
-                  </div>
-                  <div class="col-span-2">
-                    <span class:list={["text-xs px-2 py-0.5 rounded-full", STATUS_COLORS[t.status] ?? "bg-gray-800 text-gray-400"]}>
-                      {t.status}
-                    </span>
-                  </div>
-                  <div class="col-span-2 text-sm text-gray-400">
-                    {t.credits_used != null ? `${t.credits_used} cr` : "—"}
-                  </div>
-                  <div class="col-span-2 text-sm text-gray-500">
-                    {new Date(t.created_at).toLocaleString()}
-                  </div>
-                  <div class="col-span-2 text-sm text-gray-500">
-                    {duration != null ? `${duration}s` : "—"}
-                  </div>
-                </a>
               </div>
             );
           })}

@@ -369,6 +369,18 @@ async def invite_member(
 
     logger.info("org_invite_sent", org_id=str(org_id), email=req.email, invited_by=user_id)
 
+    # Advance requester onboarding: invite_team step
+    import asyncio as _asyncio
+    async def _adv_onboarding():
+        from core.database import AsyncSessionLocal
+        from routers.requester_onboarding import complete_step_internal
+        async with AsyncSessionLocal() as _db:
+            try:
+                await complete_step_internal(str(user_id), "invite_team", _db)
+            except Exception:
+                pass
+    _asyncio.create_task(_adv_onboarding())
+
     return OrgInviteOut(
         id=invite.id,
         org_id=invite.org_id,

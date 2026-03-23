@@ -210,6 +210,12 @@ class TaskDB(Base):
     org_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="SET NULL"),
                     nullable=True, index=True)
 
+    # Task labels / tags — JSON array of strings (e.g. ["billing","v2","prod"])
+    tags = Column(JSON, nullable=True)
+
+    # Deferred execution — if set and in the future, sweeper holds until time arrives
+    scheduled_at = Column(DateTime(timezone=True), nullable=True)
+
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     started_at = Column(DateTime(timezone=True), nullable=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)
@@ -1131,3 +1137,39 @@ class WebhookEndpointDB(Base):
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
 
     user = relationship("UserDB", backref="webhook_endpoints")
+
+
+# ── Task tags (stored inline on TaskDB.tags as JSON array) ───────────────────
+# No separate table needed — tags are simple strings on the task.
+
+
+class RequesterOnboardingDB(Base):
+    """
+    Tracks requester onboarding progress.
+
+    Five guided steps encourage new requesters to explore core platform features:
+      1. welcome          – complete profile / set display name
+      2. create_task      – create first AI or human task
+      3. view_results     – open a completed task's result page
+      4. set_webhook      – register a webhook endpoint
+      5. invite_team      – invite a team member (or skip)
+
+    +200 credit bonus awarded on full completion.
+    """
+    __tablename__ = "requester_onboarding"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, unique=True, index=True)
+
+    step_welcome = Column(Boolean, default=False, nullable=False)
+    step_create_task = Column(Boolean, default=False, nullable=False)
+    step_view_results = Column(Boolean, default=False, nullable=False)
+    step_set_webhook = Column(Boolean, default=False, nullable=False)
+    step_invite_team = Column(Boolean, default=False, nullable=False)
+
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    bonus_claimed = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    user = relationship("UserDB", backref="requester_onboarding")

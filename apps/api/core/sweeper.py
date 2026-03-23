@@ -342,6 +342,108 @@ async def send_weekly_digests(session_factory) -> int:
     return sent
 
 
+async def _sweep_scheduled_tasks(session_factory: async_sessionmaker) -> int:
+    """
+    Activate scheduled tasks whose scheduled_at time has arrived.
+
+    - AI tasks: pending → queued (background executor picks them up)
+    - Human tasks: pending → open (appear in the worker marketplace)
+    """
+    from workers.router import execute_task
+    activated = 0
+    now = datetime.now(timezone.utc)
+
+    async with session_factory() as db:
+        try:
+            result = await db.execute(
+                select(TaskDB).where(
+                    TaskDB.status == "pending",
+                    TaskDB.scheduled_at.isnot(None),
+                    TaskDB.scheduled_at <= now,
+                )
+            )
+            tasks = result.scalars().all()
+
+            for task in tasks:
+                try:
+                    if task.execution_mode == "ai":
+                        task.status = "queued"
+                        await db.commit()
+                        # Fire off AI execution
+                        asyncio.create_task(_run_scheduled_ai_task(str(task.id), str(task.user_id)))
+                    else:
+                        # Human task → publish to marketplace
+                        task.status = "open"
+                        await db.commit()
+                        # Notify workers whose saved searches match
+                        asyncio.create_task(_notify_scheduled_human_task(
+                            task_type=task.type,
+                            priority=task.priority,
+                            reward_credits=task.worker_reward_credits,
+                        ))
+                    activated += 1
+                    logger.info(
+                        "sweeper.scheduled_task_activated",
+                        task_id=str(task.id),
+                        task_type=task.type,
+                        mode=task.execution_mode,
+                    )
+                except Exception:  # noqa: BLE001
+                    logger.exception("sweeper.scheduled_task_error", task_id=str(task.id))
+                    await db.rollback()
+
+        except Exception:  # noqa: BLE001
+            logger.exception("sweeper.scheduled_sweep_error")
+            await db.rollback()
+
+    return activated
+
+
+async def _run_scheduled_ai_task(task_id: str, user_id: str) -> None:
+    """Thin wrapper to run a scheduled AI task (mirrors _run_task in tasks router)."""
+    from core.database import AsyncSessionLocal
+    from workers.router import execute_task, TASK_CREDITS
+    from core.webhooks import fire_webhook_for_task, fire_persistent_endpoints
+    from models.db import TaskDB, CreditTransactionDB
+    from sqlalchemy import select
+
+    async with AsyncSessionLocal() as db:
+        try:
+            result = await db.execute(select(TaskDB).where(TaskDB.id == task_id))
+            task = result.scalar_one_or_none()
+            if not task:
+                return
+            task.status = "running"
+            task.started_at = datetime.now(timezone.utc)
+            await db.commit()
+            await db.refresh(task)
+            # Execute
+            output = await execute_task(task.type, task.input)
+            task.status = "completed"
+            task.output = output
+            task.completed_at = datetime.now(timezone.utc)
+            await db.commit()
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("sweeper.scheduled_ai_task_failed", task_id=task_id)
+            async with AsyncSessionLocal() as db2:
+                r2 = await db2.execute(select(TaskDB).where(TaskDB.id == task_id))
+                t2 = r2.scalar_one_or_none()
+                if t2:
+                    t2.status = "failed"
+                    t2.error = str(exc)
+                    await db2.commit()
+
+
+async def _notify_scheduled_human_task(task_type: str, priority: str, reward_credits) -> None:
+    from core.database import AsyncSessionLocal
+    from routers.saved_searches import notify_matching_saved_searches
+    async with AsyncSessionLocal() as db:
+        try:
+            await notify_matching_saved_searches(task_type, priority, reward_credits, db)
+        except Exception:
+            pass
+
+
 async def run_sweeper(session_factory: async_sessionmaker, interval: int = SWEEP_INTERVAL_SECONDS):
     """Infinite loop: sweep, sleep, repeat. Designed to run as an asyncio background task."""
     logger.info("sweeper.started", interval_seconds=interval)
@@ -354,6 +456,14 @@ async def run_sweeper(session_factory: async_sessionmaker, interval: int = SWEEP
             await sweep_once(session_factory)
         except Exception:  # noqa: BLE001
             logger.exception("sweeper.unhandled_error")
+
+        # Activate any tasks whose scheduled_at has arrived
+        try:
+            activated = await _sweep_scheduled_tasks(session_factory)
+            if activated:
+                logger.info("sweeper.scheduled_activated", count=activated)
+        except Exception:  # noqa: BLE001
+            logger.exception("sweeper.scheduled_check_error")
 
         # Check SLA breaches on every sweep pass
         try:

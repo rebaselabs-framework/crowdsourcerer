@@ -67,6 +67,18 @@ if (Astro.request.method === "POST") {
       body.webhook_events = webhookEventsRaw.length > 0 ? webhookEventsRaw : ["task.completed"];
     }
 
+    // Tags
+    const tagsRaw = form.get("tags") as string;
+    if (tagsRaw?.trim()) {
+      body.tags = tagsRaw.split(",").map((t: string) => t.trim()).filter(Boolean).slice(0, 20);
+    }
+
+    // Scheduled execution
+    const scheduledAt = form.get("scheduled_at") as string;
+    if (scheduledAt) {
+      body.scheduled_at = new Date(scheduledAt).toISOString();
+    }
+
     if (HUMAN_TASK_TYPES.has(type)) {
       const workerReward = Number(form.get("worker_reward_credits") || 0);
       const assignmentsRequired = Number(form.get("assignments_required") || 1);
@@ -339,6 +351,40 @@ if (Astro.request.method === "POST") {
             placeholder="Optional guidance for workers: what to look for, format of answer, etc."
             class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-violet-500 resize-y"
           />
+        </div>
+      </div>
+
+      <!-- ── Tags / Labels ─────────────────────────────────────── -->
+      <div class="pt-4 border-t border-gray-800">
+        <h3 class="text-sm font-semibold text-gray-300 mb-3">Labels & Scheduling</h3>
+
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div>
+            <label class="block text-xs font-medium text-gray-400 mb-1.5">
+              Tags
+              <span class="text-gray-600">(comma-separated, optional)</span>
+            </label>
+            <input
+              type="text"
+              name="tags"
+              placeholder="e.g. billing, v2, prod"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-violet-500"
+            />
+            <p class="text-xs text-gray-600 mt-1">Up to 20 tags to organise and filter your tasks.</p>
+          </div>
+
+          <div>
+            <label class="block text-xs font-medium text-gray-400 mb-1.5">
+              Schedule for later
+              <span class="text-gray-600">(optional)</span>
+            </label>
+            <input
+              type="datetime-local"
+              name="scheduled_at"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-violet-500"
+            />
+            <p class="text-xs text-gray-600 mt-1">Leave blank to run immediately.</p>
+          </div>
         </div>
       </div>
 

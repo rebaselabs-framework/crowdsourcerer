@@ -100,6 +100,10 @@ class TaskCreateRequest(BaseModel):
     consensus_strategy: CONSENSUS_STRATEGIES = "any_first"
     # Minimum worker skill level (1–5) required to claim this task
     min_skill_level: Optional[int] = Field(None, ge=1, le=5)
+    # Labels / tags (max 20, each max 50 chars)
+    tags: Optional[list[str]] = Field(None, max_length=20)
+    # Deferred execution — ISO datetime in the future to schedule task
+    scheduled_at: Optional[datetime] = None
 
 
 class TaskCreateResponse(BaseModel):
@@ -153,6 +157,8 @@ class TaskOut(BaseModel):
     dispute_status: Optional[str] = None
     winning_assignment_id: Optional[UUID] = None
     org_id: Optional[UUID] = None
+    tags: Optional[list[str]] = None
+    scheduled_at: Optional[datetime] = None
     created_at: datetime
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
@@ -1232,3 +1238,84 @@ class WebhookEndpointOut(BaseModel):
     secret: Optional[str] = None
 
     model_config = {"from_attributes": True}
+
+# ─── Task Tags schemas ─────────────────────────────────────────────────────
+
+class TaskTagsUpdate(BaseModel):
+    """Replace task tags entirely."""
+    tags: list[str] = Field(default_factory=list, max_length=20)
+
+
+class TagStats(BaseModel):
+    tag: str
+    count: int
+
+
+# ─── Requester Onboarding schemas ─────────────────────────────────────────
+
+REQUESTER_ONBOARDING_STEPS = [
+    "welcome",
+    "create_task",
+    "view_results",
+    "set_webhook",
+    "invite_team",
+]
+
+REQUESTER_STEP_META = {
+    "welcome": {
+        "title": "Complete your profile",
+        "description": "Add a display name and learn your way around the dashboard.",
+        "cta": "Go to profile",
+        "cta_url": "/dashboard/profile",
+        "icon": "👤",
+    },
+    "create_task": {
+        "title": "Create your first task",
+        "description": "Submit an AI-powered or human task to see CrowdSorcerer in action.",
+        "cta": "Create a task",
+        "cta_url": "/dashboard/tasks/new",
+        "icon": "🚀",
+    },
+    "view_results": {
+        "title": "View task results",
+        "description": "Open a completed task to explore the rich result viewer.",
+        "cta": "View tasks",
+        "cta_url": "/dashboard/tasks",
+        "icon": "📊",
+    },
+    "set_webhook": {
+        "title": "Register a webhook",
+        "description": "Connect your app to receive real-time task completion events.",
+        "cta": "Set up webhook",
+        "cta_url": "/dashboard/webhooks",
+        "icon": "🔗",
+    },
+    "invite_team": {
+        "title": "Invite a team member",
+        "description": "Bring colleagues in to collaborate on tasks and share credits.",
+        "cta": "Invite team",
+        "cta_url": "/dashboard/team",
+        "icon": "👥",
+    },
+}
+
+
+class RequesterOnboardingStepOut(BaseModel):
+    key: str
+    title: str
+    description: str
+    cta: str
+    cta_url: str
+    icon: str
+    completed: bool
+
+
+class RequesterOnboardingStatusOut(BaseModel):
+    steps: list[RequesterOnboardingStepOut]
+    completed_count: int
+    total_steps: int
+    all_complete: bool
+    bonus_claimed: bool
+    bonus_credits: int = 200
+
+
