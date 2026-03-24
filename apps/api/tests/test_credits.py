@@ -81,15 +81,31 @@ async def test_admin_cache_stats_requires_auth(client):
 
 @pytest.mark.asyncio
 async def test_stripe_webhook_rejects_missing_signature(client):
-    """POST /v1/webhooks/stripe without Stripe-Signature must return 400 or 422."""
-    r = await client.post(
-        "/v1/webhooks/stripe",
-        content=b'{"type": "checkout.session.completed"}',
-        headers={"Content-Type": "application/json"},
-        # No Stripe-Signature header
-    )
-    # Stripe signature verification fails → 400 or 422
-    assert r.status_code in (400, 422)
+    """POST /v1/webhooks/stripe without Stripe-Signature must return 400 or 422.
+
+    NOTE: get_settings() is lru_cache'd and may have been populated by an
+    earlier test before STRIPE_WEBHOOK_SECRET was set in this module.  We
+    force-refresh the cache here so the endpoint sees the correct secret.
+    """
+    import os
+    from core.config import get_settings
+    # Force the secret into the environment and reset the cached settings so
+    # the Stripe handler sees a non-empty stripe_webhook_secret.
+    os.environ["STRIPE_WEBHOOK_SECRET"] = "whsec_test_dummy"
+    get_settings.cache_clear()
+    try:
+        r = await client.post(
+            "/v1/webhooks/stripe",
+            content=b'{"type": "checkout.session.completed"}',
+            headers={"Content-Type": "application/json"},
+            # No Stripe-Signature header → should reject with 400
+        )
+        # Stripe signature verification fails → 400 or 422
+        assert r.status_code in (400, 422)
+    finally:
+        # Restore original environment and cache so other tests aren't affected
+        os.environ.pop("STRIPE_WEBHOOK_SECRET", None)
+        get_settings.cache_clear()
 
 
 # ── Credit bonus logic (pure unit test, no DB/HTTP) ───────────────────────────
