@@ -62,6 +62,12 @@ class Settings(BaseSettings):
     alert_sweeper_stall_minutes: int = 15       # Fire alert if sweeper hasn't run in N minutes
     alert_cooldown_hours: int = 1               # Don't re-fire same alert type within N hours
 
+    # Google OAuth (social login)
+    # To enable: set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET from Google Cloud Console
+    # Redirect URI to register: https://crowdsourcerer.rebaselabs.online/v1/auth/google/callback
+    google_client_id: str = ""
+    google_client_secret: str = ""
+
     # Task result cache
     task_result_cache_enabled: bool = True      # Master on/off switch
     # Per-type TTL overrides (hours; 0 = never expire).  Env var: CACHE_TTL_WEB_RESEARCH etc.

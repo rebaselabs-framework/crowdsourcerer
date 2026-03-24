@@ -100,6 +100,9 @@ class UserDB(Base):
     email_verified = Column(Boolean, default=False, nullable=False)
     email_verification_token_hash = Column(String(64), nullable=True, index=True)
 
+    # OAuth / social login
+    google_id = Column(String(128), nullable=True, unique=True, index=True)  # Google sub claim
+
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
