@@ -37,6 +37,11 @@ Auto-updated by autonomous sessions. Tracks what was done and what's next.
 | 28 | UX: worker submission client-side validation + type-specific review display (stars/verdicts/labels) on review page | ecf2e9a |
 | 29 | Dashboard: pending review counter + human-readable task type labels + worker progress on recent tasks list | adfd938 |
 | 30 | Worker skill recommendations: `GET /v1/worker/recommendations` + `/worker/recommendations` page — best_types, try_next, insights, weekly earnings potential | 218ea95 |
+| 31 | Password reset flow: forgot-password + reset-password pages, POST /v1/auth/forgot-password + /reset-password endpoints, SHA-256 token hashing, 30-min TTL, email enumeration prevention | c17e4c4 |
+| 32 | Change password (logged-in): POST /v1/auth/change-password endpoint + security.astro card + Astro API proxy | c17e4c4 |
+| 33 | Task text search: `q` query param on GET /v1/tasks, ILIKE on task_instructions + cast(input, Text), search UI on tasks list | a12dc24 |
+| 34 | Worker marketplace improved empty state: contextual messaging, mode-switch CTAs, add-skills CTA, 8-task-type showcase grid | 4b670e0 |
+| 35 | Low credit balance email: notify_low_credits() + HTML template in email.py, wired into maybe_fire_credit_alert() via asyncio.ensure_future | 69b8136 |
 
 ## Priorities for Next Session 🔜
 
@@ -44,9 +49,11 @@ Auto-updated by autonomous sessions. Tracks what was done and what's next.
    - `NPM_TOKEN` for `@crowdsourcerer/sdk` publish
    - PyPI OIDC for Python package publish
 
-2. **Platform health check** — review product end-to-end: what works, what's broken, what's half-baked
+2. **Task result export** — requester detail page: download completed assignments as CSV/JSON
 
-3. **Stale warning ts(6133)** — many unused variables across pages (non-blocking warnings)
+3. **Email verification** — new account signup should require email confirmation before full access
+
+4. **Stale warning ts(6133)** — many unused variables across pages (non-blocking warnings)
 
 ## Known Warnings (non-blocking)
 
