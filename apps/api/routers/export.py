@@ -242,7 +242,7 @@ async def export_tasks(
             "input": json.dumps(t.input, default=str) if t.input else None,
             "output": json.dumps(t.output, default=str) if t.output else None,
             "error": t.error,
-            "metadata": json.dumps(t.metadata, default=str) if t.metadata else None,
+            "metadata": json.dumps(t.task_metadata, default=str) if t.task_metadata else None,
         }
         if include_submissions:
             row["submissions"] = submissions_by_task.get(str(t.id), [])

@@ -193,7 +193,7 @@ class TaskDB(Base):
     webhook_url = Column(String(2048), nullable=True)
     # Subscribed webhook events. NULL/empty → default ["task.completed"]
     webhook_events = Column(JSON, nullable=True)
-    metadata = Column(JSON, nullable=True)
+    task_metadata = Column("metadata", JSON, nullable=True)
 
     # Human task fields
     worker_reward_credits = Column(Integer, nullable=True)      # Credits paid to each worker
@@ -518,7 +518,7 @@ class OrgActivityLogDB(Base):
     event_type = Column(String(64), nullable=False)  # task_created | task_completed | credit_spend
     task_id = Column(UUID(as_uuid=True), nullable=True)
     credits = Column(Integer, default=0, nullable=False)
-    metadata = Column(JSON, nullable=True)
+    activity_metadata = Column("metadata", JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
 
     org = relationship("OrganizationDB", backref="activity_log")
