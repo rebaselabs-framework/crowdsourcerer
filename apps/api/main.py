@@ -211,11 +211,36 @@ app.include_router(global_search.router)
 
 @app.get("/health", tags=["health"])
 async def health():
+    """Basic liveness probe — does not check DB (used by Docker healthcheck)."""
     return {
         "status": "ok",
         "version": settings.app_version,
         "service": "crowdsourcerer-api",
     }
+
+
+@app.get("/health/ready", tags=["health"])
+async def health_ready():
+    """Readiness probe — checks DB connectivity.  Returns 503 if DB is unreachable."""
+    from sqlalchemy import text
+    db_ok = False
+    db_error: str | None = None
+    try:
+        async with AsyncSessionLocal() as session:
+            await session.execute(text("SELECT 1"))
+        db_ok = True
+    except Exception as exc:
+        db_error = str(exc)
+
+    status_code = 200 if db_ok else 503
+    body = {
+        "status": "ready" if db_ok else "degraded",
+        "version": settings.app_version,
+        "checks": {
+            "database": {"ok": db_ok, "error": db_error},
+        },
+    }
+    return JSONResponse(content=body, status_code=status_code)
 
 
 @app.get("/", tags=["health"])
