@@ -4,16 +4,26 @@
  *
  * No authentication required. Shows open human tasks so prospective workers
  * can browse available work before committing to sign up.
+ * Supports text search, type filter, reward range, and sort options.
  * Drives worker acquisition with in-page CTAs.
  */
 import Layout from "@/layouts/Layout.astro";
+import { getToken } from "@/lib/api";
 
 const API_URL = import.meta.env.PUBLIC_API_URL ?? "http://api:8100";
+const token = getToken(Astro.cookies);
 
 // ── URL params ────────────────────────────────────────────────────────────────
-const typeFilter = Astro.url.searchParams.get("type") ?? "";
-const page       = Math.max(1, parseInt(Astro.url.searchParams.get("page") ?? "1", 10));
-const PAGE_SIZE  = 24;
+const typeFilter  = Astro.url.searchParams.get("type")       ?? "";
+const searchQuery = Astro.url.searchParams.get("q")          ?? "";
+const sortParam   = Astro.url.searchParams.get("sort")       ?? "newest";
+const minReward   = Astro.url.searchParams.get("min_reward") ?? "";
+const maxReward   = Astro.url.searchParams.get("max_reward") ?? "";
+const page        = Math.max(1, parseInt(Astro.url.searchParams.get("page") ?? "1", 10));
+const PAGE_SIZE   = 24;
+
+const VALID_SORTS = ["newest", "reward_high", "reward_low", "urgent"] as const;
+const sort = VALID_SORTS.includes(sortParam as any) ? sortParam : "newest";
 
 // ── Fetch public task feed ────────────────────────────────────────────────────
 interface TaskPreview {
@@ -31,16 +41,22 @@ interface FeedResponse {
   total: number;
   page: number;
   page_size: number;
+  query: string;
+  sort: string;
 }
 
-let feed: FeedResponse = { items: [], total: 0, page: 1, page_size: PAGE_SIZE };
+let feed: FeedResponse = { items: [], total: 0, page: 1, page_size: PAGE_SIZE, query: "", sort: "newest" };
 let fetchError = "";
 
 try {
   const qs = new URLSearchParams({
     page: String(page),
     page_size: String(PAGE_SIZE),
-    ...(typeFilter ? { type: typeFilter } : {}),
+    sort,
+    ...(typeFilter  ? { type: typeFilter }          : {}),
+    ...(searchQuery ? { q: searchQuery }             : {}),
+    ...(minReward   ? { min_reward: minReward }      : {}),
+    ...(maxReward   ? { max_reward: maxReward }      : {}),
   });
   const res = await fetch(`${API_URL}/v1/tasks/public?${qs}`);
   if (res.ok) {
@@ -53,18 +69,19 @@ try {
 }
 
 const totalPages = Math.ceil(feed.total / PAGE_SIZE);
+const hasFilters = !!(typeFilter || searchQuery || minReward || maxReward || sort !== "newest");
 
 // ── Human task types for filter bar ──────────────────────────────────────────
 const HUMAN_TYPES: { value: string; label: string; icon: string }[] = [
-  { value: "",                  label: "All Tasks",          icon: "🎯" },
-  { value: "label_image",       label: "Label Image",        icon: "🖼️" },
-  { value: "label_text",        label: "Label Text",         icon: "📝" },
-  { value: "rate_quality",      label: "Rate Quality",       icon: "⭐" },
-  { value: "verify_fact",       label: "Verify Fact",        icon: "✅" },
-  { value: "moderate_content",  label: "Moderate Content",   icon: "🛡️" },
-  { value: "compare_rank",      label: "Compare & Rank",     icon: "📊" },
-  { value: "answer_question",   label: "Answer Question",    icon: "❓" },
-  { value: "transcription_review", label: "Review Audio",   icon: "📋" },
+  { value: "",                     label: "All Tasks",       icon: "🎯" },
+  { value: "label_image",          label: "Label Image",     icon: "🖼️" },
+  { value: "label_text",           label: "Label Text",      icon: "📝" },
+  { value: "rate_quality",         label: "Rate Quality",    icon: "⭐" },
+  { value: "verify_fact",          label: "Verify Fact",     icon: "✅" },
+  { value: "moderate_content",     label: "Moderate",        icon: "🛡️" },
+  { value: "compare_rank",         label: "Compare & Rank",  icon: "📊" },
+  { value: "answer_question",      label: "Answer Q",        icon: "❓" },
+  { value: "transcription_review", label: "Review Audio",    icon: "📋" },
 ];
 
 const TYPE_DESC: Record<string, string> = {
@@ -78,17 +95,24 @@ const TYPE_DESC: Record<string, string> = {
   transcription_review: "Correct and verify audio transcripts",
 };
 
+const SORT_OPTIONS = [
+  { value: "newest",      label: "Newest first"    },
+  { value: "reward_high", label: "Highest reward"  },
+  { value: "reward_low",  label: "Lowest reward"   },
+  { value: "urgent",      label: "Most urgent"     },
+];
+
 function typeIcon(t: string): string {
   return HUMAN_TYPES.find(h => h.value === t)?.icon ?? "🔮";
 }
 function typeLabel(t: string): string {
-  return HUMAN_TYPES.find(h => h.value === t)?.label ?? t.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+  return HUMAN_TYPES.find(h => h.value === t)?.label ?? t.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase());
 }
 function priorityBadge(p: string | null): string {
   if (p === "urgent")   return "bg-red-900/60 text-red-300 border-red-800";
   if (p === "high")     return "bg-orange-900/60 text-orange-300 border-orange-800";
   if (p === "low")      return "bg-gray-800 text-gray-500 border-gray-700";
-  return "bg-gray-800 text-gray-400 border-gray-700"; // normal
+  return "bg-gray-800 text-gray-400 border-gray-700";
 }
 
 function timeAgo(iso: string | null): string {
@@ -96,38 +120,61 @@ function timeAgo(iso: string | null): string {
   const d = new Date(iso);
   const now = new Date();
   const sec = Math.floor((now.getTime() - d.getTime()) / 1000);
-  if (sec < 60)   return "just now";
-  if (sec < 3600) return `${Math.floor(sec / 60)}m ago`;
+  if (sec < 60)    return "just now";
+  if (sec < 3600)  return `${Math.floor(sec / 60)}m ago`;
   if (sec < 86400) return `${Math.floor(sec / 3600)}h ago`;
   return `${Math.floor(sec / 86400)}d ago`;
 }
 
-function paginateUrl(p: number): string {
-  const q = new URLSearchParams({ page: String(p), ...(typeFilter ? { type: typeFilter } : {}) });
-  return `/marketplace?${q}`;
-}
-function filterUrl(t: string): string {
-  return t ? `/marketplace?type=${t}` : "/marketplace";
+function buildUrl(overrides: Record<string, string | number>): string {
+  const params: Record<string, string> = {
+    ...(typeFilter  ? { type: typeFilter }          : {}),
+    ...(searchQuery ? { q: searchQuery }             : {}),
+    ...(sort !== "newest" ? { sort }                 : {}),
+    ...(minReward   ? { min_reward: minReward }      : {}),
+    ...(maxReward   ? { max_reward: maxReward }      : {}),
+    page: String(page),
+  };
+  // Apply overrides (remove empty string values = clear filter)
+  for (const [k, v] of Object.entries(overrides)) {
+    if (v === "" || v === null || v === undefined) {
+      delete params[k];
+    } else {
+      params[k] = String(v);
+    }
+  }
+  const qs = new URLSearchParams(params).toString();
+  return `/marketplace${qs ? "?" + qs : ""}`;
 }
 
 // ── Stats for the hero banner ─────────────────────────────────────────────────
-const totalOpen      = feed.total;
-const avgReward      = feed.items.length
+const totalOpen = feed.total;
+const avgReward = feed.items.length
   ? Math.round(feed.items.reduce((s, t) => s + (t.worker_reward_credits ?? 0), 0) / feed.items.length)
   : 0;
+
+// ── Build "saved search" URL for CTA ─────────────────────────────────────────
+const savedSearchParams = new URLSearchParams();
+if (typeFilter)  savedSearchParams.set("type", typeFilter);
+if (searchQuery) savedSearchParams.set("q", searchQuery);
+if (minReward)   savedSearchParams.set("min_reward", minReward);
+if (maxReward)   savedSearchParams.set("max_reward", maxReward);
+if (sort !== "newest") savedSearchParams.set("sort", sort);
+const savedSearchQs = savedSearchParams.toString();
+const saveSearchLoginUrl = `/register?role=worker${savedSearchQs ? "&next=/worker/saved-searches?" + encodeURIComponent(savedSearchQs) : ""}`;
 ---
 
 <Layout
   title="Browse Open Tasks — CrowdSorcerer"
-  description="Browse open crowdsourcing tasks. Earn credits by labelling images, verifying facts, moderating content, and more. No experience required."
+  description="Browse open crowdsourcing tasks. Search by keyword, filter by type, and sort by reward. Earn credits by labelling images, verifying facts, moderating content, and more."
 >
 
   <!-- ── Hero ──────────────────────────────────────────────────────────────── -->
   <div class="border-b border-gray-800 bg-gradient-to-b from-gray-900/50 to-transparent">
-    <div class="max-w-6xl mx-auto px-6 py-14">
+    <div class="max-w-6xl mx-auto px-6 py-10">
       <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-8">
         <div class="max-w-xl">
-          <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-900/40 border border-emerald-700/60 text-emerald-400 text-xs font-medium mb-4">
+          <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-900/40 border border-emerald-700/60 text-emerald-400 text-xs font-medium mb-3">
             <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
             Tasks available now
           </div>
@@ -135,34 +182,28 @@ const avgReward      = feed.items.length
             Browse Open Tasks<br />
             <span class="text-violet-400">Earn as You Go</span>
           </h1>
-          <p class="text-gray-400 text-base leading-relaxed mb-6">
+          <p class="text-gray-400 text-sm leading-relaxed mb-4">
             Complete bite-sized tasks — labelling images, checking facts, moderating content — and
             earn credits redeemable for cash. No experience needed, work at your own pace.
           </p>
           <div class="flex flex-wrap gap-3">
-            <a
-              href="/worker/onboarding"
-              class="px-5 py-2.5 bg-violet-600 hover:bg-violet-500 text-white text-sm font-semibold rounded-xl transition-colors"
-            >
+            <a href="/worker/onboarding" class="px-5 py-2.5 bg-violet-600 hover:bg-violet-500 text-white text-sm font-semibold rounded-xl transition-colors">
               Start earning →
             </a>
-            <a
-              href="/pricing"
-              class="px-5 py-2.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 text-sm font-medium rounded-xl transition-colors"
-            >
+            <a href="/pricing" class="px-5 py-2.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 text-sm font-medium rounded-xl transition-colors">
               How credits work
             </a>
           </div>
         </div>
 
         <!-- Stats panel -->
-        <div class="grid grid-cols-3 gap-4 md:gap-6 shrink-0">
+        <div class="grid grid-cols-3 gap-4 shrink-0">
           {[
-            { icon: "📋", value: String(totalOpen), label: "open tasks" },
-            { icon: "⭐", value: `${avgReward}`, label: "avg credits/task" },
-            { icon: "🔖", value: String(HUMAN_TYPES.length - 1), label: "task types" },
+            { icon: "📋", value: String(totalOpen),          label: "open tasks"       },
+            { icon: "⭐", value: `${avgReward}`,             label: "avg credits/task" },
+            { icon: "🔖", value: String(HUMAN_TYPES.length - 1), label: "task types"  },
           ].map(s => (
-            <div class="bg-gray-900 border border-gray-800 rounded-xl px-5 py-4 text-center">
+            <div class="bg-gray-900 border border-gray-800 rounded-xl px-4 py-4 text-center">
               <div class="text-2xl mb-1">{s.icon}</div>
               <div class="text-2xl font-bold text-white">{s.value}</div>
               <div class="text-xs text-gray-500 mt-0.5">{s.label}</div>
@@ -174,23 +215,99 @@ const avgReward      = feed.items.length
   </div>
 
   <!-- ── Content ────────────────────────────────────────────────────────────── -->
-  <div class="max-w-6xl mx-auto px-6 py-10">
+  <div class="max-w-6xl mx-auto px-6 py-8">
 
-    <!-- Filter bar -->
-    <div class="flex flex-wrap gap-2 mb-8">
+    <!-- ── Search + Sort + Filters ──────────────────────────────────────────── -->
+    <form method="get" action="/marketplace" class="mb-6 space-y-4">
+      <!-- Search bar row -->
+      <div class="flex flex-col sm:flex-row gap-3">
+        <div class="relative flex-1">
+          <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none">🔍</span>
+          <input
+            type="text"
+            name="q"
+            value={searchQuery}
+            placeholder="Search tasks by keyword…"
+            class="w-full pl-9 pr-4 py-2.5 bg-gray-900 border border-gray-700 rounded-xl text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-violet-500 transition-colors"
+          />
+          {searchQuery && (
+            <a href={buildUrl({ q: "", page: 1 })} class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 text-xs transition-colors" title="Clear search">✕</a>
+          )}
+        </div>
+
+        <!-- Sort selector -->
+        <div class="flex items-center gap-2 shrink-0">
+          <label for="sort-select" class="text-xs text-gray-500 whitespace-nowrap">Sort:</label>
+          <select
+            id="sort-select"
+            name="sort"
+            onchange="this.form.submit()"
+            class="bg-gray-900 border border-gray-700 rounded-xl text-sm text-gray-300 px-3 py-2.5 focus:outline-none focus:border-violet-500 cursor-pointer"
+          >
+            {SORT_OPTIONS.map(o => (
+              <option value={o.value} selected={sort === o.value}>{o.label}</option>
+            ))}
+          </select>
+        </div>
+
+        <button type="submit" class="px-4 py-2.5 bg-violet-700 hover:bg-violet-600 text-white text-sm font-medium rounded-xl transition-colors shrink-0">
+          Search
+        </button>
+      </div>
+
+      <!-- Reward range row -->
+      <div class="flex flex-wrap items-center gap-3">
+        <span class="text-xs text-gray-500">Reward:</span>
+        <div class="flex items-center gap-2">
+          <input
+            type="number"
+            name="min_reward"
+            value={minReward}
+            min="0"
+            placeholder="Min"
+            class="w-20 px-3 py-1.5 bg-gray-900 border border-gray-700 rounded-lg text-sm text-gray-300 placeholder-gray-600 focus:outline-none focus:border-violet-500"
+          />
+          <span class="text-gray-600 text-xs">–</span>
+          <input
+            type="number"
+            name="max_reward"
+            value={maxReward}
+            min="0"
+            placeholder="Max"
+            class="w-20 px-3 py-1.5 bg-gray-900 border border-gray-700 rounded-lg text-sm text-gray-300 placeholder-gray-600 focus:outline-none focus:border-violet-500"
+          />
+          <span class="text-xs text-gray-500">credits</span>
+          {(minReward || maxReward) && (
+            <a href={buildUrl({ min_reward: "", max_reward: "", page: 1 })} class="text-xs text-gray-500 hover:text-gray-300 ml-1 transition-colors">clear</a>
+          )}
+        </div>
+
+        <!-- Preserve type/page hidden fields -->
+        {typeFilter && <input type="hidden" name="type" value={typeFilter} />}
+
+        {hasFilters && (
+          <a href="/marketplace" class="text-xs text-violet-400 hover:text-violet-300 ml-auto transition-colors">
+            ✕ Clear all filters
+          </a>
+        )}
+      </div>
+    </form>
+
+    <!-- Type filter pills -->
+    <div class="flex flex-wrap gap-2 mb-6">
       {HUMAN_TYPES.map(t => (
         <a
-          href={filterUrl(t.value)}
+          href={buildUrl({ type: t.value, page: 1 })}
           class:list={[
-            "inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-sm font-medium border transition-colors",
+            "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border transition-colors",
             typeFilter === t.value
               ? "bg-violet-700 border-violet-600 text-white"
-              : "bg-gray-900 border-gray-700 text-gray-400 hover:border-gray-600 hover:text-gray-200"
+              : "bg-gray-900 border-gray-700 text-gray-400 hover:border-gray-600 hover:text-gray-200",
           ]}
         >
           {t.icon} {t.label}
           {t.value && typeFilter === t.value && (
-            <span class="ml-0.5 text-xs opacity-70">✕</span>
+            <span class="ml-0.5 opacity-70">✕</span>
           )}
         </a>
       ))}
@@ -204,29 +321,57 @@ const avgReward      = feed.items.length
     ) : feed.items.length === 0 ? (
       <div class="rounded-xl bg-gray-900 border border-gray-800 p-12 text-center">
         <div class="text-4xl mb-3">🔍</div>
-        <h2 class="text-lg font-semibold mb-2">No tasks available right now</h2>
+        <h2 class="text-lg font-semibold mb-2">No tasks found</h2>
         <p class="text-gray-400 text-sm mb-6">
-          {typeFilter
-            ? `There are no open "${typeLabel(typeFilter)}" tasks at the moment.`
-            : "No tasks are currently open. Check back soon!"}
+          {searchQuery
+            ? `No open tasks matching "${searchQuery}".`
+            : typeFilter
+              ? `No open "${typeLabel(typeFilter)}" tasks right now.`
+              : "No tasks are currently open. Check back soon!"}
         </p>
-        {typeFilter && (
+        {hasFilters && (
           <a href="/marketplace" class="text-violet-400 hover:text-violet-300 text-sm transition-colors">
-            ← Browse all task types
+            ← Browse all tasks
           </a>
         )}
       </div>
     ) : (
       <>
-        <!-- Result count + sort hint -->
-        <div class="flex items-center justify-between mb-4">
+        <!-- Result count + save-search CTA -->
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
           <p class="text-sm text-gray-500">
-            Showing {((page - 1) * PAGE_SIZE) + 1}–{Math.min(page * PAGE_SIZE, feed.total)} of <span class="text-gray-300 font-medium">{feed.total.toLocaleString()}</span> open tasks
+            Showing
+            <span class="text-gray-300 font-medium"> {((page - 1) * PAGE_SIZE) + 1}–{Math.min(page * PAGE_SIZE, feed.total)}</span>
+            {" "}of{" "}
+            <span class="text-gray-300 font-medium">{feed.total.toLocaleString()}</span> tasks
+            {searchQuery && (
+              <span> for <span class="text-violet-400 font-medium">"{searchQuery}"</span></span>
+            )}
             {typeFilter && (
-              <span> · filtered by <span class="text-violet-400">{typeLabel(typeFilter)}</span></span>
+              <span> · <span class="text-violet-400">{typeLabel(typeFilter)}</span></span>
             )}
           </p>
-          <span class="text-xs text-gray-600">Newest first</span>
+
+          <!-- Save-search / watchlist CTA -->
+          {hasFilters && (
+            token ? (
+              <button
+                data-save-search-btn
+                data-qs={savedSearchQs}
+                onclick="window.__saveMarketplaceSearch(this.dataset.qs)"
+                class="inline-flex items-center gap-1.5 text-xs text-emerald-400 hover:text-emerald-300 border border-emerald-700/60 bg-emerald-900/20 hover:bg-emerald-900/40 px-3 py-1.5 rounded-lg transition-colors"
+              >
+                🔔 Save this search
+              </button>
+            ) : (
+              <a
+                href={saveSearchLoginUrl}
+                class="inline-flex items-center gap-1.5 text-xs text-emerald-400 hover:text-emerald-300 border border-emerald-700/60 bg-emerald-900/20 hover:bg-emerald-900/40 px-3 py-1.5 rounded-lg transition-colors"
+              >
+                🔔 Save search — sign up to get notified
+              </a>
+            )
+          )}
         </div>
 
         <!-- Task grid -->
@@ -270,10 +415,7 @@ const avgReward      = feed.items.length
                     </span>
                   </div>
                   <div class="h-1.5 bg-gray-800 rounded-full overflow-hidden">
-                    <div
-                      class="h-full bg-violet-600 rounded-full transition-all"
-                      style={`width:${pct}%`}
-                    />
+                    <div class="h-full bg-violet-600 rounded-full transition-all" style={`width:${pct}%`} />
                   </div>
                 </div>
 
@@ -287,10 +429,10 @@ const avgReward      = feed.items.length
                     <span class="text-xs text-gray-600">{timeAgo(task.created_at)}</span>
                     {spotsLeft > 0 ? (
                       <a
-                        href="/register?role=worker"
+                        href={token ? `/worker/tasks/${task.id}` : `/register?role=worker`}
                         class="px-3 py-1 bg-violet-700/60 hover:bg-violet-600 border border-violet-600/60 text-violet-200 text-xs font-medium rounded-lg transition-colors"
                       >
-                        Take task
+                        {token ? "View task" : "Take task"}
                       </a>
                     ) : (
                       <span class="px-3 py-1 bg-gray-800 border border-gray-700 text-gray-500 text-xs font-medium rounded-lg cursor-not-allowed">
@@ -306,9 +448,9 @@ const avgReward      = feed.items.length
 
         <!-- Pagination -->
         {totalPages > 1 && (
-          <div class="flex justify-center items-center gap-4">
+          <div class="flex justify-center items-center gap-4 mb-10">
             {page > 1 ? (
-              <a href={paginateUrl(page - 1)} class="px-4 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-sm text-gray-300 transition-colors">
+              <a href={buildUrl({ page: page - 1 })} class="px-4 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-sm text-gray-300 transition-colors">
                 ← Prev
               </a>
             ) : (
@@ -316,7 +458,7 @@ const avgReward      = feed.items.length
             )}
             <span class="text-sm text-gray-400">Page <span class="text-white font-medium">{page}</span> of {totalPages}</span>
             {page < totalPages ? (
-              <a href={paginateUrl(page + 1)} class="px-4 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-sm text-gray-300 transition-colors">
+              <a href={buildUrl({ page: page + 1 })} class="px-4 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-sm text-gray-300 transition-colors">
                 Next →
               </a>
             ) : (
@@ -328,7 +470,7 @@ const avgReward      = feed.items.length
     )}
 
     <!-- ── Bottom CTA ─────────────────────────────────────────────────────── -->
-    <div class="mt-16 bg-gradient-to-br from-violet-950/60 to-gray-900 border border-violet-800/40 rounded-2xl p-8 md:p-10 text-center">
+    <div class="mt-12 bg-gradient-to-br from-violet-950/60 to-gray-900 border border-violet-800/40 rounded-2xl p-8 md:p-10 text-center">
       <div class="text-4xl mb-4">🚀</div>
       <h2 class="text-2xl font-bold mb-3">Ready to start earning?</h2>
       <p class="text-gray-400 text-sm max-w-md mx-auto mb-6">
@@ -336,16 +478,10 @@ const avgReward      = feed.items.length
         at your own pace, and withdraw your earnings anytime.
       </p>
       <div class="flex flex-wrap justify-center gap-3">
-        <a
-          href="/register?role=worker"
-          class="px-6 py-3 bg-violet-600 hover:bg-violet-500 text-white font-semibold rounded-xl transition-colors"
-        >
+        <a href="/register?role=worker" class="px-6 py-3 bg-violet-600 hover:bg-violet-500 text-white font-semibold rounded-xl transition-colors">
           Create free account
         </a>
-        <a
-          href="/worker/leaderboard"
-          class="px-6 py-3 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 rounded-xl transition-colors"
-        >
+        <a href="/leaderboard" class="px-6 py-3 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 rounded-xl transition-colors">
           View leaderboard
         </a>
       </div>
@@ -357,24 +493,9 @@ const avgReward      = feed.items.length
       <h2 class="text-xl font-bold text-center mb-8">How it works</h2>
       <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
         {[
-          {
-            step: "1",
-            icon: "🎯",
-            title: "Browse & claim",
-            desc: "Find tasks that match your skills. Each task shows exactly how many credits you'll earn.",
-          },
-          {
-            step: "2",
-            icon: "✍️",
-            title: "Complete the task",
-            desc: "Follow the task instructions. Most tasks take 1–5 minutes. Work whenever you have free time.",
-          },
-          {
-            step: "3",
-            icon: "💸",
-            title: "Get paid",
-            desc: "Credits are awarded after requester approval. Withdraw to your preferred payment method.",
-          },
+          { step: "1", icon: "🎯", title: "Browse & claim",    desc: "Search tasks by keyword or filter by type. Each task shows exactly how many credits you'll earn."  },
+          { step: "2", icon: "✍️", title: "Complete the task", desc: "Follow the task instructions. Most tasks take 1–5 minutes. Work whenever you have free time." },
+          { step: "3", icon: "💸", title: "Get paid",           desc: "Credits are awarded after requester approval. Withdraw to your preferred payment method."      },
         ].map(s => (
           <div class="flex gap-4 p-5 bg-gray-900 border border-gray-800 rounded-xl">
             <div class="w-8 h-8 rounded-full bg-violet-900/60 border border-violet-700 text-violet-400 text-sm font-bold flex items-center justify-center shrink-0 mt-0.5">
@@ -391,13 +512,13 @@ const avgReward      = feed.items.length
     </div>
 
     <!-- ── Task types showcase ─────────────────────────────────────────────── -->
-    <div class="mt-16">
+    <div class="mt-16 mb-6">
       <h2 class="text-xl font-bold text-center mb-2">All task types</h2>
-      <p class="text-gray-500 text-sm text-center mb-8">Click to filter the list above</p>
+      <p class="text-gray-500 text-sm text-center mb-8">Click to filter by task type</p>
       <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {HUMAN_TYPES.filter(t => t.value).map(t => (
           <a
-            href={filterUrl(t.value)}
+            href={buildUrl({ type: t.value, page: 1 })}
             class="flex items-center gap-3 p-4 bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl transition-colors group"
           >
             <span class="text-2xl">{t.icon}</span>
@@ -411,4 +532,39 @@ const avgReward      = feed.items.length
     </div>
 
   </div>
+
+  <!-- Save-search handler (logged-in users) -->
+  <script is:inline>
+    window.__saveMarketplaceSearch = async function(qs) {
+      try {
+        var params = new URLSearchParams(qs);
+        var defaultName = params.get("q") || params.get("type") || "My saved search";
+        var name = prompt("Name this saved search:", defaultName);
+        if (!name) return;
+        var filters = {};
+        if (params.get("q"))          filters.q = params.get("q");
+        if (params.get("type"))       filters.task_type = params.get("type");
+        if (params.get("min_reward")) filters.min_reward = parseInt(params.get("min_reward"), 10);
+        if (params.get("max_reward")) filters.max_reward = parseInt(params.get("max_reward"), 10);
+        var res = await fetch("/api/worker/saved-searches", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: name, filters: filters, alert_enabled: true, alert_frequency: "instant" }),
+        });
+        if (res.ok) {
+          var btn = document.querySelector("[data-save-search-btn]");
+          if (btn) {
+            btn.textContent = "\u2713 Saved!";
+            btn.setAttribute("disabled", "true");
+          }
+        } else {
+          var err = await res.json().catch(function() { return {}; });
+          alert((err && err.detail) || "Could not save search. Please try again.");
+        }
+      } catch(e) {
+        alert("Could not save search. Please try again.");
+      }
+    };
+  </script>
+
 </Layout>

@@ -171,7 +171,7 @@ const queueTotal = health
         </div>
 
         <!-- Bottom row: Top failing types + System info -->
-        <div class="grid grid-cols-2 gap-6">
+        <div class="grid grid-cols-2 gap-6 mb-8">
           <!-- Top failing task types -->
           <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
             <div class="px-5 py-4 border-b border-gray-800">
@@ -224,6 +224,101 @@ const queueTotal = health
             </div>
           </div>
         </div>
+
+        <!-- ── Stuck Tasks ──────────────────────────────────────────────────── -->
+        {(() => {
+          const stuck = health.stuck_tasks;
+          const totalStuck = (stuck?.total_stuck ?? 0) + (stuck?.timed_out_assignments ?? 0);
+          return (
+            <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+              <div class="px-5 py-4 border-b border-gray-800 flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <h2 class="font-semibold text-sm">Stuck / Stalled Tasks</h2>
+                  {totalStuck > 0 && (
+                    <span class="text-xs px-2 py-0.5 rounded-full bg-red-900/50 border border-red-700 text-red-300 font-medium">
+                      {totalStuck} issue{totalStuck !== 1 ? "s" : ""}
+                    </span>
+                  )}
+                </div>
+                <a href="/admin/queue" class="text-xs text-violet-400 hover:text-violet-300 transition-colors">View full queue →</a>
+              </div>
+
+              {(!stuck || totalStuck === 0) ? (
+                <div class="px-5 py-6 text-center text-gray-500 text-sm">
+                  ✅ No stuck tasks detected
+                </div>
+              ) : (
+                <div class="divide-y divide-gray-800">
+                  {/* AI tasks stuck > 30 min */}
+                  {stuck.ai_running_over_30m?.length > 0 && (
+                    <div class="px-5 py-4">
+                      <div class="text-xs font-semibold text-orange-400 mb-3 uppercase tracking-wider">
+                        🤖 AI tasks running &gt;30 min ({stuck.ai_running_over_30m.length})
+                      </div>
+                      <div class="space-y-2">
+                        {stuck.ai_running_over_30m.map((t: any) => (
+                          <div class="flex items-center justify-between text-sm">
+                            <div class="flex items-center gap-2">
+                              <a
+                                href={`/dashboard/tasks/${t.id}`}
+                                class="font-mono text-xs text-gray-400 hover:text-violet-400 transition-colors"
+                              >
+                                {t.id.slice(0, 8)}…
+                              </a>
+                              <span class="text-xs text-gray-500">{t.type.replace(/_/g, " ")}</span>
+                              <span class="text-xs px-1.5 py-0.5 rounded bg-gray-800 text-gray-400 border border-gray-700">{t.status}</span>
+                            </div>
+                            <span class="text-xs text-orange-400 font-medium">
+                              {t.stuck_for_minutes}m
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Human tasks open > 24h */}
+                  {stuck.human_open_over_24h?.length > 0 && (
+                    <div class="px-5 py-4">
+                      <div class="text-xs font-semibold text-amber-400 mb-3 uppercase tracking-wider">
+                        👤 Human tasks open &gt;24h ({stuck.human_open_over_24h.length})
+                      </div>
+                      <div class="space-y-2">
+                        {stuck.human_open_over_24h.map((t: any) => (
+                          <div class="flex items-center justify-between text-sm">
+                            <div class="flex items-center gap-2">
+                              <a
+                                href={`/dashboard/tasks/${t.id}`}
+                                class="font-mono text-xs text-gray-400 hover:text-violet-400 transition-colors"
+                              >
+                                {t.id.slice(0, 8)}…
+                              </a>
+                              <span class="text-xs text-gray-500">{t.type.replace(/_/g, " ")}</span>
+                            </div>
+                            <span class="text-xs text-amber-400 font-medium">
+                              {t.open_for_hours}h open
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Timed-out assignments */}
+                  {stuck.timed_out_assignments > 0 && (
+                    <div class="flex items-center justify-between px-5 py-4">
+                      <div>
+                        <div class="text-sm font-medium text-red-400">Timed-out assignments</div>
+                        <div class="text-xs text-gray-500 mt-0.5">Assignments past deadline still in active state</div>
+                      </div>
+                      <span class="text-2xl font-bold text-red-400">{stuck.timed_out_assignments}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </>
     ) : null}
   </div>

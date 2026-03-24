@@ -1351,10 +1351,70 @@ async def get_system_health(
     if _sweep_ts is not None:
         sweeper_ago = round((now - _sweep_ts).total_seconds(), 1)
 
-    # Overall status
+    # ── Stuck task detection ─────────────────────────────────────────────────
+    # AI tasks running/queued for > 30 minutes
+    stuck_threshold_ai = now - timedelta(minutes=30)
+    stuck_ai_q = await db.execute(
+        select(TaskDB.id, TaskDB.type, TaskDB.status, TaskDB.created_at)
+        .where(
+            TaskDB.status.in_(["running", "queued"]),
+            TaskDB.execution_mode == "ai",
+            TaskDB.created_at <= stuck_threshold_ai,
+        )
+        .order_by(TaskDB.created_at.asc())
+        .limit(20)
+    )
+    stuck_ai_tasks = [
+        {
+            "id": str(r.id),
+            "type": r.type,
+            "status": r.status,
+            "stuck_for_minutes": round((now - r.created_at.replace(tzinfo=timezone.utc)).total_seconds() / 60),
+        }
+        for r in stuck_ai_q.all()
+    ]
+
+    # Human tasks open for > 24h with no assignments claimed
+    stuck_threshold_human = now - timedelta(hours=24)
+    stuck_human_q = await db.execute(
+        select(TaskDB.id, TaskDB.type, TaskDB.created_at)
+        .where(
+            TaskDB.status == "open",
+            TaskDB.execution_mode == "human",
+            TaskDB.created_at <= stuck_threshold_human,
+        )
+        .order_by(TaskDB.created_at.asc())
+        .limit(20)
+    )
+    stuck_human_tasks = [
+        {
+            "id": str(r.id),
+            "type": r.type,
+            "open_for_hours": round((now - r.created_at.replace(tzinfo=timezone.utc)).total_seconds() / 3600),
+        }
+        for r in stuck_human_q.all()
+    ]
+
+    # Timed-out assignments (timeout_at in the past, still in claimed/in_progress state)
+    timed_out_assignments_count = (await db.scalar(
+        select(func.count()).where(
+            TaskAssignmentDB.timeout_at != None,  # noqa: E711
+            TaskAssignmentDB.timeout_at <= now,
+            TaskAssignmentDB.status.in_(["claimed", "in_progress"]),
+        )
+    )) or 0
+
+    # ── Overall status ───────────────────────────────────────────────────────
+    total_stuck = len(stuck_ai_tasks) + len(stuck_human_tasks)
     if db_ping_ms > 500 or error_rate_1h > 0.5:
         status = "down"
-    elif db_ping_ms > 200 or error_rate_1h > 0.2 or sweeper_ago is None or sweeper_ago > 900:
+    elif (
+        db_ping_ms > 200
+        or error_rate_1h > 0.2
+        or sweeper_ago is None
+        or sweeper_ago > 900
+        or total_stuck > 10
+    ):
         status = "degraded"
     else:
         status = "healthy"
@@ -1377,6 +1437,12 @@ async def get_system_health(
         "top_failing_types": top_failing_types,
         "total_users": total_users,
         "active_workers_24h": active_workers_24h,
+        "stuck_tasks": {
+            "ai_running_over_30m": stuck_ai_tasks,
+            "human_open_over_24h": stuck_human_tasks,
+            "timed_out_assignments": timed_out_assignments_count,
+            "total_stuck": total_stuck,
+        },
         "timestamp": now.isoformat(),
     }
 

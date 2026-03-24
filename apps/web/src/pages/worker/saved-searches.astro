@@ -1,0 +1,248 @@
+---
+/**
+ * Worker Saved Searches — /worker/saved-searches
+ *
+ * Lists a worker's saved search filters. Each entry can have instant/daily/weekly
+ * task-alert notifications. Workers can edit the name, toggle alerts, change
+ * frequency, or delete entries.
+ */
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Astro.cookies);
+if (!token) return Astro.redirect("/login?next=/worker/saved-searches");
+
+let user: any         = null;
+let searches: any[]   = [];
+let error             = "";
+
+try {
+  [user, searches] = await Promise.all([
+    apiFetch<any>("/v1/users/me", { token }),
+    apiFetch<any[]>("/v1/worker/saved-searches", { token }).catch(() => []),
+  ]);
+  if (user?.role !== "worker" && user?.role !== "both") {
+    return Astro.redirect("/dashboard");
+  }
+} catch (e: any) {
+  error = e.message ?? "Failed to load saved searches";
+}
+
+const FREQ_LABELS: Record<string, string> = {
+  instant: "Instant",
+  daily:   "Daily digest",
+  weekly:  "Weekly digest",
+};
+
+function filtersToUrl(filters: Record<string, any>): string {
+  const p = new URLSearchParams();
+  if (filters.q)          p.set("q", filters.q);
+  if (filters.task_type)  p.set("type", filters.task_type);
+  if (filters.min_reward) p.set("min_reward", String(filters.min_reward));
+  if (filters.max_reward) p.set("max_reward", String(filters.max_reward));
+  if (filters.priority)   p.set("priority", filters.priority);
+  return `/marketplace?${p.toString()}`;
+}
+
+function filtersToLabel(filters: Record<string, any>): string {
+  const parts: string[] = [];
+  if (filters.q)          parts.push(`"${filters.q}"`);
+  if (filters.task_type)  parts.push(filters.task_type.replace(/_/g, " "));
+  if (filters.min_reward) parts.push(`≥${filters.min_reward} credits`);
+  if (filters.max_reward) parts.push(`≤${filters.max_reward} credits`);
+  if (filters.priority)   parts.push(`priority:${filters.priority}`);
+  return parts.length ? parts.join(", ") : "All tasks";
+}
+---
+
+<Layout title="Saved Searches — CrowdSorcerer">
+  <div class="max-w-3xl mx-auto px-4 py-10">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-8">
+      <div>
+        <h1 class="text-2xl font-bold">🔔 Saved Searches</h1>
+        <p class="text-gray-400 text-sm mt-1">
+          Get notified when new tasks match your saved filters.
+        </p>
+      </div>
+      <a
+        href="/marketplace"
+        class="px-4 py-2 bg-violet-700 hover:bg-violet-600 text-white text-sm font-medium rounded-xl transition-colors"
+      >
+        + New search
+      </a>
+    </div>
+
+    {error ? (
+      <div class="rounded-xl bg-red-900/30 border border-red-800 p-6 text-red-300 text-sm text-center">
+        {error}
+      </div>
+    ) : searches.length === 0 ? (
+      <div class="rounded-xl bg-gray-900 border border-gray-800 p-12 text-center">
+        <div class="text-5xl mb-4">🔍</div>
+        <h2 class="text-lg font-semibold mb-2">No saved searches yet</h2>
+        <p class="text-gray-400 text-sm mb-6">
+          Browse the marketplace, apply filters, then click <strong>"Save this search"</strong>
+          to get instant notifications when matching tasks appear.
+        </p>
+        <a href="/marketplace" class="px-5 py-2.5 bg-violet-700 hover:bg-violet-600 text-white text-sm font-semibold rounded-xl transition-colors">
+          Browse marketplace
+        </a>
+      </div>
+    ) : (
+      <div class="space-y-4" id="searches-list">
+        {searches.map((s: any) => (
+          <div
+            class="bg-gray-900 border border-gray-800 rounded-xl p-5"
+            data-search-id={s.id}
+          >
+            <div class="flex items-start justify-between gap-4">
+              <div class="min-w-0 flex-1">
+                <!-- Name (editable) -->
+                <div class="flex items-center gap-2 mb-1">
+                  <h3
+                    class="font-semibold text-gray-100 text-base leading-tight"
+                    data-name-display
+                  >
+                    {s.name}
+                  </h3>
+                  <button
+                    class="text-gray-600 hover:text-gray-400 transition-colors"
+                    onclick="window.__startRenameSearch(this)"
+                    data-id={s.id}
+                    data-name={s.name}
+                    title="Rename"
+                  >
+                    ✏️
+                  </button>
+                </div>
+
+                <!-- Filters summary -->
+                <p class="text-xs text-gray-500 mb-3">
+                  Filters: <span class="text-gray-300">{filtersToLabel(s.filters ?? {})}</span>
+                  <a
+                    href={filtersToUrl(s.filters ?? {})}
+                    class="ml-2 text-violet-400 hover:text-violet-300 transition-colors"
+                    target="_blank"
+                  >
+                    Preview →
+                  </a>
+                </p>
+
+                <!-- Notification settings -->
+                <div class="flex flex-wrap items-center gap-3">
+                  <!-- Alert toggle -->
+                  <label class="flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      class="w-4 h-4 rounded accent-violet-500"
+                      checked={s.alert_enabled}
+                      onchange={`window.__toggleAlert('${s.id}', this.checked)`}
+                    />
+                    <span class="text-xs text-gray-400">Notifications on</span>
+                  </label>
+
+                  {s.alert_enabled && (
+                    <div class="flex items-center gap-1.5">
+                      <span class="text-xs text-gray-500">Frequency:</span>
+                      <select
+                        class="text-xs bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-gray-300 focus:outline-none focus:border-violet-500"
+                        onchange={`window.__updateFrequency('${s.id}', this.value)`}
+                      >
+                        {(["instant", "daily", "weekly"] as const).map(f => (
+                          <option value={f} selected={s.alert_frequency === f}>
+                            {FREQ_LABELS[f]}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  <!-- Match stats -->
+                  <span class="text-xs text-gray-600">
+                    {s.match_count} match{s.match_count !== 1 ? "es" : ""} total
+                    {s.last_notified_at && (
+                      ` · last: ${new Date(s.last_notified_at).toLocaleDateString()}`
+                    )}
+                  </span>
+                </div>
+              </div>
+
+              <!-- Delete button -->
+              <button
+                class="shrink-0 text-gray-600 hover:text-red-400 transition-colors p-1"
+                onclick={`window.__deleteSearch('${s.id}')`}
+                title="Delete saved search"
+              >
+                🗑️
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    )}
+
+    <!-- Nav back -->
+    <div class="mt-8 flex justify-between items-center text-sm">
+      <a href="/worker" class="text-gray-500 hover:text-gray-300 transition-colors">← Worker dashboard</a>
+      <a href="/marketplace" class="text-violet-400 hover:text-violet-300 transition-colors">Browse marketplace →</a>
+    </div>
+
+  </div>
+</Layout>
+
+<script is:inline>
+  // ── Rename ─────────────────────────────────────────────────────────────────
+  window.__startRenameSearch = async function(btn) {
+    var id = btn.dataset.id;
+    var current = btn.dataset.name;
+    var newName = prompt("Rename saved search:", current);
+    if (!newName || newName === current) return;
+    var res = await fetch("/api/worker/saved-searches/" + id, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: newName }),
+    });
+    if (res.ok) {
+      var card = document.querySelector("[data-search-id=\"" + id + "\"]");
+      var display = card && card.querySelector("[data-name-display]");
+      if (display) display.textContent = newName;
+      btn.dataset.name = newName;
+    } else {
+      alert("Could not rename. Please try again.");
+    }
+  };
+
+  // ── Toggle alert ───────────────────────────────────────────────────────────
+  window.__toggleAlert = async function(id, enabled) {
+    await fetch("/api/worker/saved-searches/" + id, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ alert_enabled: enabled }),
+    });
+  };
+
+  // ── Update frequency ───────────────────────────────────────────────────────
+  window.__updateFrequency = async function(id, frequency) {
+    await fetch("/api/worker/saved-searches/" + id, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ alert_frequency: frequency }),
+    });
+  };
+
+  // ── Delete ─────────────────────────────────────────────────────────────────
+  window.__deleteSearch = async function(id) {
+    if (!confirm("Delete this saved search?")) return;
+    var res = await fetch("/api/worker/saved-searches/" + id, { method: "DELETE" });
+    if (res.ok || res.status === 204) {
+      var card = document.querySelector("[data-search-id=\"" + id + "\"]");
+      if (card) card.parentNode.removeChild(card);
+      var list = document.getElementById("searches-list");
+      if (list && list.children.length === 0) window.location.reload();
+    } else {
+      alert("Could not delete. Please try again.");
+    }
+  };
+</script>

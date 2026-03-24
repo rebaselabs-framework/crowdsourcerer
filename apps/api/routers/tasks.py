@@ -590,6 +590,10 @@ async def get_task_templates():
 @router.get("/public")
 async def public_task_feed(
     type: Optional[str] = Query(None, description="Filter by task type"),
+    q: Optional[str] = Query(None, description="Text search across task instructions/title"),
+    sort: str = Query("newest", description="Sort order: newest | reward_high | reward_low | urgent"),
+    min_reward: Optional[int] = Query(None, description="Minimum worker reward (credits)"),
+    max_reward: Optional[int] = Query(None, description="Maximum worker reward (credits)"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=50),
     db: AsyncSession = Depends(get_db),
@@ -598,19 +602,49 @@ async def public_task_feed(
 
     Only exposes safe, non-sensitive fields: id, type, title (from instructions),
     worker_reward_credits, assignments_required, assignments_completed, created_at.
+    Supports text search (q), type filter, reward range filter, and sort options.
     """
-    q = select(TaskDB).where(
+    base_q = select(TaskDB).where(
         TaskDB.status == "open",
         TaskDB.execution_mode == "human",
     )
     if type:
-        q = q.where(TaskDB.type == type)
+        base_q = base_q.where(TaskDB.type == type)
+    if q and q.strip():
+        search_term = f"%{q.strip().lower()}%"
+        base_q = base_q.where(
+            func.lower(TaskDB.task_instructions).like(search_term)
+        )
+    if min_reward is not None:
+        base_q = base_q.where(TaskDB.worker_reward_credits >= min_reward)
+    if max_reward is not None:
+        base_q = base_q.where(TaskDB.worker_reward_credits <= max_reward)
 
-    total_result = await db.execute(select(func.count()).select_from(q.subquery()))
+    total_result = await db.execute(select(func.count()).select_from(base_q.subquery()))
     total = total_result.scalar() or 0
 
-    q = q.order_by(TaskDB.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
-    result = await db.execute(q)
+    # Apply sort order
+    if sort == "reward_high":
+        base_q = base_q.order_by(TaskDB.worker_reward_credits.desc(), TaskDB.created_at.desc())
+    elif sort == "reward_low":
+        base_q = base_q.order_by(TaskDB.worker_reward_credits.asc(), TaskDB.created_at.desc())
+    elif sort == "urgent":
+        # Urgent = high priority first, then newest
+        from sqlalchemy import case as sa_case
+        priority_order = sa_case(
+            (TaskDB.priority == "urgent", 0),
+            (TaskDB.priority == "high", 1),
+            (TaskDB.priority == "normal", 2),
+            (TaskDB.priority == "low", 3),
+            else_=4,
+        )
+        base_q = base_q.order_by(priority_order, TaskDB.created_at.desc())
+    else:
+        # newest (default)
+        base_q = base_q.order_by(TaskDB.created_at.desc())
+
+    base_q = base_q.offset((page - 1) * page_size).limit(page_size)
+    result = await db.execute(base_q)
     tasks = result.scalars().all()
 
     # Return sanitised subset of fields only
@@ -618,7 +652,7 @@ async def public_task_feed(
         {
             "id": str(t.id),
             "type": t.type,
-            "title": (t.task_instructions[:60] + "…") if t.task_instructions and len(t.task_instructions) > 60 else (t.task_instructions or t.type.replace("_", " ").title()),
+            "title": (t.task_instructions[:80] + "…") if t.task_instructions and len(t.task_instructions) > 80 else (t.task_instructions or t.type.replace("_", " ").title()),
             "worker_reward_credits": t.worker_reward_credits,
             "assignments_required": t.assignments_required,
             "assignments_completed": t.assignments_completed,
@@ -627,7 +661,14 @@ async def public_task_feed(
         }
         for t in tasks
     ]
-    return {"items": items, "total": total, "page": page, "page_size": page_size}
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "query": q or "",
+        "sort": sort,
+    }
 
 
 @router.get("/scheduled")
