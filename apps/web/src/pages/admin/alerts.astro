@@ -45,8 +45,8 @@ const total  = data?.total  ?? 0;
 const pages  = Math.ceil(total / limit);
 
 const SEVERITY_STYLES: Record<string, string> = {
-  critical: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
-  warning:  "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
+  critical: "bg-red-900/30 text-red-300",
+  warning:  "bg-amber-900/30 text-amber-300",
 };
 
 const ALERT_TYPE_LABELS: Record<string, string> = {
@@ -73,23 +73,23 @@ function relTime(iso: string): string {
     <!-- Header -->
     <div class="flex items-center justify-between mb-8">
       <div>
-        <h1 class="text-3xl font-bold text-gray-900 dark:text-white">🚨 System Alerts</h1>
-        <p class="text-gray-500 dark:text-gray-400 mt-1">Platform health monitoring — {total.toLocaleString()} alert{total !== 1 ? "s" : ""} shown</p>
+        <h1 class="text-3xl font-bold text-white">🚨 System Alerts</h1>
+        <p class="text-gray-400 mt-1">Platform health monitoring — {total.toLocaleString()} alert{total !== 1 ? "s" : ""} shown</p>
       </div>
-      <a href="/admin" class="text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">← Admin</a>
+      <a href="/admin" class="text-sm text-gray-500 hover:text-gray-300">← Admin</a>
     </div>
 
     <!-- Summary stats -->
     <div class="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-8">
-      <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 text-center">
-        <div class={`text-3xl font-bold ${activeCritical > 0 ? "text-red-600" : "text-gray-400"}`}>{activeCritical}</div>
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
+        <div class={`text-3xl font-bold ${activeCritical > 0 ? "text-red-400" : "text-gray-500"}`}>{activeCritical}</div>
         <div class="text-xs text-gray-500 mt-1 uppercase tracking-wide">Active Critical</div>
       </div>
-      <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 text-center">
-        <div class={`text-3xl font-bold ${activeWarning > 0 ? "text-amber-500" : "text-gray-400"}`}>{activeWarning}</div>
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
+        <div class={`text-3xl font-bold ${activeWarning > 0 ? "text-amber-400" : "text-gray-500"}`}>{activeWarning}</div>
         <div class="text-xs text-gray-500 mt-1 uppercase tracking-wide">Active Warnings</div>
       </div>
-      <div class={`rounded-xl border p-4 text-center col-span-2 sm:col-span-1 ${activeCritical === 0 && activeWarning === 0 ? "bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-700" : "bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700"}`}>
+      <div class={`rounded-xl border p-4 text-center col-span-2 sm:col-span-1 ${activeCritical === 0 && activeWarning === 0 ? "bg-emerald-900/20 border-emerald-700" : "bg-gray-900 border-gray-800"}`}>
         <div class={`text-3xl font-bold ${activeCritical === 0 && activeWarning === 0 ? "text-emerald-600" : "text-gray-400"}`}>
           {activeCritical === 0 && activeWarning === 0 ? "✓" : "⚠"}
         </div>
@@ -100,10 +100,10 @@ function relTime(iso: string): string {
     </div>
 
     <!-- Filters -->
-    <form method="get" class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 mb-6 flex flex-wrap gap-3 items-end">
+    <form method="get" class="bg-gray-900 border border-gray-800 rounded-xl p-4 mb-6 flex flex-wrap gap-3 items-end">
       <div>
         <label class="block text-xs text-gray-500 mb-1">Status</label>
-        <select name="status" class="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 dark:text-white">
+        <select name="status" class="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm">
           {["active","resolved","all"].map(s => (
             <option value={s} selected={status === s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>
           ))}
@@ -111,7 +111,7 @@ function relTime(iso: string): string {
       </div>
       <div>
         <label class="block text-xs text-gray-500 mb-1">Severity</label>
-        <select name="severity" class="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 dark:text-white">
+        <select name="severity" class="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm">
           <option value="">All</option>
           <option value="critical" selected={severity === "critical"}>Critical</option>
           <option value="warning"  selected={severity === "warning"}>Warning</option>
@@ -119,30 +119,30 @@ function relTime(iso: string): string {
       </div>
       <div>
         <label class="block text-xs text-gray-500 mb-1">Alert Type</label>
-        <select name="alert_type" class="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 dark:text-white">
+        <select name="alert_type" class="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm">
           <option value="">All types</option>
           {Object.entries(ALERT_TYPE_LABELS).map(([val, label]) => (
             <option value={val} selected={alertType === val}>{label}</option>
           ))}
         </select>
       </div>
-      <button type="submit" class="bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
+      <button type="submit" class="bg-violet-600 hover:bg-violet-500 text-white px-4 py-2 rounded-lg text-sm font-medium">
         Filter
       </button>
       {(status !== "active" || severity || alertType) && (
-        <a href="/admin/alerts" class="text-sm text-gray-500 hover:text-gray-700 py-2">✕ Reset</a>
+        <a href="/admin/alerts" class="text-sm text-gray-500 hover:text-gray-300 py-2">✕ Reset</a>
       )}
     </form>
 
     {error && (
-      <div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-xl p-4 mb-6 text-red-700 dark:text-red-300">{error}</div>
+      <div class="bg-red-900/30 border border-red-700 rounded-xl p-4 mb-6 text-red-300">{error}</div>
     )}
 
     <!-- Alerts list -->
     {alerts.length === 0 ? (
-      <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-16 text-center">
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-16 text-center">
         <div class="text-5xl mb-4">{status === "active" ? "✅" : "📭"}</div>
-        <p class="text-lg font-semibold text-gray-700 dark:text-gray-300">
+        <p class="text-lg font-semibold text-gray-300">
           {status === "active" ? "No active alerts — system is healthy!" : "No alerts found"}
         </p>
         <p class="text-sm text-gray-400 mt-1">Alerts appear here when error rates spike or background jobs stall</p>
@@ -151,7 +151,7 @@ function relTime(iso: string): string {
       <div class="space-y-4">
         {alerts.map((alert: any) => (
           <div
-            class={`bg-white dark:bg-gray-800 rounded-xl border-l-4 border border-gray-200 dark:border-gray-700 p-5 ${
+            class={`bg-gray-900 border border-gray-800 rounded-xl border-l-4 p-5 ${
               alert.severity === "critical"
                 ? "border-l-red-500"
                 : "border-l-amber-400"
@@ -162,21 +162,21 @@ function relTime(iso: string): string {
               <div class="flex-1 min-w-0">
                 <!-- Title row -->
                 <div class="flex items-center gap-2 flex-wrap mb-2">
-                  <span class={`px-2 py-0.5 rounded-full text-xs font-bold uppercase tracking-wide ${SEVERITY_STYLES[alert.severity] ?? "bg-gray-100 text-gray-700"}`}>
+                  <span class={`px-2 py-0.5 rounded-full text-xs font-bold uppercase tracking-wide ${SEVERITY_STYLES[alert.severity] ?? "bg-gray-800 text-gray-300"}`}>
                     {alert.severity}
                   </span>
-                  <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300 font-mono">
+                  <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-800 text-gray-300 font-mono">
                     {ALERT_TYPE_LABELS[alert.alert_type] ?? alert.alert_type}
                   </span>
                   {alert.resolved_at && (
-                    <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+                    <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-900/30 text-emerald-300">
                       ✓ Resolved
                     </span>
                   )}
                   <span class="text-xs text-gray-400" title={alert.created_at}>{relTime(alert.created_at)}</span>
                 </div>
 
-                <h3 class="text-base font-semibold text-gray-900 dark:text-white mb-2">{alert.title}</h3>
+                <h3 class="text-base font-semibold text-white mb-2">{alert.title}</h3>
 
                 <!-- Detail table -->
                 {alert.detail && Object.keys(alert.detail).length > 0 && (
@@ -185,15 +185,15 @@ function relTime(iso: string): string {
                       <span class="group-open:hidden">▶ Show details</span>
                       <span class="hidden group-open:inline">▼ Hide details</span>
                     </summary>
-                    <div class="mt-2 bg-gray-50 dark:bg-gray-900/50 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+                    <div class="mt-2 bg-gray-950 rounded-lg overflow-hidden border border-gray-800">
                       <table class="w-full text-xs">
                         <tbody>
                           {Object.entries(alert.detail).map(([k, v]: [string, any], i: number) => (
-                            <tr class={i % 2 === 0 ? "" : "bg-white dark:bg-gray-800/50"}>
-                              <td class="px-3 py-2 font-semibold text-gray-600 dark:text-gray-400 w-2/5">
+                            <tr class={i % 2 === 0 ? "" : "bg-gray-800/50"}>
+                              <td class="px-3 py-2 font-semibold text-gray-400 w-2/5">
                                 {k.replace(/_/g, " ")}
                               </td>
-                              <td class="px-3 py-2 font-mono text-gray-800 dark:text-gray-200">
+                              <td class="px-3 py-2 font-mono text-gray-200">
                                 {Array.isArray(v) ? v.join(", ") || "—" : String(v)}
                               </td>
                             </tr>
@@ -212,7 +212,7 @@ function relTime(iso: string): string {
               <!-- Resolve button -->
               {!alert.resolved_at && (
                 <button
-                  class="resolve-btn flex-shrink-0 text-sm px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-emerald-50 hover:border-emerald-400 hover:text-emerald-700 dark:hover:bg-emerald-900/20 dark:hover:text-emerald-400 text-gray-600 dark:text-gray-400 transition-colors font-medium"
+                  class="resolve-btn flex-shrink-0 text-sm px-4 py-2 rounded-lg border border-gray-700 hover:bg-emerald-900/20 hover:border-emerald-700 hover:text-emerald-400 text-gray-400 transition-colors font-medium"
                   data-id={alert.id}
                 >
                   ✓ Resolve
@@ -229,14 +229,14 @@ function relTime(iso: string): string {
       <div class="flex justify-center gap-2 mt-6">
         {page > 1 && (
           <a href={`?page=${page-1}&status=${status}&severity=${severity}&alert_type=${alertType}`}
-            class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700">
+            class="px-4 py-2 border border-gray-700 rounded-lg text-sm text-gray-300 hover:bg-gray-800">
             ← Prev
           </a>
         )}
         <span class="px-4 py-2 text-sm text-gray-500">Page {page} of {pages}</span>
         {page < pages && (
           <a href={`?page=${page+1}&status=${status}&severity=${severity}&alert_type=${alertType}`}
-            class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700">
+            class="px-4 py-2 border border-gray-700 rounded-lg text-sm text-gray-300 hover:bg-gray-800">
             Next →
           </a>
         )}

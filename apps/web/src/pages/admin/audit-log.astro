@@ -36,13 +36,13 @@ const total    = data?.total ?? 0;
 const pages    = Math.ceil(total / limit);
 
 const ACTION_COLORS: Record<string, string> = {
-  ban_worker:      "bg-red-100 text-red-700",
-  unban_worker:    "bg-emerald-100 text-emerald-700",
-  issue_strike:    "bg-orange-100 text-orange-700",
-  pardon_strike:   "bg-blue-100 text-blue-700",
-  payout_paid:     "bg-emerald-100 text-emerald-700",
-  payout_rejected: "bg-red-100 text-red-700",
-  payout_processing: "bg-amber-100 text-amber-700",
+  ban_worker:      "bg-red-900/30 text-red-300",
+  unban_worker:    "bg-green-900/30 text-green-300",
+  issue_strike:    "bg-orange-900/30 text-orange-300",
+  pardon_strike:   "bg-blue-900/30 text-blue-300",
+  payout_paid:     "bg-green-900/30 text-green-300",
+  payout_rejected: "bg-red-900/30 text-red-300",
+  payout_processing: "bg-yellow-900/30 text-yellow-300",
 };
 
 function relTime(iso: string): string {
@@ -63,17 +63,17 @@ function relTime(iso: string): string {
     <!-- Header -->
     <div class="flex items-center justify-between mb-8">
       <div>
-        <h1 class="text-3xl font-bold text-gray-900 dark:text-white">📋 Audit Log</h1>
-        <p class="text-gray-500 dark:text-gray-400 mt-1">All admin actions — {total.toLocaleString()} entries</p>
+        <h1 class="text-3xl font-bold text-white">📋 Audit Log</h1>
+        <p class="text-gray-400 mt-1">All admin actions — {total.toLocaleString()} entries</p>
       </div>
-      <a href="/admin" class="text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">← Admin</a>
+      <a href="/admin" class="text-sm text-gray-500 hover:text-gray-300">← Admin</a>
     </div>
 
     <!-- Filters -->
-    <form method="get" class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 mb-6 flex flex-wrap gap-3 items-end">
+    <form method="get" class="bg-gray-900 border border-gray-800 rounded-xl p-4 mb-6 flex flex-wrap gap-3 items-end">
       <div>
         <label class="block text-xs text-gray-500 mb-1">Action</label>
-        <select name="action" class="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 dark:text-white">
+        <select name="action" class="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm">
           <option value="">All actions</option>
           {["ban_worker","unban_worker","issue_strike","pardon_strike","payout_paid","payout_rejected","payout_processing"].map(a => (
             <option value={a} selected={action === a}>{a.replace(/_/g," ")}</option>
@@ -82,7 +82,7 @@ function relTime(iso: string): string {
       </div>
       <div>
         <label class="block text-xs text-gray-500 mb-1">Target type</label>
-        <select name="target_type" class="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 dark:text-white">
+        <select name="target_type" class="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm">
           <option value="">All types</option>
           {["user","payout","task"].map(t => (
             <option value={t} selected={targetType === t}>{t}</option>
@@ -92,22 +92,22 @@ function relTime(iso: string): string {
       <div>
         <label class="block text-xs text-gray-500 mb-1">Target ID</label>
         <input type="text" name="target_id" value={targetId} placeholder="UUID…"
-          class="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 dark:text-white w-48" />
+          class="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm w-48" />
       </div>
-      <button type="submit" class="bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
+      <button type="submit" class="bg-violet-600 hover:bg-violet-500 text-white px-4 py-2 rounded-lg text-sm font-medium">
         Filter
       </button>
       {(action || targetType || targetId) && (
-        <a href="/admin/audit-log" class="text-sm text-gray-500 hover:text-gray-700 py-2">✕ Clear</a>
+        <a href="/admin/audit-log" class="text-sm text-gray-500 hover:text-gray-300 py-2">✕ Clear</a>
       )}
     </form>
 
     {error && (
-      <div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-xl p-4 mb-6 text-red-700 dark:text-red-300">{error}</div>
+      <div class="bg-red-900/30 border border-red-700 rounded-xl p-4 mb-6 text-red-300">{error}</div>
     )}
 
     <!-- Log table -->
-    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden mb-6">
+    <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden mb-6">
       {entries.length === 0 ? (
         <div class="p-12 text-center text-gray-400">
           <div class="text-4xl mb-3">📋</div>
@@ -117,28 +117,28 @@ function relTime(iso: string): string {
       ) : (
         <div class="overflow-x-auto">
           <table class="w-full text-sm">
-            <thead class="bg-gray-50 dark:bg-gray-700/50">
+            <thead class="bg-gray-800">
               <tr>
                 {["When","Admin","Action","Target","Details","IP"].map(h => (
-                  <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">{h}</th>
+                  <th class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">{h}</th>
                 ))}
               </tr>
             </thead>
-            <tbody class="divide-y divide-gray-100 dark:divide-gray-700">
+            <tbody class="divide-y divide-gray-800">
               {entries.map((e: any) => (
-                <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30">
+                <tr class="hover:bg-gray-800/50">
                   <td class="px-4 py-3 text-gray-500 text-xs whitespace-nowrap" title={e.created_at}>
                     {relTime(e.created_at)}
                   </td>
-                  <td class="px-4 py-3 font-medium text-gray-800 dark:text-gray-200">
+                  <td class="px-4 py-3 font-medium text-gray-200">
                     {e.admin_name}
                   </td>
                   <td class="px-4 py-3">
-                    <span class={`px-2 py-0.5 rounded-full text-xs font-medium ${ACTION_COLORS[e.action] ?? "bg-gray-100 text-gray-700"}`}>
+                    <span class={`px-2 py-0.5 rounded-full text-xs font-medium ${ACTION_COLORS[e.action] ?? "bg-gray-800 text-gray-300"}`}>
                       {e.action.replace(/_/g," ")}
                     </span>
                   </td>
-                  <td class="px-4 py-3 text-gray-600 dark:text-gray-400">
+                  <td class="px-4 py-3 text-gray-400">
                     {e.target_type && (
                       <span class="text-xs">
                         <span class="uppercase text-gray-400">{e.target_type}</span>{" "}
@@ -151,11 +151,11 @@ function relTime(iso: string): string {
                       </span>
                     )}
                   </td>
-                  <td class="px-4 py-3 text-gray-600 dark:text-gray-400 max-w-xs">
+                  <td class="px-4 py-3 text-gray-400 max-w-xs">
                     {e.detail ? (
                       <details class="text-xs">
                         <summary class="cursor-pointer text-violet-500">view</summary>
-                        <pre class="mt-1 bg-gray-50 dark:bg-gray-900 rounded p-2 overflow-auto max-h-24 text-gray-700 dark:text-gray-300">
+                        <pre class="mt-1 bg-gray-950 rounded p-2 overflow-auto max-h-24 text-gray-300">
                           {JSON.stringify(e.detail, null, 2)}
                         </pre>
                       </details>
@@ -175,14 +175,14 @@ function relTime(iso: string): string {
       <div class="flex justify-center gap-2">
         {page > 1 && (
           <a href={`?page=${page-1}&action=${action}&target_type=${targetType}&target_id=${targetId}`}
-            class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700">
+            class="px-4 py-2 border border-gray-700 rounded-lg text-sm text-gray-300 hover:bg-gray-800">
             ← Prev
           </a>
         )}
         <span class="px-4 py-2 text-sm text-gray-500">Page {page} of {pages}</span>
         {page < pages && (
           <a href={`?page=${page+1}&action=${action}&target_type=${targetType}&target_id=${targetId}`}
-            class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700">
+            class="px-4 py-2 border border-gray-700 rounded-lg text-sm text-gray-300 hover:bg-gray-800">
             Next →
           </a>
         )}

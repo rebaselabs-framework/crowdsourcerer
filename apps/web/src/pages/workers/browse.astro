@@ -64,15 +64,15 @@ const SORT_OPTIONS = [
         <h1 class="text-2xl font-bold">👷 Worker Marketplace</h1>
         <p class="text-sm text-gray-500 mt-1">Browse skilled workers and invite them to your tasks</p>
       </div>
-      <a href="/workers" class="text-sm text-blue-500 hover:underline">← All workers</a>
+      <a href="/workers" class="text-sm text-violet-400 hover:underline">← All workers</a>
     </div>
 
     <!-- Filter bar -->
-    <form method="GET" class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 mb-6 flex flex-wrap gap-3 items-end">
+    <form method="GET" class="bg-gray-800 rounded-xl border border-gray-700 p-4 mb-6 flex flex-wrap gap-3 items-end">
       <!-- Skill -->
       <div>
         <label class="block text-xs font-medium text-gray-500 mb-1">Skill</label>
-        <select name="skill" class="border dark:border-gray-600 dark:bg-gray-700 rounded px-2 py-1.5 text-sm">
+        <select name="skill" class="border border-gray-600 bg-gray-700 rounded px-2 py-1.5 text-sm">
           <option value="">All skills</option>
           {TASK_TYPES.map(t => (
             <option value={t} selected={skill === t}>{t.replace(/_/g, " ")}</option>
@@ -83,7 +83,7 @@ const SORT_OPTIONS = [
       <!-- Sort -->
       <div>
         <label class="block text-xs font-medium text-gray-500 mb-1">Sort by</label>
-        <select name="sort" class="border dark:border-gray-600 dark:bg-gray-700 rounded px-2 py-1.5 text-sm">
+        <select name="sort" class="border border-gray-600 bg-gray-700 rounded px-2 py-1.5 text-sm">
           {SORT_OPTIONS.map(s => (
             <option value={s.value} selected={sort === s.value}>{s.label}</option>
           ))}
@@ -94,14 +94,14 @@ const SORT_OPTIONS = [
       <div>
         <label class="block text-xs font-medium text-gray-500 mb-1">Min reputation</label>
         <input type="number" name="min_rep" min="0" max="100" value={minRep}
-               class="border dark:border-gray-600 dark:bg-gray-700 rounded px-2 py-1.5 text-sm w-20" />
+               class="border border-gray-600 bg-gray-700 rounded px-2 py-1.5 text-sm w-20" />
       </div>
 
       <!-- Min tasks -->
       <div>
         <label class="block text-xs font-medium text-gray-500 mb-1">Min tasks done</label>
         <input type="number" name="min_tasks" min="0" value={minTasks}
-               class="border dark:border-gray-600 dark:bg-gray-700 rounded px-2 py-1.5 text-sm w-20" />
+               class="border border-gray-600 bg-gray-700 rounded px-2 py-1.5 text-sm w-20" />
       </div>
 
       <!-- Verified only -->
@@ -112,14 +112,14 @@ const SORT_OPTIONS = [
       </label>
 
       <button type="submit"
-              class="bg-blue-600 text-white px-4 py-1.5 rounded text-sm hover:bg-blue-700">
+              class="bg-violet-600 text-white px-4 py-1.5 rounded text-sm hover:bg-violet-500">
         🔍 Filter
       </button>
       <a href="/workers/browse" class="text-sm text-gray-500 hover:underline self-center">Clear</a>
     </form>
 
     {error && (
-      <div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 mb-6 text-red-700 dark:text-red-300">
+      <div class="bg-red-900/30 border border-red-700 rounded-lg p-4 mb-6 text-red-300">
         {error}
       </div>
     )}
@@ -152,7 +152,7 @@ const SORT_OPTIONS = [
           <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {workers.items.map((w: any) => (
               <div
-                class="worker-card bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 hover:shadow-md transition-shadow relative"
+                class="worker-card bg-gray-800 rounded-xl border border-gray-700 p-5 hover:shadow-md transition-shadow relative"
                 data-worker-id={w.id}
                 data-worker-name={w.name || "Anonymous Worker"}
               >
@@ -176,7 +176,7 @@ const SORT_OPTIONS = [
                     )}
                   </div>
                   <div class="min-w-0">
-                    <a href={w.profile_url} class="font-semibold hover:text-blue-500 truncate block">
+                    <a href={w.profile_url} class="font-semibold hover:text-violet-400 truncate block">
                       {w.name || "Anonymous Worker"}
                     </a>
                     <div class="flex items-center gap-2 text-xs text-gray-500 mt-0.5">
@@ -203,10 +203,10 @@ const SORT_OPTIONS = [
                   </div>
                   <!-- Reputation badge -->
                   <div class={`ml-auto text-center px-2 py-1 rounded-lg text-xs font-bold flex-shrink-0 ${
-                    w.reputation_score >= 80 ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300" :
-                    w.reputation_score >= 60 ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300" :
-                    w.reputation_score >= 40 ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300" :
-                    "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300"
+                    w.reputation_score >= 80 ? "bg-yellow-900/30 text-yellow-300" :
+                    w.reputation_score >= 60 ? "bg-green-900/30 text-green-300" :
+                    w.reputation_score >= 40 ? "bg-blue-900/30 text-blue-300" :
+                    "bg-gray-700 text-gray-300"
                   }`}>
                     ⭐ {w.reputation_score}
                   </div>
@@ -214,7 +214,7 @@ const SORT_OPTIONS = [
 
                 <!-- Bio -->
                 {w.bio && (
-                  <p class="text-xs text-gray-500 dark:text-gray-400 mb-3 line-clamp-2">{w.bio}</p>
+                  <p class="text-xs text-gray-400 mb-3 line-clamp-2">{w.bio}</p>
                 )}
 
                 <!-- Skills -->
@@ -225,8 +225,8 @@ const SORT_OPTIONS = [
                       {w.skills.slice(0, 4).map((s: any) => (
                         <span class={`text-xs px-2 py-0.5 rounded-full border ${
                           s.verified
-                            ? "bg-amber-50 border-amber-300 text-amber-700 dark:bg-amber-900/20 dark:border-amber-700 dark:text-amber-300"
-                            : "bg-gray-50 border-gray-200 text-gray-600 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300"
+                            ? "bg-amber-900/20 border-amber-700 text-amber-300"
+                            : "bg-gray-700 border-gray-600 text-gray-300"
                         }`}>
                           {s.verified ? "🏅 " : ""}{s.task_type.replace(/_/g, " ")} L{s.proficiency_level}
                         </span>
@@ -239,7 +239,7 @@ const SORT_OPTIONS = [
                 )}
 
                 <!-- Stats row -->
-                <div class="flex items-center gap-3 text-xs text-gray-500 border-t dark:border-gray-700 pt-3 mb-3">
+                <div class="flex items-center gap-3 text-xs text-gray-500 border-t border-gray-700 pt-3 mb-3">
                   {w.verified_skill_count > 0 && (
                     <span title="Verified skills">🏅 {w.verified_skill_count} verified</span>
                   )}
@@ -254,7 +254,7 @@ const SORT_OPTIONS = [
                 <!-- Actions -->
                 <div class="flex gap-2">
                   <a href={w.profile_url}
-                     class="flex-1 text-center text-xs border border-gray-200 dark:border-gray-600 rounded-lg py-1.5 hover:bg-gray-50 dark:hover:bg-gray-700">
+                     class="flex-1 text-center text-xs border border-gray-600 rounded-lg py-1.5 hover:bg-gray-700">
                     View Profile
                   </a>
                   <button
@@ -273,14 +273,14 @@ const SORT_OPTIONS = [
           <div class="flex items-center justify-center gap-2 mt-8">
             {workers.page > 1 && (
               <a href={`?${new URLSearchParams({ ...Object.fromEntries(url.searchParams), page: String(workers.page - 1) })}`}
-                 class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700">
+                 class="px-4 py-2 border border-gray-700 rounded-lg text-sm hover:bg-gray-800">
                 ← Prev
               </a>
             )}
             <span class="text-sm text-gray-500">Page {workers.page} of {workers.pages}</span>
             {workers.page < workers.pages && (
               <a href={`?${new URLSearchParams({ ...Object.fromEntries(url.searchParams), page: String(workers.page + 1) })}`}
-                 class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700">
+                 class="px-4 py-2 border border-gray-700 rounded-lg text-sm hover:bg-gray-800">
                 Next →
               </a>
             )}
@@ -311,16 +311,16 @@ const SORT_OPTIONS = [
 
   <!-- Bulk Invite Modal -->
   <div id="bulkInviteModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50">
-    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-md mx-4 p-6">
+    <div class="bg-gray-900 border border-gray-800 rounded-xl w-full max-w-md mx-4 p-6">
       <h2 class="text-lg font-bold mb-1">✉️ Bulk Invite Workers</h2>
       <p class="text-sm text-gray-500 mb-4">
-        Invite <span id="bulkWorkerList" class="font-medium text-gray-700 dark:text-gray-300"></span> to one of your tasks.
+        Invite <span id="bulkWorkerList" class="font-medium text-gray-300"></span> to one of your tasks.
       </p>
 
       <!-- Task selector -->
       <div class="mb-4">
         <label class="block text-sm font-medium mb-1">Task</label>
-        <select id="bulkTaskSelect" class="w-full border dark:border-gray-600 dark:bg-gray-700 rounded-lg px-3 py-2 text-sm">
+        <select id="bulkTaskSelect" class="w-full border border-gray-600 bg-gray-700 rounded-lg px-3 py-2 text-sm">
           <option value="">-- Select a task --</option>
           {(userTasks ?? []).map((t: any) => (
             <option value={t.id}>{t.title || t.task_type} ({t.status})</option>
@@ -336,7 +336,7 @@ const SORT_OPTIONS = [
         <label class="block text-sm font-medium mb-1">Message <span class="text-gray-400 font-normal">(optional)</span></label>
         <textarea id="bulkMessage" rows="2"
                   placeholder="Hi! I think you'd be great for this task..."
-                  class="w-full border dark:border-gray-600 dark:bg-gray-700 rounded-lg px-3 py-2 text-sm resize-none"></textarea>
+                  class="w-full border border-gray-600 bg-gray-700 rounded-lg px-3 py-2 text-sm resize-none"></textarea>
       </div>
 
       <div id="bulkError" class="hidden text-red-600 text-sm mb-3"></div>
@@ -344,7 +344,7 @@ const SORT_OPTIONS = [
 
       <div class="flex gap-3">
         <button onclick="closeBulkModal()"
-                class="flex-1 border dark:border-gray-600 rounded-lg py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700">
+                class="flex-1 border border-gray-600 rounded-lg py-2 text-sm hover:bg-gray-800">
           Cancel
         </button>
         <button onclick="submitBulkInvite()"
@@ -357,7 +357,7 @@ const SORT_OPTIONS = [
 
   <!-- Invite Modal -->
   <div id="inviteModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50">
-    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-md mx-4 p-6">
+    <div class="bg-gray-900 border border-gray-800 rounded-xl w-full max-w-md mx-4 p-6">
       <h2 class="text-lg font-bold mb-1">✉️ Invite Worker</h2>
       <p class="text-sm text-gray-500 mb-4">Invite <span id="inviteWorkerName" class="font-medium"></span> to one of your open tasks</p>
 
@@ -366,7 +366,7 @@ const SORT_OPTIONS = [
       <!-- Task selector -->
       <div class="mb-4">
         <label class="block text-sm font-medium mb-1">Task</label>
-        <select id="inviteTaskSelect" class="w-full border dark:border-gray-600 dark:bg-gray-700 rounded-lg px-3 py-2 text-sm">
+        <select id="inviteTaskSelect" class="w-full border border-gray-600 bg-gray-700 rounded-lg px-3 py-2 text-sm">
           <option value="">-- Select a task --</option>
           {(userTasks ?? []).map((t: any) => (
             <option value={t.id}>{t.title || t.task_type} ({t.status})</option>
@@ -382,7 +382,7 @@ const SORT_OPTIONS = [
         <label class="block text-sm font-medium mb-1">Message <span class="text-gray-400 font-normal">(optional)</span></label>
         <textarea id="inviteMessage" rows="3"
                   placeholder="Hi! I think you'd be great for this task..."
-                  class="w-full border dark:border-gray-600 dark:bg-gray-700 rounded-lg px-3 py-2 text-sm resize-none"></textarea>
+                  class="w-full border border-gray-600 bg-gray-700 rounded-lg px-3 py-2 text-sm resize-none"></textarea>
       </div>
 
       <div id="inviteError" class="hidden text-red-600 text-sm mb-3"></div>
@@ -390,7 +390,7 @@ const SORT_OPTIONS = [
 
       <div class="flex gap-3">
         <button onclick="closeInviteModal()"
-                class="flex-1 border dark:border-gray-600 rounded-lg py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700">
+                class="flex-1 border border-gray-600 rounded-lg py-2 text-sm hover:bg-gray-800">
           Cancel
         </button>
         <button onclick="submitInvite()"

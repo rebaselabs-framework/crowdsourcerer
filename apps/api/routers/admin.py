@@ -20,7 +20,7 @@ from core.database import get_db, AsyncSessionLocal
 from core.sweeper import sweep_once, get_sweeper_task, _sweep_scheduled_tasks, _LAST_SWEEP_AT
 from core.audit import log_admin_action
 from core.result_cache import cache_stats, cache_flush
-from models.db import TaskDB, UserDB, CreditTransactionDB, TaskAssignmentDB, WebhookLogDB, PayoutRequestDB, WorkerStrikeDB, AdminAuditLogDB, SystemAlertDB, RequesterOnboardingDB
+from models.db import TaskDB, UserDB, CreditTransactionDB, TaskAssignmentDB, WebhookLogDB, PayoutRequestDB, WorkerStrikeDB, AdminAuditLogDB, SystemAlertDB, RequesterOnboardingDB, OnboardingProgressDB
 
 logger = structlog.get_logger()
 router = APIRouter(prefix="/v1/admin", tags=["admin"])
@@ -1659,6 +1659,101 @@ async def onboarding_funnel(
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "total_requesters": total_requesters,
         "completion_rate": completion_rate,
+        "funnel": funnel,
+        "drop_off": drop_off,
+    }
+
+
+# ─── Worker Onboarding Funnel ────────────────────────────────────────────────
+
+@router.get("/worker-onboarding/funnel")
+async def worker_onboarding_funnel(
+    db: AsyncSession = Depends(get_db),
+    _admin: str = Depends(require_admin),
+):
+    """Worker onboarding completion-rate funnel.
+
+    Returns counts at each stage of the 5-step worker onboarding flow,
+    from initial registration through full completion.
+    """
+    # Total registered workers (role includes 'worker' or 'both')
+    total_workers_res = await db.execute(
+        select(func.count()).where(
+            UserDB.role.in_(["worker", "both"])
+        )
+    )
+    total_workers = total_workers_res.scalar_one() or 0
+
+    # Count onboarding rows (workers who have at least *started* onboarding)
+    started_res = await db.execute(
+        select(func.count()).select_from(OnboardingProgressDB)
+    )
+    started = started_res.scalar_one() or 0
+
+    # Count per-step completions
+    steps: list[tuple[str, str]] = [
+        ("step_profile", "Step 1: Set display name"),
+        ("step_explore", "Step 2: Browse marketplace"),
+        ("step_first_task", "Step 3: Complete first task"),
+        ("step_skills", "Step 4: View skills"),
+        ("step_cert", "Step 5: Attempt certification"),
+    ]
+    step_counts: dict[str, int] = {}
+    for col_name, _ in steps:
+        col = getattr(OnboardingProgressDB, col_name)
+        res = await db.execute(
+            select(func.count()).where(col == True)  # noqa: E712
+        )
+        step_counts[col_name] = res.scalar_one() or 0
+
+    # Completed (all steps done, completed_at is set)
+    completed_res = await db.execute(
+        select(func.count()).where(OnboardingProgressDB.completed_at != None)  # noqa: E711
+    )
+    completed = completed_res.scalar_one() or 0
+
+    # Skipped
+    skipped_res = await db.execute(
+        select(func.count()).where(OnboardingProgressDB.skipped_at != None)  # noqa: E711
+    )
+    skipped = skipped_res.scalar_one() or 0
+
+    # Bonus claimed
+    bonus_claimed_res = await db.execute(
+        select(func.count()).where(OnboardingProgressDB.bonus_claimed == True)  # noqa: E712
+    )
+    bonus_claimed = bonus_claimed_res.scalar_one() or 0
+
+    completion_rate = round(completed / total_workers, 4) if total_workers > 0 else 0.0
+
+    funnel = [
+        {"stage": "registered_workers", "label": "Registered (worker)", "count": total_workers},
+        {"stage": "started_onboarding", "label": "Started onboarding", "count": started},
+    ]
+    for col_name, label in steps:
+        funnel.append({"stage": col_name, "label": label, "count": step_counts[col_name]})
+    funnel.append({"stage": "completed", "label": "All steps complete (+100 credits)", "count": completed})
+
+    # Drop-off between consecutive funnel stages
+    drop_off = []
+    for i in range(1, len(funnel)):
+        prev = funnel[i - 1]["count"]
+        curr = funnel[i]["count"]
+        lost = prev - curr
+        pct_val = round(lost / prev * 100, 1) if prev > 0 else 0.0
+        drop_off.append({
+            "from": funnel[i - 1]["stage"],
+            "to": funnel[i]["stage"],
+            "dropped": lost,
+            "drop_pct": pct_val,
+        })
+
+    return {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "total_workers": total_workers,
+        "completion_rate": completion_rate,
+        "skipped": skipped,
+        "bonus_claimed": bonus_claimed,
         "funnel": funnel,
         "drop_off": drop_off,
     }
