@@ -23,7 +23,6 @@ Auto-updated by autonomous sessions. Tracks what was done and what's next.
 | 15 | Fix stale test_task_endpoints tests (templates is public; public feed needs mock DB) | 0950227 |
 | 16 | Migrate `on_event` → `lifespan` context manager in main.py (FastAPI deprecation) | 2d29ce2 |
 | 17 | Fix Pydantic v2 warnings: `@validator` → `@field_validator` (availability.py), `regex=` → `pattern=` (analytics.py) | 2d29ce2 |
-
 | 18 | Fix Pydantic v2 class Config → ConfigDict in 6 router files (availability, experiments, onboarding, reputation, sla, task_messages) | 7765b58 |
 | 19 | Homepage: replace Rick Roll placeholder with interactive API demo terminal (3 scenarios, typewriter animation) | 7765b58 |
 | 20 | Task detail: Markdown rendering for LLM output with Formatted/Raw toggle (marked.js) | 7765b58 |
@@ -42,6 +41,12 @@ Auto-updated by autonomous sessions. Tracks what was done and what's next.
 | 33 | Task text search: `q` query param on GET /v1/tasks, ILIKE on task_instructions + cast(input, Text), search UI on tasks list | a12dc24 |
 | 34 | Worker marketplace improved empty state: contextual messaging, mode-switch CTAs, add-skills CTA, 8-task-type showcase grid | 4b670e0 |
 | 35 | Low credit balance email: notify_low_credits() + HTML template in email.py, wired into maybe_fire_credit_alert() via asyncio.ensure_future | 69b8136 |
+| 36 | Email verification for new signups (migration 0043) — 24h link, resend endpoint, amber banner | 87fd723 |
+| 37 | Google OAuth login + signup (migration 0044) — social login, auto-link by email, skip verify step | d2a555e |
+| 38 | Admin setup checklist `/admin/setup` — DB/JWT/RebaseKit/Email/Stripe/OAuth/cache status | effc35b |
+| 39 | Worker task-available email notifications (migration 0045) — opt-in email when new human task matches skills | 4d54f2d |
+| 40 | Fix 28 ts(6133) unused-variable hints across Astro pages | f98cded |
+| 41 | SSR perf: withTimeout() utility + apply to requester hub, worker home, analytics (2–3s cap on heavy calls) | 2397d9d |
 
 ## Priorities for Next Session 🔜
 
@@ -49,11 +54,13 @@ Auto-updated by autonomous sessions. Tracks what was done and what's next.
    - `NPM_TOKEN` for `@crowdsourcerer/sdk` publish
    - PyPI OIDC for Python package publish
 
-2. **Task result export** — requester detail page: download completed assignments as CSV/JSON
+2. **Worker notifications page** — `/worker/notifications` — dedicated page with notification history/settings (currently just a bell icon)
 
-3. **Email verification** — new account signup should require email confirmation before full access
+3. **Public task listing improvements** — the `/marketplace` (public feed) could benefit from better filtering, search, and task previews without login
 
-4. **Stale warning ts(6133)** — many unused variables across pages (non-blocking warnings)
+4. **Requester onboarding final step** — after task creation, show a "you're set up!" confirmation and guide to invite workers
+
+5. **API rate limiting** — the task creation endpoint lacks per-user rate limiting beyond quota checks
 
 ## Known Warnings (non-blocking)
 
@@ -71,3 +78,5 @@ Auto-updated by autonomous sessions. Tracks what was done and what's next.
 - **SQLAlchemy boolean defaults**: `Column(Boolean, default=False)` only sets SQL-level DEFAULT. Python objects have `None` until refreshed from DB. Always set boolean fields explicitly in `_get_or_create` helpers.
 - **Tailwind dark mode**: App has NO `darkMode: 'class'` in tailwind.config.js. All `dark:` variant classes are dead code. Use explicit dark colors only.
 - **Dark theme design system**: body = `bg-gray-950`, cards = `bg-gray-900 border border-gray-800` or `bg-gray-800 border border-gray-700`, primary accent = `violet-600`, text = `text-gray-100`/`text-gray-300`/`text-gray-400`.
+- **cs_token is httpOnly** — client-side JS cannot read it via `document.cookie`. Any existing pages that try `document.cookie.match(/cs_token=.../)` will get null — those client-side API calls will fail with 401. Use Astro API route proxies for client-side auth needs.
+- **withTimeout(promise, ms, fallback)** in `src/lib/api.ts` — use for non-critical SSR fetches to avoid blocking page render on slow analytics queries.
