@@ -318,7 +318,7 @@ async def get_pipeline(
     return out
 
 
-@router.delete("/{pipeline_id}", status_code=204)
+@router.delete("/{pipeline_id}", status_code=204, response_model=None)
 async def delete_pipeline(
     pipeline_id: UUID,
     db: AsyncSession = Depends(get_db),

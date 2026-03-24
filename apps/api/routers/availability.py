@@ -192,7 +192,7 @@ async def add_blackout(
     return bo
 
 
-@router.delete("/blackouts/{blackout_id}", status_code=204)
+@router.delete("/blackouts/{blackout_id}", status_code=204, response_model=None)
 async def remove_blackout(
     blackout_id: UUID,
     user_id: str = Depends(get_current_user_id),

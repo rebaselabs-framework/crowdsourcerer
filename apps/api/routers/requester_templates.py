@@ -148,7 +148,7 @@ async def update_template(
 
 # ─── Delete ───────────────────────────────────────────────────────────────────
 
-@router.delete("/{template_id}", status_code=204)
+@router.delete("/{template_id}", status_code=204, response_model=None)
 async def delete_template(
     template_id: UUID,
     db: AsyncSession = Depends(get_db),
@@ -223,7 +223,7 @@ async def publish_template(
     return tpl
 
 
-@router.delete("/{template_id}/publish", status_code=204)
+@router.delete("/{template_id}/publish", status_code=204, response_model=None)
 async def unpublish_template(
     template_id: UUID,
     db: AsyncSession = Depends(get_db),

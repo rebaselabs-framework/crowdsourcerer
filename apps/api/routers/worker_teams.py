@@ -291,7 +291,7 @@ async def get_team(
     )
 
 
-@router.delete("/{team_id}", status_code=204)
+@router.delete("/{team_id}", status_code=204, response_model=None)
 async def delete_team(
     team_id: UUID,
     db: AsyncSession = Depends(get_db),
@@ -453,7 +453,7 @@ async def decline_invite(
     return {"message": "Invite declined"}
 
 
-@router.delete("/{team_id}/members/{member_user_id}", status_code=204)
+@router.delete("/{team_id}/members/{member_user_id}", status_code=204, response_model=None)
 async def remove_member(
     team_id: UUID,
     member_user_id: UUID,
@@ -542,7 +542,7 @@ async def assign_team_to_task(
     return {"task_id": str(task_id), "assigned_team_id": str(req.team_id), "team_name": team.name}
 
 
-@router.delete("/v1/tasks/{task_id}/assign-team", status_code=204)
+@router.delete("/v1/tasks/{task_id}/assign-team", status_code=204, response_model=None)
 async def remove_team_from_task(
     task_id: UUID,
     db: AsyncSession = Depends(get_db),

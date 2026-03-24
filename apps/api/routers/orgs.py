@@ -600,7 +600,7 @@ async def set_active_org(
     return await _org_to_out(org, db)
 
 
-@router.post("/deactivate", status_code=204)
+@router.post("/deactivate", status_code=204, response_model=None)
 async def deactivate_org(
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id),

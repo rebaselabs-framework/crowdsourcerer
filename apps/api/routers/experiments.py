@@ -251,7 +251,7 @@ async def update_status(
     return {"status": status}
 
 
-@router.delete("/{experiment_id}", status_code=204)
+@router.delete("/{experiment_id}", status_code=204, response_model=None)
 async def delete_experiment(
     experiment_id: UUID,
     db: AsyncSession = Depends(get_db),

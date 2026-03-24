@@ -10,7 +10,6 @@ import pyotp
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,8 +30,6 @@ from models.schemas import (
 logger = structlog.get_logger()
 router = APIRouter(prefix="/v1/auth/2fa", tags=["2fa"])
 settings = get_settings()
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
 _ISSUER = "CrowdSorcerer"
 _BACKUP_CODE_COUNT = 8
 _PENDING_2FA_EXPIRE = 300  # 5 minutes

@@ -38,8 +38,9 @@ if (Astro.request.method === "POST") {
         path: "/",
       });
       // Redirect to the appropriate onboarding flow
-      const destination = role === "worker" ? "/worker/onboarding" : "/dashboard/requester-onboarding";
-      return Astro.redirect(destination);
+      return Astro.redirect(
+        role === "worker" ? "/worker/onboarding" : "/dashboard/requester-onboarding"
+      );
     }
   } catch (e) {
     error = "Network error — please try again";

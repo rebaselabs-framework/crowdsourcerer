@@ -169,7 +169,7 @@ async def list_dependents(
     return [_fmt(dep, downstream) for dep, downstream in result.all()]
 
 
-@router.delete("/{task_id}/dependencies/{dep_id}", status_code=204)
+@router.delete("/{task_id}/dependencies/{dep_id}", status_code=204, response_model=None)
 async def remove_dependency(
     task_id: uuid.UUID,
     dep_id: uuid.UUID,

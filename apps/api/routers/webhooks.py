@@ -212,7 +212,7 @@ async def update_endpoint(
     }
 
 
-@router.delete("/endpoints/{endpoint_id}", status_code=204)
+@router.delete("/endpoints/{endpoint_id}", status_code=204, response_model=None)
 async def delete_endpoint(
     endpoint_id: UUID,
     db: AsyncSession = Depends(get_db),

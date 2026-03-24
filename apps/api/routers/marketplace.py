@@ -310,7 +310,7 @@ async def update_template(
     return _template_out(t)
 
 
-@router.delete("/templates/{template_id}", status_code=204)
+@router.delete("/templates/{template_id}", status_code=204, response_model=None)
 async def delete_template(
     template_id: UUID,
     db: AsyncSession = Depends(get_db),

@@ -4,7 +4,7 @@ from datetime import datetime, date
 from typing import Any, Literal, Optional, Union
 from uuid import UUID
 
-from pydantic import AliasChoices, BaseModel, EmailStr, Field, model_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, EmailStr, Field, model_validator
 
 
 # ─── Auth ─────────────────────────────────────────────────────────────────
@@ -171,9 +171,8 @@ class TaskOut(BaseModel):
     error: Optional[str] = None
     credits_used: Optional[int] = None
     duration_ms: Optional[int] = None
-    metadata: Optional[dict[str, Any]] = Field(
-        None, validation_alias=AliasChoices("metadata", "task_metadata"),
-    )
+    # validation_alias maps the ORM attribute (task_metadata) to this Pydantic field (metadata)
+    metadata: Optional[dict[str, Any]] = Field(None, validation_alias=AliasChoices("metadata", "task_metadata"))
     worker_reward_credits: Optional[int] = None
     assignments_required: int = 1
     assignments_completed: int = 0
@@ -191,7 +190,7 @@ class TaskOut(BaseModel):
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
 
-    model_config = {"from_attributes": True, "populate_by_name": True}
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
 
 class PaginatedTasks(BaseModel):

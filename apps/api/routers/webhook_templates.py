@@ -163,7 +163,7 @@ async def get_payload_template(
     }
 
 
-@router.delete("/{event_type}", status_code=204)
+@router.delete("/{event_type}", status_code=204, response_model=None)
 async def delete_payload_template(
     event_type: str,
     db: AsyncSession = Depends(get_db),

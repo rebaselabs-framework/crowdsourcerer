@@ -124,6 +124,21 @@ async def get_optional_user_id(
     return decode_access_token(token)
 
 
+async def get_current_user(
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Dependency: returns the full UserDB object for the authenticated caller."""
+    from models.db import UserDB  # avoid circular import at module level
+    result = await db.execute(select(UserDB).where(UserDB.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found"
+        )
+    return user
+
+
 async def require_admin(
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id),

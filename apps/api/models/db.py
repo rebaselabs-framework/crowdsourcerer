@@ -99,7 +99,7 @@ class UserDB(Base):
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
-    tasks = relationship("TaskDB", back_populates="user", lazy="dynamic")
+    tasks = relationship("TaskDB", back_populates="user", lazy="dynamic", foreign_keys="TaskDB.user_id")
     api_keys = relationship("ApiKeyDB", back_populates="user", lazy="dynamic")
     transactions = relationship("CreditTransactionDB", back_populates="user", lazy="dynamic")
     assignments = relationship("TaskAssignmentDB", back_populates="worker", lazy="dynamic",
@@ -199,7 +199,7 @@ class TaskDB(Base):
     webhook_url = Column(String(2048), nullable=True)
     # Subscribed webhook events. NULL/empty → default ["task.completed"]
     webhook_events = Column(JSON, nullable=True)
-    task_metadata = Column("metadata", JSON, nullable=True)
+    task_metadata = Column("metadata", JSON, nullable=True)  # renamed: 'metadata' is reserved by SQLAlchemy
 
     # Human task fields
     worker_reward_credits = Column(Integer, nullable=True)      # Credits paid to each worker
@@ -252,7 +252,7 @@ class TaskDB(Base):
     started_at = Column(DateTime(timezone=True), nullable=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)
 
-    user = relationship("UserDB", back_populates="tasks")
+    user = relationship("UserDB", back_populates="tasks", foreign_keys="[TaskDB.user_id]")
     assignments = relationship("TaskAssignmentDB", back_populates="task", lazy="dynamic",
                                foreign_keys="TaskAssignmentDB.task_id")
 
@@ -527,7 +527,7 @@ class OrgActivityLogDB(Base):
     event_type = Column(String(64), nullable=False)  # task_created | task_completed | credit_spend
     task_id = Column(UUID(as_uuid=True), nullable=True)
     credits = Column(Integer, default=0, nullable=False)
-    activity_metadata = Column("metadata", JSON, nullable=True)
+    event_metadata = Column("metadata", JSON, nullable=True)  # renamed: 'metadata' is reserved by SQLAlchemy
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
 
     org = relationship("OrganizationDB", backref="activity_log")

@@ -126,7 +126,7 @@ async def update_saved_search(
     return saved
 
 
-@router.delete("/{search_id}", status_code=204)
+@router.delete("/{search_id}", status_code=204, response_model=None)
 async def delete_saved_search(
     search_id: UUID,
     db: AsyncSession = Depends(get_db),
