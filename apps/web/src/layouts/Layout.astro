@@ -28,19 +28,18 @@ const canonical = canonicalUrl ?? `${siteUrl}${Astro.url.pathname}`;
 const token = getToken(Astro.cookies);
 const isLoggedIn = !!token;
 
-// Fetch unread notification count (SSR) — fails gracefully
+// Fetch unread notification count + email verified status (SSR) — fails gracefully
 let unreadCount = 0;
 let unreadMsgCount = 0;
+let emailVerified = true; // default true to avoid false-positive banners on fetch failure
 if (isLoggedIn) {
   try {
     const API_URL = import.meta.env.PUBLIC_API_URL ?? "http://api:8100";
-    const [notifRes, msgRes] = await Promise.allSettled([
-      fetch(`${API_URL}/v1/notifications/unread-count`, {
-        headers: { Authorization: `Bearer ${token}` },
-      }),
-      fetch(`${API_URL}/v1/tasks/messages/unread-count`, {
-        headers: { Authorization: `Bearer ${token}` },
-      }),
+    const authHeader = { Authorization: `Bearer ${token}` };
+    const [notifRes, msgRes, meRes] = await Promise.allSettled([
+      fetch(`${API_URL}/v1/notifications/unread-count`, { headers: authHeader }),
+      fetch(`${API_URL}/v1/tasks/messages/unread-count`, { headers: authHeader }),
+      fetch(`${API_URL}/v1/users/me`, { headers: authHeader }),
     ]);
     if (notifRes.status === "fulfilled" && notifRes.value.ok) {
       const data = await notifRes.value.json();
@@ -50,10 +49,20 @@ if (isLoggedIn) {
       const data = await msgRes.value.json();
       unreadMsgCount = data.count ?? 0;
     }
+    if (meRes.status === "fulfilled" && meRes.value.ok) {
+      const data = await meRes.value.json();
+      emailVerified = data.email_verified !== false; // treat missing field as verified
+    }
   } catch {
     // silently ignore — non-critical
   }
 }
+
+// Show email verification banner only when logged in, unverified, and not on the verify page
+const showVerifyBanner =
+  isLoggedIn &&
+  !emailVerified &&
+  !Astro.url.pathname.startsWith("/verify-email");
 
 const currentPath = Astro.url.pathname;
 ---
@@ -457,6 +466,37 @@ const currentPath = Astro.url.pathname;
       </div>
     </nav>
 
+    <!-- Email verification banner — shown when logged in with unverified email -->
+    {showVerifyBanner && (
+      <div
+        id="email-verify-banner"
+        class="bg-amber-500/10 border-b border-amber-500/30 px-4 py-2.5"
+      >
+        <div class="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2 text-sm">
+          <div class="flex items-center gap-2 text-amber-300">
+            <span>⚠️</span>
+            <span>Please verify your email address to unlock all features.</span>
+          </div>
+          <div class="flex items-center gap-3">
+            <button
+              id="banner-resend-btn"
+              class="text-amber-300 hover:text-amber-100 font-medium underline underline-offset-2 transition-colors"
+            >
+              Resend verification email
+            </button>
+            <button
+              id="banner-dismiss-btn"
+              class="text-amber-500 hover:text-amber-300 transition-colors text-xs"
+              aria-label="Dismiss"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+        <p id="banner-status" class="text-xs text-center text-amber-400 mt-1 hidden"></p>
+      </div>
+    )}
+
     <!-- Content -->
     <!-- Extra bottom padding on mobile to account for the bottom nav bar -->
     <div class:list={["pb-0", isLoggedIn ? "sm:pb-0 pb-20" : ""]}>
@@ -806,6 +846,53 @@ const currentPath = Astro.url.pathname;
           }
         </script>
       </>
+    )}
+
+    <!-- Email verification banner JS (resend + dismiss) -->
+    {showVerifyBanner && (
+      <script>
+        (function setupVerifyBanner() {
+          const banner = document.getElementById("email-verify-banner");
+          const resendBtn = document.getElementById("banner-resend-btn") as HTMLButtonElement | null;
+          const dismissBtn = document.getElementById("banner-dismiss-btn");
+          const statusEl = document.getElementById("banner-status");
+
+          dismissBtn?.addEventListener("click", () => {
+            banner?.remove();
+          });
+
+          resendBtn?.addEventListener("click", async () => {
+            if (!resendBtn) return;
+            resendBtn.textContent = "Sending…";
+            resendBtn.style.pointerEvents = "none";
+            try {
+              const res = await fetch("/api/auth/resend-verification", { method: "POST" });
+              const data = await res.json().catch(() => ({}));
+              if (res.ok) {
+                resendBtn.textContent = "✓ Sent! Check your inbox.";
+                if (statusEl) {
+                  statusEl.textContent = "Verification email sent. Links expire in 24 hours.";
+                  statusEl.classList.remove("hidden");
+                }
+              } else {
+                resendBtn.textContent = "Resend verification email";
+                resendBtn.style.pointerEvents = "";
+                if (statusEl) {
+                  statusEl.textContent = data.detail ?? "Failed to send. Please try again.";
+                  statusEl.classList.remove("hidden");
+                }
+              }
+            } catch {
+              resendBtn.textContent = "Resend verification email";
+              resendBtn.style.pointerEvents = "";
+              if (statusEl) {
+                statusEl.textContent = "Network error — please try again.";
+                statusEl.classList.remove("hidden");
+              }
+            }
+          });
+        })();
+      </script>
     )}
 
     <!-- Live notification + message badge polling (every 60s, only when logged in) -->

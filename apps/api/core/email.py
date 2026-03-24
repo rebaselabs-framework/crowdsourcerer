@@ -350,6 +350,42 @@ async def send_password_reset(to_email: str, reset_url: str, name: str | None = 
     )
 
 
+def _email_verification_html(verify_url: str, name: str | None) -> str:
+    greeting = f"Hi {name}," if name else "Hi there,"
+    return f"""
+<html><body style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px">
+<h2 style="color:#6366f1">✉️ Verify your email address</h2>
+<p>{greeting}</p>
+<p>Thanks for signing up for CrowdSorcerer! Please verify your email address to unlock
+all platform features.</p>
+<p style="margin:24px 0">
+  <a href="{verify_url}"
+     style="background:#6366f1;color:white;padding:12px 24px;border-radius:6px;
+            text-decoration:none;font-weight:bold;display:inline-block">
+    ✅ Verify my email
+  </a>
+</p>
+<p style="color:#6b7280;font-size:14px">
+  This link expires in <strong>24 hours</strong>. If you didn't create an account,
+  you can safely ignore this email.
+</p>
+<hr style="margin:24px 0;border:none;border-top:1px solid #e5e7eb">
+<p style="color:#9ca3af;font-size:12px">
+  CrowdSorcerer · <a href="https://crowdsourcerer.rebaselabs.online">crowdsourcerer.rebaselabs.online</a>
+</p>
+</body></html>
+"""
+
+
+async def send_email_verification(to_email: str, verify_url: str, name: str | None = None) -> bool:
+    """Send an email address verification link. Security email — always sent, bypasses notification prefs."""
+    return await send_email(
+        to_email=to_email,
+        subject="Verify your CrowdSorcerer email address",
+        html_body=_email_verification_html(verify_url, name),
+    )
+
+
 # ─── Preference-gated send helpers ─────────────────────────────────────────
 # These load the user's NotificationPreferencesDB row before sending; if the
 # pref is disabled (or the row doesn't exist yet, defaults to enabled), the

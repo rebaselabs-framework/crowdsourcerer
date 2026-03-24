@@ -1,0 +1,158 @@
+---
+/**
+ * Email verification landing page.
+ * Reached via link in verification email: /verify-email?token=<raw_token>
+ *
+ * On load (GET): calls POST /v1/auth/verify-email automatically and shows result.
+ * Works whether or not the user is logged in.
+ */
+import Layout from "@/layouts/Layout.astro";
+import { getToken } from "@/lib/api";
+
+const token = Astro.url.searchParams.get("token") ?? "";
+
+const API_URL = import.meta.env.PUBLIC_API_URL ?? "http://api:8100";
+
+type VerifyResult =
+  | { ok: true; alreadyVerified: boolean }
+  | { ok: false; detail: string };
+
+let result: VerifyResult;
+
+if (!token) {
+  result = { ok: false, detail: "No verification token provided." };
+} else {
+  try {
+    const res = await fetch(
+      `${API_URL}/v1/auth/verify-email?token=${encodeURIComponent(token)}`,
+      { method: "GET" }
+    );
+    if (res.ok) {
+      const data = await res.json();
+      result = { ok: true, alreadyVerified: data.already_verified === true };
+    } else {
+      const data = await res.json().catch(() => ({}));
+      result = { ok: false, detail: data.detail ?? "Verification failed." };
+    }
+  } catch {
+    result = { ok: false, detail: "Network error — please try again." };
+  }
+}
+
+// Check if user is already logged in (to offer resend option on failure)
+const authToken = getToken(Astro.cookies);
+---
+
+<Layout title="Verify email — CrowdSorcerer">
+  <div class="min-h-screen flex items-center justify-center px-6">
+    <div class="w-full max-w-md">
+
+      {result.ok ? (
+        <!-- ── SUCCESS ──────────────────────────────────────────────── -->
+        <div class="text-center">
+          <div class="text-6xl mb-4">✅</div>
+          <h1 class="text-2xl font-bold mb-2">
+            {result.alreadyVerified ? "Already verified!" : "Email verified!"}
+          </h1>
+          <p class="text-gray-400 mb-8">
+            {result.alreadyVerified
+              ? "Your email address was already confirmed."
+              : "Your email address has been successfully verified. You now have full access to CrowdSorcerer."}
+          </p>
+
+          <div class="flex flex-col gap-3">
+            <a
+              href="/dashboard"
+              class="w-full py-3 bg-violet-600 hover:bg-violet-700 text-white font-semibold rounded-lg transition-colors text-center"
+            >
+              Go to Dashboard →
+            </a>
+            <a
+              href="/"
+              class="w-full py-3 border border-white/10 hover:bg-white/5 text-gray-300 font-medium rounded-lg transition-colors text-center text-sm"
+            >
+              Back to home
+            </a>
+          </div>
+        </div>
+      ) : (
+        <!-- ── FAILURE ──────────────────────────────────────────────── -->
+        <div class="text-center">
+          <div class="text-6xl mb-4">❌</div>
+          <h1 class="text-2xl font-bold mb-2">Verification failed</h1>
+          <p class="text-gray-400 mb-2">{result.detail}</p>
+          <p class="text-gray-500 text-sm mb-8">
+            Links expire after 24 hours. If yours has expired, request a new one below.
+          </p>
+
+          <div class="flex flex-col gap-3">
+            {authToken ? (
+              <!-- Logged-in: offer resend button -->
+              <button
+                id="resend-btn"
+                class="w-full py-3 bg-violet-600 hover:bg-violet-700 text-white font-semibold rounded-lg transition-colors"
+              >
+                Resend verification email
+              </button>
+            ) : (
+              <!-- Not logged in: direct to login so they can resend -->
+              <a
+                href="/login?redirect=/dashboard"
+                class="w-full py-3 bg-violet-600 hover:bg-violet-700 text-white font-semibold rounded-lg transition-colors text-center"
+              >
+                Log in to resend email
+              </a>
+            )}
+            <a
+              href="/dashboard"
+              class="w-full py-3 border border-white/10 hover:bg-white/5 text-gray-300 font-medium rounded-lg transition-colors text-center text-sm"
+            >
+              Back to Dashboard
+            </a>
+          </div>
+
+          <div id="resend-status" class="mt-4 text-sm hidden"></div>
+        </div>
+      )}
+
+    </div>
+  </div>
+</Layout>
+
+<script>
+  const btn = document.getElementById("resend-btn");
+  const statusDiv = document.getElementById("resend-status");
+
+  btn?.addEventListener("click", async () => {
+    btn.setAttribute("disabled", "");
+    btn.textContent = "Sending…";
+    if (statusDiv) statusDiv.classList.add("hidden");
+
+    try {
+      const res = await fetch("/api/auth/resend-verification", { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        btn.textContent = "✓ Sent!";
+        if (statusDiv) {
+          statusDiv.textContent = data.message ?? "Verification email sent. Please check your inbox.";
+          statusDiv.className = "mt-4 text-sm text-emerald-400";
+        }
+      } else {
+        btn.removeAttribute("disabled");
+        btn.textContent = "Resend verification email";
+        if (statusDiv) {
+          statusDiv.textContent = data.detail ?? "Failed to send. Please try again.";
+          statusDiv.className = "mt-4 text-sm text-red-400";
+        }
+      }
+    } catch {
+      btn.removeAttribute("disabled");
+      btn.textContent = "Resend verification email";
+      if (statusDiv) {
+        statusDiv.textContent = "Network error — please try again.";
+        statusDiv.className = "mt-4 text-sm text-red-400";
+      }
+    }
+    if (statusDiv) statusDiv.classList.remove("hidden");
+  });
+</script>

@@ -96,6 +96,10 @@ class UserDB(Base):
     totp_backup_codes = Column(JSON, nullable=True)          # list[str] hashed codes
     totp_pending_token = Column(String(512), nullable=True)  # short-lived pre-2FA JWT
 
+    # Email verification
+    email_verified = Column(Boolean, default=False, nullable=False)
+    email_verification_token_hash = Column(String(64), nullable=True, index=True)
+
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 

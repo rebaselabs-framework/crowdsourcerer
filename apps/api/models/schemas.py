@@ -38,6 +38,7 @@ class UserOut(BaseModel):
     credits: int
     created_at: datetime
     availability_status: Optional[str] = "available"
+    email_verified: bool = False
 
     model_config = {"from_attributes": True}
 

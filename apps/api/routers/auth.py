@@ -1,4 +1,4 @@
-"""Auth endpoints: register, login, forgot/reset password."""
+"""Auth endpoints: register, login, forgot/reset password, email verification."""
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Union
 import hashlib
@@ -23,14 +23,19 @@ from models.schemas import (
 )
 
 _RESET_TOKEN_TTL_MINUTES = 30
+_VERIFY_TOKEN_TTL_HOURS = 24
 _BASE_URL = "https://crowdsourcerer.rebaselabs.online"
 
 
-def _make_reset_token() -> tuple[str, str]:
+def _make_token() -> tuple[str, str]:
     """Return (raw_token, sha256_hex). Store the hash, email the raw token."""
     raw = os.urandom(32).hex()  # 64 hex chars = 256 bits of entropy
     h = hashlib.sha256(raw.encode()).hexdigest()
     return raw, h
+
+
+# Keep old name as alias for backward-compat within this module
+_make_reset_token = _make_token
 
 router = APIRouter(prefix="/v1/auth", tags=["auth"])
 settings = get_settings()
@@ -61,12 +66,17 @@ async def register(
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Email already registered")
 
+    # Generate email verification token
+    raw_verify_token, verify_token_hash = _make_token()
+
     user = UserDB(
         email=req.email,
         name=req.name,
         password_hash=_hash_password(req.password),
         role=req.role,
         credits=settings.free_tier_credits,
+        email_verified=False,
+        email_verification_token_hash=verify_token_hash,
     )
     db.add(user)
     await db.flush()  # get user.id without committing
@@ -78,6 +88,12 @@ async def register(
 
     await db.commit()
     await db.refresh(user)
+
+    # Send verification email (fire-and-forget — don't block signup on email failure)
+    import asyncio
+    from core.email import send_email_verification
+    verify_url = f"{_BASE_URL}/verify-email?token={raw_verify_token}"
+    asyncio.ensure_future(send_email_verification(user.email, verify_url, user.name))
 
     token = create_access_token(str(user.id))
     return TokenResponse(
@@ -252,3 +268,72 @@ async def change_password(
     user.password_hash = _hash_password(req.new_password)
     await db.commit()
     return {"message": "Password changed successfully."}
+
+
+# ─── Email verification ───────────────────────────────────────────────────────
+
+@router.get("/verify-email", status_code=200)
+async def verify_email(
+    token: str = Query(..., description="Email verification token from link"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Verify a user's email address using the token sent at signup.
+
+    Returns 200 on success (including already-verified), 400 for bad/expired token.
+    The token is single-use: cleared from DB after successful verification.
+    """
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+
+    result = await db.execute(
+        select(UserDB).where(UserDB.email_verification_token_hash == token_hash)
+    )
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid or expired verification link. Please request a new one.",
+        )
+
+    if user.email_verified:
+        # Already verified — idempotent success
+        return {"message": "Email already verified.", "already_verified": True}
+
+    user.email_verified = True
+    user.email_verification_token_hash = None  # single-use; clear it
+    await db.commit()
+
+    return {"message": "Email verified successfully.", "already_verified": False}
+
+
+@router.post("/resend-verification", status_code=200)
+@limiter.limit("3/minute")
+async def resend_verification(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Resend the email verification link. Requires authentication.
+
+    Rate-limited to 3/minute to prevent abuse. Safe to call even if already verified.
+    """
+    from uuid import UUID
+    result = await db.execute(select(UserDB).where(UserDB.id == UUID(user_id)))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if user.email_verified:
+        return {"message": "Email is already verified."}
+
+    # Generate a fresh token
+    raw_token, token_hash = _make_token()
+    user.email_verification_token_hash = token_hash
+    await db.commit()
+
+    import asyncio
+    from core.email import send_email_verification
+    verify_url = f"{_BASE_URL}/verify-email?token={raw_token}"
+    asyncio.ensure_future(send_email_verification(user.email, verify_url, user.name))
+
+    return {"message": "Verification email sent. Please check your inbox."}
