@@ -2,6 +2,7 @@
 from __future__ import annotations
 import time
 import uuid
+from contextlib import asynccontextmanager
 
 import structlog
 from fastapi import FastAPI, Request, Response
@@ -86,6 +87,27 @@ _TAGS_METADATA = [
     {"name": "health", "description": "Health check and version info"},
 ]
 
+@asynccontextmanager
+async def lifespan(application: FastAPI):
+    """Application startup and shutdown lifecycle manager."""
+    # ── Startup ───────────────────────────────────────────────────────────
+    logger.info("startup", version=settings.app_version)
+    # Create tables (dev only — use Alembic in prod)
+    if settings.debug:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+    # Start background sweeper (expires timed-out task assignments)
+    start_sweeper(AsyncSessionLocal)
+    logger.info("sweeper.scheduled", interval_seconds=300)
+
+    yield  # Application runs here
+
+    # ── Shutdown ──────────────────────────────────────────────────────────
+    logger.info("shutdown")
+    stop_sweeper()
+    await get_rebasekit_client().close()
+
+
 app = FastAPI(
     title="CrowdSorcerer API",
     description=_DESCRIPTION,
@@ -93,6 +115,7 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_tags=_TAGS_METADATA,
+    lifespan=lifespan,
     contact={
         "name": "RebaseLabs",
         "url": "https://rebaselabs.online",
@@ -262,26 +285,6 @@ async def root():
 async def get_openapi_spec():
     """Download the raw OpenAPI 3.x spec as JSON."""
     return app.openapi()
-
-# ─── Startup / Shutdown ───────────────────────────────────────────────────
-
-@app.on_event("startup")
-async def startup():
-    logger.info("startup", version=settings.app_version)
-    # Create tables (dev only — use Alembic in prod)
-    if settings.debug:
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-    # Start background sweeper (expires timed-out task assignments)
-    start_sweeper(AsyncSessionLocal)
-    logger.info("sweeper.scheduled", interval_seconds=300)
-
-
-@app.on_event("shutdown")
-async def shutdown():
-    logger.info("shutdown")
-    stop_sweeper()
-    await get_rebasekit_client().close()
 
 # ─── Global error handler ─────────────────────────────────────────────────
 

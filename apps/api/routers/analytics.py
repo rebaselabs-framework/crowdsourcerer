@@ -385,7 +385,7 @@ _EXPORT_COLUMNS = [
 
 @router.get("/export")
 async def export_analytics(
-    fmt: str = Query("csv", regex="^(csv|json)$"),
+    fmt: str = Query("csv", pattern="^(csv|json)$"),
     days: int = Query(30, ge=1, le=365),
     org_id: Optional[UUID] = None,
     db: AsyncSession = Depends(get_db),

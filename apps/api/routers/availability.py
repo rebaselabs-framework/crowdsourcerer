@@ -5,7 +5,7 @@ from typing import List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 
@@ -24,9 +24,11 @@ class AvailabilitySlotIn(BaseModel):
     start_hour: int = Field(..., ge=0, le=23)
     end_hour: int = Field(..., ge=1, le=24)
 
-    @validator("end_hour")
-    def end_after_start(cls, v, values):
-        if "start_hour" in values and v <= values["start_hour"]:
+    @field_validator("end_hour", mode="after")
+    @classmethod
+    def end_after_start(cls, v, info):
+        start = info.data.get("start_hour")
+        if start is not None and v <= start:
             raise ValueError("end_hour must be greater than start_hour")
         return v
 
