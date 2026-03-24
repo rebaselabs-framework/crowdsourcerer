@@ -14,9 +14,10 @@ from alembic import context
 # Ensure the api root is on sys.path so absolute imports work
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Import Base *after* adjusting sys.path, and import models so they register
-from core.database import Base  # noqa: E402
-import models.db  # noqa: F401, E402  — side-effect: registers ORM models on Base.metadata
+# NOTE: We intentionally do NOT import models.db here.
+# Importing it causes SQLAlchemy's Enum types (with create_type=True by default)
+# to register event listeners that auto-emit CREATE TYPE on the first connection,
+# conflicting with the explicit CREATE TYPE in migration scripts.
 
 # Alembic config object (populated from alembic.ini)
 config = context.config
