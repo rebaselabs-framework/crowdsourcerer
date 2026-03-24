@@ -1,0 +1,173 @@
+---
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Astro.cookies);
+if (!token) return Astro.redirect("/login");
+
+let funnel: any = null;
+let error: string | null = null;
+
+try {
+  funnel = await apiFetch<any>("/v1/admin/onboarding/funnel", { token });
+} catch (e: any) {
+  if (e.message?.includes("403")) {
+    error = "forbidden";
+  } else if (e.message?.includes("401")) {
+    return Astro.redirect("/login");
+  } else {
+    error = "Failed to load onboarding funnel data";
+  }
+}
+
+// Derive per-stage conversion rates relative to the first funnel stage
+const maxCount: number = funnel?.funnel?.[0]?.count ?? 1;
+function pct(count: number): number {
+  return maxCount > 0 ? Math.round((count / maxCount) * 100) : 0;
+}
+---
+
+<Layout title="Onboarding Funnel — Admin">
+  <div class="max-w-4xl mx-auto px-6 py-10">
+    <!-- Breadcrumb -->
+    <div class="text-sm text-gray-500 mb-6">
+      <a href="/admin" class="hover:text-gray-300 transition-colors">Admin</a>
+      <span class="mx-2">›</span>
+      <span>Onboarding Funnel</span>
+    </div>
+
+    <div class="flex items-start justify-between mb-8">
+      <div>
+        <h1 class="text-2xl font-bold">Onboarding Completion Funnel</h1>
+        <p class="text-gray-400 text-sm mt-1">
+          Requester sign-up → 5-step onboarding → +200 credit bonus
+        </p>
+      </div>
+      {funnel && (
+        <div class="text-right">
+          <div class="text-3xl font-bold text-violet-400">
+            {(funnel.completion_rate * 100).toFixed(1)}%
+          </div>
+          <div class="text-xs text-gray-500 mt-0.5">overall completion rate</div>
+        </div>
+      )}
+    </div>
+
+    {error === "forbidden" ? (
+      <div class="bg-red-950/30 border border-red-800 rounded-xl p-8 text-center">
+        <div class="text-4xl mb-4">🚫</div>
+        <h2 class="text-xl font-bold mb-2 text-red-400">Access Denied</h2>
+        <p class="text-gray-400 text-sm">Admin privileges required.</p>
+        <a href="/dashboard" class="inline-block mt-4 text-violet-400 hover:text-violet-300 text-sm">← Back to dashboard</a>
+      </div>
+    ) : error ? (
+      <div class="bg-red-950/30 border border-red-800 rounded-xl p-4 text-red-300 text-sm">{error}</div>
+    ) : funnel ? (
+      <>
+        <!-- Summary cards -->
+        <div class="grid grid-cols-3 gap-4 mb-8">
+          <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+            <div class="text-xs text-gray-500 uppercase tracking-wide mb-1">Total Requesters</div>
+            <div class="text-2xl font-bold">{funnel.total_requesters.toLocaleString()}</div>
+          </div>
+          <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+            <div class="text-xs text-gray-500 uppercase tracking-wide mb-1">Started Onboarding</div>
+            <div class="text-2xl font-bold">
+              {funnel.funnel.find((s: any) => s.stage === "started_onboarding")?.count?.toLocaleString() ?? "—"}
+            </div>
+            <div class="text-xs text-gray-600 mt-0.5">
+              {pct(funnel.funnel.find((s: any) => s.stage === "started_onboarding")?.count ?? 0)}% of registered
+            </div>
+          </div>
+          <div class="bg-violet-950/40 border border-violet-800/50 rounded-xl p-5">
+            <div class="text-xs text-violet-400 uppercase tracking-wide mb-1">Completed All Steps</div>
+            <div class="text-2xl font-bold text-violet-300">
+              {funnel.funnel.find((s: any) => s.stage === "completed")?.count?.toLocaleString() ?? "—"}
+            </div>
+            <div class="text-xs text-violet-500/70 mt-0.5">
+              {pct(funnel.funnel.find((s: any) => s.stage === "completed")?.count ?? 0)}% of registered
+            </div>
+          </div>
+        </div>
+
+        <!-- Funnel bars -->
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 mb-6">
+          <h2 class="text-sm font-semibold text-gray-300 mb-5">Conversion Funnel</h2>
+          <div class="space-y-4">
+            {funnel.funnel.map((stage: any, idx: number) => {
+              const barPct = pct(stage.count);
+              const isCompleted = stage.stage === "completed";
+              const dropOffEntry = funnel.drop_off[idx]; // drop from prev to this stage
+              return (
+                <div>
+                  <div class="flex items-center justify-between mb-1.5">
+                    <div class="flex items-center gap-2">
+                      <span class={`text-xs font-mono w-5 text-center ${isCompleted ? "text-violet-400" : "text-gray-600"}`}>
+                        {idx + 1}
+                      </span>
+                      <span class={`text-sm font-medium ${isCompleted ? "text-violet-300" : "text-gray-300"}`}>
+                        {stage.label}
+                      </span>
+                      {dropOffEntry && dropOffEntry.dropped > 0 && (
+                        <span class="text-xs text-red-400/70">
+                          −{dropOffEntry.dropped.toLocaleString()} ({dropOffEntry.drop_pct}% drop)
+                        </span>
+                      )}
+                    </div>
+                    <div class="flex items-center gap-3">
+                      <span class={`text-sm font-bold ${isCompleted ? "text-violet-300" : "text-gray-200"}`}>
+                        {stage.count.toLocaleString()}
+                      </span>
+                      <span class="text-xs text-gray-500 w-10 text-right">{barPct}%</span>
+                    </div>
+                  </div>
+                  <div class="h-2 bg-gray-800 rounded-full overflow-hidden">
+                    <div
+                      class={`h-full rounded-full transition-all ${isCompleted ? "bg-violet-500" : "bg-blue-600"}`}
+                      style={`width: ${barPct}%`}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <!-- Drop-off table -->
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
+          <h2 class="text-sm font-semibold text-gray-300 mb-4">Stage-by-Stage Drop-off</h2>
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="text-left text-gray-500 text-xs border-b border-gray-800">
+                <th class="pb-2 font-medium">From</th>
+                <th class="pb-2 font-medium">To</th>
+                <th class="pb-2 font-medium text-right">Users Lost</th>
+                <th class="pb-2 font-medium text-right">Drop %</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-800/50">
+              {funnel.drop_off.map((d: any) => (
+                <tr class="text-gray-300">
+                  <td class="py-2 text-gray-500 text-xs font-mono">{d.from}</td>
+                  <td class="py-2 text-gray-500 text-xs font-mono">{d.to}</td>
+                  <td class="py-2 text-right font-medium text-red-400">
+                    {d.dropped > 0 ? `−${d.dropped.toLocaleString()}` : "—"}
+                  </td>
+                  <td class={`py-2 text-right font-bold ${d.drop_pct > 30 ? "text-red-400" : d.drop_pct > 15 ? "text-orange-400" : "text-gray-400"}`}>
+                    {d.drop_pct > 0 ? `${d.drop_pct}%` : "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <p class="text-xs text-gray-600 mt-4 text-right">
+          Generated {new Date(funnel.generated_at).toLocaleString()}
+        </p>
+      </>
+    ) : (
+      <div class="text-center py-20 text-gray-600">Loading…</div>
+    )}
+  </div>
+</Layout>
