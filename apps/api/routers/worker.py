@@ -6,7 +6,7 @@ import uuid as uuid_mod
 from uuid import UUID, uuid4
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_
@@ -913,7 +913,7 @@ async def submit_task(
 
 # ─── Release a task ───────────────────────────────────────────────────────
 
-@router.delete("/tasks/{task_id}/release", status_code=204)
+@router.delete("/tasks/{task_id}/release", status_code=204, response_class=Response)
 async def release_task(
     task_id: UUID,
     db: AsyncSession = Depends(get_db),

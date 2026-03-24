@@ -8,7 +8,7 @@ from typing import AsyncIterator, Optional
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, Response
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -943,7 +943,7 @@ async def update_task_tags(
     return task
 
 
-@router.post("/{task_id}/cancel", status_code=204)
+@router.post("/{task_id}/cancel", status_code=204, response_class=Response)
 async def cancel_task(
     task_id: UUID,
     db: AsyncSession = Depends(get_db),

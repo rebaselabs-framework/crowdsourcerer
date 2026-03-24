@@ -8,7 +8,7 @@ from typing import Optional
 
 import pyotp
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from sqlalchemy import select
@@ -162,7 +162,7 @@ async def enable_2fa(
 
 # ─── POST /v1/auth/2fa/disable ────────────────────────────────────────────────
 
-@router.post("/disable", status_code=204)
+@router.post("/disable", status_code=204, response_class=Response)
 async def disable_2fa(
     req: TwoFADisableRequest,
     db: AsyncSession = Depends(get_db),

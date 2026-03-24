@@ -11,7 +11,7 @@ from typing import Optional
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
@@ -300,7 +300,7 @@ async def reject_application(
     return await _fmt_application(app, db)
 
 
-@router.delete("/v1/tasks/{task_id}/applications", status_code=204)
+@router.delete("/v1/tasks/{task_id}/applications", status_code=204, response_class=Response)
 async def withdraw_application(
     task_id: UUID,
     db: AsyncSession = Depends(get_db),

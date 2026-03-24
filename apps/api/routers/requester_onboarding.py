@@ -14,7 +14,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -126,7 +126,7 @@ async def skip_step(
     return _build_status(rec)
 
 
-@router.post("/reset", status_code=204)
+@router.post("/reset", status_code=204, response_class=Response)
 async def reset_onboarding(
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id),

@@ -6,7 +6,7 @@ from typing import Optional
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -174,7 +174,7 @@ async def my_payout_summary(
     }
 
 
-@router.delete("/{payout_id}", status_code=204)
+@router.delete("/{payout_id}", status_code=204, response_class=Response)
 async def cancel_payout_request(
     payout_id: UUID,
     user_id: UUID = Depends(get_current_user_id),
