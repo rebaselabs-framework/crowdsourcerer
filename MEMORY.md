@@ -47,6 +47,11 @@ Auto-updated by autonomous sessions. Tracks what was done and what's next.
 | 39 | Worker task-available email notifications (migration 0045) — opt-in email when new human task matches skills | 4d54f2d |
 | 40 | Fix 28 ts(6133) unused-variable hints across Astro pages | f98cded |
 | 41 | SSR perf: withTimeout() utility + apply to requester hub, worker home, analytics (2–3s cap on heavy calls) | 2397d9d |
+| 42 | Reduce Astro check hints 54 → 5 (91% reduction): is:inline on define:vars, event delegation, data-confirm pattern, optional chaining, clipboard API | 2c0f79a |
+| 43 | Public task marketplace at /marketplace (public, no auth) + 301 redirect from /tasks + nav link update | 3b033b1 |
+| 44 | Task launched banner on task detail (mode-aware: AI=green/queued, human=violet/live), dismiss via history.replaceState | 4dd3b69 |
+| 45 | Fix missing DELETE /api/notifications/[id] Astro proxy route (per-notification delete was silently 404ing) | 4dd3b69 |
+| 46 | Per-minute burst rate limiting on task creation: free=3/min, starter=10/min, pro=30/min, enterprise=100/min | 4dd3b69 |
 
 ## Priorities for Next Session 🔜
 
@@ -54,13 +59,13 @@ Auto-updated by autonomous sessions. Tracks what was done and what's next.
    - `NPM_TOKEN` for `@crowdsourcerer/sdk` publish
    - PyPI OIDC for Python package publish
 
-2. **Worker notifications page** — `/worker/notifications` — dedicated page with notification history/settings (currently just a bell icon)
+2. **Marketplace improvements** — add text search to `/marketplace` public feed, add "save search" / watchlist CTA for logged-in users
 
-3. **Public task listing improvements** — the `/marketplace` (public feed) could benefit from better filtering, search, and task previews without login
+3. **Stripe webhook hardening** — add idempotency key check on payment webhooks to prevent double-crediting on retries
 
-4. **Requester onboarding final step** — after task creation, show a "you're set up!" confirmation and guide to invite workers
+4. **Worker profile public page** — `/workers/[id]` public profile showing completed tasks, ratings, certifications (for requester trust-building)
 
-5. **API rate limiting** — the task creation endpoint lacks per-user rate limiting beyond quota checks
+5. **Admin task health dashboard** — surface stuck/long-running tasks, worker assignment timeouts, consensus failures in one view
 
 ## Known Warnings (non-blocking)
 
