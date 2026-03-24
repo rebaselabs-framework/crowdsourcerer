@@ -26,6 +26,7 @@ logger = structlog.get_logger()
 PLAN_QUOTAS: dict[str, dict[str, Optional[int]]] = {
     "free": {
         "tasks_per_day": 10,
+        "tasks_per_minute": 3,          # burst protection
         "pipelines_total": 2,
         "pipeline_runs_per_day": 2,
         "batch_task_size": 10,        # max tasks per batch call
@@ -33,6 +34,7 @@ PLAN_QUOTAS: dict[str, dict[str, Optional[int]]] = {
     },
     "starter": {
         "tasks_per_day": 100,
+        "tasks_per_minute": 10,
         "pipelines_total": 10,
         "pipeline_runs_per_day": 20,
         "batch_task_size": 25,
@@ -40,6 +42,7 @@ PLAN_QUOTAS: dict[str, dict[str, Optional[int]]] = {
     },
     "pro": {
         "tasks_per_day": 500,
+        "tasks_per_minute": 30,
         "pipelines_total": None,        # unlimited
         "pipeline_runs_per_day": 100,
         "batch_task_size": 50,
@@ -47,6 +50,7 @@ PLAN_QUOTAS: dict[str, dict[str, Optional[int]]] = {
     },
     "enterprise": {
         "tasks_per_day": None,          # unlimited
+        "tasks_per_minute": 100,
         "pipelines_total": None,
         "pipeline_runs_per_day": None,
         "batch_task_size": 50,
@@ -69,6 +73,11 @@ def _utcnow() -> datetime:
 def _today_key(prefix: str) -> str:
     today = _utcnow().strftime("%Y-%m-%d")
     return f"{prefix}:{today}"
+
+
+def _minute_key(prefix: str) -> str:
+    minute = _utcnow().strftime("%Y-%m-%dT%H:%M")
+    return f"{prefix}:{minute}"
 
 
 def _month_key(prefix: str) -> str:
@@ -175,6 +184,37 @@ async def enforce_task_creation_quota(
         )
 
 
+async def enforce_task_burst_limit(
+    db: AsyncSession,
+    user_id: str,
+    user_plan: str,
+    task_count: int = 1,
+) -> None:
+    """Raise HTTP 429 if creating `task_count` tasks would exceed per-minute burst limit."""
+    limit = get_plan_quota(user_plan, "tasks_per_minute")
+    if limit is None:
+        return  # unlimited
+
+    bucket_key = _minute_key("tasks_burst")
+    now = _utcnow()
+    next_minute = now.replace(second=0, microsecond=0) + timedelta(minutes=1)
+
+    current = await _get_bucket_count(db, user_id, bucket_key)
+    if current + task_count > limit:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error": "burst_limit_exceeded",
+                "message": f"Too many requests. Burst limit is {limit} tasks/minute for {PLAN_DISPLAY.get(user_plan, user_plan)} plan.",
+                "limit": limit,
+                "used": current,
+                "plan": user_plan,
+                "resets_at": next_minute.isoformat(),
+                "retry_after_seconds": (next_minute - now).seconds + 1,
+            },
+        )
+
+
 async def record_task_creation(
     db: AsyncSession,
     user_id: str,
@@ -187,6 +227,19 @@ async def record_task_creation(
     )
     for _ in range(task_count):
         await _increment_bucket(db, user_id, bucket_key, tomorrow)
+
+
+async def record_task_burst(
+    db: AsyncSession,
+    user_id: str,
+    task_count: int = 1,
+) -> None:
+    """Increment the per-minute burst counter. Call AFTER successful task creation."""
+    now = _utcnow()
+    bucket_key = _minute_key("tasks_burst")
+    next_minute = now.replace(second=0, microsecond=0) + timedelta(minutes=1)
+    for _ in range(task_count):
+        await _increment_bucket(db, user_id, bucket_key, next_minute)
 
 
 async def enforce_pipeline_total_quota(
@@ -284,6 +337,9 @@ async def get_quota_status(
     tasks_limit = get_plan_quota(user_plan, "tasks_per_day")
     tasks_used = await _get_bucket_count(db, user_id, _today_key("tasks"))
 
+    burst_limit = get_plan_quota(user_plan, "tasks_per_minute")
+    burst_used = await _get_bucket_count(db, user_id, _minute_key("tasks_burst"))
+
     runs_limit = get_plan_quota(user_plan, "pipeline_runs_per_day")
     runs_used = await _get_bucket_count(db, user_id, _today_key("pipeline_runs"))
 
@@ -298,6 +354,12 @@ async def get_quota_status(
             "used": tasks_used,
             "limit": tasks_limit,
             "unlimited": tasks_limit is None,
+        },
+        "tasks_burst": {
+            "used": burst_used,
+            "limit": burst_limit,
+            "unlimited": burst_limit is None,
+            "window": "1 minute",
         },
         "pipeline_runs": {
             "used": runs_used,

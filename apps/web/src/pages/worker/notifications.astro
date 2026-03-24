@@ -1,0 +1,7 @@
+---
+/**
+ * /worker/notifications — redirects to the shared notification center.
+ * Preserves any query params (e.g. ?tab=submission).
+ */
+return Astro.redirect(`/dashboard/notifications${Astro.url.search}`, 301);
+---

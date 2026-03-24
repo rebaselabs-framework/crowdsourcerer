@@ -73,9 +73,10 @@ async def create_task(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Enforce plan quota limits
-    from core.quotas import enforce_task_creation_quota, record_task_creation
+    # Enforce plan quota limits (daily + per-minute burst)
+    from core.quotas import enforce_task_creation_quota, enforce_task_burst_limit, record_task_creation, record_task_burst
     await enforce_task_creation_quota(db, user_id, user.plan)
+    await enforce_task_burst_limit(db, user_id, user.plan)
 
     # Org billing: if org_id specified, check membership and deduct from org pool
     org = None
@@ -191,8 +192,9 @@ async def create_task(
     await db.commit()
     await db.refresh(task)
 
-    # Record quota usage
+    # Record quota usage (daily + burst)
     await record_task_creation(db, user_id)
+    await record_task_burst(db, user_id)
 
     # Hook requester onboarding: create_task step
     asyncio.create_task(_mark_requester_onboarding(user_id, "create_task"))
@@ -300,10 +302,11 @@ async def create_tasks_batch(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Enforce plan quota limits (batch size + daily limit)
-    from core.quotas import enforce_task_creation_quota, record_task_creation, enforce_batch_size
+    # Enforce plan quota limits (batch size + daily limit + burst)
+    from core.quotas import enforce_task_creation_quota, enforce_task_burst_limit, record_task_creation, record_task_burst, enforce_batch_size
     enforce_batch_size(user.plan, len(req.tasks))
     await enforce_task_creation_quota(db, user_id, user.plan, task_count=len(req.tasks))
+    await enforce_task_burst_limit(db, user_id, user.plan, task_count=len(req.tasks))
 
     if user.credits < total_credits:
         raise HTTPException(
@@ -376,9 +379,10 @@ async def create_tasks_batch(
 
     await db.commit()
 
-    # Record quota usage for successfully created tasks
+    # Record quota usage for successfully created tasks (daily + burst)
     if created:
         await record_task_creation(db, user_id, task_count=len(created))
+        await record_task_burst(db, user_id, task_count=len(created))
 
     # Refresh and schedule AI tasks
     results = []
