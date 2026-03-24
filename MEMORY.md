@@ -18,33 +18,27 @@ Auto-updated by autonomous sessions. Tracks what was done and what's next.
 | 10 | Worker onboarding funnel admin page (`/admin/worker-onboarding-funnel` + `GET /v1/admin/worker-onboarding/funnel`) | e4cdd3c |
 | 11 | Extend integration tests to 43 (requester onboarding flow, worker onboarding, claim/submit guards) | 49af1eb |
 | 12 | Bug fix: explicitly set SQLAlchemy boolean defaults in `_get_or_create` for both onboarding routers | 49af1eb |
+| 13 | Full human-task flow E2E tests (26 tests: create/claim/submit/approve/reject + negative paths) | 0950227 |
+| 14 | Fix pre-existing test isolation: lru_cache settings leak + background task exception propagation | 0950227 |
+| 15 | Fix stale test_task_endpoints tests (templates is public; public feed needs mock DB) | 0950227 |
+| 16 | Migrate `on_event` → `lifespan` context manager in main.py (FastAPI deprecation) | 2d29ce2 |
+| 17 | Fix Pydantic v2 warnings: `@validator` → `@field_validator` (availability.py), `regex=` → `pattern=` (analytics.py) | 2d29ce2 |
 
 ## Priorities for Next Session 🔜
 
-1. **Full task flow E2E test** — the happy path mock test for human task:
-   - POST /v1/tasks (human type) → 201 with task_id
-   - POST /v1/worker/tasks/{id}/claim → 200 with assignment
-   - POST /v1/worker/tasks/{id}/submit → 200
-   - POST /v1/tasks/{id}/submissions/{assign_id}/approve → 200
-   Needs careful mocking of: quota enforcement, credit deduction, worker stats,
-   assignment creation, consensus logic. Use `side_effect` with call counter.
-
-2. **Deploy blockers** (owner-dependent, needs GitHub Secrets):
+1. **Deploy blockers** (owner-dependent, needs GitHub Secrets):
    - `NPM_TOKEN` for `@crowdsourcerer/sdk` publish
    - PyPI OIDC for Python package publish
-   - Coolify webhook URL for auto-deploy trigger
 
-3. **Known Pydantic warnings to fix** (touch files opportunistically):
-   - `on_event` deprecation in `main.py` → migrate to `lifespan`
-   - `@validator` in `availability.py` → `@field_validator`
-   - `regex=` in `analytics.py` → `pattern=`
-   - Pydantic v1 class Config → `ConfigDict`
+2. **Pydantic v1 class Config → ConfigDict** (remaining):
+   - Multiple model files still use `class Config: from_attributes = True`
+   - Migrate to `model_config = ConfigDict(from_attributes=True)`
+
+3. **UX polish**: task creation form could use better validation UX
+   (inline field-level errors instead of generic toast on submit)
 
 ## Known Warnings (non-blocking)
 
-- `on_event` deprecation in `main.py` — migrate to `lifespan` when touching main.py
-- `@validator` in `availability.py` — migrate to `@field_validator` when touching that file
-- `regex=` in `analytics.py` — migrate to `pattern=` when touching that file
 - Pydantic v1 class Config in various models — migrate to `ConfigDict` when touching
 
 ## Architecture Notes
