@@ -52,7 +52,7 @@ def upgrade() -> None:
             "status",
             sa.Enum("pending", "accepted", "declined", name="team_invite_status"),
             nullable=False,
-            server_default="'pending'",
+            server_default="pending",
         ),
         sa.Column("message", sa.Text(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
