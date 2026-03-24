@@ -1618,3 +1618,35 @@ class SystemAlertDB(Base):
     resolved_at = Column(DateTime(timezone=True), nullable=True)   # null = still active
     notified_at = Column(DateTime(timezone=True), nullable=True)   # when email was sent
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False, index=True)
+
+
+class TaskResultCacheDB(Base):
+    """Cache for AI task results keyed on (task_type, SHA-256 of canonical input JSON).
+
+    When a requester submits the exact same AI task input again, we skip the
+    external API call, return the cached output instantly, and refund most of
+    the credits (charging only a small cache-hit fee).  This saves real money
+    on repeated web_research / llm_generate / pii_detect calls.
+    """
+    __tablename__ = "task_result_cache"
+    __table_args__ = (
+        UniqueConstraint("task_type", "input_hash", name="uq_cache_type_hash"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    task_type = Column(String(64), nullable=False, index=True)
+    input_hash = Column(String(64), nullable=False, index=True)   # hex SHA-256
+
+    # Cached result
+    output = Column(JSON, nullable=False)
+    full_credits_cost = Column(Integer, nullable=False)           # cost of the original run
+    duration_ms = Column(Integer, nullable=True)                  # how long original run took
+
+    # Lifetime stats
+    hit_count = Column(Integer, default=0, nullable=False)
+    last_hit_at = Column(DateTime(timezone=True), nullable=True)
+
+    # TTL — sweeper/cron can evict expired entries; NULL means no expiry
+    expires_at = Column(DateTime(timezone=True), nullable=True, index=True)
+
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False, index=True)

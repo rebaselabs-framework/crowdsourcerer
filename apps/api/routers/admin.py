@@ -19,6 +19,7 @@ from core.auth import get_current_user_id, require_admin
 from core.database import get_db, AsyncSessionLocal
 from core.sweeper import sweep_once, get_sweeper_task, _sweep_scheduled_tasks, _LAST_SWEEP_AT
 from core.audit import log_admin_action
+from core.result_cache import cache_stats, cache_flush
 from models.db import TaskDB, UserDB, CreditTransactionDB, TaskAssignmentDB, WebhookLogDB, PayoutRequestDB, WorkerStrikeDB, AdminAuditLogDB, SystemAlertDB
 
 logger = structlog.get_logger()
@@ -1539,3 +1540,44 @@ async def resolve_system_alert(
     await db.commit()
 
     return {"ok": True, "alert_id": str(alert_id), "resolved_at": alert.resolved_at.isoformat()}
+
+
+# ─── Task Result Cache ──────────────────────────────────────────────────────
+
+@router.get("/cache/stats")
+async def get_cache_stats(
+    db: AsyncSession = Depends(get_db),
+    _admin_id: UUID = Depends(require_admin),
+):
+    """Return aggregate statistics for the task result cache.
+
+    Includes total entries, hit counts, and estimated credits saved.
+    """
+    return await cache_stats(db)
+
+
+@router.delete("/cache/flush", status_code=200)
+async def flush_cache(
+    task_type: Optional[str] = Query(None, description="Flush only this task type (omit for all)"),
+    expired_only: bool = Query(False, description="Only remove expired entries"),
+    db: AsyncSession = Depends(get_db),
+    admin_id: UUID = Depends(require_admin),
+):
+    """Flush task result cache entries.
+
+    * ``task_type`` — limit flush to a specific task type
+    * ``expired_only=true`` — only remove entries whose TTL has elapsed
+    """
+    deleted = await cache_flush(db, task_type=task_type, expired_only=expired_only)
+
+    await log_admin_action(
+        db=db,
+        admin_id=admin_id,
+        action="flush_result_cache",
+        target_type="cache",
+        target_id=task_type or "all",
+        detail={"expired_only": expired_only, "deleted": deleted},
+    )
+    await db.commit()
+
+    return {"ok": True, "deleted": deleted}

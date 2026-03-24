@@ -1676,11 +1676,28 @@ def _result_preview(output: dict | None, max_chars: int = 200) -> str:
     return raw[:max_chars] + ("…" if len(raw) > max_chars else "")
 
 
+async def _store_cache_entry(
+    task_type: str,
+    task_input: dict,
+    output: dict,
+    full_credits_cost: int,
+    duration_ms: int | None,
+) -> None:
+    """Background coroutine: persist a task result to the cache with its own DB session."""
+    from core.database import AsyncSessionLocal
+    from core.result_cache import cache_store
+    async with AsyncSessionLocal() as db:
+        await cache_store(db, task_type, task_input, output, full_credits_cost, duration_ms)
+
+
 async def _run_task(task_id: str, user_id: str):
-    """Execute an AI task against RebaseKit and store the result."""
+    """Execute an AI task against RebaseKit (or return a cached result) and store the outcome."""
     from core.database import AsyncSessionLocal  # avoid circular import at module level
     from core.email import notify_task_completed, notify_task_failed
     from core.notify import create_notification, NotifType
+    from core.result_cache import (
+        cache_lookup, cache_store, CACHE_HIT_FEE_CREDITS,
+    )
 
     async with AsyncSessionLocal() as db:
         try:
@@ -1693,24 +1710,71 @@ async def _run_task(task_id: str, user_id: str):
             task.started_at = datetime.now(timezone.utc)
             await db.commit()
 
-            t0 = time.perf_counter()
-            client = get_rebasekit_client()
-            output = await execute_task(task.type, task.input, client)
-            duration_ms = int((time.perf_counter() - t0) * 1000)
+            full_cost = TASK_CREDITS.get(task.type, 5)
+            cache_entry = await cache_lookup(db, task.type, task.input)
+            cache_hit = cache_entry is not None
+
+            if cache_hit:
+                # ── Cache hit: use stored result, skip external API call ──
+                output = cache_entry.output
+                duration_ms = 0  # instant from cache
+                credits_used = CACHE_HIT_FEE_CREDITS
+
+                # Refund the difference so the requester only pays the nominal fee
+                refund_amount = full_cost - CACHE_HIT_FEE_CREDITS
+                if refund_amount > 0:
+                    user_result = await db.execute(select(UserDB).where(UserDB.id == user_id))
+                    owner = user_result.scalar_one_or_none()
+                    if owner:
+                        owner.credits += refund_amount
+                        refund_txn = CreditTransactionDB(
+                            user_id=user_id,
+                            task_id=task.id,
+                            amount=refund_amount,
+                            type="refund",
+                            description=f"Cache hit refund: {task.type}",
+                        )
+                        db.add(refund_txn)
+
+                logger.info(
+                    "task_cache_hit",
+                    task_id=task_id,
+                    type=task.type,
+                    refunded_credits=refund_amount if refund_amount > 0 else 0,
+                )
+            else:
+                # ── Cache miss: call RebaseKit ──
+                t0 = time.perf_counter()
+                client = get_rebasekit_client()
+                output = await execute_task(task.type, task.input, client)
+                duration_ms = int((time.perf_counter() - t0) * 1000)
+                credits_used = full_cost
+
+                # Store result for future cache hits (fire-and-forget, own DB session)
+                asyncio.create_task(
+                    _store_cache_entry(task.type, task.input, output, full_cost, duration_ms)
+                )
 
             task.status = "completed"
             task.output = output
             task.duration_ms = duration_ms
             task.completed_at = datetime.now(timezone.utc)
-            task.credits_used = TASK_CREDITS.get(task.type, 5)
+            task.credits_used = credits_used
 
             # Build result preview snippet for notifications + webhooks
             preview = _result_preview(output)
             task_label = task.type.replace("_", " ")
-            notif_body = (
-                f"Your {task_label} task finished in {duration_ms}ms."
-                + (f" — {preview}" if preview else "")
-            )
+            if cache_hit:
+                notif_body = (
+                    f"Your {task_label} task completed instantly from cache"
+                    f" (saved {full_cost - CACHE_HIT_FEE_CREDITS} credits)."
+                    + (f" — {preview}" if preview else "")
+                )
+            else:
+                notif_body = (
+                    f"Your {task_label} task finished in {duration_ms}ms."
+                    + (f" — {preview}" if preview else "")
+                )
 
             # In-app notification: task completed (with preview)
             await create_notification(
@@ -1733,11 +1797,12 @@ async def _run_task(task_id: str, user_id: str):
             user_result = await db.execute(select(UserDB).where(UserDB.id == user_id))
             owner = user_result.scalar_one_or_none()
 
-            # Fire webhook if set — include result_preview in payload
+            # Fire webhook if set — include result_preview and cache flag in payload
             _wh_done_extra = {
                 "type": task.type,
                 "duration_ms": duration_ms,
                 "credits_used": task.credits_used,
+                "cached": cache_hit,
                 **({"result_preview": preview} if preview else {}),
             }
             if task.webhook_url:

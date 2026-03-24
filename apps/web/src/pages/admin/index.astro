@@ -8,13 +8,15 @@ if (!token) return Astro.redirect("/login");
 let stats: any = null;
 let sweeperStatus: any = null;
 let activeAlerts: any = null;
+let cacheStats: any = null;
 let error: string | null = null;
 
 try {
-  [stats, sweeperStatus, activeAlerts] = await Promise.all([
+  [stats, sweeperStatus, activeAlerts, cacheStats] = await Promise.all([
     apiFetch<any>("/v1/admin/stats", { token }),
     apiFetch<any>("/v1/admin/sweeper/status", { token }).catch(() => null),
     apiFetch<any>("/v1/admin/alerts?status=active&limit=1", { token }).catch(() => null),
+    apiFetch<any>("/v1/admin/cache/stats", { token }).catch(() => null),
   ]);
 } catch (e: any) {
   if (e.message?.includes("403")) {
@@ -258,6 +260,33 @@ try {
                 </div>
               </div>
             </div>
+
+            <!-- Task result cache summary -->
+            {cacheStats && (
+              <a
+                href="/admin/cache"
+                class="block bg-gray-900 border border-emerald-800/30 hover:border-emerald-600/50 rounded-xl p-5 transition-colors"
+              >
+                <div class="flex items-center justify-between mb-3">
+                  <h3 class="font-semibold text-sm">Result Cache</h3>
+                  <span class="text-xs text-gray-500">→</span>
+                </div>
+                <div class="grid grid-cols-3 gap-4">
+                  <div>
+                    <div class="text-xs text-gray-500 mb-1">Entries</div>
+                    <div class="text-xl font-bold">{cacheStats.total_entries}</div>
+                  </div>
+                  <div>
+                    <div class="text-xs text-gray-500 mb-1">Hits</div>
+                    <div class="text-xl font-bold text-emerald-400">{cacheStats.total_hits.toLocaleString()}</div>
+                  </div>
+                  <div>
+                    <div class="text-xs text-gray-500 mb-1">Credits saved</div>
+                    <div class="text-xl font-bold text-amber-300">{cacheStats.credits_saved.toLocaleString()}</div>
+                  </div>
+                </div>
+              </a>
+            )}
           </div>
         </div>
 
@@ -327,6 +356,13 @@ try {
               )}
             </div>
             <div class="text-xs text-gray-500">Health alerts: error spikes, sweeper stalls</div>
+          </a>
+          <a href="/admin/cache" class="bg-gray-900 border border-emerald-800/30 hover:border-emerald-600/50 rounded-xl p-5 transition-colors">
+            <div class="text-2xl mb-2">⚡</div>
+            <div class="font-semibold text-sm mb-1">Result Cache</div>
+            <div class="text-xs text-gray-500">
+              {cacheStats ? `${cacheStats.total_hits} hits · ${cacheStats.credits_saved} credits saved` : "AI task deduplication cache"}
+            </div>
           </a>
         </div>
       </>
