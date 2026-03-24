@@ -317,6 +317,7 @@ async def send_weekly_digests(session_factory) -> int:
                             continue
                     else:
                         # No prefs row means default (weekly) — proceed
+                        pass
 
                     # User's tasks this week
                     tasks_created = await db.scalar(
