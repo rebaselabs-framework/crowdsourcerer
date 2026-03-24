@@ -52,6 +52,8 @@ Auto-updated by autonomous sessions. Tracks what was done and what's next.
 | 44 | Task launched banner on task detail (mode-aware: AI=green/queued, human=violet/live), dismiss via history.replaceState | 4dd3b69 |
 | 45 | Fix missing DELETE /api/notifications/[id] Astro proxy route (per-notification delete was silently 404ing) | 4dd3b69 |
 | 46 | Per-minute burst rate limiting on task creation: free=3/min, starter=10/min, pro=30/min, enterprise=100/min | 4dd3b69 |
+| 47 | Marketplace text search + sort + reward filter (API + UI) + Save search CTA + /worker/saved-searches page | d688a1b |
+| 48 | Admin health: stuck task detection (AI >30m, human >24h, timed-out assignments) + health page stuck panel | d688a1b |
 
 ## Priorities for Next Session 🔜
 
@@ -59,13 +61,13 @@ Auto-updated by autonomous sessions. Tracks what was done and what's next.
    - `NPM_TOKEN` for `@crowdsourcerer/sdk` publish
    - PyPI OIDC for Python package publish
 
-2. **Marketplace improvements** — add text search to `/marketplace` public feed, add "save search" / watchlist CTA for logged-in users
+2. **Worker onboarding completion rate** — track which onboarding steps workers abandon; show completion nudge in dashboard
 
-3. **Stripe webhook hardening** — add idempotency key check on payment webhooks to prevent double-crediting on retries
+3. **Requester task analytics** — "time to first claim", "average completion time per type", "worker quality scores" per task
 
-4. **Worker profile public page** — `/workers/[id]` public profile showing completed tasks, ratings, certifications (for requester trust-building)
+4. **Notification preferences UI** — allow workers to fine-tune which notification types they receive (in-app vs email per event type)
 
-5. **Admin task health dashboard** — surface stuck/long-running tasks, worker assignment timeouts, consensus failures in one view
+5. **Public leaderboard improvements** — monthly/weekly tabs, show worker specialisations and badge count
 
 ## Known Warnings (non-blocking)
 
