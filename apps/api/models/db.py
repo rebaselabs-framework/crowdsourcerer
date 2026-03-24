@@ -1181,8 +1181,6 @@ class DisputeEventDB(Base):
     task = relationship("TaskDB", backref="dispute_events")
     actor = relationship("UserDB", backref="dispute_actions")
 
-    worker = relationship("UserDB", backref="quiz_attempts")
-
 
 class WebhookEndpointDB(Base):
     """
