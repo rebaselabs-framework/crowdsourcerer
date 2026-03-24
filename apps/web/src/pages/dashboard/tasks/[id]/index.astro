@@ -697,16 +697,30 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
 
             {richOutput?.kind === "llm_generate" && (
               <div id="rich-view" class="px-5 py-5">
-                {(richOutput.model || richOutput.tokens) && (
-                  <div class="flex items-center gap-3 mb-3">
-                    {richOutput.model && <span class="text-xs px-2 py-0.5 rounded bg-violet-950/50 border border-violet-800 text-violet-300">{richOutput.model}</span>}
-                    {richOutput.tokens && <span class="text-xs text-gray-500">{richOutput.tokens} tokens</span>}
+                <!-- Metadata + view toggle row -->
+                <div class="flex items-center gap-3 mb-4 flex-wrap">
+                  {richOutput.model && <span class="text-xs px-2 py-0.5 rounded bg-violet-950/50 border border-violet-800 text-violet-300">{richOutput.model}</span>}
+                  {richOutput.tokens && <span class="text-xs text-gray-500">{richOutput.tokens} tokens</span>}
+                  <div class="ml-auto flex items-center gap-0.5 bg-gray-800 rounded-lg p-1" id="llm-view-toggle">
+                    <button id="llm-view-rendered"
+                      class="px-2.5 py-1 rounded-md text-xs font-medium transition-colors bg-violet-600 text-white">
+                      ✦ Formatted
+                    </button>
+                    <button id="llm-view-raw"
+                      class="px-2.5 py-1 rounded-md text-xs font-medium transition-colors text-gray-400 hover:text-white">
+                      { } Raw
+                    </button>
                   </div>
-                )}
+                </div>
 
-                <!-- Static output -->
-                <div id="static-output">
+                <!-- Rendered Markdown output (default) — populated by marked.js, fallback is plain text -->
+                <div id="md-rendered" class="llm-prose">
                   <p class="text-sm text-gray-200 leading-relaxed whitespace-pre-wrap">{richOutput.text}</p>
+                </div>
+
+                <!-- Raw text output (hidden by default) -->
+                <div id="static-output" class="hidden">
+                  <pre class="text-sm text-gray-400 font-mono leading-relaxed whitespace-pre-wrap bg-gray-950 border border-gray-800 rounded-lg p-4 overflow-x-auto">{richOutput.text}</pre>
                 </div>
 
                 <!-- Streaming output panel (hidden by default) -->
@@ -2464,6 +2478,16 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
         streamCursor.classList.add("hidden");
         streamStopBtn.classList.add("hidden");
         speedSelect.disabled = false;
+        // Restore the active text output view (md-rendered or static-output)
+        const mdView = document.getElementById("md-rendered");
+        const rawActive = mdView?.classList.contains("hidden") === false ? false : true;
+        // Show whichever was previously visible based on toggle state
+        const llmViewRaw = document.getElementById("llm-view-raw");
+        if (llmViewRaw?.classList.contains("bg-violet-600")) {
+          staticOutput.classList.remove("hidden");
+        } else {
+          mdView?.classList.remove("hidden");
+        }
       }
 
       streamStopBtn?.addEventListener("click", () => {
@@ -2481,8 +2505,9 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
         speedSelect.disabled = true;
         streamStopBtn.classList.remove("hidden");
 
-        // Show stream panel, hide static
+        // Show stream panel, hide both md-rendered and static-output
         staticOutput.classList.add("hidden");
+        document.getElementById("md-rendered")?.classList.add("hidden");
         streamPanel.classList.remove("hidden");
         streamText.textContent = "";
         streamCursor.classList.remove("hidden");
@@ -2518,6 +2543,54 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
       });
     }
   </script>
+
+  <!-- LLM Output: Markdown rendering + view toggle -->
+  {richOutput?.kind === "llm_generate" && (
+    <script define:vars={{ llmRawText: richOutput.text }}>
+      const mdContainer = document.getElementById("md-rendered");
+      const rawContainer = document.getElementById("static-output");
+      const btnFormatted = document.getElementById("llm-view-rendered");
+      const btnRaw = document.getElementById("llm-view-raw");
+
+      function setView(mode) {
+        if (mode === "formatted") {
+          mdContainer?.classList.remove("hidden");
+          rawContainer?.classList.add("hidden");
+          btnFormatted?.classList.add("bg-violet-600", "text-white");
+          btnFormatted?.classList.remove("text-gray-400", "hover:text-white");
+          btnRaw?.classList.remove("bg-violet-600", "text-white");
+          btnRaw?.classList.add("text-gray-400", "hover:text-white");
+        } else {
+          mdContainer?.classList.add("hidden");
+          rawContainer?.classList.remove("hidden");
+          btnRaw?.classList.add("bg-violet-600", "text-white");
+          btnRaw?.classList.remove("text-gray-400", "hover:text-white");
+          btnFormatted?.classList.remove("bg-violet-600", "text-white");
+          btnFormatted?.classList.add("text-gray-400", "hover:text-white");
+        }
+      }
+
+      btnFormatted?.addEventListener("click", () => setView("formatted"));
+      btnRaw?.addEventListener("click", () => setView("raw"));
+
+      // Load marked.js and render markdown
+      if (mdContainer && llmRawText) {
+        const script = document.createElement("script");
+        script.src = "https://cdn.jsdelivr.net/npm/marked@9/marked.min.js";
+        script.onload = () => {
+          try {
+            mdContainer.innerHTML = marked.parse(llmRawText, { breaks: true, gfm: true });
+          } catch (e) {
+            // Fallback: keep the pre-rendered plain text
+          }
+        };
+        script.onerror = () => {
+          // CDN failed: show raw text as fallback (already in the DOM as plain text)
+        };
+        document.head.appendChild(script);
+      }
+    </script>
+  )}
 
   <!-- Related tasks + suggested workers lazy loader -->
   <script define:vars={{ taskId: id, isRequester, executionMode: task?.execution_mode }}>
@@ -2771,3 +2844,49 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
     }
   </script>
 </Layout>
+
+<style is:global>
+  /* ── LLM Prose: Markdown rendered output styles ─────────────────────────── */
+  .llm-prose { color: #e5e7eb; font-size: 0.875rem; line-height: 1.75; }
+  .llm-prose > *:first-child { margin-top: 0; }
+  .llm-prose > *:last-child { margin-bottom: 0; }
+  .llm-prose h1 { font-size: 1.25rem; font-weight: 700; color: #f9fafb; margin: 1.25rem 0 0.5rem; line-height: 1.3; }
+  .llm-prose h2 { font-size: 1.125rem; font-weight: 600; color: #f3f4f6; margin: 1rem 0 0.4rem; line-height: 1.35; }
+  .llm-prose h3 { font-size: 1rem; font-weight: 600; color: #e5e7eb; margin: 0.875rem 0 0.35rem; line-height: 1.4; }
+  .llm-prose h4, .llm-prose h5, .llm-prose h6 { font-size: 0.9375rem; font-weight: 600; color: #d1d5db; margin: 0.75rem 0 0.3rem; }
+  .llm-prose p { margin: 0.5rem 0; color: #e5e7eb; }
+  .llm-prose ul { margin: 0.5rem 0; padding-left: 1.5rem; list-style-type: disc; }
+  .llm-prose ol { margin: 0.5rem 0; padding-left: 1.5rem; list-style-type: decimal; }
+  .llm-prose li { color: #d1d5db; margin: 0.2rem 0; padding-left: 0.25rem; }
+  .llm-prose li::marker { color: #7c3aed; }
+  .llm-prose strong { color: #f9fafb; font-weight: 600; }
+  .llm-prose em { color: #c4b5fd; font-style: italic; }
+  .llm-prose code:not(pre code) {
+    background: #1f2937; border: 1px solid #374151; border-radius: 0.3rem;
+    padding: 0.1em 0.4em; font-size: 0.8125rem; font-family: ui-monospace, monospace;
+    color: #a78bfa;
+  }
+  .llm-prose pre {
+    background: #030712; border: 1px solid #1f2937; border-radius: 0.5rem;
+    padding: 1rem 1.25rem; margin: 0.875rem 0; overflow-x: auto;
+  }
+  .llm-prose pre code {
+    background: none; border: none; padding: 0; color: #6ee7b7;
+    font-size: 0.8125rem; font-family: ui-monospace, monospace;
+  }
+  .llm-prose blockquote {
+    border-left: 3px solid #7c3aed; padding: 0.25rem 0 0.25rem 1rem;
+    margin: 0.75rem 0; color: #9ca3af; font-style: italic;
+  }
+  .llm-prose a { color: #a78bfa; text-decoration: underline; text-underline-offset: 2px; }
+  .llm-prose a:hover { color: #c4b5fd; }
+  .llm-prose hr { border: none; border-top: 1px solid #374151; margin: 1rem 0; }
+  .llm-prose table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; margin: 0.75rem 0; }
+  .llm-prose th {
+    background: #1f2937; padding: 0.5rem 0.75rem; text-align: left;
+    font-weight: 600; color: #9ca3af; border-bottom: 1px solid #374151;
+  }
+  .llm-prose td { padding: 0.5rem 0.75rem; color: #d1d5db; border-bottom: 1px solid #111827; }
+  .llm-prose tr:last-child td { border-bottom: none; }
+  .llm-prose img { max-width: 100%; border-radius: 0.5rem; margin: 0.5rem 0; }
+</style>

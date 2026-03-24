@@ -76,48 +76,59 @@ function taskLabel(type: string): string {
     </div>
   </section>
 
-  <!-- Video demo -->
-  <section class="max-w-4xl mx-auto px-6 pb-20">
+  <!-- Interactive API Demo -->
+  <section class="max-w-5xl mx-auto px-6 pb-20">
     <div class="text-center mb-8">
       <h2 class="text-2xl font-bold text-gray-200 mb-2">See it in action</h2>
-      <p class="text-gray-400 text-sm">Watch how CrowdSorcerer routes a task end-to-end in under 30 seconds.</p>
+      <p class="text-gray-400 text-sm">Submit a task. Get results. Pick your scenario:</p>
     </div>
-    <div
-      class="relative rounded-2xl overflow-hidden border border-gray-800 bg-gray-900 shadow-2xl"
-      style="aspect-ratio: 16/9;"
-      id="demo-video-wrapper"
-    >
-      <!-- Thumbnail / click-to-play -->
-      <button
-        id="demo-play-btn"
-        class="absolute inset-0 w-full h-full flex flex-col items-center justify-center gap-4 group cursor-pointer bg-transparent border-0 p-0"
-        aria-label="Play demo video"
-      >
-        <!-- Dark overlay background -->
-        <div class="absolute inset-0 bg-gradient-to-br from-violet-950/60 via-gray-900 to-gray-950"></div>
 
-        <!-- Animated concentric rings -->
-        <div class="relative z-10 flex items-center justify-center">
-          <div class="absolute w-28 h-28 rounded-full border border-violet-500/20 animate-ping"></div>
-          <div class="absolute w-20 h-20 rounded-full border border-violet-500/30"></div>
-          <button
-            class="relative w-16 h-16 rounded-full bg-violet-600 hover:bg-violet-500 transition-colors flex items-center justify-center shadow-lg shadow-violet-900/50 group-hover:scale-105 transition-transform"
-            tabindex="-1"
-          >
-            <svg class="w-6 h-6 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M8 5v14l11-7z"/>
-            </svg>
-          </button>
+    <!-- Demo terminal window -->
+    <div class="rounded-2xl overflow-hidden border border-gray-700 bg-gray-900 shadow-2xl">
+      <!-- Window chrome -->
+      <div class="flex items-center gap-2 px-4 py-3 bg-gray-800/80 border-b border-gray-700">
+        <div class="w-3 h-3 rounded-full bg-red-500/70"></div>
+        <div class="w-3 h-3 rounded-full bg-yellow-500/70"></div>
+        <div class="w-3 h-3 rounded-full bg-green-500/70"></div>
+        <span class="ml-3 text-xs text-gray-500 font-mono">CrowdSorcerer API</span>
+        <!-- Scenario tabs -->
+        <div class="ml-auto flex gap-1">
+          <button class="demo-tab active-tab px-3 py-1 rounded text-xs font-medium transition-colors" data-demo="0">🌐 Web Research</button>
+          <button class="demo-tab px-3 py-1 rounded text-xs font-medium transition-colors" data-demo="1">🤖 LLM Generate</button>
+          <button class="demo-tab px-3 py-1 rounded text-xs font-medium transition-colors" data-demo="2">🏢 Entity Lookup</button>
+        </div>
+      </div>
+
+      <!-- Split pane: request + response -->
+      <div class="grid md:grid-cols-2 gap-0 divide-y md:divide-y-0 md:divide-x divide-gray-800">
+        <!-- Request pane -->
+        <div class="p-5">
+          <div class="flex items-center gap-2 mb-3">
+            <span class="text-[10px] font-bold uppercase tracking-widest text-violet-400 bg-violet-950/40 border border-violet-800/50 px-2 py-0.5 rounded">POST</span>
+            <span class="text-xs text-gray-500 font-mono">/v1/tasks</span>
+          </div>
+          <pre id="demo-request" class="text-sm font-mono text-gray-300 leading-relaxed overflow-x-auto whitespace-pre-wrap min-h-[160px]"></pre>
         </div>
 
-        <div class="relative z-10 text-center mt-2">
-          <span class="text-sm text-gray-300 font-medium">2 min walkthrough</span>
-          <span class="block text-xs text-gray-500 mt-0.5">Task submission · AI routing · Results</span>
+        <!-- Response pane -->
+        <div class="p-5">
+          <div class="flex items-center gap-2 mb-3">
+            <span id="demo-status-badge" class="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded border text-gray-400 bg-gray-800 border-gray-700">Waiting…</span>
+            <span id="demo-status-label" class="text-xs text-gray-500">Submit a task to see results</span>
+          </div>
+          <pre id="demo-response" class="text-sm font-mono text-gray-500 leading-relaxed overflow-x-auto whitespace-pre-wrap min-h-[160px]"></pre>
         </div>
-      </button>
+      </div>
 
-      <!-- YouTube iframe (injected on click) -->
-      <div id="demo-iframe-container" class="hidden absolute inset-0 w-full h-full"></div>
+      <!-- Progress bar + action -->
+      <div class="px-5 py-4 bg-gray-950/50 border-t border-gray-800 flex items-center justify-between gap-4">
+        <div class="flex-1 bg-gray-800 rounded-full h-1.5 overflow-hidden">
+          <div id="demo-progress" class="h-full bg-violet-500 rounded-full transition-all duration-300" style="width: 0%"></div>
+        </div>
+        <button id="demo-run-btn" class="flex-shrink-0 px-4 py-1.5 bg-violet-600 hover:bg-violet-500 text-white text-xs font-semibold rounded-lg transition-colors">
+          ▶ Run demo
+        </button>
+      </div>
     </div>
   </section>
 
@@ -418,25 +429,216 @@ console.<span class="text-yellow-400">log</span>(task.output.summary);
   </script>
 
   <script>
-    // Demo video — click-to-play (YouTube embed)
-    // Replace VIDEO_ID with real YouTube ID once the video is uploaded.
-    const VIDEO_ID = "dQw4w9WgXcQ"; // TODO: replace with real demo video ID
+    // ── Interactive API Demo ──────────────────────────────────────────────────
+    const DEMOS = [
+      {
+        request: `{
+  "type": "web_research",
+  "input": {
+    "url": "https://news.ycombinator.com",
+    "instruction": "List the top 5 story titles"
+  },
+  "priority": "normal"
+}`,
+        response: `{
+  "id": "task_8f3a2c1d",
+  "status": "completed",
+  "type": "web_research",
+  "output": {
+    "summary": "Hacker News front page features stories
+about AI safety research, a new Rust HTTP
+library, PostgreSQL 17 benchmarks, and a
+discussion on distributed systems.",
+    "key_facts": [
+      "Top story: AI alignment paper by Anthropic",
+      "PostgreSQL 17 shows 40% query speedup",
+      "New Rust async HTTP client: 2M req/sec"
+    ],
+    "sources": ["https://news.ycombinator.com"]
+  },
+  "credits_used": 10,
+  "completed_at": "2026-03-24T14:02:11Z"
+}`,
+      },
+      {
+        request: `{
+  "type": "llm_generate",
+  "input": {
+    "messages": [{
+      "role": "user",
+      "content": "Write 3 taglines for a
+crowdsourcing + AI task API platform"
+    }],
+    "model": "claude-3-5-haiku-20241022"
+  }
+}`,
+        response: `{
+  "id": "task_2e9b1f4a",
+  "status": "completed",
+  "type": "llm_generate",
+  "output": {
+    "text": "**1.** Route any task. Get results instantly.
 
-    const playBtn = document.getElementById("demo-play-btn");
-    const iframeContainer = document.getElementById("demo-iframe-container");
+**2.** 10 AI workers. One API. Zero setup.
 
-    playBtn?.addEventListener("click", () => {
-      if (!iframeContainer) return;
-      iframeContainer.innerHTML = `<iframe
-        src="https://www.youtube.com/embed/${VIDEO_ID}?autoplay=1&rel=0&modestbranding=1"
-        class="w-full h-full"
-        frameborder="0"
-        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-        allowfullscreen
-        title="CrowdSorcerer demo video"
-      ></iframe>`;
-      iframeContainer.classList.remove("hidden");
-      playBtn.classList.add("hidden");
+**3.** From prompt to production — in minutes,
+not months.",
+    "model": "claude-3-5-haiku-20241022",
+    "tokens": 84
+  },
+  "credits_used": 1,
+  "completed_at": "2026-03-24T14:02:04Z"
+}`,
+      },
+      {
+        request: `{
+  "type": "entity_lookup",
+  "input": {
+    "entity_type": "company",
+    "domain": "stripe.com",
+    "enrich_fields": [
+      "description",
+      "headcount",
+      "funding"
+    ]
+  }
+}`,
+        response: `{
+  "id": "task_7c4d8e2b",
+  "status": "completed",
+  "type": "entity_lookup",
+  "output": {
+    "name": "Stripe",
+    "description": "Online payment processing
+for internet businesses.",
+    "headcount": "~8,000 employees",
+    "funding": "$2.2B raised",
+    "founded": 2010,
+    "hq": "South San Francisco, CA"
+  },
+  "credits_used": 5,
+  "completed_at": "2026-03-24T14:02:07Z"
+}`,
+      },
+    ];
+
+    let currentDemo = 0;
+    let running = false;
+
+    const reqEl    = document.getElementById("demo-request");
+    const resEl    = document.getElementById("demo-response");
+    const progEl   = document.getElementById("demo-progress") as HTMLElement | null;
+    const statusBadge = document.getElementById("demo-status-badge");
+    const statusLabel = document.getElementById("demo-status-label");
+    const runBtn   = document.getElementById("demo-run-btn") as HTMLButtonElement | null;
+    const tabs     = document.querySelectorAll(".demo-tab");
+
+    function setTab(idx: number) {
+      currentDemo = idx;
+      tabs.forEach((t, i) => {
+        if (i === idx) {
+          t.classList.add("active-tab");
+        } else {
+          t.classList.remove("active-tab");
+        }
+      });
+      // Reset display
+      if (reqEl) reqEl.textContent = DEMOS[idx].request;
+      if (resEl) { resEl.textContent = ""; resEl.classList.add("text-gray-500"); resEl.classList.remove("text-green-300"); }
+      setStatus("idle", "Click ▶ Run demo to execute");
+      if (progEl) progEl.style.width = "0%";
+    }
+
+    function setStatus(state: string, label: string) {
+      if (!statusBadge || !statusLabel) return;
+      statusLabel.textContent = label;
+      if (state === "idle") {
+        statusBadge.textContent = "Ready";
+        statusBadge.className = "text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded border text-gray-400 bg-gray-800 border-gray-700";
+      } else if (state === "running") {
+        statusBadge.textContent = "Processing";
+        statusBadge.className = "text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded border text-yellow-300 bg-yellow-950/40 border-yellow-800/50 animate-pulse";
+      } else if (state === "done") {
+        statusBadge.textContent = "200 OK";
+        statusBadge.className = "text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded border text-green-300 bg-green-950/40 border-green-800/50";
+      }
+    }
+
+    async function runDemo() {
+      if (running) return;
+      running = true;
+      if (runBtn) { runBtn.textContent = "⏳ Running…"; runBtn.disabled = true; }
+
+      const demo = DEMOS[currentDemo];
+      if (reqEl) reqEl.textContent = demo.request;
+      if (resEl) { resEl.textContent = ""; resEl.classList.remove("text-green-300"); resEl.classList.add("text-gray-500"); }
+      setStatus("running", "Routing task to AI worker…");
+
+      // Animate progress bar from 0 → 85%
+      if (progEl) progEl.style.width = "0%";
+      await new Promise(r => setTimeout(r, 50));
+      if (progEl) { progEl.style.transition = "width 1.4s ease-out"; progEl.style.width = "85%"; }
+
+      await new Promise(r => setTimeout(r, 1500));
+      setStatus("running", "Worker processing…");
+      await new Promise(r => setTimeout(r, 900));
+
+      // Complete: flash to 100%
+      if (progEl) { progEl.style.transition = "width 0.25s ease-out"; progEl.style.width = "100%"; }
+      setStatus("done", "Task completed ✓");
+
+      // Type out the response
+      if (resEl) {
+        const outputEl = resEl;
+        outputEl.classList.remove("text-gray-500");
+        outputEl.classList.add("text-green-300");
+        const text = demo.response;
+        let i = 0;
+        function typeNext() {
+          if (i < text.length) {
+            outputEl.textContent += text[i++];
+            setTimeout(typeNext, i < 50 ? 12 : 4);
+          } else {
+            running = false;
+            if (runBtn) { runBtn.textContent = "▶ Run again"; runBtn.disabled = false; }
+            if (progEl) setTimeout(() => { progEl.style.transition = "width 0.6s"; progEl.style.width = "0%"; }, 2000);
+          }
+        }
+        typeNext();
+      }
+    }
+
+    // Tab clicks
+    tabs.forEach((tab, i) => {
+      tab.addEventListener("click", () => {
+        if (!running) setTab(i);
+      });
     });
+
+    // Run button
+    runBtn?.addEventListener("click", runDemo);
+
+    // Init
+    setTab(0);
+
+    // Auto-run once after 1.5s to grab attention
+    setTimeout(() => { if (!running) runDemo(); }, 1500);
   </script>
+
+  <style is:global>
+    .demo-tab {
+      background: transparent;
+      color: #6b7280;
+      border: 1px solid transparent;
+    }
+    .demo-tab:hover {
+      color: #d1d5db;
+      background: #1f2937;
+    }
+    .demo-tab.active-tab {
+      background: #1f2937;
+      color: #e5e7eb;
+      border-color: #374151;
+    }
+  </style>
 </Layout>
