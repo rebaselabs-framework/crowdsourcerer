@@ -18,7 +18,7 @@ from core.database import get_db
 from core.notify import create_notification, NotifType
 from core.scopes import require_scope, SCOPE_TASKS_WRITE, SCOPE_TASKS_READ
 from models.db import (
-    TaskDB, TaskRatingDB, TaskAssignmentDB, UserDB, TaskSubmissionDB
+    TaskDB, TaskRatingDB, TaskAssignmentDB, UserDB,
 )
 
 router = APIRouter(prefix="/v1/tasks", tags=["ratings"])
@@ -105,16 +105,8 @@ def rate_task(
     if existing:
         raise HTTPException(status_code=409, detail="You have already rated this task")
 
-    # Resolve the worker_id: from approved submission or most recent assignment
+    # Resolve the worker_id from most recent assignment
     worker_id: Optional[UUID] = None
-
-    if body.submission_id:
-        sub = db.query(TaskSubmissionDB).filter(
-            TaskSubmissionDB.id == body.submission_id,
-            TaskSubmissionDB.task_id == task_id,
-        ).first()
-        if sub:
-            worker_id = sub.worker_id
 
     if worker_id is None:
         # Fall back: find the most recently approved / completed assignment
