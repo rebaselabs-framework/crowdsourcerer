@@ -327,6 +327,7 @@ if (Astro.request.method === "POST") {
             placeholder='{"query": "latest AI research 2025"}'
           ></textarea>
           <p class="text-xs text-gray-600 mt-1">Must be valid JSON.</p>
+          <p id="json-input-error" class="text-xs text-red-400 mt-1 hidden"></p>
         </div>
 
         <!-- Hidden textarea used in form mode (populated from guided fields) -->
@@ -357,7 +358,9 @@ if (Astro.request.method === "POST") {
             name="webhook_url"
             class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-gray-100 focus:outline-none focus:border-violet-500 transition-colors"
             placeholder="https://your-app.com/webhook"
+            id="webhook-url-input"
           />
+          <p id="webhook-url-error" class="text-xs text-red-400 mt-1 hidden"></p>
           <p class="text-xs text-gray-500 mt-1.5">
             Choose which events to receive:
           </p>
@@ -710,7 +713,9 @@ function renderField(f: FieldDef): string {
     const defVal = f.type !== "number" && (f as any).default ? ` value="${(f as any).default}"` : "";
     inputHtml = `<input id="${idAttr}" data-field="${f.name}" ${extra}${defVal} ${inputBase} />`;
   }
-  return `<div>${labelHtml}${inputHtml}</div>`;
+  // Error element (skipped for checkbox — it has its own return above)
+  const errorHtml = `<p class="gf-error text-xs text-red-400 mt-1 hidden" id="gf-err-${f.name}"></p>`;
+  return `<div>${labelHtml}${inputHtml}${errorHtml}</div>`;
 }
 
 // Build JSON from the guided form fields
@@ -784,6 +789,36 @@ function renderGuidedForm(type: string) {
     el.addEventListener("change", syncHiddenTextarea);
   });
 
+  // Wire up blur-time inline validation
+  wrapper.querySelectorAll<HTMLElement>("input[data-field], textarea[data-field]").forEach(el => {
+    el.addEventListener("blur", () => {
+      const name = el.getAttribute("data-field");
+      if (!name) return;
+      const checked = document.querySelector<HTMLInputElement>('input[name="type"]:checked');
+      if (!checked) return;
+      const fields = FORM_FIELDS[checked.value];
+      const fDef = fields?.find(f => f.name === name);
+      if (!fDef || fDef.type === "checkbox" || fDef.type === "select" || fDef.type === "number") return;
+      const value = (el as HTMLInputElement | HTMLTextAreaElement).value;
+      setGfError(name, validateFieldValue(fDef, value));
+    });
+    // Clear error on input after it was shown
+    el.addEventListener("input", () => {
+      const name = el.getAttribute("data-field");
+      if (!name) return;
+      const errEl = document.getElementById(`gf-err-${name}`);
+      if (errEl && !errEl.classList.contains("hidden")) {
+        const checked = document.querySelector<HTMLInputElement>('input[name="type"]:checked');
+        if (!checked) return;
+        const fields = FORM_FIELDS[checked.value];
+        const fDef = fields?.find(f => f.name === name);
+        if (!fDef) return;
+        const value = (el as HTMLInputElement | HTMLTextAreaElement).value;
+        setGfError(name, validateFieldValue(fDef, value));
+      }
+    });
+  });
+
   // Initial sync
   syncHiddenTextarea();
 }
@@ -793,6 +828,64 @@ function syncHiddenTextarea() {
   if (!checked) return;
   const hiddenTA = document.getElementById("input-hidden") as HTMLTextAreaElement;
   if (hiddenTA) hiddenTA.value = serializeGuidedForm(checked.value);
+}
+
+// ── Inline validation ────────────────────────────────────────────────────────
+
+/** Show or clear the error message below a guided-form field. */
+function setGfError(name: string, message: string) {
+  const errEl = document.getElementById(`gf-err-${name}`);
+  const inputEl = document.getElementById(`gf-${name}`);
+  if (errEl) {
+    if (message) {
+      errEl.textContent = message;
+      errEl.classList.remove("hidden");
+    } else {
+      errEl.textContent = "";
+      errEl.classList.add("hidden");
+    }
+  }
+  if (inputEl) {
+    if (message) {
+      inputEl.classList.add("!border-red-500");
+      inputEl.classList.remove("border-gray-700");
+    } else {
+      inputEl.classList.remove("!border-red-500");
+      inputEl.classList.add("border-gray-700");
+    }
+  }
+}
+
+/** Validate a single field value; returns error string or "" if valid. */
+function validateFieldValue(f: FieldDef, value: string): string {
+  if ((f as any).required && !value.trim()) {
+    if (f.type === "url") return "A URL is required";
+    if (f.type === "tags") return "At least one value is required";
+    return "This field is required";
+  }
+  if (f.type === "url" && value.trim()) {
+    try { new URL(value.trim()); } catch {
+      return "Please enter a valid URL (e.g. https://example.com)";
+    }
+  }
+  return "";
+}
+
+/** Validate all required guided-form fields. Returns true if all valid. */
+function validateGuidedForm(type: string): boolean {
+  const fields = FORM_FIELDS[type];
+  if (!fields) return true;
+  let valid = true;
+  for (const f of fields) {
+    if (f.type === "checkbox" || f.type === "select" || f.type === "number") continue;
+    const el = document.getElementById(`gf-${f.name}`);
+    if (!el) continue;
+    const value = (el as HTMLInputElement | HTMLTextAreaElement).value;
+    const err = validateFieldValue(f, value);
+    setGfError(f.name, err);
+    if (err) valid = false;
+  }
+  return valid;
 }
 
 // Mode toggle
@@ -859,6 +952,89 @@ document.querySelectorAll<HTMLInputElement>('input[name="type"]').forEach(radio 
   if (checked) renderGuidedForm(checked.value);
   setMode("form");
 }
+
+// ── Submit-time validation ────────────────────────────────────────────────────
+document.querySelector("form")?.addEventListener("submit", (e: Event) => {
+  let hasError = false;
+
+  const checked = document.querySelector<HTMLInputElement>('input[name="type"]:checked');
+
+  // 1. Guided form: validate all required fields
+  if (formMode === "form" && checked) {
+    if (!validateGuidedForm(checked.value)) {
+      hasError = true;
+    }
+  }
+
+  // 2. JSON mode: validate the textarea is valid JSON
+  if (formMode === "json") {
+    const jsonTA = document.getElementById("input") as HTMLTextAreaElement | null;
+    const jsonErrEl = document.getElementById("json-input-error");
+    if (jsonTA) {
+      try {
+        JSON.parse(jsonTA.value);
+        jsonTA.classList.remove("!border-red-500");
+        if (jsonErrEl) jsonErrEl.classList.add("hidden");
+      } catch (err: unknown) {
+        hasError = true;
+        jsonTA.classList.add("!border-red-500");
+        if (jsonErrEl) {
+          jsonErrEl.textContent = `Invalid JSON — ${(err as Error).message}`;
+          jsonErrEl.classList.remove("hidden");
+        }
+      }
+    }
+  }
+
+  // 3. Webhook URL: validate if non-empty
+  const webhookEl = document.getElementById("webhook-url-input") as HTMLInputElement | null;
+  const webhookErrEl = document.getElementById("webhook-url-error");
+  if (webhookEl && webhookEl.value.trim()) {
+    try {
+      new URL(webhookEl.value.trim());
+      webhookEl.classList.remove("!border-red-500");
+      if (webhookErrEl) webhookErrEl.classList.add("hidden");
+    } catch {
+      hasError = true;
+      webhookEl.classList.add("!border-red-500");
+      if (webhookErrEl) {
+        webhookErrEl.textContent = "Please enter a valid URL (e.g. https://your-app.com/webhook)";
+        webhookErrEl.classList.remove("hidden");
+      }
+    }
+  }
+
+  if (hasError) {
+    e.preventDefault();
+    // Scroll to the first visible error
+    const firstErr = document.querySelector<HTMLElement>(".gf-error:not(.hidden), #json-input-error:not(.hidden), #webhook-url-error:not(.hidden)");
+    firstErr?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+});
+
+// Clear JSON error on input
+document.getElementById("input")?.addEventListener("input", () => {
+  const errEl = document.getElementById("json-input-error");
+  const ta = document.getElementById("input") as HTMLTextAreaElement | null;
+  if (!errEl || errEl.classList.contains("hidden")) return;
+  try {
+    if (ta) JSON.parse(ta.value);
+    errEl.classList.add("hidden");
+    ta?.classList.remove("!border-red-500");
+  } catch { /* keep showing error while invalid */ }
+});
+
+// Clear webhook error on input
+document.getElementById("webhook-url-input")?.addEventListener("input", () => {
+  const errEl = document.getElementById("webhook-url-error");
+  const el = document.getElementById("webhook-url-input") as HTMLInputElement | null;
+  if (!errEl || errEl.classList.contains("hidden") || !el) return;
+  try {
+    new URL(el.value.trim());
+    errEl.classList.add("hidden");
+    el.classList.remove("!border-red-500");
+  } catch { /* keep showing error while invalid */ }
+});
 </script>
 
 <script>
