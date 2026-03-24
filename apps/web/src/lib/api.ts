@@ -37,3 +37,21 @@ export async function apiFetch<T>(
 export function getToken(cookies: AstroCookies): string | undefined {
   return cookies.get("cs_token")?.value;
 }
+
+/**
+ * Race a promise against a timeout.
+ * If the promise doesn't resolve within `ms` milliseconds, resolves with `fallback`.
+ *
+ * Use for non-critical SSR data fetches so slow analytics don't block page render:
+ *   overview = await withTimeout(apiFetch("/v1/analytics/overview", { token }), 1500)
+ */
+export function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  fallback: T | null = null
+): Promise<T | null> {
+  const timer = new Promise<null>((resolve) =>
+    setTimeout(() => resolve(null), ms)
+  );
+  return Promise.race([promise.catch(() => fallback), timer]);
+}

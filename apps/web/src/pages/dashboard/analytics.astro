@@ -1,6 +1,6 @@
 ---
 import Layout from "@/layouts/Layout.astro";
-import { apiFetch, getToken } from "@/lib/api";
+import { apiFetch, getToken, withTimeout } from "@/lib/api";
 
 const token = getToken(Astro.cookies);
 if (!token) return Astro.redirect("/login");
@@ -21,25 +21,32 @@ try {
   orgs = Array.isArray(orgsData) ? orgsData : (orgsData as any).items ?? [];
 } catch (_) {}
 
+// Run analytics queries in parallel with a 3s timeout each — avoids
+// blocking the page if the DB is temporarily slow.
+const overviewParams = new URLSearchParams({ days: String(days) });
+if (orgIdParam) overviewParams.set("org_id", orgIdParam);
+const costsParams = new URLSearchParams({ months: String(Math.ceil(days / 30)) });
+if (orgIdParam) costsParams.set("org_id", orgIdParam);
+
 try {
-  const overviewParams = new URLSearchParams({ days: String(days) });
-  if (orgIdParam) overviewParams.set("org_id", orgIdParam);
-  overview = await apiFetch<any>(`/v1/analytics/overview?${overviewParams}`, { token });
+  [overview] = await Promise.all([
+    withTimeout(apiFetch<any>(`/v1/analytics/overview?${overviewParams}`, { token }), 3000),
+  ]);
+  if (!overview) error = "Analytics took too long to load — try refreshing.";
 } catch (e: any) {
   if (e.message?.includes("401")) return Astro.redirect("/login");
   error = "Failed to load analytics";
 }
 
-try {
-  const costsParams = new URLSearchParams({ months: String(Math.ceil(days / 30)) });
-  if (orgIdParam) costsParams.set("org_id", orgIdParam);
-  costs = await apiFetch<any>(`/v1/analytics/costs?${costsParams}`, { token });
-} catch (_) {}
+[costs] = await Promise.all([
+  withTimeout(apiFetch<any>(`/v1/analytics/costs?${costsParams}`, { token }), 3000),
+]);
 
 if (orgIdParam && view === "org") {
-  try {
-    orgAnalytics = await apiFetch<any>(`/v1/analytics/org/${orgIdParam}?days=${days}`, { token });
-  } catch (_) {}
+  orgAnalytics = await withTimeout(
+    apiFetch<any>(`/v1/analytics/org/${orgIdParam}?days=${days}`, { token }),
+    3000
+  );
 }
 
 function pct(a: number, total: number) {

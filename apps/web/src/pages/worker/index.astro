@@ -4,7 +4,7 @@
  * If not enrolled as a worker, shows an enrollment prompt.
  */
 import Layout from "@/layouts/Layout.astro";
-import { apiFetch, getToken } from "@/lib/api";
+import { apiFetch, getToken, withTimeout } from "@/lib/api";
 
 const token = getToken(Astro.cookies);
 
@@ -31,18 +31,20 @@ try {
   isWorker = user?.role === "worker" || user?.role === "both";
 
   if (isWorker) {
+    // Critical (visible above the fold): stats and active assignments
+    // Non-critical (enrichment, 2s cap): challenges, reputation, notifications, feed, activity
     [stats, assignments, dailyChallenge, reputation, notifications, profileStatus, onboardingStatus, feedPreview, recentActivity] = await Promise.all([
-      apiFetch("/v1/worker/stats", { token }),
-      apiFetch("/v1/worker/assignments?status=active&page_size=5", { token }),
-      apiFetch("/v1/challenges/today", { token }).catch(() => null),
-      apiFetch("/v1/reputation/me", { token }).catch(() => null),
-      apiFetch("/v1/notifications?unread_only=true&page_size=3", { token }).catch(() => null),
-      apiFetch("/v1/users/me/profile-status", { token }).catch(() => null),
-      apiFetch<any>("/v1/onboarding/status", { token }).catch(() => null),
-      apiFetch("/v1/worker/tasks/feed?page=1&page_size=3", { token }).catch(() => null),
-      apiFetch("/v1/worker/activity?page_size=5", { token }).catch(() => []),
+      withTimeout(apiFetch("/v1/worker/stats", { token }), 2000),
+      withTimeout(apiFetch("/v1/worker/assignments?status=active&page_size=5", { token }), 2000),
+      withTimeout(apiFetch("/v1/challenges/today", { token }), 2000),
+      withTimeout(apiFetch("/v1/reputation/me", { token }), 2000),
+      withTimeout(apiFetch("/v1/notifications?unread_only=true&page_size=3", { token }), 2000),
+      withTimeout(apiFetch("/v1/users/me/profile-status", { token }), 2000),
+      withTimeout(apiFetch<any>("/v1/onboarding/status", { token }), 2000),
+      withTimeout(apiFetch("/v1/worker/tasks/feed?page=1&page_size=3", { token }), 2000),
+      withTimeout(apiFetch("/v1/worker/activity?page_size=5", { token }), 2000, []),
     ]);
-    const msgCount: any = await apiFetch("/v1/tasks/messages/unread-count", { token }).catch(() => null);
+    const msgCount: any = await withTimeout(apiFetch("/v1/tasks/messages/unread-count", { token }), 1000);
     unreadMessages = msgCount?.count ?? 0;
   }
 } catch (e) {

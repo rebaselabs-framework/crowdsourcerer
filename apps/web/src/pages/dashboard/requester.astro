@@ -4,7 +4,7 @@
  * Shows live KPIs, recent activity, cost estimator, and quick-action links.
  */
 import Layout from "@/layouts/Layout.astro";
-import { apiFetch, getToken } from "@/lib/api";
+import { apiFetch, getToken, withTimeout } from "@/lib/api";
 
 const token = getToken(Astro.cookies);
 if (!token) return Astro.redirect("/login");
@@ -17,14 +17,19 @@ let costs: any = null;
 let quota: any = null;
 
 try {
-  [user, credits, overview, , failedTasks, costs, quota] = await Promise.all([
+  // Critical: block on user + credits (auth-gating, visible above the fold)
+  [user, credits] = await Promise.all([
     apiFetch<any>("/v1/users/me", { token }),
     apiFetch<any>("/v1/credits", { token }),
-    apiFetch<any>("/v1/analytics/overview?days=30", { token }).catch(() => null),
-    apiFetch<any>("/v1/tasks?page_size=8", { token }).catch(() => null),
-    apiFetch<any>("/v1/tasks?status=failed&page_size=5", { token }).catch(() => null),
-    apiFetch<any>("/v1/analytics/costs?months=3", { token }).catch(() => null),
-    apiFetch<any>("/v1/quota", { token }).catch(() => null),
+  ]);
+  // Non-critical: analytics/costs/quota — cap at 2s each so slow DB queries
+  // don't hold up the whole page. If they timeout, sections render as empty.
+  [overview, , failedTasks, costs, quota] = await Promise.all([
+    withTimeout(apiFetch<any>("/v1/analytics/overview?days=30", { token }), 2000),
+    withTimeout(apiFetch<any>("/v1/tasks?page_size=8", { token }), 2000),
+    withTimeout(apiFetch<any>("/v1/tasks?status=failed&page_size=5", { token }), 2000),
+    withTimeout(apiFetch<any>("/v1/analytics/costs?months=3", { token }), 2000),
+    withTimeout(apiFetch<any>("/v1/quota", { token }), 2000),
   ]);
 } catch (e) {
   return Astro.redirect("/login");
