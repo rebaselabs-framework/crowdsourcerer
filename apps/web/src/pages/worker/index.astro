@@ -274,13 +274,22 @@ const TASK_TYPE_LABELS: Record<string, string> = {
             <div class="text-3xl font-bold text-amber-300">{stats?.total_earnings_credits?.toLocaleString() ?? 0}</div>
             <div class="text-xs text-gray-500 mt-0.5">credits</div>
           </div>
-          <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+          <div class:list={[
+            "rounded-xl p-5 border",
+            stats?.streak_at_risk
+              ? "bg-amber-950/30 border-amber-700/50"
+              : "bg-gray-900 border-gray-800"
+          ]}>
             <div class="text-sm text-gray-400 mb-1">Streak</div>
-            <div class="text-3xl font-bold text-orange-300">
+            <div class:list={["text-3xl font-bold", stats?.streak_at_risk ? "text-amber-300" : "text-orange-300"]}>
               {stats?.streak_days ?? 0}
-              <span class="text-base ml-1">🔥</span>
+              <span class="text-base ml-1">{stats?.streak_days > 0 ? "🔥" : "💤"}</span>
             </div>
-            <div class="text-xs text-gray-500 mt-0.5">days</div>
+            {stats?.streak_at_risk ? (
+              <div class="text-xs text-amber-400 mt-1 font-medium">⚠ Complete a task today!</div>
+            ) : (
+              <div class="text-xs text-gray-500 mt-0.5">days</div>
+            )}
           </div>
           <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
             <div class="text-sm text-gray-400 mb-1">Accuracy</div>
@@ -291,6 +300,38 @@ const TASK_TYPE_LABELS: Record<string, string> = {
             </div>
           </div>
         </div>
+
+        <!-- Streak activity calendar (last 14 days) -->
+        {(stats?.streak_days ?? 0) > 0 && (
+          <div class="bg-gray-900 border border-gray-800 rounded-xl px-5 py-4 mb-6">
+            <div class="flex items-center justify-between mb-3">
+              <div class="text-sm font-semibold text-gray-300 flex items-center gap-2">
+                🔥 Streak Calendar
+                {stats?.streak_at_risk && (
+                  <span class="text-xs bg-amber-900/50 text-amber-300 border border-amber-700/50 rounded px-2 py-0.5 font-normal">
+                    at risk
+                  </span>
+                )}
+              </div>
+              <div class="text-xs text-gray-500">{stats?.streak_days} day streak</div>
+            </div>
+            <!-- 14 day dot grid — populated by JS -->
+            <div id="streak-calendar" class="flex gap-1.5 flex-wrap">
+              {Array.from({length: 14}).map((_, i) => (
+                <div
+                  class="w-6 h-6 rounded-sm bg-gray-800 border border-gray-700/50 streak-dot"
+                  data-day-offset={13 - i}
+                  title="Loading..."
+                ></div>
+              ))}
+            </div>
+            <div class="flex items-center gap-3 mt-2 text-xs text-gray-600">
+              <div class="flex items-center gap-1"><div class="w-3 h-3 rounded-sm bg-emerald-600"></div> Active</div>
+              <div class="flex items-center gap-1"><div class="w-3 h-3 rounded-sm bg-gray-800 border border-gray-700/50"></div> Inactive</div>
+              <div class="flex items-center gap-1"><div class="w-3 h-3 rounded-sm bg-violet-600/70"></div> Today</div>
+            </div>
+          </div>
+        )}
 
         <!-- Reputation panel -->
         {reputation && (
@@ -769,4 +810,47 @@ const TASK_TYPE_LABELS: Record<string, string> = {
 
   updateAssignmentTimers();
   setInterval(updateAssignmentTimers, 60000);
+
+  // ── Streak activity calendar ──────────────────────────────────────────────
+  // Load last 14 days of activity and fill in the dot grid.
+  (async () => {
+    const calendar = document.getElementById("streak-calendar");
+    if (!calendar) return;
+
+    try {
+      const res = await fetch("/api/worker/activity-calendar?days=14");
+      if (!res.ok) return;
+      const data = await res.json();
+      const activeDates = new Set(data.active_dates ?? []);
+
+      // Build a set of the last 14 date strings (UTC)
+      const today = new Date();
+      const todayStr = today.toISOString().slice(0, 10);
+
+      const dots = calendar.querySelectorAll<HTMLElement>(".streak-dot");
+      dots.forEach(dot => {
+        const offsetDays = parseInt(dot.dataset.dayOffset ?? "0", 10);
+        const d = new Date(today);
+        d.setUTCDate(d.getUTCDate() - offsetDays);
+        const dateStr = d.toISOString().slice(0, 10);
+
+        dot.title = dateStr;
+
+        if (dateStr === todayStr) {
+          // Today — show violet whether active or not
+          if (activeDates.has(dateStr)) {
+            dot.classList.remove("bg-gray-800", "border-gray-700/50");
+            dot.classList.add("bg-violet-600", "border-violet-400/50");
+          } else {
+            dot.classList.remove("bg-gray-800");
+            dot.classList.add("bg-violet-900/50", "border-violet-700/50");
+          }
+        } else if (activeDates.has(dateStr)) {
+          dot.classList.remove("bg-gray-800", "border-gray-700/50");
+          dot.classList.add("bg-emerald-600", "border-emerald-400/30");
+        }
+        // Otherwise keep default gray (inactive)
+      });
+    } catch { /* ignore — calendar is decorative */ }
+  })();
 </script>

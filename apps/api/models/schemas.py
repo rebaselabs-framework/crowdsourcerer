@@ -353,6 +353,8 @@ class WorkerStatsOut(BaseModel):
     xp: int
     xp_to_next_level: int
     streak_days: int
+    streak_at_risk: bool = False        # True if no task completed today (streak could break)
+    last_active_date: Optional[str] = None  # ISO date string of last activity (YYYY-MM-DD)
 
 
 class MarketplaceTaskOut(BaseModel):

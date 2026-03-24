@@ -225,6 +225,18 @@ async def get_worker_stats(
 
     level, xp_to_next = compute_level(user.worker_xp)
 
+    # Streak at-risk: True when the worker hasn't completed any task today (UTC).
+    # A worker with streak_days > 0 and no activity today will lose their streak tomorrow.
+    today_utc = datetime.now(timezone.utc).date()
+    last_active = user.worker_last_active_date
+    last_active_date_str: str | None = None
+    streak_at_risk = False
+    if last_active is not None:
+        last_active_date = last_active.date() if hasattr(last_active, "date") else last_active
+        last_active_date_str = str(last_active_date)
+        # At risk when: has a streak AND last activity was before today
+        streak_at_risk = user.worker_streak_days > 0 and last_active_date < today_utc
+
     return WorkerStatsOut(
         tasks_completed=user.worker_tasks_completed,
         tasks_active=active_count,
@@ -236,7 +248,45 @@ async def get_worker_stats(
         xp=user.worker_xp,
         xp_to_next_level=xp_to_next,
         streak_days=user.worker_streak_days,
+        streak_at_risk=streak_at_risk,
+        last_active_date=last_active_date_str,
     )
+
+
+# ─── Activity calendar ────────────────────────────────────────────────────
+
+@router.get("/activity/calendar")
+async def get_activity_calendar(
+    days: int = Query(14, ge=7, le=60),
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Return a list of dates (YYYY-MM-DD) on which this worker completed at
+    least one task, covering the last ``days`` calendar days.
+
+    Response: ``{"active_dates": ["2026-03-20", "2026-03-22", ...]}``
+    """
+    result = await db.execute(select(UserDB).where(UserDB.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user or user.role not in ("worker", "both"):
+        raise HTTPException(status_code=403, detail="Not enrolled as a worker.")
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+
+    # Find all approved assignments within the window
+    rows = await db.execute(
+        select(TaskAssignmentDB.submitted_at).where(
+            TaskAssignmentDB.worker_id == user_id,
+            TaskAssignmentDB.status.in_(["submitted", "approved"]),
+            TaskAssignmentDB.submitted_at >= cutoff,
+        )
+    )
+    dates_seen: set[str] = set()
+    for (submitted_at,) in rows.fetchall():
+        if submitted_at:
+            dates_seen.add(submitted_at.date().isoformat())
+
+    return {"active_dates": sorted(dates_seen)}
 
 
 # ─── Skill-based task feed ────────────────────────────────────────────────

@@ -201,9 +201,21 @@ const SUB_STATUS_COLORS: Record<string, string> = {
   active:    "bg-blue-950/40 border-blue-800 text-blue-300",
 };
 
-const duration = task?.completed_at && task?.created_at
+const durationSecs = task?.completed_at && task?.created_at
   ? Math.round((new Date(task.completed_at).getTime() - new Date(task.created_at).getTime()) / 1000)
   : null;
+
+function formatDuration(secs: number): string {
+  if (secs < 60) return `${secs}s`;
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  if (m < 60) return s > 0 ? `${m}m ${s}s` : `${m}m`;
+  const h = Math.floor(m / 60);
+  const mm = m % 60;
+  return mm > 0 ? `${h}h ${mm}m` : `${h}h`;
+}
+
+const duration = durationSecs;
 
 const isLive = task && ["running", "queued", "pending", "open", "assigned"].includes(task.status);
 const pendingSubmissions = submissions.filter((s: any) => s.status === "submitted").length;
@@ -442,7 +454,7 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
             { label: "Priority", value: task.priority ?? "normal" },
             {
               label: "Duration",
-              value: duration != null ? `${duration}s` : "—",
+              value: durationSecs != null ? formatDuration(durationSecs) : "—",
               id: "meta-duration",
             },
             { label: "Submitted", value: new Date(task.created_at).toLocaleString() },
