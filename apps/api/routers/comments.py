@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.auth import get_current_user
+from core.auth import get_current_user_id
 from core.database import get_db
 from core.notify import create_notification, NotifType
 from models.db import TaskCommentDB, TaskDB, TaskAssignmentDB, UserDB
@@ -53,21 +53,22 @@ async def list_comments(
     page: int = Query(1, ge=1),
     per_page: int = Query(50, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
-    current_user: UserDB = Depends(get_current_user),
+    user_id: UUID = Depends(get_current_user_id),
 ):
     """List comments on a task (requester + their assigned workers only)."""
     task = await db.get(TaskDB, task_id)
     if not task:
         raise HTTPException(404, "Task not found")
+    current_user = await db.get(UserDB, user_id)
 
     # Access check: must be requester or have an assignment
-    is_requester = task.user_id == current_user.id
+    is_requester = task.user_id == user_id
     if not is_requester and not current_user.is_admin:
         asgn = await db.scalar(
             select(func.count()).where(
                 and_(
                     TaskAssignmentDB.task_id == task_id,
-                    TaskAssignmentDB.worker_id == current_user.id,
+                    TaskAssignmentDB.worker_id == user_id,
                 )
             )
         )
@@ -106,14 +107,15 @@ async def post_comment(
     task_id: UUID,
     payload: CommentCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: UserDB = Depends(get_current_user),
+    user_id: UUID = Depends(get_current_user_id),
 ):
     """Post a comment on a task."""
     task = await db.get(TaskDB, task_id)
     if not task:
         raise HTTPException(404, "Task not found")
+    current_user = await db.get(UserDB, user_id)
 
-    is_requester = task.user_id == current_user.id
+    is_requester = task.user_id == user_id
 
     # Access check
     if not is_requester and not current_user.is_admin:
@@ -121,7 +123,7 @@ async def post_comment(
             select(func.count()).where(
                 and_(
                     TaskAssignmentDB.task_id == task_id,
-                    TaskAssignmentDB.worker_id == current_user.id,
+                    TaskAssignmentDB.worker_id == user_id,
                 )
             )
         )
@@ -147,7 +149,7 @@ async def post_comment(
 
     comment = TaskCommentDB(
         task_id=task_id,
-        user_id=current_user.id,
+        user_id=user_id,
         parent_id=payload.parent_id,
         body=payload.body.strip(),
         is_internal=payload.is_internal,
@@ -200,14 +202,15 @@ async def edit_comment(
     comment_id: UUID,
     payload: CommentEdit,
     db: AsyncSession = Depends(get_db),
-    current_user: UserDB = Depends(get_current_user),
+    user_id: UUID = Depends(get_current_user_id),
 ):
     """Edit own comment (within 15 minutes of posting)."""
     comment = await db.get(TaskCommentDB, comment_id)
     if not comment or comment.task_id != task_id:
         raise HTTPException(404, "Comment not found")
+    current_user = await db.get(UserDB, user_id)
 
-    if comment.user_id != current_user.id and not current_user.is_admin:
+    if comment.user_id != user_id and not current_user.is_admin:
         raise HTTPException(403, "Can only edit your own comments")
 
     age = (datetime.now(timezone.utc) - comment.created_at).total_seconds()
@@ -222,19 +225,20 @@ async def edit_comment(
     return _comment_out(comment, current_user)
 
 
-@router.delete("/{task_id}/comments/{comment_id}", status_code=204)
+@router.delete("/{task_id}/comments/{comment_id}", status_code=204, response_model=None)
 async def delete_comment(
     task_id: UUID,
     comment_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: UserDB = Depends(get_current_user),
+    user_id: UUID = Depends(get_current_user_id),
 ):
     """Delete a comment (own comment or admin)."""
     comment = await db.get(TaskCommentDB, comment_id)
     if not comment or comment.task_id != task_id:
         raise HTTPException(404, "Comment not found")
+    current_user = await db.get(UserDB, user_id)
 
-    if comment.user_id != current_user.id and not current_user.is_admin:
+    if comment.user_id != user_id and not current_user.is_admin:
         raise HTTPException(403, "Can only delete your own comments")
 
     await db.delete(comment)
