@@ -19,7 +19,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # ── Enums (idempotent — SQLAlchemy may auto-create from model metadata) ──
+    # ── Enums (DO blocks are idempotent — safe if SQLAlchemy auto-creates first) ──
     for stmt in [
         "CREATE TYPE plan_enum AS ENUM ('free', 'starter', 'pro', 'enterprise')",
         "CREATE TYPE task_type_enum AS ENUM ('web_research', 'entity_lookup', 'document_parse', 'data_transform', 'llm_generate', 'screenshot', 'audio_transcribe', 'pii_detect', 'code_execute', 'web_intel')",

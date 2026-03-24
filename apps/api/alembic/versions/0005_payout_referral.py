@@ -24,21 +24,12 @@ def upgrade() -> None:
                                      server_default="0"))
     op.create_index("ix_users_referral_code", "users", ["referral_code"], unique=True)
 
-    # ── payout_status enum ────────────────────────────────────────────────
-    payout_status = postgresql.ENUM(
-        "pending", "processing", "paid", "rejected",
-        name="payout_status_enum",
-        create_type=True,
-    )
-    payout_status.create(op.get_bind(), checkfirst=True)
-
-    # ── payout_method enum ────────────────────────────────────────────────
-    payout_method = postgresql.ENUM(
-        "paypal", "bank_transfer", "crypto",
-        name="payout_method_enum",
-        create_type=True,
-    )
-    payout_method.create(op.get_bind(), checkfirst=True)
+    # ── payout enums ──────────────────────────────────────────────────────
+    for stmt in [
+        "CREATE TYPE payout_status_enum AS ENUM ('pending', 'processing', 'paid', 'rejected')",
+        "CREATE TYPE payout_method_enum AS ENUM ('paypal', 'bank_transfer', 'crypto')",
+    ]:
+        op.execute(sa.text(f"DO $$ BEGIN {stmt}; EXCEPTION WHEN duplicate_object THEN NULL; END $$"))
 
     # ── payout_requests table ─────────────────────────────────────────────
     op.create_table(
@@ -49,10 +40,10 @@ def upgrade() -> None:
         sa.Column("credits_requested", sa.Integer(), nullable=False),
         sa.Column("usd_amount", sa.Float(), nullable=False),
         sa.Column("status", sa.Enum("pending", "processing", "paid", "rejected",
-                                    name="payout_status_enum"), nullable=False,
+                                    name="payout_status_enum", create_type=False), nullable=False,
                   server_default="pending"),
         sa.Column("payout_method", sa.Enum("paypal", "bank_transfer", "crypto",
-                                           name="payout_method_enum"), nullable=False),
+                                           name="payout_method_enum", create_type=False), nullable=False),
         sa.Column("payout_details", postgresql.JSON(), nullable=False),
         sa.Column("admin_note", sa.Text(), nullable=True),
         sa.Column("processed_at", sa.DateTime(timezone=True), nullable=True),

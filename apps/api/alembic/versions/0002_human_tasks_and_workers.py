@@ -22,7 +22,7 @@ def upgrade() -> None:
     op.execute(sa.text("DO $$ BEGIN CREATE TYPE user_role_enum AS ENUM ('requester', 'worker', 'both'); EXCEPTION WHEN duplicate_object THEN NULL; END $$"))
     op.add_column("users", sa.Column(
         "role",
-        sa.Enum("requester", "worker", "both", name="user_role_enum"),
+        sa.Enum("requester", "worker", "both", name="user_role_enum", create_type=False),
         nullable=False,
         server_default="requester",
     ))
@@ -53,7 +53,7 @@ def upgrade() -> None:
     op.execute(sa.text("DO $$ BEGIN CREATE TYPE execution_mode_enum AS ENUM ('ai', 'human'); EXCEPTION WHEN duplicate_object THEN NULL; END $$"))
     op.add_column("tasks", sa.Column(
         "execution_mode",
-        sa.Enum("ai", "human", name="execution_mode_enum"),
+        sa.Enum("ai", "human", name="execution_mode_enum", create_type=False),
         nullable=False,
         server_default="ai",
     ))
@@ -83,7 +83,7 @@ def upgrade() -> None:
                   sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
         sa.Column("status",
                   sa.Enum("active", "submitted", "approved", "rejected", "released", "timed_out",
-                          name="assignment_status_enum"),
+                          name="assignment_status_enum", create_type=False),
                   nullable=False,
                   server_default="active"),
         sa.Column("response", sa.JSON(), nullable=True),

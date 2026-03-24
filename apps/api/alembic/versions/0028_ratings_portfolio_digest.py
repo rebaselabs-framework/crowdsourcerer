@@ -40,7 +40,7 @@ def upgrade() -> None:
         "notification_preferences",
         sa.Column(
             "digest_frequency",
-            sa.Enum("none", "daily", "weekly", name="digest_frequency_enum"),
+            sa.Enum("none", "daily", "weekly", name="digest_frequency_enum", create_type=False),
             nullable=False,
             server_default="weekly",
         ),
