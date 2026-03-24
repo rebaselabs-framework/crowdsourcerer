@@ -288,19 +288,50 @@ if (Astro.request.method === "POST") {
         </div>
       </div>
 
-      <!-- JSON input -->
-      <div>
-        <label for="input" class="block text-sm font-medium text-gray-300 mb-2">
-          Input <span class="text-gray-500">(JSON)</span>
-        </label>
+      <!-- Input section: Form builder (default) + Raw JSON toggle -->
+      <div id="input-section">
+        <!-- Mode toggle -->
+        <div class="flex items-center justify-between mb-3">
+          <label class="text-sm font-medium text-gray-300">Task Input</label>
+          <div class="flex items-center gap-1 bg-gray-800 rounded-lg p-1">
+            <button type="button" id="mode-form"
+              class="px-3 py-1 rounded-md text-xs font-medium transition-colors bg-violet-600 text-white">
+              🧩 Form
+            </button>
+            <button type="button" id="mode-json"
+              class="px-3 py-1 rounded-md text-xs font-medium transition-colors text-gray-400 hover:text-gray-200">
+              { } JSON
+            </button>
+          </div>
+        </div>
+
+        <!-- Guided form (default mode) -->
+        <div id="guided-form-container" class="bg-gray-900 border border-gray-700 rounded-lg p-4 space-y-4">
+          <!-- Fields rendered dynamically by JS -->
+          <p id="guided-form-placeholder" class="text-sm text-gray-500 text-center py-2">
+            Select a task type above to see the form
+          </p>
+        </div>
+
+        <!-- Raw JSON input (advanced mode, hidden by default) -->
+        <!-- Note: name/required are managed by JS in setMode() -->
+        <div id="json-input-container" class="hidden">
+          <textarea
+            id="input"
+            rows="6"
+            class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-3 font-mono text-sm text-gray-100
+              focus:outline-none focus:border-violet-500 transition-colors resize-y"
+            placeholder='{"query": "latest AI research 2025"}'
+          ></textarea>
+          <p class="text-xs text-gray-600 mt-1">Must be valid JSON.</p>
+        </div>
+
+        <!-- Hidden textarea used in form mode (populated from guided fields) -->
+        <!-- name="input" + required managed by JS setMode() -->
         <textarea
-          id="input"
-          name="input"
-          required
-          rows="6"
-          class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-3 font-mono text-sm text-gray-100
-            focus:outline-none focus:border-violet-500 transition-colors resize-y"
-          placeholder='{"query": "latest AI research 2025"}'
+          id="input-hidden"
+          class="sr-only"
+          aria-hidden="true"
         ></textarea>
       </div>
 
@@ -541,6 +572,293 @@ if (Astro.request.method === "POST") {
 )}
 
 <script>
+// ── Form builder ────────────────────────────────────────────────────────────
+// Provides structured per-type input forms instead of raw JSON.
+// Switches between "Form" and "JSON" modes via toggle buttons.
+
+type FieldDef =
+  | { name: string; label: string; type: "text" | "url" | "number"; required?: boolean; placeholder?: string; default?: any; min?: number; max?: number }
+  | { name: string; label: string; type: "textarea"; required?: boolean; placeholder?: string; rows?: number; monospace?: boolean }
+  | { name: string; label: string; type: "select"; options: string[]; default?: string }
+  | { name: string; label: string; type: "checkbox"; default?: boolean }
+  | { name: string; label: string; type: "tags"; required?: boolean; placeholder?: string; note?: string };
+
+const FORM_FIELDS: Record<string, FieldDef[]> = {
+  web_research: [
+    { name: "url", label: "URL to research", type: "url", required: true, placeholder: "https://example.com/article" },
+    { name: "instruction", label: "What to find or extract", type: "textarea", rows: 2, placeholder: "Summarise the key points and identify the main argument" },
+  ],
+  entity_lookup: [
+    { name: "entity_type", label: "Entity type", type: "select", options: ["company", "person", "location", "product", "domain"], default: "company" },
+    { name: "name", label: "Name", type: "text", required: true, placeholder: "OpenAI" },
+    { name: "domain", label: "Domain (optional)", type: "text", placeholder: "openai.com" },
+  ],
+  document_parse: [
+    { name: "url", label: "Document URL (PDF, DOCX, HTML…)", type: "url", required: true, placeholder: "https://example.com/report.pdf" },
+    { name: "extract_tables", label: "Extract tables", type: "checkbox", default: true },
+  ],
+  data_transform: [
+    { name: "data", label: "Input data (JSON or plain text)", type: "textarea", rows: 3, placeholder: '{"name": "Alice", "age": 30}' },
+    { name: "transform", label: "Transformation instruction", type: "textarea", rows: 2, placeholder: "Normalise all keys to snake_case" },
+    { name: "output_format", label: "Output format", type: "select", options: ["json", "csv", "text", "markdown"], default: "json" },
+  ],
+  llm_generate: [
+    { name: "__prompt", label: "User message / prompt", type: "textarea", rows: 5, required: true, placeholder: "Write a haiku about the ocean." },
+    { name: "model", label: "Model", type: "select", options: ["claude-3-5-haiku-20241022", "claude-3-5-sonnet-20241022", "gpt-4o-mini", "gpt-4o"], default: "claude-3-5-haiku-20241022" },
+  ],
+  screenshot: [
+    { name: "url", label: "URL to screenshot", type: "url", required: true, placeholder: "https://example.com" },
+    { name: "full_page", label: "Full page", type: "checkbox", default: true },
+    { name: "format", label: "Image format", type: "select", options: ["png", "jpeg", "webp"], default: "png" },
+  ],
+  audio_transcribe: [
+    { name: "url", label: "Audio URL (mp3, wav, m4a…)", type: "url", required: true, placeholder: "https://example.com/recording.mp3" },
+    { name: "language", label: "Language code", type: "text", placeholder: "en", default: "en" },
+    { name: "diarize", label: "Speaker diarization", type: "checkbox", default: false },
+  ],
+  pii_detect: [
+    { name: "text", label: "Text to scan for PII", type: "textarea", rows: 4, required: true, placeholder: "My name is Jane Doe, email: jane@example.com, SSN: 123-45-6789" },
+    { name: "mask", label: "Redact PII in output", type: "checkbox", default: true },
+  ],
+  code_execute: [
+    { name: "language", label: "Language", type: "select", options: ["python", "javascript", "bash", "ruby", "go"], default: "python" },
+    { name: "code", label: "Code", type: "textarea", rows: 7, required: true, monospace: true, placeholder: "print(sum(range(100)))" },
+  ],
+  web_intel: [
+    { name: "query", label: "Intelligence query", type: "text", required: true, placeholder: "OpenAI recent funding rounds" },
+    { name: "max_results", label: "Max results", type: "number", default: 10, min: 1, max: 50 },
+  ],
+  // Human task types
+  label_image: [
+    { name: "image_url", label: "Image URL", type: "url", required: true, placeholder: "https://example.com/image.jpg" },
+    { name: "labels", label: "Labels (comma-separated)", type: "tags", required: true, placeholder: "cat, dog, bird" },
+    { name: "question", label: "Question for workers", type: "text", required: true, placeholder: "What animal is in this image?" },
+  ],
+  label_text: [
+    { name: "text", label: "Text to label", type: "textarea", rows: 3, required: true, placeholder: "The product is absolutely fantastic!" },
+    { name: "categories", label: "Categories (comma-separated)", type: "tags", required: true, placeholder: "positive, negative, neutral" },
+    { name: "question", label: "Question for workers", type: "text", required: true, placeholder: "What is the sentiment?" },
+  ],
+  rate_quality: [
+    { name: "content", label: "Content to rate", type: "textarea", rows: 4, required: true, placeholder: "AI-generated text or any content here…" },
+    { name: "criteria", label: "Rating criteria", type: "text", required: true, placeholder: "Rate the overall quality (1–5)" },
+    { name: "scale", label: "Scale", type: "select", options: ["1,2,3,4,5", "1,2,3", "1,2,3,4,5,6,7,8,9,10"], default: "1,2,3,4,5" },
+  ],
+  verify_fact: [
+    { name: "claim", label: "Claim to verify", type: "textarea", rows: 2, required: true, placeholder: "The Eiffel Tower is 330 metres tall." },
+    { name: "context", label: "Supporting context (optional)", type: "textarea", rows: 2, placeholder: "Background information that helps verify the claim." },
+  ],
+  moderate_content: [
+    { name: "content", label: "Content to moderate", type: "textarea", rows: 3, required: true, placeholder: "User-submitted text or paste an image URL" },
+    { name: "guidelines", label: "Moderation guidelines", type: "text", placeholder: "Flag if violent, explicit, or spam" },
+  ],
+  compare_rank: [
+    { name: "items", label: "Items to compare (one per line)", type: "textarea", rows: 3, required: true, placeholder: "Option A description\nOption B description\nOption C description" },
+    { name: "criteria", label: "Ranking criteria", type: "text", required: true, placeholder: "Which option is the most creative?" },
+  ],
+  answer_question: [
+    { name: "question", label: "Question", type: "textarea", rows: 2, required: true, placeholder: "What year did World War II end?" },
+    { name: "context", label: "Context (optional)", type: "textarea", rows: 2, placeholder: "Any background information for the worker." },
+  ],
+  transcription_review: [
+    { name: "audio_url", label: "Audio URL", type: "url", required: true, placeholder: "https://example.com/audio.mp3" },
+    { name: "draft_transcript", label: "Draft transcript to review", type: "textarea", rows: 4, placeholder: "Auto-generated transcript that needs human correction." },
+  ],
+};
+
+// Field renderer: returns an HTML string for one field
+function renderField(f: FieldDef): string {
+  const idAttr = `gf-${f.name}`;
+  const labelHtml = `<label for="${idAttr}" class="block text-xs font-medium text-gray-400 mb-1">
+    ${f.label}${(f as any).required ? ' <span class="text-violet-400">*</span>' : ""}
+  </label>`;
+  const inputBase = `class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-violet-500 transition-colors"`;
+
+  let inputHtml = "";
+  if (f.type === "textarea") {
+    const mono = (f as any).monospace ? " font-mono" : "";
+    inputHtml = `<textarea id="${idAttr}" data-field="${f.name}" rows="${(f as any).rows ?? 3}"
+      placeholder="${(f as any).placeholder ?? ""}"
+      class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-violet-500 transition-colors resize-y${mono}"
+    >${f.type === "textarea" && (f as any).default ? (f as any).default : ""}</textarea>`;
+  } else if (f.type === "select") {
+    const opts = (f as any).options as string[];
+    const def = (f as any).default ?? opts[0];
+    const optHtml = opts.map(o => `<option value="${o}"${o === def ? " selected" : ""}>${o}</option>`).join("");
+    inputHtml = `<select id="${idAttr}" data-field="${f.name}" ${inputBase}>${optHtml}</select>`;
+  } else if (f.type === "checkbox") {
+    const checked = (f as any).default ? "checked" : "";
+    return `<label class="flex items-center gap-2 cursor-pointer">
+      <input type="checkbox" id="${idAttr}" data-field="${f.name}" ${checked}
+        class="w-4 h-4 rounded border-gray-600 bg-gray-800 text-violet-500 focus:ring-0 focus:ring-offset-0 cursor-pointer" />
+      <span class="text-xs font-medium text-gray-400">${f.label}</span>
+    </label>`;
+  } else if (f.type === "tags") {
+    // Renders as a text input that produces a JSON array
+    inputHtml = `<input type="text" id="${idAttr}" data-field="${f.name}" data-type="tags"
+      placeholder="${(f as any).placeholder ?? ""}"
+      ${inputBase} />
+    <p class="text-xs text-gray-600 mt-1">Comma-separated list → stored as array</p>`;
+  } else {
+    // text, url, number
+    const extra = f.type === "number"
+      ? ` type="number" min="${(f as any).min ?? ""}" max="${(f as any).max ?? ""}" value="${(f as any).default ?? ""}"`
+      : ` type="${f.type}" placeholder="${(f as any).placeholder ?? ""}"`;
+    const defVal = f.type !== "number" && (f as any).default ? ` value="${(f as any).default}"` : "";
+    inputHtml = `<input id="${idAttr}" data-field="${f.name}" ${extra}${defVal} ${inputBase} />`;
+  }
+  return `<div>${labelHtml}${inputHtml}</div>`;
+}
+
+// Build JSON from the guided form fields
+function serializeGuidedForm(type: string): string {
+  const fields = FORM_FIELDS[type];
+  if (!fields) return "{}";
+  const obj: Record<string, any> = {};
+  for (const f of fields) {
+    const el = document.getElementById(`gf-${f.name}`);
+    if (!el) continue;
+    if (f.type === "checkbox") {
+      obj[f.name] = (el as HTMLInputElement).checked;
+    } else if (f.type === "tags") {
+      const raw = (el as HTMLInputElement).value.trim();
+      obj[f.name] = raw ? raw.split(",").map(s => s.trim()).filter(Boolean) : [];
+    } else if (f.name === "__prompt") {
+      // LLM generate: build messages array from prompt
+      const prompt = (el as HTMLTextAreaElement).value.trim();
+      obj["messages"] = [{ role: "user", content: prompt }];
+      // Also set model from the model select
+      const modelEl = document.getElementById("gf-model");
+      if (modelEl) obj["model"] = (modelEl as HTMLSelectElement).value;
+    } else if (f.name === "model" && type === "llm_generate") {
+      // Already handled above via __prompt special case
+    } else if (f.name === "scale" && type === "rate_quality") {
+      const raw = (el as HTMLSelectElement).value;
+      obj[f.name] = raw.split(",").map(Number);
+    } else if (f.name === "items" && type === "compare_rank") {
+      const raw = (el as HTMLTextAreaElement).value.trim();
+      obj[f.name] = raw.split("\n").map(s => s.trim()).filter(Boolean);
+    } else if (f.type === "number") {
+      const v = (el as HTMLInputElement).value;
+      obj[f.name] = v !== "" ? Number(v) : undefined;
+    } else {
+      const v = (el as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement).value;
+      if (v !== "") obj[f.name] = v;
+    }
+  }
+  // Remove undefined values
+  return JSON.stringify(Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined)), null, 2);
+}
+
+// Render the guided form for a given type
+function renderGuidedForm(type: string) {
+  const container = document.getElementById("guided-form-container")!;
+  const placeholder = document.getElementById("guided-form-placeholder")!;
+  const fields = FORM_FIELDS[type];
+
+  if (!fields) {
+    placeholder.classList.remove("hidden");
+    placeholder.textContent = `No form available for "${type}" — use JSON mode.`;
+    // Remove any existing field elements
+    container.querySelectorAll(".gf-field").forEach(el => el.remove());
+    return;
+  }
+
+  // Remove placeholder
+  placeholder.classList.add("hidden");
+  // Remove old fields
+  container.querySelectorAll(".gf-field").forEach(el => el.remove());
+
+  // Render each field
+  const wrapper = document.createElement("div");
+  wrapper.className = "gf-field space-y-4";
+  wrapper.innerHTML = fields.map(renderField).join("");
+  container.appendChild(wrapper);
+
+  // Wire up live sync to hidden textarea
+  wrapper.querySelectorAll("input, textarea, select").forEach(el => {
+    el.addEventListener("input", syncHiddenTextarea);
+    el.addEventListener("change", syncHiddenTextarea);
+  });
+
+  // Initial sync
+  syncHiddenTextarea();
+}
+
+function syncHiddenTextarea() {
+  const checked = document.querySelector<HTMLInputElement>('input[name="type"]:checked');
+  if (!checked) return;
+  const hiddenTA = document.getElementById("input-hidden") as HTMLTextAreaElement;
+  if (hiddenTA) hiddenTA.value = serializeGuidedForm(checked.value);
+}
+
+// Mode toggle
+let formMode: "form" | "json" = "form";
+
+function setMode(mode: "form" | "json") {
+  formMode = mode;
+  const guided = document.getElementById("guided-form-container")!;
+  const jsonDiv = document.getElementById("json-input-container")!;
+  const hiddenTA = document.getElementById("input-hidden") as HTMLTextAreaElement;
+  const jsonTA = document.getElementById("input") as HTMLTextAreaElement;
+  const btnForm = document.getElementById("mode-form")!;
+  const btnJson = document.getElementById("mode-json")!;
+
+  if (mode === "form") {
+    guided.classList.remove("hidden");
+    jsonDiv.classList.add("hidden");
+    hiddenTA.required = true;
+    hiddenTA.name = "input";
+    jsonTA.required = false;
+    jsonTA.name = "";
+    btnForm.classList.add("bg-violet-600", "text-white");
+    btnForm.classList.remove("text-gray-400");
+    btnJson.classList.remove("bg-violet-600", "text-white");
+    btnJson.classList.add("text-gray-400");
+    // Sync hidden from current form state
+    syncHiddenTextarea();
+  } else {
+    guided.classList.add("hidden");
+    jsonDiv.classList.remove("hidden");
+    hiddenTA.required = false;
+    hiddenTA.name = "";
+    jsonTA.required = true;
+    jsonTA.name = "input";
+    btnJson.classList.add("bg-violet-600", "text-white");
+    btnJson.classList.remove("text-gray-400");
+    btnForm.classList.remove("bg-violet-600", "text-white");
+    btnForm.classList.add("text-gray-400");
+    // Pre-fill JSON textarea with current form state
+    const checked = document.querySelector<HTMLInputElement>('input[name="type"]:checked');
+    if (checked) {
+      const current = (document.getElementById("input-hidden") as HTMLTextAreaElement).value;
+      if (current && current !== "{}") jsonTA.value = current;
+    }
+  }
+}
+
+document.getElementById("mode-form")?.addEventListener("click", () => setMode("form"));
+document.getElementById("mode-json")?.addEventListener("click", () => setMode("json"));
+
+// Expose setMode globally so other scripts (template pre-fill) can call it
+(window as any).__setMode = setMode;
+
+// When task type changes, re-render the guided form
+document.querySelectorAll<HTMLInputElement>('input[name="type"]').forEach(radio => {
+  radio.addEventListener("change", () => {
+    if (formMode === "form") renderGuidedForm(radio.value);
+  });
+});
+
+// Init on load: render form for the default-checked type (web_research)
+{
+  const checked = document.querySelector<HTMLInputElement>('input[name="type"]:checked');
+  if (checked) renderGuidedForm(checked.value);
+  setMode("form");
+}
+</script>
+
+<script>
   // Human task options toggle
   const HUMAN_TYPES = new Set([
     "label_image","label_text","rate_quality","verify_fact",
@@ -572,28 +890,39 @@ if (Astro.request.method === "POST") {
   updateHumanOptions();
   updateConsensusVisibility();
 
-  // Pre-fill from saved template (SSR data)
+  // Pre-fill from saved template (SSR data) — switch to JSON mode with the pre-filled input
   const savedTplData = (window as any).__savedTplData;
   if (savedTplData) {
-    const type = savedTplData.task_type;
-    const radio = document.querySelector<HTMLInputElement>(`input[name="type"][value="${type}"]`);
-    if (radio) {
-      radio.checked = true;
-      radio.dispatchEvent(new Event("change", { bubbles: true }));
-    }
-    const inputTA = document.getElementById("input") as HTMLTextAreaElement;
-    if (inputTA && savedTplData.task_input) {
-      try { inputTA.value = JSON.stringify(savedTplData.task_input, null, 2); } catch {}
-    }
-    const cfg = savedTplData.task_config ?? {};
-    if (cfg.priority) {
-      const sel = document.querySelector<HTMLSelectElement>(`select[name="priority"]`);
-      if (sel) sel.value = cfg.priority;
-    }
-    if (cfg.tags && Array.isArray(cfg.tags)) {
-      const el = document.querySelector<HTMLInputElement>(`input[name="tags"]`);
-      if (el) el.value = cfg.tags.join(", ");
-    }
+    setTimeout(() => {
+      const type = savedTplData.task_type;
+      const radio = document.querySelector<HTMLInputElement>(`input[name="type"][value="${type}"]`);
+      if (radio) {
+        radio.checked = true;
+        radio.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      if (savedTplData.task_input) {
+        (window as any).__setMode?.("json");
+        const inputTA = document.getElementById("input") as HTMLTextAreaElement;
+        if (inputTA) {
+          try {
+            inputTA.value = JSON.stringify(savedTplData.task_input, null, 2);
+            inputTA.name = "input";
+            inputTA.required = true;
+          } catch {}
+        }
+        const hiddenTA = document.getElementById("input-hidden") as HTMLTextAreaElement;
+        if (hiddenTA) { hiddenTA.name = ""; hiddenTA.required = false; }
+      }
+      const cfg = savedTplData.task_config ?? {};
+      if (cfg.priority) {
+        const sel = document.querySelector<HTMLSelectElement>(`select[name="priority"]`);
+        if (sel) sel.value = cfg.priority;
+      }
+      if (cfg.tags && Array.isArray(cfg.tags)) {
+        const el = document.querySelector<HTMLInputElement>(`input[name="tags"]`);
+        if (el) el.value = cfg.tags.join(", ");
+      }
+    }, 50);
   }
 
   // Template pre-fill
@@ -609,9 +938,16 @@ if (Astro.request.method === "POST") {
         radio.dispatchEvent(new Event("change", { bubbles: true }));
       }
 
-      // Fill input textarea
+      // Switch to JSON mode and fill the textarea (templates provide pre-built JSON)
+      (window as any).__setMode?.("json");
       const textarea = document.getElementById("input") as HTMLTextAreaElement;
-      if (textarea) textarea.value = input;
+      if (textarea) {
+        textarea.value = input;
+        textarea.name = "input";
+        textarea.required = true;
+      }
+      const hiddenTA = document.getElementById("input-hidden") as HTMLTextAreaElement;
+      if (hiddenTA) { hiddenTA.name = ""; hiddenTA.required = false; }
 
       // Highlight selected template
       document.querySelectorAll(".template-btn").forEach((b) => {
@@ -653,12 +989,22 @@ if (Astro.request.method === "POST") {
       }
     }
 
-    // Fill JSON input
+    // Fill JSON input — switch to JSON mode for duplicate pre-fill
     if (inputStr) {
       try {
         const parsed = JSON.parse(inputStr);
-        const textarea = document.getElementById("input") as HTMLTextAreaElement;
-        if (textarea) textarea.value = JSON.stringify(parsed, null, 2);
+        // Use a brief timeout to let the form builder initialize first
+        setTimeout(() => {
+          (window as any).__setMode?.("json");
+          const textarea = document.getElementById("input") as HTMLTextAreaElement;
+          if (textarea) {
+            textarea.value = JSON.stringify(parsed, null, 2);
+            textarea.name = "input";
+            textarea.required = true;
+          }
+          const hiddenTA = document.getElementById("input-hidden") as HTMLTextAreaElement;
+          if (hiddenTA) { hiddenTA.name = ""; hiddenTA.required = false; }
+        }, 50);
       } catch {}
     }
 
@@ -723,9 +1069,12 @@ if (Astro.request.method === "POST") {
         radio.checked = true;
         radio.dispatchEvent(new Event("change", { bubbles: true }));
       }
-      // Fill input
+      // Switch to JSON mode and fill input
+      (window as any).__setMode?.("json");
       const textarea = document.getElementById("input") as HTMLTextAreaElement;
-      if (textarea) textarea.value = input;
+      if (textarea) { textarea.value = input; textarea.name = "input"; textarea.required = true; }
+      const hiddenTA = document.getElementById("input-hidden") as HTMLTextAreaElement;
+      if (hiddenTA) { hiddenTA.name = ""; hiddenTA.required = false; }
       // Fill config fields
       if (config.priority) {
         const sel = document.querySelector<HTMLSelectElement>(`select[name="priority"]`);
@@ -768,12 +1117,15 @@ if (Astro.request.method === "POST") {
       saveTplError.classList.remove("hidden");
       return;
     }
-    // Collect current form state
+    // Collect current form state — read from whichever input is active
     const typeRadio = document.querySelector<HTMLInputElement>(`input[name="type"]:checked`);
     const task_type = typeRadio?.value ?? "";
+    // In form mode use the hidden textarea; in JSON mode use the visible one
+    const hiddenTA = document.getElementById("input-hidden") as HTMLTextAreaElement;
     const inputTA = document.getElementById("input") as HTMLTextAreaElement;
+    const activeJson = (hiddenTA?.name === "input" ? hiddenTA : inputTA)?.value ?? "{}";
     let task_input: object;
-    try { task_input = JSON.parse(inputTA.value || "{}"); } catch { task_input = {}; }
+    try { task_input = JSON.parse(activeJson || "{}"); } catch { task_input = {}; }
 
     const prioritySel = document.querySelector<HTMLSelectElement>(`select[name="priority"]`);
     const tagsEl = document.querySelector<HTMLInputElement>(`input[name="tags"]`);
