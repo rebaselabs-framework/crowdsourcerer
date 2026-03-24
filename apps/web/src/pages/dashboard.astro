@@ -44,20 +44,39 @@ const showOnboardingBanner = Boolean(
 
     <!-- New-user onboarding banner -->
     {showOnboardingBanner && (
-      <div class="bg-violet-950/40 border border-violet-700/60 rounded-xl px-6 py-5 mb-8 flex items-center justify-between">
-        <div>
-          <div class="flex items-center gap-2 mb-1">
-            <span class="text-lg">🚀</span>
-            <h2 class="font-semibold text-violet-200">Welcome to CrowdSorcerer!</h2>
+      <div class="bg-gradient-to-r from-violet-950/60 to-indigo-950/40 border border-violet-700/50 rounded-xl px-6 py-5 mb-8">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <div class="flex items-center gap-2 mb-1.5">
+              <span class="text-xl">🚀</span>
+              <h2 class="font-semibold text-violet-200 text-base">Welcome to CrowdSorcerer!</h2>
+            </div>
+            <p class="text-sm text-gray-400 mb-3">
+              You have <strong class="text-violet-300">{credits?.available ?? 100} free credits</strong> — enough for
+              {(credits?.available ?? 100) >= 10 ? ` ${Math.floor((credits?.available ?? 100) / 10)} web research tasks` : " several quick tasks"}.
+              Complete the quick-start guide to earn <strong class="text-amber-300">+200 bonus credits</strong>.
+            </p>
+            <div class="flex flex-wrap gap-3">
+              <a href="/dashboard/requester-onboarding"
+                class="inline-flex items-center gap-1.5 px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white text-sm font-semibold rounded-lg transition-colors">
+                📋 Quick-start guide
+              </a>
+              <a href="/dashboard/new-task"
+                class="inline-flex items-center gap-1.5 px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-200 text-sm font-medium rounded-lg transition-colors border border-gray-700">
+                + Create first task
+              </a>
+              <a href="/docs"
+                class="inline-flex items-center gap-1.5 px-4 py-2 text-gray-400 hover:text-gray-200 text-sm transition-colors">
+                Read docs →
+              </a>
+            </div>
           </div>
-          <p class="text-sm text-gray-400">Follow the quick-start guide to post your first task and earn <strong class="text-violet-300">+200 bonus credits</strong>.</p>
+          <div class="flex-shrink-0 hidden sm:flex flex-col items-center gap-1 bg-amber-900/20 border border-amber-800/40 rounded-xl px-4 py-3">
+            <span class="text-2xl">🎁</span>
+            <span class="text-xs text-amber-300 font-semibold whitespace-nowrap">+200 bonus</span>
+            <span class="text-xs text-gray-500 whitespace-nowrap">on completion</span>
+          </div>
         </div>
-        <a
-          href="/dashboard/requester-onboarding"
-          class="flex-shrink-0 ml-6 px-5 py-2.5 bg-violet-600 hover:bg-violet-500 text-white text-sm font-semibold rounded-lg transition-colors"
-        >
-          Get started →
-        </a>
       </div>
     )}
 
@@ -100,9 +119,36 @@ const showOnboardingBanner = Boolean(
         <a href="/dashboard/tasks" class="text-sm text-violet-400 hover:text-violet-300">View all →</a>
       </div>
       {tasks?.items?.length === 0 ? (
-        <div class="px-6 py-12 text-center text-gray-500">
-          No tasks yet.
-          <a href="/dashboard/new-task" class="text-violet-400 ml-1">Submit your first task →</a>
+        <!-- Rich empty state: first-task launcher -->
+        <div class="px-6 py-8">
+          <div class="text-center mb-6">
+            <div class="text-3xl mb-2">🔮</div>
+            <h3 class="font-semibold text-gray-200 mb-1">Submit your first task</h3>
+            <p class="text-sm text-gray-500">Choose a task type below to get started — each one runs in seconds.</p>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
+            {[
+              { type: "web_research",   icon: "🌐", label: "Web Research",   desc: "Scrape any URL + extract key points",   credits: 10, color: "violet" },
+              { type: "llm_generate",   icon: "🤖", label: "LLM Generate",   desc: "Generate text with Claude or GPT-4",   credits: 1,  color: "indigo" },
+              { type: "entity_lookup",  icon: "🏢", label: "Entity Lookup",  desc: "Enrich a company or person's profile", credits: 5,  color: "sky"    },
+            ].map(({ type, icon, label, desc, credits, color }) => (
+              <a href={`/dashboard/new-task?preset=${type}`}
+                class={`group bg-gray-800/60 hover:bg-gray-800 border border-gray-700 hover:border-${color}-700/60 rounded-xl p-4 transition-all`}>
+                <div class="text-2xl mb-2">{icon}</div>
+                <div class="text-sm font-semibold text-gray-200 group-hover:text-white mb-1">{label}</div>
+                <div class="text-xs text-gray-500 mb-3">{desc}</div>
+                <div class="flex items-center justify-between">
+                  <span class="text-xs text-gray-600">{credits} credit{credits !== 1 ? "s" : ""}</span>
+                  <span class={`text-xs text-${color}-400 group-hover:text-${color}-300 font-medium`}>Try it →</span>
+                </div>
+              </a>
+            ))}
+          </div>
+          <div class="text-center">
+            <a href="/dashboard/new-task" class="text-sm text-gray-400 hover:text-gray-200 transition-colors">
+              See all 18 task types →
+            </a>
+          </div>
         </div>
       ) : (
         <div class="divide-y divide-gray-800">
