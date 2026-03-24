@@ -189,9 +189,20 @@ async def _get_or_create(user_id: UUID, db: AsyncSession) -> OnboardingProgressD
     )
     progress = res.scalar_one_or_none()
     if not progress:
+        # Explicitly set all boolean fields to their defaults so in-memory
+        # attributes are correct before the DB INSERT is flushed/refreshed.
         progress = OnboardingProgressDB(
             id=_uuid.uuid4(),
             user_id=user_id,
+            step_profile=False,
+            step_explore=False,
+            step_first_task=False,
+            step_skills=False,
+            step_cert=False,
+            completed_at=None,
+            skipped_at=None,
+            bonus_claimed=False,
+            banner_dismissed=False,
         )
         db.add(progress)
         await db.flush()

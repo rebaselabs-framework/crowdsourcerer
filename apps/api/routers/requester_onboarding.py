@@ -71,9 +71,17 @@ async def _get_or_create_record(user_id: str, db: AsyncSession) -> RequesterOnbo
     )
     rec = result.scalar_one_or_none()
     if not rec:
+        # Explicitly set all boolean fields to their defaults so in-memory
+        # attributes are correct before the DB INSERT is flushed/refreshed.
         rec = RequesterOnboardingDB(
             id=uuid.uuid4(),
             user_id=user_id,
+            step_welcome=False,
+            step_create_task=False,
+            step_view_results=False,
+            step_set_webhook=False,
+            step_invite_team=False,
+            bonus_claimed=False,
         )
         db.add(rec)
         await db.flush()

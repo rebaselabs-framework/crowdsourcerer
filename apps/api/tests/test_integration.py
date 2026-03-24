@@ -468,6 +468,345 @@ class TestJWTIntegrity:
         assert t1 != t2
 
 
+# ── Requester onboarding flow ─────────────────────────────────────────────────
+
+class TestRequesterOnboardingFlow:
+    """Mock-based tests for requester onboarding step completion."""
+
+    USER_ID = str(uuid.uuid4())
+
+    @pytest.fixture
+    def headers(self):
+        return {"Authorization": f"Bearer {_real_token(self.USER_ID)}"}
+
+    @pytest.fixture
+    def mock_db_with_no_record(self):
+        """DB mock: first execute returns no existing onboarding record."""
+        db = _make_mock_db()
+        # First call: no existing record → create new
+        db.execute.return_value = _make_scalar_result(None)
+        return db
+
+    @pytest.fixture
+    def mock_db_with_existing_record(self):
+        """DB mock: returns an existing partial record."""
+        from models.db import RequesterOnboardingDB
+        rec = MagicMock(spec=RequesterOnboardingDB)
+        rec.id = uuid.uuid4()
+        rec.user_id = self.USER_ID
+        rec.step_welcome = False
+        rec.step_create_task = False
+        rec.step_view_results = False
+        rec.step_set_webhook = False
+        rec.step_invite_team = False
+        rec.completed_at = None
+        rec.bonus_claimed = False
+        rec.skipped_at = None
+        db = _make_mock_db()
+        db.execute.return_value = _make_scalar_result(rec)
+        return db, rec
+
+    @pytest.mark.asyncio
+    async def test_invalid_step_returns_400(self, app, headers):
+        """Completing an unknown step name returns 400."""
+        db = _make_mock_db()
+        from core.database import get_db
+        app.dependency_overrides[get_db] = _db_override(db)
+        try:
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+                r = await c.post(
+                    "/v1/requester-onboarding/steps/not_a_real_step/complete",
+                    headers=headers,
+                )
+            assert r.status_code == 400
+        finally:
+            app.dependency_overrides.pop(get_db, None)
+
+    @pytest.mark.asyncio
+    async def test_complete_welcome_step_creates_record(self, app, headers, mock_db_with_no_record):
+        """Completing 'welcome' on a new user creates the record and marks the step."""
+        from core.database import get_db
+        app.dependency_overrides[get_db] = _db_override(mock_db_with_no_record)
+        try:
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+                r = await c.post(
+                    "/v1/requester-onboarding/steps/welcome/complete",
+                    headers=headers,
+                )
+            # Should succeed and return onboarding status
+            assert r.status_code == 200
+            data = r.json()
+            assert "steps" in data
+            assert "completed_count" in data
+            assert "total_steps" in data
+        finally:
+            app.dependency_overrides.pop(get_db, None)
+
+    @pytest.mark.asyncio
+    async def test_complete_step_marks_existing_record(self, app, headers, mock_db_with_existing_record):
+        """Completing a step on an existing record updates it."""
+        db, rec = mock_db_with_existing_record
+        from core.database import get_db
+        app.dependency_overrides[get_db] = _db_override(db)
+        try:
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+                r = await c.post(
+                    "/v1/requester-onboarding/steps/view_results/complete",
+                    headers=headers,
+                )
+            assert r.status_code == 200
+            # The endpoint sets step_view_results = True on the rec object
+            assert rec.step_view_results is True
+        finally:
+            app.dependency_overrides.pop(get_db, None)
+
+    @pytest.mark.asyncio
+    async def test_skip_non_skippable_step_returns_400(self, app, headers, mock_db_with_no_record):
+        """Only set_webhook and invite_team can be skipped; welcome cannot."""
+        from core.database import get_db
+        app.dependency_overrides[get_db] = _db_override(mock_db_with_no_record)
+        try:
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+                r = await c.post(
+                    "/v1/requester-onboarding/steps/welcome/skip",
+                    headers=headers,
+                )
+            assert r.status_code == 400
+        finally:
+            app.dependency_overrides.pop(get_db, None)
+
+    @pytest.mark.asyncio
+    async def test_skip_invite_team_succeeds(self, app, headers, mock_db_with_no_record):
+        """invite_team is a skippable step."""
+        from core.database import get_db
+        app.dependency_overrides[get_db] = _db_override(mock_db_with_no_record)
+        try:
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+                r = await c.post(
+                    "/v1/requester-onboarding/steps/invite_team/skip",
+                    headers=headers,
+                )
+            assert r.status_code == 200
+        finally:
+            app.dependency_overrides.pop(get_db, None)
+
+
+# ── Worker onboarding flow ────────────────────────────────────────────────────
+
+class TestWorkerOnboardingFlow:
+    """Mock-based tests for worker onboarding step completion."""
+
+    USER_ID = str(uuid.uuid4())
+
+    @pytest.fixture
+    def headers(self):
+        return {"Authorization": f"Bearer {_real_token(self.USER_ID)}"}
+
+    @pytest.fixture
+    def mock_db_no_record(self):
+        """DB mock: no existing onboarding progress record."""
+        db = _make_mock_db()
+        db.execute.return_value = _make_scalar_result(None)
+        return db
+
+    @pytest.mark.asyncio
+    async def test_status_requires_auth(self, client):
+        r = await client.get("/v1/onboarding/status")
+        assert r.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_step_complete_requires_auth(self, client):
+        r = await client.post("/v1/onboarding/steps/profile/complete")
+        assert r.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_complete_profile_step(self, app, headers, mock_db_no_record):
+        """Completing the 'profile' step should return 200 with a step result."""
+        from core.database import get_db
+        app.dependency_overrides[get_db] = _db_override(mock_db_no_record)
+        try:
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+                r = await c.post(
+                    "/v1/onboarding/steps/profile/complete",
+                    headers=headers,
+                )
+            assert r.status_code == 200
+            data = r.json()
+            # Response includes step and completion status (exact keys vary by schema)
+            assert "step" in data or "all_done" in data or "is_complete" in data
+        finally:
+            app.dependency_overrides.pop(get_db, None)
+
+    @pytest.mark.asyncio
+    async def test_complete_invalid_step_returns_400(self, app, headers, mock_db_no_record):
+        """Completing a nonexistent step name returns 400."""
+        from core.database import get_db
+        app.dependency_overrides[get_db] = _db_override(mock_db_no_record)
+        try:
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+                r = await c.post(
+                    "/v1/onboarding/steps/nonexistent_step/complete",
+                    headers=headers,
+                )
+            assert r.status_code in (400, 422)
+        finally:
+            app.dependency_overrides.pop(get_db, None)
+
+    @pytest.mark.asyncio
+    async def test_skip_onboarding(self, app, headers, mock_db_no_record):
+        """Skipping onboarding should set skipped_at and return 204."""
+        from core.database import get_db
+        app.dependency_overrides[get_db] = _db_override(mock_db_no_record)
+        try:
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+                r = await c.post("/v1/onboarding/skip", headers=headers)
+            assert r.status_code in (200, 204)
+        finally:
+            app.dependency_overrides.pop(get_db, None)
+
+
+# ── Worker task claim flow ────────────────────────────────────────────────────
+
+class TestWorkerClaimFlow:
+    """Mock-based tests for worker task claiming."""
+
+    WORKER_ID = str(uuid.uuid4())
+    TASK_ID = str(uuid.uuid4())
+
+    @pytest.fixture
+    def worker_headers(self):
+        return {"Authorization": f"Bearer {_real_token(self.WORKER_ID)}"}
+
+    def _make_worker_user(self):
+        user = _make_user_db(user_id=self.WORKER_ID, role="worker", credits=200)
+        user.is_banned = False
+        user.reputation_score = 100.0
+        user.availability_status = "available"
+        user.referral_code = None
+        user.plan = "free"
+        return user
+
+    def _make_open_human_task(self):
+        task = MagicMock()
+        task.id = uuid.UUID(self.TASK_ID)
+        task.user_id = uuid.uuid4()
+        task.type = "label_text"
+        task.status = "open"
+        task.execution_mode = "human"
+        task.application_mode = False
+        task.assigned_team_id = None
+        task.min_reputation_score = None
+        task.min_skill_level = None
+        task.assignments_required = 1
+        task.assignments_completed = 0
+        task.worker_reward_credits = 5
+        task.timeout_minutes = 60
+        task.sla_hours = None
+        task.task_metadata = None
+        task.input = {"text": "classify this"}
+        task.tags = []
+        task.certified_only = False
+        return task
+
+    @pytest.mark.asyncio
+    async def test_claim_requires_auth(self, client):
+        """Claiming a task without auth returns 401."""
+        r = await client.post(f"/v1/worker/tasks/{self.TASK_ID}/claim")
+        assert r.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_claim_by_non_worker_returns_403(self, app):
+        """A requester-role user cannot claim a task."""
+        requester_id = str(uuid.uuid4())
+        headers = {"Authorization": f"Bearer {_real_token(requester_id)}"}
+
+        # DB: returns requester user
+        requester = _make_user_db(user_id=requester_id, role="requester")
+        db = _make_mock_db()
+        db.execute.return_value = _make_scalar_result(requester)
+
+        from core.database import get_db
+        app.dependency_overrides[get_db] = _db_override(db)
+        try:
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+                r = await c.post(
+                    f"/v1/worker/tasks/{self.TASK_ID}/claim",
+                    headers=headers,
+                )
+            assert r.status_code == 403
+        finally:
+            app.dependency_overrides.pop(get_db, None)
+
+    @pytest.mark.asyncio
+    async def test_claim_banned_worker_returns_403(self, app, worker_headers):
+        """A banned worker cannot claim a task."""
+        worker = self._make_worker_user()
+        worker.is_banned = True
+
+        db = _make_mock_db()
+        db.execute.return_value = _make_scalar_result(worker)
+
+        from core.database import get_db
+        app.dependency_overrides[get_db] = _db_override(db)
+        try:
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+                r = await c.post(
+                    f"/v1/worker/tasks/{self.TASK_ID}/claim",
+                    headers=worker_headers,
+                )
+            assert r.status_code == 403
+        finally:
+            app.dependency_overrides.pop(get_db, None)
+
+    @pytest.mark.asyncio
+    async def test_claim_missing_task_returns_404(self, app, worker_headers):
+        """Claiming a non-existent task returns 404."""
+        worker = self._make_worker_user()
+
+        call_count = 0
+
+        def side_effect(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return _make_scalar_result(worker)   # user lookup
+            return _make_scalar_result(None)          # task lookup → not found
+
+        db = _make_mock_db()
+        db.execute.side_effect = side_effect
+
+        from core.database import get_db
+        app.dependency_overrides[get_db] = _db_override(db)
+        try:
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+                r = await c.post(
+                    f"/v1/worker/tasks/{self.TASK_ID}/claim",
+                    headers=worker_headers,
+                )
+            assert r.status_code == 404
+        finally:
+            app.dependency_overrides.pop(get_db, None)
+
+    @pytest.mark.asyncio
+    async def test_submit_requires_active_assignment(self, app, worker_headers):
+        """Worker submit returns 404 when no active assignment exists."""
+        db = _make_mock_db()
+        db.execute.return_value = _make_scalar_result(None)  # no active assignment
+
+        from core.database import get_db
+        app.dependency_overrides[get_db] = _db_override(db)
+        try:
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+                r = await c.post(
+                    f"/v1/worker/tasks/{self.TASK_ID}/submit",
+                    json={"response": {"label": "positive"}},
+                    headers=worker_headers,
+                )
+            assert r.status_code == 404
+        finally:
+            app.dependency_overrides.pop(get_db, None)
+
+
 # ── Helpers: dependency override factories ───────────────────────────────────
 
 async def _async_yield(value):
