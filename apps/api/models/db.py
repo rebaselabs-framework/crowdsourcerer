@@ -1389,7 +1389,7 @@ class TaskRatingDB(Base):
                           nullable=False, index=True)
     worker_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
                        nullable=False, index=True)
-    submission_id = Column(UUID(as_uuid=True), ForeignKey("task_submissions.id", ondelete="SET NULL"),
+    submission_id = Column(UUID(as_uuid=True),
                            nullable=True)
     score = Column(Integer, nullable=False)          # 1–5 stars
     comment = Column(Text, nullable=True)            # up to 1000 chars
