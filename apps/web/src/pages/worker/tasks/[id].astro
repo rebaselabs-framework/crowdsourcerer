@@ -48,6 +48,17 @@ const TASK_META: Record<string, { label: string; icon: string }> = {
 
 const meta = task ? (TASK_META[task.type] ?? { label: task.type, icon: "🔮" }) : null;
 const inp = task?.input ?? {};
+
+// compare_rank: support both `items` array (form builder) and legacy `option_a`/`option_b`
+const COMPARE_LETTERS = "ABCDEFGHIJKL";
+const COMPARE_COLORS = ["text-blue-400","text-purple-400","text-emerald-400","text-amber-400","text-rose-400","text-cyan-400"];
+const COMPARE_BORDER = ["hover:border-blue-500","hover:border-purple-500","hover:border-emerald-500","hover:border-amber-500","hover:border-rose-500"];
+const compareItems: string[] = task?.type === "compare_rank"
+  ? (Array.isArray(inp.items) && inp.items.length > 0
+      ? inp.items
+      : [inp.option_a ?? "Option A", inp.option_b ?? "Option B"])
+  : [];
+
 const timeoutStr = activeAssignment?.timeout_at
   ? new Date(activeAssignment.timeout_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
   : null;
@@ -166,18 +177,22 @@ const timeoutStr = activeAssignment?.timeout_at
           )}
 
           {task.type === "compare_rank" && (
-            <div class="grid grid-cols-2 gap-4">
-              <div class="bg-gray-800 rounded-xl p-4">
-                <div class="text-xs text-blue-400 font-bold uppercase tracking-wider mb-2">Option A</div>
-                <p class="text-gray-200 text-sm leading-relaxed">
-                  {inp.option_a ?? "Option A not provided."}
-                </p>
-              </div>
-              <div class="bg-gray-800 rounded-xl p-4">
-                <div class="text-xs text-purple-400 font-bold uppercase tracking-wider mb-2">Option B</div>
-                <p class="text-gray-200 text-sm leading-relaxed">
-                  {inp.option_b ?? "Option B not provided."}
-                </p>
+            <div>
+              {inp.criteria && (
+                <div class="mb-4 bg-violet-950/30 border border-violet-800/40 rounded-lg px-4 py-2.5">
+                  <span class="text-xs text-violet-400 font-semibold uppercase tracking-wide">Criteria: </span>
+                  <span class="text-sm text-gray-200">{inp.criteria}</span>
+                </div>
+              )}
+              <div class:list={["grid gap-4", compareItems.length === 2 ? "grid-cols-2" : "grid-cols-2 sm:grid-cols-3"]}>
+                {compareItems.map((item: string, i: number) => (
+                  <div class="bg-gray-800 rounded-xl p-4">
+                    <div class:list={["text-xs font-bold uppercase tracking-wider mb-2", COMPARE_COLORS[i % COMPARE_COLORS.length]]}>
+                      Option {COMPARE_LETTERS[i] ?? String(i + 1)}
+                    </div>
+                    <p class="text-gray-200 text-sm leading-relaxed">{item}</p>
+                  </div>
+                ))}
               </div>
             </div>
           )}
@@ -333,21 +348,28 @@ const timeoutStr = activeAssignment?.timeout_at
               </div>
             ) : task.type === "compare_rank" ? (
               <div>
-                <p class="text-sm text-gray-400 mb-4">Which option is better?</p>
-                <div class="grid grid-cols-3 gap-3 mb-6">
-                  {[
-                    { choice: "a", label: "🔵 Option A is better", color: "hover:border-blue-500" },
-                    { choice: "tie", label: "⚪ About the same", color: "hover:border-gray-400" },
-                    { choice: "b", label: "🟣 Option B is better", color: "hover:border-purple-500" },
-                  ].map(({ choice, label, color }) => (
+                {inp.criteria && (
+                  <p class="text-sm text-violet-300 font-medium mb-4">{inp.criteria}</p>
+                )}
+                <p class="text-sm text-gray-400 mb-4">Select the best option:</p>
+                <div class:list={["grid gap-3 mb-3", compareItems.length === 2 ? "grid-cols-3" : "grid-cols-2 sm:grid-cols-3"]}>
+                  {compareItems.map((item: string, i: number) => (
                     <button
                       type="button"
-                      class={`rank-btn py-4 border border-gray-700 ${color} rounded-xl text-sm font-medium transition-all`}
-                      data-choice={choice}
+                      class:list={["rank-btn py-3 px-4 border border-gray-700 rounded-xl text-sm font-medium transition-all text-left", COMPARE_BORDER[i % COMPARE_BORDER.length]]}
+                      data-choice={(COMPARE_LETTERS[i] ?? String(i + 1)).toLowerCase()}
                     >
-                      {label}
+                      <div class="text-xs text-gray-500 mb-0.5">Option {COMPARE_LETTERS[i] ?? String(i + 1)}</div>
+                      <div class="text-xs text-gray-300 line-clamp-2">{item}</div>
                     </button>
                   ))}
+                  <button
+                    type="button"
+                    class="rank-btn py-3 px-4 border border-gray-700 hover:border-gray-400 rounded-xl text-sm font-medium transition-all"
+                    data-choice="tie"
+                  >
+                    ⚪ <span class="block text-xs text-gray-400 mt-0.5">About equal</span>
+                  </button>
                 </div>
                 <label class="block text-sm text-gray-400 mb-2">Reason (optional)</label>
                 <textarea
