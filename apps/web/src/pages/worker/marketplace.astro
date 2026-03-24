@@ -161,10 +161,56 @@ const HUMAN_TASK_TYPES = Object.keys(TASK_TYPE_META);
 
     <!-- Task list -->
     {tasks?.items?.length === 0 ? (
-      <div class="text-center py-20">
-        <div class="text-5xl mb-4">🔮</div>
-        <p class="text-gray-400 text-lg mb-2">No tasks available right now</p>
-        <p class="text-gray-500 text-sm">Check back soon — new tasks are added continuously</p>
+      <div class="py-12">
+        <div class="text-center mb-10">
+          <div class="text-5xl mb-4">🔮</div>
+          <h3 class="text-xl font-semibold mb-2">No tasks right now</h3>
+          {(filterType || filterPriority) ? (
+            <p class="text-gray-400 text-sm mb-4">No tasks match your current filters. Try clearing them or check back soon.</p>
+          ) : mode === "feed" ? (
+            <p class="text-gray-400 text-sm mb-4">Your personalised feed is empty. Add skills to your profile to get matched with tasks — or browse all tasks.</p>
+          ) : (
+            <p class="text-gray-400 text-sm mb-4">The marketplace is quiet right now. Tasks are posted by requesters on demand — check back soon or set up an alert.</p>
+          )}
+          <div class="flex flex-wrap justify-center gap-3">
+            {mode === "feed" ? (
+              <a href="/worker/marketplace?mode=browse"
+                class="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-200 text-sm rounded-lg border border-gray-700 transition-colors">
+                Browse all tasks
+              </a>
+            ) : (
+              <a href="/worker/marketplace?mode=feed"
+                class="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-200 text-sm rounded-lg border border-gray-700 transition-colors">
+                Switch to personalised feed
+              </a>
+            )}
+            <a href="/worker/skills"
+              class="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium rounded-lg transition-colors">
+              Add skills
+            </a>
+            <a href="/dashboard/saved-searches"
+              class="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-200 text-sm rounded-lg border border-gray-700 transition-colors">
+              🔔 Set task alert
+            </a>
+          </div>
+        </div>
+
+        <!-- What kinds of tasks are available here? -->
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
+          <h4 class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Task types you can earn from</h4>
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {Object.entries(TASK_TYPE_META).map(([type, meta]) => (
+              <div class="bg-gray-800/50 rounded-lg p-3 text-center">
+                <div class="text-2xl mb-1">{meta.icon}</div>
+                <div class="text-xs font-medium text-gray-300">{meta.label}</div>
+                <div class="text-xs text-gray-500 mt-0.5">{meta.desc}</div>
+              </div>
+            ))}
+          </div>
+          <p class="text-xs text-gray-500 text-center mt-4">
+            New tasks appear as requesters post them. Complete your profile and add skills to get notified first.
+          </p>
+        </div>
       </div>
     ) : (
       <div class="space-y-3">
