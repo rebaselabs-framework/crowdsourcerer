@@ -36,7 +36,7 @@ def upgrade() -> None:
     )
     op.add_column(
         "requester_saved_templates",
-        sa.Column("marketplace_tags", JSONB(), nullable=True, server_default="'[]'"),
+        sa.Column("marketplace_tags", JSONB(), nullable=True, server_default="[]"),
     )
     op.add_column(
         "requester_saved_templates",
