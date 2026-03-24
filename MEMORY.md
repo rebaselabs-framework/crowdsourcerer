@@ -36,6 +36,7 @@ Auto-updated by autonomous sessions. Tracks what was done and what's next.
 | 27 | Worker home: task feed preview (3 matched tasks), recent activity (5 completions), condensed quick links (8 essentials) | 94d19f6 |
 | 28 | UX: worker submission client-side validation + type-specific review display (stars/verdicts/labels) on review page | ecf2e9a |
 | 29 | Dashboard: pending review counter + human-readable task type labels + worker progress on recent tasks list | adfd938 |
+| 30 | Worker skill recommendations: `GET /v1/worker/recommendations` + `/worker/recommendations` page — best_types, try_next, insights, weekly earnings potential | 218ea95 |
 
 ## Priorities for Next Session 🔜
 
@@ -43,7 +44,7 @@ Auto-updated by autonomous sessions. Tracks what was done and what's next.
    - `NPM_TOKEN` for `@crowdsourcerer/sdk` publish
    - PyPI OIDC for Python package publish
 
-2. **Worker skill recommendations** — personalized task-type recommendations + earnings potential based on history
+2. **Platform health check** — review product end-to-end: what works, what's broken, what's half-baked
 
 3. **Stale warning ts(6133)** — many unused variables across pages (non-blocking warnings)
 
