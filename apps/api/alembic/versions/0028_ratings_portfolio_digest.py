@@ -33,9 +33,7 @@ def upgrade() -> None:
                                      nullable=True))
 
     # ── notification_preferences: digest_frequency ──────────────────────────
-    op.execute(
-        "DO $$ BEGIN CREATE TYPE digest_frequency_enum AS ENUM ('none', 'daily', 'weekly'); EXCEPTION WHEN duplicate_object THEN NULL; END $$"
-    )
+    op.execute("CREATE TYPE digest_frequency_enum AS ENUM ('none', 'daily', 'weekly')")
     op.add_column(
         "notification_preferences",
         sa.Column(

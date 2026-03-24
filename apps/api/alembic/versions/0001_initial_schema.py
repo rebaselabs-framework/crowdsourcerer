@@ -19,15 +19,12 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # ── Enums (DO blocks are idempotent — safe if SQLAlchemy auto-creates first) ──
-    for stmt in [
-        "CREATE TYPE plan_enum AS ENUM ('free', 'starter', 'pro', 'enterprise')",
-        "CREATE TYPE task_type_enum AS ENUM ('web_research', 'entity_lookup', 'document_parse', 'data_transform', 'llm_generate', 'screenshot', 'audio_transcribe', 'pii_detect', 'code_execute', 'web_intel')",
-        "CREATE TYPE task_status_enum AS ENUM ('pending', 'queued', 'running', 'completed', 'failed', 'cancelled')",
-        "CREATE TYPE task_priority_enum AS ENUM ('low', 'normal', 'high', 'urgent')",
-        "CREATE TYPE transaction_type_enum AS ENUM ('charge', 'credit', 'refund')",
-    ]:
-        op.execute(sa.text(f"DO $$ BEGIN {stmt}; EXCEPTION WHEN duplicate_object THEN NULL; END $$"))
+    # ── Enums ─────────────────────────────────────────────────────────────────
+    op.execute("CREATE TYPE plan_enum AS ENUM ('free', 'starter', 'pro', 'enterprise')")
+    op.execute("CREATE TYPE task_type_enum AS ENUM ('web_research', 'entity_lookup', 'document_parse', 'data_transform', 'llm_generate', 'screenshot', 'audio_transcribe', 'pii_detect', 'code_execute', 'web_intel')")
+    op.execute("CREATE TYPE task_status_enum AS ENUM ('pending', 'queued', 'running', 'completed', 'failed', 'cancelled')")
+    op.execute("CREATE TYPE task_priority_enum AS ENUM ('low', 'normal', 'high', 'urgent')")
+    op.execute("CREATE TYPE transaction_type_enum AS ENUM ('charge', 'credit', 'refund')")
 
     # ── users ─────────────────────────────────────────────────────────────────
     op.create_table(

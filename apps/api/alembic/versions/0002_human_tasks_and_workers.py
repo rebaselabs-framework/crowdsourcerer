@@ -19,7 +19,7 @@ depends_on = None
 
 def upgrade() -> None:
     # ── 1. Add role to users ───────────────────────────────────────────────
-    op.execute(sa.text("DO $$ BEGIN CREATE TYPE user_role_enum AS ENUM ('requester', 'worker', 'both'); EXCEPTION WHEN duplicate_object THEN NULL; END $$"))
+    op.execute("CREATE TYPE user_role_enum AS ENUM ('requester', 'worker', 'both')")
     op.add_column("users", sa.Column(
         "role",
         sa.Enum("requester", "worker", "both", name="user_role_enum", create_type=False),
@@ -50,7 +50,7 @@ def upgrade() -> None:
     op.execute("ALTER TYPE task_status_enum ADD VALUE IF NOT EXISTS 'assigned'")
 
     # ── 5. Add execution_mode enum and column ──────────────────────────────
-    op.execute(sa.text("DO $$ BEGIN CREATE TYPE execution_mode_enum AS ENUM ('ai', 'human'); EXCEPTION WHEN duplicate_object THEN NULL; END $$"))
+    op.execute("CREATE TYPE execution_mode_enum AS ENUM ('ai', 'human')")
     op.add_column("tasks", sa.Column(
         "execution_mode",
         sa.Enum("ai", "human", name="execution_mode_enum", create_type=False),
@@ -69,11 +69,7 @@ def upgrade() -> None:
     op.execute("ALTER TYPE transaction_type_enum ADD VALUE IF NOT EXISTS 'earning'")
 
     # ── 8. Create task_assignments table ──────────────────────────────────
-    op.execute("""
-        DO $$ BEGIN CREATE TYPE assignment_status_enum AS ENUM (
-            'active', 'submitted', 'approved', 'rejected', 'released', 'timed_out'
-        ); EXCEPTION WHEN duplicate_object THEN NULL; END $$
-    """)
+    op.execute("CREATE TYPE assignment_status_enum AS ENUM ('active', 'submitted', 'approved', 'rejected', 'released', 'timed_out')")
     op.create_table(
         "task_assignments",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),

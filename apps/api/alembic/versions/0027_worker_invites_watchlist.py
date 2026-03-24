@@ -17,10 +17,7 @@ depends_on = None
 
 def upgrade() -> None:
     # invite_status_enum
-    op.execute(
-        "DO $$ BEGIN CREATE TYPE invite_status_enum AS ENUM "
-        "('pending', 'accepted', 'declined', 'expired'); EXCEPTION WHEN duplicate_object THEN NULL; END $$"
-    )
+    op.execute("CREATE TYPE invite_status_enum AS ENUM ('pending', 'accepted', 'declined', 'expired')")
 
     # worker_invites
     op.create_table(
