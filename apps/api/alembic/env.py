@@ -29,7 +29,10 @@ config.set_main_option("sqlalchemy.url", _db_url)
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-target_metadata = Base.metadata
+# Use None for target_metadata — all migrations are manually authored.
+# Passing Base.metadata causes SQLAlchemy to auto-create enum types before
+# the migration scripts run, breaking migrations that CREATE TYPE explicitly.
+target_metadata = None
 
 
 # ─── Offline mode ────────────────────────────────────────────────────────────
