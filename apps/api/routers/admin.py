@@ -1757,3 +1757,81 @@ async def worker_onboarding_funnel(
         "funnel": funnel,
         "drop_off": drop_off,
     }
+
+
+@router.get("/config/status")
+async def config_status(
+    _admin: str = Depends(require_admin),
+):
+    """Return a checklist of platform configuration status.
+
+    Shows which features are enabled/disabled based on environment variables,
+    without exposing sensitive credentials. Useful for initial setup verification.
+    """
+    from core.config import get_settings
+    s = get_settings()
+
+    def _bool_check(value: str | bool) -> dict:
+        ok = bool(value) and str(value).lower() not in ("", "0", "false", "change-me-in-production")
+        return {"configured": ok}
+
+    checks = {
+        "database": {
+            "name": "PostgreSQL Database",
+            "configured": True,  # If we're responding, DB is connected
+            "detail": s.database_url.split("@")[-1] if "@" in s.database_url else "connected",
+            "required": True,
+        },
+        "jwt_secret": {
+            "name": "JWT Secret",
+            "configured": s.jwt_secret != "change-me-in-production",
+            "detail": "Custom secret set" if s.jwt_secret != "change-me-in-production" else "⚠️ Using default — CHANGE IN PRODUCTION",
+            "required": True,
+        },
+        "api_key_salt": {
+            "name": "API Key Salt",
+            "configured": s.api_key_salt != "change-me-in-production",
+            "detail": "Custom salt set" if s.api_key_salt != "change-me-in-production" else "⚠️ Using default — CHANGE IN PRODUCTION",
+            "required": True,
+        },
+        "rebasekit": {
+            "name": "RebaseKit API (AI tasks)",
+            "configured": bool(s.rebasekit_api_key),
+            "detail": f"Base URL: {s.rebasekit_base_url}" if s.rebasekit_api_key else "Not set — AI tasks will fail",
+            "required": True,
+        },
+        "email": {
+            "name": "Email (SMTP)",
+            "configured": s.email_enabled and bool(s.smtp_host),
+            "detail": f"{s.smtp_host}:{s.smtp_port}" if s.smtp_host else "Not configured — email notifications disabled",
+            "required": False,
+        },
+        "stripe": {
+            "name": "Stripe (billing)",
+            "configured": bool(s.stripe_secret_key),
+            "detail": "Connected" if s.stripe_secret_key else "Not set — credit purchases disabled",
+            "required": False,
+        },
+        "google_oauth": {
+            "name": "Google OAuth (social login)",
+            "configured": bool(s.google_client_id),
+            "detail": f"Client ID: {s.google_client_id[:8]}..." if s.google_client_id else "Not set — Google sign-in disabled",
+            "required": False,
+        },
+        "task_cache": {
+            "name": "Task Result Cache",
+            "configured": s.task_result_cache_enabled,
+            "detail": "Enabled — duplicate AI calls will be deduplicated" if s.task_result_cache_enabled else "Disabled",
+            "required": False,
+        },
+    }
+
+    required_ok = all(v["configured"] for v in checks.values() if v.get("required"))
+    all_ok = all(v["configured"] for v in checks.values())
+
+    return {
+        "ready": required_ok,
+        "all_optional_configured": all_ok,
+        "checks": checks,
+        "summary": f"{sum(1 for v in checks.values() if v['configured'])}/{len(checks)} items configured",
+    }

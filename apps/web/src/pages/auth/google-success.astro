@@ -31,7 +31,5 @@ Astro.cookies.set("cs_token", token, {
 });
 
 // Sanitise next to prevent open redirects (only allow relative paths)
-const safePath = next.startsWith("/") && !next.startsWith("//") ? next : "/dashboard";
-
-return Astro.redirect(safePath);
+return Astro.redirect(next.startsWith("/") && !next.startsWith("//") ? next : "/dashboard");
 ---

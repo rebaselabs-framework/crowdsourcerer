@@ -38,6 +38,11 @@ services:
       SMTP_PASS: ${SMTP_PASS:-}
       SMTP_FROM: ${SMTP_FROM:-noreply@crowdsourcerer.rebaselabs.online}
       SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
+      # Google OAuth (optional — enables "Sign in with Google" on login/register pages)
+      # Create credentials at: https://console.cloud.google.com → APIs & Services → Credentials
+      # Authorised redirect URI: https://crowdsourcerer.rebaselabs.online/v1/auth/google/callback
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
     depends_on:
       db:
         condition: service_healthy
