@@ -12,6 +12,7 @@ let user: any = null;
 let credits: any = null;
 let tasks: any = null;
 let apiKeys: any = [];
+let onboardingStatus: any = null;
 
 try {
   [user, credits, tasks, apiKeys] = await Promise.all([
@@ -23,10 +24,43 @@ try {
 } catch (e) {
   return Astro.redirect("/login");
 }
+
+// Non-blocking: fetch onboarding status to detect new users
+try {
+  onboardingStatus = await apiFetch<any>("/v1/requester-onboarding/status", { token });
+} catch (_) {}
+
+// Show onboarding banner if not yet complete and not skipped
+const showOnboardingBanner = Boolean(
+  onboardingStatus &&
+  !onboardingStatus.is_complete &&
+  !onboardingStatus.skipped_at &&
+  (onboardingStatus.completed_steps ?? 0) === 0
+);
 ---
 
 <Layout title="Dashboard — CrowdSorcerer">
   <div class="max-w-5xl mx-auto px-6 py-10">
+
+    <!-- New-user onboarding banner -->
+    {showOnboardingBanner && (
+      <div class="bg-violet-950/40 border border-violet-700/60 rounded-xl px-6 py-5 mb-8 flex items-center justify-between">
+        <div>
+          <div class="flex items-center gap-2 mb-1">
+            <span class="text-lg">🚀</span>
+            <h2 class="font-semibold text-violet-200">Welcome to CrowdSorcerer!</h2>
+          </div>
+          <p class="text-sm text-gray-400">Follow the quick-start guide to post your first task and earn <strong class="text-violet-300">+200 bonus credits</strong>.</p>
+        </div>
+        <a
+          href="/dashboard/requester-onboarding"
+          class="flex-shrink-0 ml-6 px-5 py-2.5 bg-violet-600 hover:bg-violet-500 text-white text-sm font-semibold rounded-lg transition-colors"
+        >
+          Get started →
+        </a>
+      </div>
+    )}
+
     <div class="flex items-center justify-between mb-8">
       <div>
         <h1 class="text-2xl font-bold">Dashboard</h1>

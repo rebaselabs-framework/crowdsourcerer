@@ -42,6 +42,7 @@ async def register(
         email=req.email,
         name=req.name,
         password_hash=pwd_context.hash(req.password),
+        role=req.role,
         credits=settings.free_tier_credits,
     )
     db.add(user)
