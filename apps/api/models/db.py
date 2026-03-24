@@ -4,8 +4,14 @@ from datetime import datetime, timezone
 
 from sqlalchemy import (
     Column, String, Integer, BigInteger, Boolean, DateTime, Float,
-    Text, ForeignKey, Enum as SAEnum, JSON, Date, UniqueConstraint
+    Text, ForeignKey, Enum as _SAEnum, JSON, Date, UniqueConstraint
 )
+
+
+def SAEnum(*args: str, **kwargs: object) -> _SAEnum:  # type: ignore[type-arg]
+    """Wrapper that defaults create_type=False — migrations handle enum creation."""
+    kwargs.setdefault("create_type", False)
+    return _SAEnum(*args, **kwargs)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship, backref
 
