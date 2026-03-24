@@ -1242,3 +1242,45 @@ async def list_my_assignments(
     result = await db.execute(q)
     assignments = result.scalars().all()
     return [TaskAssignmentOut.model_validate(a) for a in assignments]
+
+
+# ─── Recent activity (completions with task type) ─────────────────────────
+
+@router.get("/activity")
+async def recent_worker_activity(
+    page_size: int = Query(5, ge=1, le=20),
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Recent submitted/approved assignments with embedded task type for the home page feed."""
+    result = await db.execute(select(UserDB).where(UserDB.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user or user.role not in ("worker", "both"):
+        raise HTTPException(status_code=403, detail="Not enrolled as a worker.")
+
+    stmt = (
+        select(TaskAssignmentDB, TaskDB.type.label("task_type"))
+        .join(TaskDB, TaskAssignmentDB.task_id == TaskDB.id)
+        .where(
+            TaskAssignmentDB.worker_id == user_id,
+            TaskAssignmentDB.status.in_(["submitted", "approved", "released"]),
+        )
+        .order_by(TaskAssignmentDB.submitted_at.desc())
+        .limit(page_size)
+    )
+    result = await db.execute(stmt)
+    rows = result.all()
+
+    return [
+        {
+            "task_id": str(a.task_id),
+            "assignment_id": str(a.id),
+            "task_type": task_type,
+            "status": a.status,
+            "earnings_credits": a.earnings_credits,
+            "xp_earned": a.xp_earned,
+            "submitted_at": a.submitted_at.isoformat() if a.submitted_at else None,
+        }
+        for a, task_type in rows
+    ]
+
