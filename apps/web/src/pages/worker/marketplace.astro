@@ -347,5 +347,6 @@ const HUMAN_TASK_TYPES = Object.keys(TASK_TYPE_META);
       document.body.appendChild(el);
       setTimeout(() => el.remove(), 2500);
     }
+    (window as any).toggleWatchlist = toggleWatchlist;
   </script>
 </Layout>

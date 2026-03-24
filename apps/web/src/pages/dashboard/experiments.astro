@@ -375,5 +375,6 @@ const taskTypes = [
         alert(`Traffic percentages must sum to 100 (currently ${total.toFixed(1)})`);
       }
     });
+    (window as any).addVariant = addVariant;
   </script>
 </Layout>

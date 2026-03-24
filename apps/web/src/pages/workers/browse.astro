@@ -577,6 +577,8 @@ const SORT_OPTIONS = [
     }
 
     // Make bulk functions global for inline onclick
+    (window as any).openInviteModal = openInviteModal;
+    (window as any).submitInvite = submitInvite;
     (window as any).closeBulkModal = closeBulkModal;
     (window as any).submitBulkInvite = submitBulkInvite;
   </script>
