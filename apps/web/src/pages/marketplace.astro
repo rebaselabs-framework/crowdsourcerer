@@ -1,0 +1,414 @@
+---
+/**
+ * Public Task Marketplace — /marketplace
+ *
+ * No authentication required. Shows open human tasks so prospective workers
+ * can browse available work before committing to sign up.
+ * Drives worker acquisition with in-page CTAs.
+ */
+import Layout from "@/layouts/Layout.astro";
+
+const API_URL = import.meta.env.PUBLIC_API_URL ?? "http://api:8100";
+
+// ── URL params ────────────────────────────────────────────────────────────────
+const typeFilter = Astro.url.searchParams.get("type") ?? "";
+const page       = Math.max(1, parseInt(Astro.url.searchParams.get("page") ?? "1", 10));
+const PAGE_SIZE  = 24;
+
+// ── Fetch public task feed ────────────────────────────────────────────────────
+interface TaskPreview {
+  id: string;
+  type: string;
+  title: string;
+  worker_reward_credits: number;
+  assignments_required: number;
+  assignments_completed: number;
+  priority: string | null;
+  created_at: string | null;
+}
+interface FeedResponse {
+  items: TaskPreview[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+let feed: FeedResponse = { items: [], total: 0, page: 1, page_size: PAGE_SIZE };
+let fetchError = "";
+
+try {
+  const qs = new URLSearchParams({
+    page: String(page),
+    page_size: String(PAGE_SIZE),
+    ...(typeFilter ? { type: typeFilter } : {}),
+  });
+  const res = await fetch(`${API_URL}/v1/tasks/public?${qs}`);
+  if (res.ok) {
+    feed = await res.json();
+  } else {
+    fetchError = `Server returned ${res.status}`;
+  }
+} catch (e: any) {
+  fetchError = e?.message ?? "Failed to load tasks";
+}
+
+const totalPages = Math.ceil(feed.total / PAGE_SIZE);
+
+// ── Human task types for filter bar ──────────────────────────────────────────
+const HUMAN_TYPES: { value: string; label: string; icon: string }[] = [
+  { value: "",                  label: "All Tasks",          icon: "🎯" },
+  { value: "label_image",       label: "Label Image",        icon: "🖼️" },
+  { value: "label_text",        label: "Label Text",         icon: "📝" },
+  { value: "rate_quality",      label: "Rate Quality",       icon: "⭐" },
+  { value: "verify_fact",       label: "Verify Fact",        icon: "✅" },
+  { value: "moderate_content",  label: "Moderate Content",   icon: "🛡️" },
+  { value: "compare_rank",      label: "Compare & Rank",     icon: "📊" },
+  { value: "answer_question",   label: "Answer Question",    icon: "❓" },
+  { value: "transcription_review", label: "Review Audio",   icon: "📋" },
+];
+
+const TYPE_DESC: Record<string, string> = {
+  label_image:          "Classify or describe images",
+  label_text:           "Tag or categorise text snippets",
+  rate_quality:         "Score AI outputs on a rubric",
+  verify_fact:          "Confirm whether a claim is accurate",
+  moderate_content:     "Check content against safety guidelines",
+  compare_rank:         "Rank multiple options from best to worst",
+  answer_question:      "Answer questions using your knowledge",
+  transcription_review: "Correct and verify audio transcripts",
+};
+
+function typeIcon(t: string): string {
+  return HUMAN_TYPES.find(h => h.value === t)?.icon ?? "🔮";
+}
+function typeLabel(t: string): string {
+  return HUMAN_TYPES.find(h => h.value === t)?.label ?? t.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+}
+function priorityBadge(p: string | null): string {
+  if (p === "urgent")   return "bg-red-900/60 text-red-300 border-red-800";
+  if (p === "high")     return "bg-orange-900/60 text-orange-300 border-orange-800";
+  if (p === "low")      return "bg-gray-800 text-gray-500 border-gray-700";
+  return "bg-gray-800 text-gray-400 border-gray-700"; // normal
+}
+
+function timeAgo(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const now = new Date();
+  const sec = Math.floor((now.getTime() - d.getTime()) / 1000);
+  if (sec < 60)   return "just now";
+  if (sec < 3600) return `${Math.floor(sec / 60)}m ago`;
+  if (sec < 86400) return `${Math.floor(sec / 3600)}h ago`;
+  return `${Math.floor(sec / 86400)}d ago`;
+}
+
+function paginateUrl(p: number): string {
+  const q = new URLSearchParams({ page: String(p), ...(typeFilter ? { type: typeFilter } : {}) });
+  return `/marketplace?${q}`;
+}
+function filterUrl(t: string): string {
+  return t ? `/marketplace?type=${t}` : "/marketplace";
+}
+
+// ── Stats for the hero banner ─────────────────────────────────────────────────
+const totalOpen      = feed.total;
+const avgReward      = feed.items.length
+  ? Math.round(feed.items.reduce((s, t) => s + (t.worker_reward_credits ?? 0), 0) / feed.items.length)
+  : 0;
+---
+
+<Layout
+  title="Browse Open Tasks — CrowdSorcerer"
+  description="Browse open crowdsourcing tasks. Earn credits by labelling images, verifying facts, moderating content, and more. No experience required."
+>
+
+  <!-- ── Hero ──────────────────────────────────────────────────────────────── -->
+  <div class="border-b border-gray-800 bg-gradient-to-b from-gray-900/50 to-transparent">
+    <div class="max-w-6xl mx-auto px-6 py-14">
+      <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-8">
+        <div class="max-w-xl">
+          <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-900/40 border border-emerald-700/60 text-emerald-400 text-xs font-medium mb-4">
+            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            Tasks available now
+          </div>
+          <h1 class="text-3xl md:text-4xl font-bold leading-tight mb-3">
+            Browse Open Tasks<br />
+            <span class="text-violet-400">Earn as You Go</span>
+          </h1>
+          <p class="text-gray-400 text-base leading-relaxed mb-6">
+            Complete bite-sized tasks — labelling images, checking facts, moderating content — and
+            earn credits redeemable for cash. No experience needed, work at your own pace.
+          </p>
+          <div class="flex flex-wrap gap-3">
+            <a
+              href="/worker/onboarding"
+              class="px-5 py-2.5 bg-violet-600 hover:bg-violet-500 text-white text-sm font-semibold rounded-xl transition-colors"
+            >
+              Start earning →
+            </a>
+            <a
+              href="/pricing"
+              class="px-5 py-2.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 text-sm font-medium rounded-xl transition-colors"
+            >
+              How credits work
+            </a>
+          </div>
+        </div>
+
+        <!-- Stats panel -->
+        <div class="grid grid-cols-3 gap-4 md:gap-6 shrink-0">
+          {[
+            { icon: "📋", value: String(totalOpen), label: "open tasks" },
+            { icon: "⭐", value: `${avgReward}`, label: "avg credits/task" },
+            { icon: "🔖", value: String(HUMAN_TYPES.length - 1), label: "task types" },
+          ].map(s => (
+            <div class="bg-gray-900 border border-gray-800 rounded-xl px-5 py-4 text-center">
+              <div class="text-2xl mb-1">{s.icon}</div>
+              <div class="text-2xl font-bold text-white">{s.value}</div>
+              <div class="text-xs text-gray-500 mt-0.5">{s.label}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Content ────────────────────────────────────────────────────────────── -->
+  <div class="max-w-6xl mx-auto px-6 py-10">
+
+    <!-- Filter bar -->
+    <div class="flex flex-wrap gap-2 mb-8">
+      {HUMAN_TYPES.map(t => (
+        <a
+          href={filterUrl(t.value)}
+          class:list={[
+            "inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-sm font-medium border transition-colors",
+            typeFilter === t.value
+              ? "bg-violet-700 border-violet-600 text-white"
+              : "bg-gray-900 border-gray-700 text-gray-400 hover:border-gray-600 hover:text-gray-200"
+          ]}
+        >
+          {t.icon} {t.label}
+          {t.value && typeFilter === t.value && (
+            <span class="ml-0.5 text-xs opacity-70">✕</span>
+          )}
+        </a>
+      ))}
+    </div>
+
+    {fetchError ? (
+      <div class="rounded-xl bg-red-900/30 border border-red-800 p-6 text-red-300 text-sm text-center">
+        <div class="text-2xl mb-2">⚠️</div>
+        {fetchError}
+      </div>
+    ) : feed.items.length === 0 ? (
+      <div class="rounded-xl bg-gray-900 border border-gray-800 p-12 text-center">
+        <div class="text-4xl mb-3">🔍</div>
+        <h2 class="text-lg font-semibold mb-2">No tasks available right now</h2>
+        <p class="text-gray-400 text-sm mb-6">
+          {typeFilter
+            ? `There are no open "${typeLabel(typeFilter)}" tasks at the moment.`
+            : "No tasks are currently open. Check back soon!"}
+        </p>
+        {typeFilter && (
+          <a href="/marketplace" class="text-violet-400 hover:text-violet-300 text-sm transition-colors">
+            ← Browse all task types
+          </a>
+        )}
+      </div>
+    ) : (
+      <>
+        <!-- Result count + sort hint -->
+        <div class="flex items-center justify-between mb-4">
+          <p class="text-sm text-gray-500">
+            Showing {((page - 1) * PAGE_SIZE) + 1}–{Math.min(page * PAGE_SIZE, feed.total)} of <span class="text-gray-300 font-medium">{feed.total.toLocaleString()}</span> open tasks
+            {typeFilter && (
+              <span> · filtered by <span class="text-violet-400">{typeLabel(typeFilter)}</span></span>
+            )}
+          </p>
+          <span class="text-xs text-gray-600">Newest first</span>
+        </div>
+
+        <!-- Task grid -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-10">
+          {feed.items.map(task => {
+            const pct = task.assignments_required > 0
+              ? Math.round((task.assignments_completed / task.assignments_required) * 100)
+              : 0;
+            const spotsLeft = task.assignments_required - task.assignments_completed;
+            return (
+              <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 flex flex-col gap-3 hover:border-gray-700 transition-colors group">
+                <!-- Type + Priority -->
+                <div class="flex items-center justify-between">
+                  <span class="inline-flex items-center gap-1.5 text-xs font-medium text-gray-400">
+                    <span class="text-base">{typeIcon(task.type)}</span>
+                    {typeLabel(task.type)}
+                  </span>
+                  {task.priority && task.priority !== "normal" && (
+                    <span class:list={["text-xs px-2 py-0.5 rounded-full border font-medium", priorityBadge(task.priority)]}>
+                      {task.priority}
+                    </span>
+                  )}
+                </div>
+
+                <!-- Title -->
+                <h3 class="text-sm font-semibold text-gray-100 leading-snug line-clamp-2 min-h-[2.5rem]">
+                  {task.title}
+                </h3>
+
+                <!-- Description hint -->
+                {TYPE_DESC[task.type] && (
+                  <p class="text-xs text-gray-500 -mt-1">{TYPE_DESC[task.type]}</p>
+                )}
+
+                <!-- Progress bar -->
+                <div>
+                  <div class="flex items-center justify-between text-xs text-gray-500 mb-1.5">
+                    <span>{task.assignments_completed} / {task.assignments_required} workers</span>
+                    <span class={spotsLeft > 0 ? "text-emerald-400" : "text-gray-600"}>
+                      {spotsLeft > 0 ? `${spotsLeft} spot${spotsLeft !== 1 ? "s" : ""} left` : "Full"}
+                    </span>
+                  </div>
+                  <div class="h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                    <div
+                      class="h-full bg-violet-600 rounded-full transition-all"
+                      style={`width:${pct}%`}
+                    />
+                  </div>
+                </div>
+
+                <!-- Footer: reward + age + CTA -->
+                <div class="flex items-center justify-between pt-1 border-t border-gray-800 mt-auto">
+                  <div class="flex items-center gap-1.5">
+                    <span class="text-lg font-bold text-emerald-400">{task.worker_reward_credits}</span>
+                    <span class="text-xs text-gray-500">credits</span>
+                  </div>
+                  <div class="flex items-center gap-3">
+                    <span class="text-xs text-gray-600">{timeAgo(task.created_at)}</span>
+                    {spotsLeft > 0 ? (
+                      <a
+                        href="/register?role=worker"
+                        class="px-3 py-1 bg-violet-700/60 hover:bg-violet-600 border border-violet-600/60 text-violet-200 text-xs font-medium rounded-lg transition-colors"
+                      >
+                        Take task
+                      </a>
+                    ) : (
+                      <span class="px-3 py-1 bg-gray-800 border border-gray-700 text-gray-500 text-xs font-medium rounded-lg cursor-not-allowed">
+                        Full
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <!-- Pagination -->
+        {totalPages > 1 && (
+          <div class="flex justify-center items-center gap-4">
+            {page > 1 ? (
+              <a href={paginateUrl(page - 1)} class="px-4 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-sm text-gray-300 transition-colors">
+                ← Prev
+              </a>
+            ) : (
+              <span class="px-4 py-2 bg-gray-900 border border-gray-800 rounded-lg text-sm text-gray-600 cursor-not-allowed">← Prev</span>
+            )}
+            <span class="text-sm text-gray-400">Page <span class="text-white font-medium">{page}</span> of {totalPages}</span>
+            {page < totalPages ? (
+              <a href={paginateUrl(page + 1)} class="px-4 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-sm text-gray-300 transition-colors">
+                Next →
+              </a>
+            ) : (
+              <span class="px-4 py-2 bg-gray-900 border border-gray-800 rounded-lg text-sm text-gray-600 cursor-not-allowed">Next →</span>
+            )}
+          </div>
+        )}
+      </>
+    )}
+
+    <!-- ── Bottom CTA ─────────────────────────────────────────────────────── -->
+    <div class="mt-16 bg-gradient-to-br from-violet-950/60 to-gray-900 border border-violet-800/40 rounded-2xl p-8 md:p-10 text-center">
+      <div class="text-4xl mb-4">🚀</div>
+      <h2 class="text-2xl font-bold mb-3">Ready to start earning?</h2>
+      <p class="text-gray-400 text-sm max-w-md mx-auto mb-6">
+        Create a free worker account in under 2 minutes. Browse your matched tasks, complete them
+        at your own pace, and withdraw your earnings anytime.
+      </p>
+      <div class="flex flex-wrap justify-center gap-3">
+        <a
+          href="/register?role=worker"
+          class="px-6 py-3 bg-violet-600 hover:bg-violet-500 text-white font-semibold rounded-xl transition-colors"
+        >
+          Create free account
+        </a>
+        <a
+          href="/worker/leaderboard"
+          class="px-6 py-3 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 rounded-xl transition-colors"
+        >
+          View leaderboard
+        </a>
+      </div>
+      <p class="text-xs text-gray-600 mt-4">No credit card required · Instant approval</p>
+    </div>
+
+    <!-- ── How it works ───────────────────────────────────────────────────── -->
+    <div class="mt-16">
+      <h2 class="text-xl font-bold text-center mb-8">How it works</h2>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {[
+          {
+            step: "1",
+            icon: "🎯",
+            title: "Browse & claim",
+            desc: "Find tasks that match your skills. Each task shows exactly how many credits you'll earn.",
+          },
+          {
+            step: "2",
+            icon: "✍️",
+            title: "Complete the task",
+            desc: "Follow the task instructions. Most tasks take 1–5 minutes. Work whenever you have free time.",
+          },
+          {
+            step: "3",
+            icon: "💸",
+            title: "Get paid",
+            desc: "Credits are awarded after requester approval. Withdraw to your preferred payment method.",
+          },
+        ].map(s => (
+          <div class="flex gap-4 p-5 bg-gray-900 border border-gray-800 rounded-xl">
+            <div class="w-8 h-8 rounded-full bg-violet-900/60 border border-violet-700 text-violet-400 text-sm font-bold flex items-center justify-center shrink-0 mt-0.5">
+              {s.step}
+            </div>
+            <div>
+              <div class="text-xl mb-1">{s.icon}</div>
+              <h3 class="font-semibold text-sm mb-1">{s.title}</h3>
+              <p class="text-gray-400 text-xs leading-relaxed">{s.desc}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+
+    <!-- ── Task types showcase ─────────────────────────────────────────────── -->
+    <div class="mt-16">
+      <h2 class="text-xl font-bold text-center mb-2">All task types</h2>
+      <p class="text-gray-500 text-sm text-center mb-8">Click to filter the list above</p>
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {HUMAN_TYPES.filter(t => t.value).map(t => (
+          <a
+            href={filterUrl(t.value)}
+            class="flex items-center gap-3 p-4 bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl transition-colors group"
+          >
+            <span class="text-2xl">{t.icon}</span>
+            <div>
+              <div class="text-sm font-medium text-gray-200 group-hover:text-white transition-colors">{t.label}</div>
+              <div class="text-xs text-gray-500 mt-0.5 leading-tight">{TYPE_DESC[t.value] ?? ""}</div>
+            </div>
+          </a>
+        ))}
+      </div>
+    </div>
+
+  </div>
+</Layout>
