@@ -424,7 +424,7 @@ function statusBadge(status: string) {
     <div class="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
       <div class="p-6 border-b border-gray-800 flex items-center justify-between">
         <h2 class="text-lg font-bold text-white">Create New Pipeline</h2>
-        <button onclick="document.getElementById('create-modal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600 text-2xl">×</button>
+        <button onclick="document.getElementById('create-modal')?.classList.add('hidden')" class="text-gray-400 hover:text-gray-600 text-2xl">×</button>
       </div>
       <form method="POST" class="p-6 space-y-5">
         <input type="hidden" name="action" value="create" />

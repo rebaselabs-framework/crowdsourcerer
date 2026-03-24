@@ -293,7 +293,7 @@ const TASKS = [
     </div>
   </div>
 
-  <script define:vars={{ TASKS, PUBLIC_API }}>
+  <script is:inline define:vars={{ TASKS, PUBLIC_API }}>
     // ── State ────────────────────────────────────────────────────────────────
     let currentTask = TASKS[0];
     let isRawMode = false;

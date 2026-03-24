@@ -138,7 +138,7 @@ const TASK_CREDITS: Record<string, number> = {
   </div>
 </Layout>
 
-<script define:vars={{ TASK_TYPES, TASK_CREDITS }}>
+<script is:inline define:vars={{ TASK_TYPES, TASK_CREDITS }}>
   // ─── CSV parsing ────────────────────────────────────────────────────────
 
   function parseCSV(text) {

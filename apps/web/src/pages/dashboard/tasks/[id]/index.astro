@@ -1001,19 +1001,7 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
               const json = btn.dataset.json || "";
               const originalHtml = btn.innerHTML;
               try {
-                if (navigator.clipboard && navigator.clipboard.writeText) {
-                  await navigator.clipboard.writeText(json);
-                } else {
-                  // Fallback for older browsers / non-HTTPS
-                  const ta = document.createElement("textarea");
-                  ta.value = json;
-                  ta.style.cssText = "position:fixed;top:-9999px;left:-9999px;opacity:0";
-                  document.body.appendChild(ta);
-                  ta.focus();
-                  ta.select();
-                  document.execCommand("copy");
-                  document.body.removeChild(ta);
-                }
+                await navigator.clipboard.writeText(json);
                 btn.innerHTML = "✓ Copied!";
                 btn.classList.add("text-green-400", "border-green-700");
                 btn.classList.remove("text-gray-500", "border-gray-700");
@@ -1966,7 +1954,7 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
   </div>
 
   {/* Comments interaction script */}
-  <script define:vars={{ taskId: id }}>
+  <script is:inline define:vars={{ taskId: id }}>
     let replyToId = null;
 
     // Reply button handler
@@ -2029,7 +2017,7 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
   </script>
 
   {/* Tag editor script */}
-  <script define:vars={{ taskId: id }}>
+  <script is:inline define:vars={{ taskId: id }}>
     const editBtn = document.getElementById("edit-tags-btn");
     const tagEditor = document.getElementById("tag-editor");
     const cancelBtn = document.getElementById("cancel-tags-btn");
@@ -2074,7 +2062,7 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
   </script>
 
   {/* Duplicate task button script */}
-  <script define:vars={{ taskId: id }}>
+  <script is:inline define:vars={{ taskId: id }}>
     const dupBtn = document.getElementById("duplicate-task-btn");
     if (dupBtn) {
       dupBtn.addEventListener("click", async () => {
@@ -2112,7 +2100,7 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
   </script>
 
   {/* Task dependency management script */}
-  <script define:vars={{ taskId: id }}>
+  <script is:inline define:vars={{ taskId: id }}>
     const addDepBtn = document.getElementById("add-dep-btn");
     const addDepForm = document.getElementById("add-dep-form");
     const depSaveBtn = document.getElementById("dep-save-btn");
@@ -2335,7 +2323,7 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
 
   {/* Live polling client script — only loaded for non-terminal tasks */}
   {isLive && (
-    <script define:vars={{ taskId: id }}>
+    <script is:inline define:vars={{ taskId: id }}>
       var TERMINAL = new Set(["completed", "failed", "cancelled"]);
       var STATUS_COLORS = {
         completed: "bg-green-950/50 border-green-800 text-green-300",
@@ -2462,7 +2450,7 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
   )}
 
   <!-- Messages UI -->
-  <script define:vars={{ taskId: id }}>
+  <script is:inline define:vars={{ taskId: id }}>
     (function() {
       var thread = document.getElementById("msg-thread");
       var sendBtn = document.getElementById("send-msg-btn");
@@ -2537,7 +2525,7 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
   </script>
 
   <!-- LLM Output Streaming -->
-  <script define:vars={{ taskId: id }}>
+  <script is:inline define:vars={{ taskId: id }}>
     const streamBtn = document.getElementById("stream-btn");
     if (streamBtn) {
       let es = null;
@@ -2626,7 +2614,7 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
 
   <!-- LLM Output: Markdown rendering + view toggle -->
   {richOutput?.kind === "llm_generate" && (
-    <script define:vars={{ llmRawText: richOutput.text }}>
+    <script is:inline define:vars={{ llmRawText: richOutput.text }}>
       const mdContainer = document.getElementById("md-rendered");
       const rawContainer = document.getElementById("static-output");
       const btnFormatted = document.getElementById("llm-view-rendered");
@@ -2674,7 +2662,7 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
 
   <!-- web_research: Markdown rendering for summary -->
   {richOutput?.kind === "web_research" && (
-    <script define:vars={{ webResearchSummary: richOutput.summary }}>
+    <script is:inline define:vars={{ webResearchSummary: richOutput.summary }}>
       var container = document.getElementById("web-research-summary");
       if (container && webResearchSummary) {
         var s = document.createElement("script");
@@ -2691,7 +2679,7 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
 
   <!-- web_intel: Markdown rendering for report -->
   {richOutput?.kind === "web_intel" && (
-    <script define:vars={{ webIntelReport: richOutput.report }}>
+    <script is:inline define:vars={{ webIntelReport: richOutput.report }}>
       var container = document.getElementById("web-intel-report");
       if (container && webIntelReport) {
         var s = document.createElement("script");
@@ -2707,7 +2695,7 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
   )}
 
   <!-- Related tasks + suggested workers lazy loader -->
-  <script define:vars={{ taskId: id, isRequester, executionMode: task?.execution_mode }}>
+  <script is:inline define:vars={{ taskId: id, isRequester, executionMode: task?.execution_mode }}>
     if (isRequester) {
       // ── Related tasks ──────────────────────────────────────────────────────
       const STATUS_BADGE = {

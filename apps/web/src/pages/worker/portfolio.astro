@@ -171,7 +171,7 @@ const clientApiUrl = import.meta.env.PUBLIC_API_URL ?? 'http://localhost:8100';
   </div>
 </Layout>
 
-<script define:vars={{ clientApiUrl }}>
+<script is:inline define:vars={{ clientApiUrl }}>
 const token = document.cookie.split('; ').find(r => r.startsWith('token='))?.split('=')[1];
 
 function toast(msg, ok = true) {

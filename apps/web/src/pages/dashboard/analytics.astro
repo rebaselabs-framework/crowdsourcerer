@@ -243,7 +243,7 @@ function pct(a: number, total: number) {
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
-  <script define:vars={{
+  <script is:inline define:vars={{
     dailyData: overview?.tasks_last_30_days ?? [],
     statusData: overview?.tasks_by_status ?? {},
     monthlyData: costs?.by_month ?? [],

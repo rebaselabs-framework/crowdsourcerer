@@ -425,7 +425,7 @@ function fmt(d: string) {
   </div>
 </Layout>
 
-<script define:vars={{ creditBalance: credits?.available ?? 0 }}>
+<script is:inline define:vars={{ creditBalance: credits?.available ?? 0 }}>
   // ── Cost estimator logic ──────────────────────────────────────────────────
   function update() {
     const typeEl = document.getElementById("est-type");

@@ -193,7 +193,7 @@ const distData: number[] = a ? Object.values(a.response_distribution) : [];
   </div>
 </Layout>
 
-<script define:vars={{ statusLabels, statusData, statusColors, distLabels, distData }}>
+<script is:inline define:vars={{ statusLabels, statusData, statusColors, distLabels, distData }}>
   const s = document.createElement("script");
   s.src = "https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js";
   s.onload = () => {

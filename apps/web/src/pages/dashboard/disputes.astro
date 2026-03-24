@@ -384,7 +384,7 @@ const EVENT_ICONS: Record<string, string> = {
 </div>
 </Layout>
 
-<script define:vars={{ clientApiUrl }}>
+<script is:inline define:vars={{ clientApiUrl }}>
 const TOKEN = document.cookie.split(";").find(c=>c.trim().startsWith("cs_token="))?.split("=")[1];
 const API = clientApiUrl;
 
@@ -447,8 +447,6 @@ function showMsg(el, text, color) {
   el.classList.remove("hidden");
 }
 
-// Expose to global scope for inline onclick handlers
-// @ts-ignore — custom property on window
-window.submitEvidence = submitEvidence;
-window.assignMediator = assignMediator;
+// Expose to HTML onclick attributes (TypeScript can't trace inline event attr calls)
+void submitEvidence; void assignMediator;
 </script>

@@ -247,7 +247,7 @@ const selectedCategory = categories.find((c: any) => c.category === categoryPara
   </div>
 </Layout>
 
-<script define:vars={{ categoryParam, questions: questions.map((q: any) => ({ id: q.id })) }}>
+<script is:inline define:vars={{ categoryParam, questions: questions.map((q: any) => ({ id: q.id })) }}>
   const CATEGORY = categoryParam;
   const QUESTION_IDS = questions.map((q) => q.id);
   const answers = new Array(QUESTION_IDS.length).fill(-1);

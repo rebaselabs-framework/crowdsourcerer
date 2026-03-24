@@ -1,7 +1,7 @@
 import type { APIRoute } from "astro";
 import { apiFetch, getToken } from "@/lib/api";
 
-export const GET: APIRoute = async ({ request, cookies, url }) => {
+export const GET: APIRoute = async ({ cookies, url }) => {
   const token = getToken(cookies);
   if (!token) return new Response("Unauthorized", { status: 401 });
 

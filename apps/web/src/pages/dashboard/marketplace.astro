@@ -240,7 +240,7 @@ function starHtml(rating: number, count: number): string {
   .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 </style>
 
-<script define:vars={{ clientApiUrl }}>
+<script is:inline define:vars={{ clientApiUrl }}>
   const API = clientApiUrl;
   const token = document.cookie.match(/cs_token=([^;]+)/)?.[1] || '';
   const authHeader = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };

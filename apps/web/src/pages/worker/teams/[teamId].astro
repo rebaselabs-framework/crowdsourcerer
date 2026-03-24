@@ -333,7 +333,7 @@ const pendingInvites: any[] = team?.pending_invites ?? [];
                 <p class="text-sm text-gray-300">Delete this team</p>
                 <p class="text-xs text-gray-500 mt-0.5">Permanently removes the team and all membership records.</p>
               </div>
-              <form method="POST" action="/worker/teams" onsubmit="return confirm('Permanently delete this team? This cannot be undone.')">
+              <form method="POST" action="/worker/teams" data-confirm="Permanently delete this team? This cannot be undone.">
                 <input type="hidden" name="action" value="delete_team" />
                 <input type="hidden" name="team_id" value={team.id} />
                 <button type="submit" class="px-4 py-2 bg-red-900/40 hover:bg-red-900/70 border border-red-800 text-red-300 text-sm rounded-lg transition-colors">
@@ -346,4 +346,12 @@ const pendingInvites: any[] = team?.pending_invites ?? [];
       </div>
     )}
   </div>
+  <script is:inline>
+    // Confirm-required forms use data-confirm instead of onsubmit="return confirm(...)"
+    document.querySelectorAll("form[data-confirm]").forEach(function(form) {
+      form.addEventListener("submit", function(e) {
+        if (!confirm(form.dataset.confirm)) e.preventDefault();
+      });
+    });
+  </script>
 </Layout>

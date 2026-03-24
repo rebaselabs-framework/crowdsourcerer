@@ -312,7 +312,7 @@ const chartData = analytics ? {
 
   <!-- Chart rendering (client-side) -->
   {chartData && (
-    <script define:vars={{ chartData }}>
+    <script is:inline define:vars={{ chartData }}>
       const CHART_DEFAULTS = {
         responsive: true,
         maintainAspectRatio: false,

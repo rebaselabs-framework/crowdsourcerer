@@ -269,7 +269,7 @@ const modeBars = Object.entries(byMode).map(([mode, creds]: any) => ({
   </div>
 </Layout>
 
-<script define:vars={{ monthlyJson, weeklyJson, byTypeJson, byPriJson, byModeJson }}>
+<script is:inline define:vars={{ monthlyJson, weeklyJson, byTypeJson, byPriJson, byModeJson }}>
 const monthly  = JSON.parse(monthlyJson);
 const weekly   = JSON.parse(weeklyJson);
 const byType   = JSON.parse(byTypeJson);

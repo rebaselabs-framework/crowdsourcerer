@@ -232,7 +232,7 @@ const EMOJI_OPTIONS = ["👥", "🚀", "⚡", "🔥", "💡", "🎯", "🛠️",
                     </span>
                     <div class="flex gap-2">
                       {team.my_role === "owner" ? (
-                        <form method="POST" class="inline" onsubmit="return confirm('Delete this team? This cannot be undone.')">
+                        <form method="POST" class="inline" data-confirm="Delete this team? This cannot be undone.">
                           <input type="hidden" name="action" value="delete_team" />
                           <input type="hidden" name="team_id" value={team.id} />
                           <button type="submit" class="text-xs text-red-400 hover:text-red-300 transition-colors">
@@ -240,7 +240,7 @@ const EMOJI_OPTIONS = ["👥", "🚀", "⚡", "🔥", "💡", "🎯", "🛠️",
                           </button>
                         </form>
                       ) : (
-                        <form method="POST" class="inline" onsubmit="return confirm('Leave this team?')">
+                        <form method="POST" class="inline" data-confirm="Leave this team?">
                           <input type="hidden" name="action" value="leave_team" />
                           <input type="hidden" name="team_id" value={team.id} />
                           <input type="hidden" name="user_id" value={me?.id || ""} />
@@ -329,6 +329,13 @@ const EMOJI_OPTIONS = ["👥", "🚀", "⚡", "🔥", "💡", "🎯", "🛠️",
   </div>
 
   <script is:inline>
+    // Confirm-required forms (data-confirm attribute replaces onsubmit="return confirm(...)")
+    document.querySelectorAll("form[data-confirm]").forEach(function(form) {
+      form.addEventListener("submit", function(e) {
+        if (!confirm(form.dataset.confirm)) e.preventDefault();
+      });
+    });
+
     // Modal logic
     const modal = document.getElementById("createTeamModal");
     const openBtns = [document.getElementById("createTeamBtn"), document.getElementById("createTeamBtn2")].filter(Boolean);

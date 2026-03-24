@@ -6,7 +6,7 @@ import type { APIRoute } from "astro";
 
 const API_URL = import.meta.env.PUBLIC_API_URL ?? "http://api:8100";
 
-export const POST: APIRoute = async ({ cookies, request }) => {
+export const POST: APIRoute = async ({ cookies }) => {
   const token = cookies.get("cs_token")?.value;
   if (!token) return new Response(JSON.stringify({ detail: "Unauthorized" }), { status: 401 });
 

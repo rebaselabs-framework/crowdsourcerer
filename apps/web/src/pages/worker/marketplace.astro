@@ -272,7 +272,7 @@ const HUMAN_TASK_TYPES = Object.keys(TASK_TYPE_META);
                         class="watchlist-btn p-1.5 rounded-lg text-gray-500 hover:text-amber-400 hover:bg-gray-800 transition-colors"
                         data-task-id={task.id}
                         title="Bookmark task"
-                        onclick="event.preventDefault(); toggleWatchlist(this, event)"
+                        data-watchlist-btn="1"
                       >
                         🔖
                       </button>
@@ -317,9 +317,7 @@ const HUMAN_TASK_TYPES = Object.keys(TASK_TYPE_META);
 
   <script>
     // Watchlist toggle — bookmark/unbookmark a task
-    async function toggleWatchlist(btn: HTMLButtonElement, event: MouseEvent) {
-      event.preventDefault();
-      event.stopPropagation();
+    async function toggleWatchlist(btn: HTMLButtonElement) {
       const taskId = btn.dataset.taskId;
       if (!taskId) return;
 
@@ -347,6 +345,13 @@ const HUMAN_TASK_TYPES = Object.keys(TASK_TYPE_META);
       document.body.appendChild(el);
       setTimeout(() => el.remove(), 2500);
     }
-    (window as any).toggleWatchlist = toggleWatchlist;
+    // Wire up watchlist buttons via event delegation (avoids inline onclick + deprecated event global)
+    document.querySelectorAll<HTMLButtonElement>('[data-watchlist-btn]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleWatchlist(btn);
+      });
+    });
   </script>
 </Layout>

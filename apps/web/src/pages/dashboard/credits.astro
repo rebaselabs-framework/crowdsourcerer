@@ -137,7 +137,7 @@ const PACKS = [
   </div>
 </Layout>
 
-<script define:vars={{ apiUrl: import.meta.env.PUBLIC_API_URL ?? "" }}>
+<script is:inline define:vars={{ apiUrl: import.meta.env.PUBLIC_API_URL ?? "" }}>
   // Client-side: clicking a pack calls /v1/credits/checkout
   document.querySelectorAll(".buy-pack").forEach((btn) => {
     btn.addEventListener("click", async () => {

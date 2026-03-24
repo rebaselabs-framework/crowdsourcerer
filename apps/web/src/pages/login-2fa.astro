@@ -59,7 +59,7 @@ const pendingToken = Astro.url.searchParams.get("pt") ?? "";
   </div>
 </Layout>
 
-<script define:vars={{ pendingToken }}>
+<script is:inline define:vars={{ pendingToken }}>
   const form     = document.getElementById("verify-form");
   const codeInput = document.getElementById("code-input");
   const btnVerify = document.getElementById("btn-verify");

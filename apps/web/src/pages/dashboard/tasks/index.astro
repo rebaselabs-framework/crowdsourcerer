@@ -224,7 +224,7 @@ const STATUS_COLORS: Record<string, string> = {
               <div class="px-6 py-4 hover:bg-gray-800/50 transition-colors task-row" data-id={t.id} data-status={t.status}>
                 <div class="flex items-center gap-3">
                   <!-- Checkbox -->
-                  <div onclick="event.stopPropagation()" class="shrink-0">
+                  <div class="shrink-0 cb-wrap">
                     <input
                       type="checkbox"
                       class="task-checkbox w-4 h-4 rounded border-gray-600 bg-gray-800 text-violet-500 focus:ring-violet-500 cursor-pointer"
@@ -373,6 +373,11 @@ const STATUS_COLORS: Record<string, string> = {
       : "mb-4 px-4 py-3 rounded-lg text-sm border bg-red-950 border-red-700 text-red-300";
     setTimeout(() => { toast.className = "hidden mb-4 px-4 py-3 rounded-lg text-sm border"; }, 4000);
   }
+
+  // Stop checkbox-wrapper clicks from propagating to parent row handlers
+  document.querySelectorAll<HTMLElement>(".cb-wrap").forEach(el => {
+    el.addEventListener("click", (e) => e.stopPropagation());
+  });
 
   // Individual checkboxes
   document.querySelectorAll<HTMLInputElement>(".task-checkbox").forEach(cb => {

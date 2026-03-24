@@ -176,7 +176,7 @@ const metricLabels: Record<string, string> = {
     )}
   </div>
 
-  <script define:vars={{ expId: id }}>
+  <script is:inline define:vars={{ expId: id }}>
     document.getElementById("enroll-form")?.addEventListener("submit", async (e) => {
       e.preventDefault();
       const taskEl = document.getElementById("enroll-task-id");

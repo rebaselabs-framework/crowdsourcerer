@@ -569,7 +569,7 @@ const clientApiUrl = import.meta.env.PUBLIC_API_URL ?? "";
 </div>
 </Layout>
 
-<script define:vars={{ analyticsJson, clientApiUrl }}>
+<script is:inline define:vars={{ analyticsJson, clientApiUrl }}>
 const TOKEN = document.cookie.split(";").find(c=>c.trim().startsWith("cs_token="))?.split("=")[1];
 const API = clientApiUrl;
 const analytics = JSON.parse(analyticsJson);
