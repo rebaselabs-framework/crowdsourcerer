@@ -32,6 +32,8 @@ from models.schemas import (
     WorkerTaskClaimResponse,
     WorkerTaskSubmitRequest,
     WorkerTaskSubmitResponse,
+    WorkerRecommendationsOut,
+    TaskTypeRecommendation,
 )
 
 logger = structlog.get_logger()
@@ -1283,4 +1285,264 @@ async def recent_worker_activity(
         }
         for a, task_type in rows
     ]
+
+
+# ─── Skill recommendations ─────────────────────────────────────────────────
+
+# Human-readable labels and categories for all task types
+_TASK_META: dict[str, dict] = {
+    # AI tasks
+    "web_research":       {"label": "Web Research",      "category": "ai",    "worker_reward": 5},
+    "entity_lookup":      {"label": "Entity Lookup",     "category": "ai",    "worker_reward": 3},
+    "document_parse":     {"label": "Document Parse",    "category": "ai",    "worker_reward": 2},
+    "data_transform":     {"label": "Data Transform",    "category": "ai",    "worker_reward": 1},
+    "llm_generate":       {"label": "LLM Generate",      "category": "ai",    "worker_reward": 1},
+    "screenshot":         {"label": "Screenshot",        "category": "ai",    "worker_reward": 1},
+    "audio_transcribe":   {"label": "Audio Transcribe",  "category": "ai",    "worker_reward": 4},
+    "pii_detect":         {"label": "PII Detection",     "category": "ai",    "worker_reward": 1},
+    "code_execute":       {"label": "Code Execute",      "category": "ai",    "worker_reward": 2},
+    "web_intel":          {"label": "Web Intelligence",  "category": "ai",    "worker_reward": 3},
+    # Human tasks
+    "label_image":        {"label": "Label Image",       "category": "human", "worker_reward": 3},
+    "label_text":         {"label": "Label Text",        "category": "human", "worker_reward": 2},
+    "rate_quality":       {"label": "Rate Quality",      "category": "human", "worker_reward": 2},
+    "verify_fact":        {"label": "Verify Fact",       "category": "human", "worker_reward": 2},
+    "moderate_content":   {"label": "Moderate Content",  "category": "human", "worker_reward": 2},
+    "compare_rank":       {"label": "Compare & Rank",    "category": "human", "worker_reward": 2},
+    "answer_question":    {"label": "Answer Question",   "category": "human", "worker_reward": 3},
+    "transcription_review": {"label": "Transcription Review", "category": "human", "worker_reward": 4},
+}
+
+# Proficiency thresholds: tasks_completed required to advance to level 1..5
+_PROFICIENCY_THRESHOLDS = [0, 5, 15, 30, 60]  # tasks to reach level 1, 2, 3, 4, 5
+
+# Verification requires proficiency ≥4 AND ≥15 approved tasks AND accuracy ≥90%
+_VERIFICATION_MIN_APPROVED = 15
+_VERIFICATION_MIN_ACCURACY = 0.90
+_VERIFICATION_MIN_LEVEL = 4
+
+# Assume worker does ~20 tasks/day × 5 working days = 100 tasks/week
+_TASKS_PER_WEEK = 100
+
+CREDITS_PER_USD = 100
+
+
+def _next_proficiency_tasks(completed: int) -> int:
+    """Tasks needed to reach the next proficiency level; 0 if maxed at 5."""
+    for threshold in _PROFICIENCY_THRESHOLDS[1:]:  # levels 1→5
+        if completed < threshold:
+            return threshold - completed
+    return 0  # already at level 5
+
+
+def _tasks_to_verification(approved: int, accuracy: Optional[float], level: int) -> int:
+    """Approved tasks still needed for skill verification (0 if already eligible/verified)."""
+    if level < _VERIFICATION_MIN_LEVEL:
+        return 0  # not eligible until level 4
+    if accuracy is not None and accuracy < _VERIFICATION_MIN_ACCURACY:
+        return 0  # accuracy too low — can't verify via task count alone
+    needed = max(0, _VERIFICATION_MIN_APPROVED - approved)
+    return needed
+
+
+@router.get("/recommendations", response_model=WorkerRecommendationsOut)
+async def get_worker_recommendations(
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+) -> WorkerRecommendationsOut:
+    """
+    Personalised task-type recommendations based on the worker's skill history.
+
+    Returns:
+    - best_types: up to 5 task types ranked by earnings potential
+    - try_next: up to 3 untried types likely to suit them
+    - weekly earnings potential if focused on best types
+    - actionable insights (level progress, verification proximity, etc.)
+    """
+    from models.db import WorkerSkillDB, CreditTransactionDB
+
+    uid = UUID(user_id)
+
+    # Verify worker
+    user_res = await db.execute(select(UserDB).where(UserDB.id == uid))
+    user = user_res.scalar_one_or_none()
+    if not user or user.role not in ("worker", "both"):
+        raise HTTPException(status_code=403, detail="Not enrolled as a worker.")
+
+    # Load all skill records for this worker
+    skill_res = await db.execute(
+        select(WorkerSkillDB).where(WorkerSkillDB.worker_id == uid)
+    )
+    skills: list[WorkerSkillDB] = list(skill_res.scalars().all())
+    skills_by_type: dict[str, WorkerSkillDB] = {s.task_type: s for s in skills}
+
+    # Credits earned in last 7 days
+    week_ago = datetime.now(timezone.utc) - timedelta(days=7)
+    weekly_res = await db.execute(
+        select(func.coalesce(func.sum(CreditTransactionDB.amount), 0))
+        .where(
+            CreditTransactionDB.user_id == uid,
+            CreditTransactionDB.type == "earning",
+            CreditTransactionDB.created_at >= week_ago,
+        )
+    )
+    current_weekly_rate: int = int(weekly_res.scalar_one() or 0)
+
+    # ── Build best_types: all tried types sorted by earnings potential ────────
+    best_types: list[TaskTypeRecommendation] = []
+    insights: list[str] = []
+
+    for task_type, meta in _TASK_META.items():
+        skill = skills_by_type.get(task_type)
+        if skill is None or skill.tasks_completed == 0:
+            continue  # only tried types here
+
+        completed = skill.tasks_completed
+        approved = skill.tasks_approved
+        acc = skill.accuracy or 0.0
+        credits_earned = skill.credits_earned
+        avg_credits = credits_earned / max(1, completed)
+        # Earnings potential = credits/task × acceptance rate
+        weekly_credits = int(_TASKS_PER_WEEK * avg_credits * acc)
+        weekly_usd = round(weekly_credits / CREDITS_PER_USD, 2)
+
+        next_level_needed = _next_proficiency_tasks(completed)
+        to_verification = (
+            _tasks_to_verification(approved, skill.accuracy, skill.proficiency_level)
+            if not skill.verified else 0
+        )
+
+        # Build reason string
+        if skill.proficiency_level >= 4:
+            reason = f"Level {skill.proficiency_level} proficiency — keep earning"
+        elif acc >= 0.85:
+            reason = f"{int(acc * 100)}% acceptance rate — strong performer"
+        else:
+            reason = f"{completed} tasks completed — building experience"
+
+        best_types.append(TaskTypeRecommendation(
+            task_type=task_type,
+            label=meta["label"],
+            category=meta["category"],
+            reason=reason,
+            proficiency_level=skill.proficiency_level,
+            accuracy=skill.accuracy,
+            tasks_completed=completed,
+            avg_credits_per_task=round(avg_credits, 2),
+            estimated_weekly_credits=weekly_credits,
+            estimated_weekly_usd=weekly_usd,
+            is_verified=skill.verified,
+            next_level_tasks_needed=next_level_needed,
+            tasks_to_verification=to_verification,
+        ))
+
+        # Build insights
+        if next_level_needed > 0 and next_level_needed <= 5:
+            insights.append(
+                f"Only {next_level_needed} more {meta['label']} task"
+                f"{'s' if next_level_needed > 1 else ''} to reach proficiency level "
+                f"{min(skill.proficiency_level + 1, 5)}"
+            )
+        if to_verification > 0 and to_verification <= 5:
+            insights.append(
+                f"{to_verification} more approved {meta['label']} task"
+                f"{'s' if to_verification > 1 else ''} until you earn the verified badge"
+            )
+        if skill.accuracy is not None and skill.accuracy < 0.70 and completed >= 5:
+            insights.append(
+                f"Your {meta['label']} acceptance rate is {int(skill.accuracy * 100)}% — "
+                "review the task guidelines to improve"
+            )
+
+    # Sort best_types by weekly earnings potential (descending)
+    best_types.sort(key=lambda r: r.estimated_weekly_credits, reverse=True)
+    best_types = best_types[:5]
+
+    # ── Build try_next: untried types most similar to what they're good at ───
+    tried_types = set(skills_by_type.keys())
+    # Similarity groups — if good at one, suggest related types
+    _similarity_groups = [
+        {"label_image", "label_text", "moderate_content"},
+        {"verify_fact", "answer_question"},
+        {"rate_quality", "compare_rank"},
+        {"transcription_review", "audio_transcribe"},
+    ]
+    # Categories the worker has experience in
+    worker_categories = {
+        meta["category"]
+        for t, meta in _TASK_META.items()
+        if t in tried_types
+    }
+
+    try_next_types: list[str] = []
+    # First pass: related to something they're good at
+    for group in _similarity_groups:
+        done_in_group = group & tried_types
+        not_tried_in_group = group - tried_types
+        if done_in_group and not_tried_in_group:
+            try_next_types.extend(list(not_tried_in_group))
+
+    # Second pass: any human task if they haven't tried the category
+    if "human" not in worker_categories:
+        for t in _TASK_META:
+            if _TASK_META[t]["category"] == "human" and t not in tried_types:
+                try_next_types.append(t)
+                break
+
+    # Deduplicate and limit
+    seen = set()
+    try_next_deduped: list[str] = []
+    for t in try_next_types:
+        if t not in seen and t not in tried_types:
+            seen.add(t)
+            try_next_deduped.append(t)
+    try_next_deduped = try_next_deduped[:3]
+
+    try_next: list[TaskTypeRecommendation] = []
+    for task_type in try_next_deduped:
+        meta = _TASK_META[task_type]
+        base_reward = meta["worker_reward"]
+        try_next.append(TaskTypeRecommendation(
+            task_type=task_type,
+            label=meta["label"],
+            category=meta["category"],
+            reason="New to you — similar to tasks you've already done well",
+            proficiency_level=0,
+            accuracy=None,
+            tasks_completed=0,
+            avg_credits_per_task=float(base_reward),
+            estimated_weekly_credits=int(_TASKS_PER_WEEK * base_reward * 0.80),
+            estimated_weekly_usd=round(_TASKS_PER_WEEK * base_reward * 0.80 / CREDITS_PER_USD, 2),
+            is_verified=False,
+            next_level_tasks_needed=_PROFICIENCY_THRESHOLDS[1],
+            tasks_to_verification=0,
+        ))
+
+    # ── Weekly earnings potential ─────────────────────────────────────────────
+    if best_types:
+        # Average of top 3 best types' estimates
+        top_n = best_types[:3]
+        weekly_potential = sum(r.estimated_weekly_credits for r in top_n) // len(top_n)
+    elif try_next:
+        weekly_potential = int(_TASKS_PER_WEEK * _TASK_META[try_next[0].task_type]["worker_reward"] * 0.80)
+    else:
+        weekly_potential = int(_TASKS_PER_WEEK * 2 * 0.80)  # generic fallback
+
+    # Add global insight if no skills yet
+    if not best_types and not insights:
+        insights.append("Complete your first task to unlock personalised recommendations")
+    elif best_types and current_weekly_rate < weekly_potential // 2:
+        insights.append(
+            f"Focusing on {best_types[0].label} could increase your weekly earnings "
+            f"to ~{weekly_potential} credits (${round(weekly_potential / CREDITS_PER_USD, 2)})"
+        )
+
+    return WorkerRecommendationsOut(
+        best_types=best_types,
+        try_next=try_next,
+        weekly_earnings_potential=weekly_potential,
+        weekly_earnings_potential_usd=round(weekly_potential / CREDITS_PER_USD, 2),
+        current_weekly_rate=current_weekly_rate,
+        insights=insights[:5],  # cap at 5 insights
+    )
 

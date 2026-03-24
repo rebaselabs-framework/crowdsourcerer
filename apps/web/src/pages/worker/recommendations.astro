@@ -1,0 +1,328 @@
+---
+/**
+ * Worker Skill Recommendations — personalised task-type recommendations
+ * with earnings potential and actionable insights.
+ */
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Astro.cookies);
+if (!token) return Astro.redirect("/login?next=/worker/recommendations");
+
+let recData: any = null;
+let error: string | null = null;
+
+try {
+  recData = await apiFetch<any>("/v1/worker/recommendations", { token });
+} catch (e: any) {
+  if (e.message?.includes("401") || e.message?.includes("403")) {
+    return Astro.redirect("/login");
+  }
+  error = e.message ?? "Failed to load recommendations.";
+}
+
+const bestTypes: any[] = recData?.best_types ?? [];
+const tryNext: any[] = recData?.try_next ?? [];
+const insights: string[] = recData?.insights ?? [];
+const weeklyPotential: number = recData?.weekly_earnings_potential ?? 0;
+const weeklyPotentialUsd: number = recData?.weekly_earnings_potential_usd ?? 0;
+const currentWeeklyRate: number = recData?.current_weekly_rate ?? 0;
+const improvementPct = currentWeeklyRate > 0 && weeklyPotential > currentWeeklyRate
+  ? Math.round(((weeklyPotential - currentWeeklyRate) / currentWeeklyRate) * 100)
+  : null;
+
+const TASK_ICONS: Record<string, string> = {
+  label_image: "🖼️", label_text: "📝", rate_quality: "⭐",
+  verify_fact: "✅", moderate_content: "🛡️", compare_rank: "📊",
+  answer_question: "💬", transcription_review: "🎙️",
+  web_research: "🔍", entity_lookup: "🏢", document_parse: "📄",
+  data_transform: "⚙️", llm_generate: "🤖", screenshot: "📸",
+  audio_transcribe: "🎤", pii_detect: "🔒", code_execute: "💻", web_intel: "🌐",
+};
+
+const PROFICIENCY_LABELS: Record<number, string> = {
+  0: "Not tried", 1: "Beginner", 2: "Developing", 3: "Competent", 4: "Advanced", 5: "Expert",
+};
+
+const PROFICIENCY_COLORS: Record<number, string> = {
+  0: "text-gray-500",
+  1: "text-gray-400",
+  2: "text-blue-400",
+  3: "text-green-400",
+  4: "text-purple-400",
+  5: "text-amber-400",
+};
+---
+
+<Layout title="Skill Recommendations — CrowdSorcerer">
+  <div class="max-w-4xl mx-auto px-6 py-10">
+
+    <!-- Breadcrumb -->
+    <div class="text-sm text-gray-500 mb-6">
+      <a href="/worker" class="hover:text-gray-300 transition-colors">Worker Hub</a>
+      <span class="mx-2">›</span>
+      <span>Skill Recommendations</span>
+    </div>
+
+    <!-- Header -->
+    <div class="flex items-start justify-between mb-8">
+      <div>
+        <h1 class="text-2xl font-bold flex items-center gap-2">
+          <span>💡</span> Personalised Recommendations
+        </h1>
+        <p class="text-gray-400 text-sm mt-1">
+          Task types best matched to your skills and earning history
+        </p>
+      </div>
+      <a href="/worker/skills" class="text-sm text-violet-400 hover:text-violet-300 transition-colors">
+        View skill profile →
+      </a>
+    </div>
+
+    {error && (
+      <div class="bg-red-950/30 border border-red-800 text-red-300 rounded-xl p-4 mb-6 text-sm">
+        {error}
+      </div>
+    )}
+
+    <!-- Earnings potential banner -->
+    {!error && (
+      <div class="bg-gradient-to-r from-violet-950/60 to-indigo-950/40 border border-violet-700/50 rounded-2xl p-6 mb-8">
+        <div class="grid sm:grid-cols-3 gap-6">
+          <div>
+            <div class="text-sm text-gray-400 mb-1">Weekly potential</div>
+            <div class="text-3xl font-bold text-violet-300">{weeklyPotential.toLocaleString()} cr</div>
+            <div class="text-sm text-gray-500 mt-0.5">${weeklyPotentialUsd.toFixed(2)} USD</div>
+          </div>
+          <div>
+            <div class="text-sm text-gray-400 mb-1">Current weekly rate</div>
+            <div class="text-3xl font-bold text-gray-200">{currentWeeklyRate.toLocaleString()} cr</div>
+            <div class="text-sm text-gray-500 mt-0.5">Last 7 days</div>
+          </div>
+          <div class="sm:text-right">
+            {improvementPct !== null ? (
+              <div>
+                <div class="text-sm text-gray-400 mb-1">Improvement opportunity</div>
+                <div class="text-3xl font-bold text-emerald-400">+{improvementPct}%</div>
+                <div class="text-sm text-gray-500 mt-0.5">by focusing on top types</div>
+              </div>
+            ) : (
+              <div>
+                <div class="text-sm text-gray-400 mb-1">Estimate based on</div>
+                <div class="text-2xl font-bold text-gray-200">100 tasks/week</div>
+                <div class="text-sm text-gray-500 mt-0.5">at your acceptance rates</div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    )}
+
+    <!-- Insights strip -->
+    {insights.length > 0 && (
+      <div class="bg-amber-950/20 border border-amber-800/40 rounded-xl p-4 mb-8">
+        <div class="flex items-start gap-3">
+          <span class="text-lg mt-0.5">💡</span>
+          <div class="space-y-1.5">
+            {insights.map((insight: string) => (
+              <p class="text-sm text-amber-200">{insight}</p>
+            ))}
+          </div>
+        </div>
+      </div>
+    )}
+
+    <!-- Best task types -->
+    {bestTypes.length > 0 && (
+      <div class="mb-10">
+        <h2 class="text-lg font-semibold mb-4 flex items-center gap-2">
+          <span>🏆</span> Your Best Task Types
+        </h2>
+        <div class="space-y-3">
+          {bestTypes.map((rec: any, idx: number) => (
+            <div class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-5 transition-colors">
+              <div class="flex items-start gap-4">
+                <!-- Rank -->
+                <div class={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-sm font-bold ${
+                  idx === 0 ? "bg-amber-900/50 text-amber-300 border border-amber-700" :
+                  idx === 1 ? "bg-gray-700 text-gray-300 border border-gray-600" :
+                  idx === 2 ? "bg-orange-950/50 text-orange-400 border border-orange-800" :
+                  "bg-gray-800 text-gray-400 border border-gray-700"
+                }`}>
+                  {idx + 1}
+                </div>
+
+                <!-- Task icon + name -->
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-2 mb-1">
+                    <span class="text-xl">{TASK_ICONS[rec.task_type] ?? "📋"}</span>
+                    <span class="font-semibold text-gray-100">{rec.label}</span>
+                    <span class={`text-xs px-2 py-0.5 rounded-full border ${
+                      rec.category === "ai"
+                        ? "bg-blue-950/40 text-blue-300 border-blue-800"
+                        : "bg-purple-950/40 text-purple-300 border-purple-800"
+                    }`}>
+                      {rec.category === "ai" ? "AI" : "Human"}
+                    </span>
+                    {rec.is_verified && (
+                      <span class="text-xs px-2 py-0.5 rounded-full bg-emerald-950/40 text-emerald-300 border border-emerald-800">
+                        ✓ Verified
+                      </span>
+                    )}
+                  </div>
+                  <div class="text-sm text-gray-400">{rec.reason}</div>
+                </div>
+
+                <!-- Stats -->
+                <div class="grid grid-cols-3 gap-4 text-center flex-shrink-0">
+                  <div>
+                    <div class={`text-sm font-semibold ${PROFICIENCY_COLORS[rec.proficiency_level] ?? "text-gray-400"}`}>
+                      {PROFICIENCY_LABELS[rec.proficiency_level] ?? `Level ${rec.proficiency_level}`}
+                    </div>
+                    <div class="text-xs text-gray-500 mt-0.5">Proficiency</div>
+                  </div>
+                  <div>
+                    <div class="text-sm font-semibold text-gray-200">
+                      {rec.accuracy !== null ? `${Math.round(rec.accuracy * 100)}%` : "—"}
+                    </div>
+                    <div class="text-xs text-gray-500 mt-0.5">Acceptance</div>
+                  </div>
+                  <div>
+                    <div class="text-sm font-semibold text-violet-300">
+                      ~{rec.estimated_weekly_credits.toLocaleString()} cr
+                    </div>
+                    <div class="text-xs text-gray-500 mt-0.5">Est./week</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Progress bars -->
+              <div class="mt-4 pt-4 border-t border-gray-800 grid sm:grid-cols-2 gap-3">
+                <!-- Proficiency progress -->
+                <div>
+                  <div class="flex items-center justify-between text-xs text-gray-500 mb-1.5">
+                    <span>Proficiency Level {rec.proficiency_level}/5</span>
+                    {rec.next_level_tasks_needed > 0 ? (
+                      <span>{rec.next_level_tasks_needed} tasks to level {Math.min(rec.proficiency_level + 1, 5)}</span>
+                    ) : (
+                      <span class="text-amber-400">Max level!</span>
+                    )}
+                  </div>
+                  <div class="h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                    <div
+                      class="h-full bg-violet-600 rounded-full transition-all"
+                      style={`width: ${(rec.proficiency_level / 5) * 100}%`}
+                    />
+                  </div>
+                </div>
+                <!-- Earnings context -->
+                <div class="flex items-center justify-between text-xs text-gray-500">
+                  <span>{rec.tasks_completed.toLocaleString()} tasks completed</span>
+                  <span class="text-gray-300">{rec.avg_credits_per_task.toFixed(1)} cr/task avg</span>
+                </div>
+              </div>
+
+              <!-- Verification callout -->
+              {rec.tasks_to_verification > 0 && (
+                <div class="mt-3 text-xs text-emerald-400 bg-emerald-950/20 border border-emerald-800/30 rounded-lg px-3 py-2">
+                  🏅 {rec.tasks_to_verification} more approved task{rec.tasks_to_verification > 1 ? "s" : ""} until you earn the <strong>Verified</strong> badge for this skill
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    )}
+
+    <!-- Try next -->
+    {tryNext.length > 0 && (
+      <div class="mb-10">
+        <h2 class="text-lg font-semibold mb-2 flex items-center gap-2">
+          <span>🚀</span> Try These Next
+        </h2>
+        <p class="text-sm text-gray-400 mb-4">
+          Task types you haven't tried yet, matched to your existing skills
+        </p>
+        <div class="grid sm:grid-cols-3 gap-4">
+          {tryNext.map((rec: any) => (
+            <div class="bg-gray-900 border border-gray-800 hover:border-violet-700 rounded-xl p-5 transition-colors group">
+              <div class="flex items-center gap-2 mb-3">
+                <span class="text-2xl">{TASK_ICONS[rec.task_type] ?? "📋"}</span>
+                <div>
+                  <div class="font-semibold text-gray-100 text-sm group-hover:text-violet-300 transition-colors">
+                    {rec.label}
+                  </div>
+                  <div class={`text-xs mt-0.5 ${rec.category === "ai" ? "text-blue-400" : "text-purple-400"}`}>
+                    {rec.category === "ai" ? "AI task" : "Human task"}
+                  </div>
+                </div>
+              </div>
+              <p class="text-xs text-gray-400 mb-4">{rec.reason}</p>
+              <div class="flex items-center justify-between">
+                <div>
+                  <div class="text-sm font-semibold text-violet-300">
+                    ~{rec.estimated_weekly_credits} cr/week
+                  </div>
+                  <div class="text-xs text-gray-500">at full speed</div>
+                </div>
+                <a
+                  href={`/worker/marketplace?type=${rec.task_type}`}
+                  class="text-xs px-3 py-1.5 bg-violet-700 hover:bg-violet-600 text-white rounded-lg transition-colors"
+                >
+                  Browse tasks →
+                </a>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    )}
+
+    <!-- Empty state — no skills yet -->
+    {!error && bestTypes.length === 0 && tryNext.length === 0 && (
+      <div class="text-center py-20 bg-gray-900/50 border border-gray-800 rounded-2xl">
+        <div class="text-5xl mb-4">🌱</div>
+        <h2 class="text-lg font-semibold mb-2">No skill data yet</h2>
+        <p class="text-gray-400 text-sm mb-6 max-w-md mx-auto">
+          Complete a few tasks to unlock personalised recommendations. We'll analyse
+          your acceptance rates and earnings to suggest where you'll earn the most.
+        </p>
+        <a
+          href="/worker/marketplace"
+          class="inline-flex items-center gap-2 px-5 py-2.5 bg-violet-600 hover:bg-violet-500 text-white rounded-xl font-medium text-sm transition-colors"
+        >
+          Browse available tasks →
+        </a>
+      </div>
+    )}
+
+    <!-- How it works -->
+    <div class="mt-8 bg-gray-900/50 border border-gray-800 rounded-xl p-5">
+      <h3 class="font-semibold text-gray-300 mb-3 text-sm">How recommendations work</h3>
+      <div class="grid sm:grid-cols-3 gap-4 text-xs text-gray-400">
+        <div class="flex items-start gap-2">
+          <span class="text-base mt-0.5">📊</span>
+          <div>
+            <div class="font-medium text-gray-300 mb-1">Earnings potential</div>
+            Calculated from your average credits per task × your acceptance rate for that type
+          </div>
+        </div>
+        <div class="flex items-start gap-2">
+          <span class="text-base mt-0.5">🎯</span>
+          <div>
+            <div class="font-medium text-gray-300 mb-1">Proficiency levels</div>
+            Level 1–5 based on tasks completed per type. Reach level 4 to become eligible for skill verification
+          </div>
+        </div>
+        <div class="flex items-start gap-2">
+          <span class="text-base mt-0.5">🔄</span>
+          <div>
+            <div class="font-medium text-gray-300 mb-1">Updated automatically</div>
+            Recommendations refresh after every approved or rejected submission
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</Layout>

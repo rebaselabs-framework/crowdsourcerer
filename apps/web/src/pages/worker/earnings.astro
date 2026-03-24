@@ -74,7 +74,12 @@ const clientApiUrl = import.meta.env.PUBLIC_API_URL ?? "";
       <h1 class="text-2xl font-bold">Earnings & Payouts</h1>
       <p class="text-gray-400 text-sm">Your task history, analytics, and withdrawal requests</p>
     </div>
-    <a href="/worker" class="text-sm text-gray-400 hover:text-gray-200">← Worker hub</a>
+    <div class="flex items-center gap-4">
+      <a href="/worker/recommendations" class="text-sm text-violet-400 hover:text-violet-300 transition-colors">
+        💡 Skill recommendations →
+      </a>
+      <a href="/worker" class="text-sm text-gray-400 hover:text-gray-200">← Worker hub</a>
+    </div>
   </div>
 
   <!-- KPI row -->

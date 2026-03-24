@@ -24,18 +24,28 @@ Auto-updated by autonomous sessions. Tracks what was done and what's next.
 | 16 | Migrate `on_event` → `lifespan` context manager in main.py (FastAPI deprecation) | 2d29ce2 |
 | 17 | Fix Pydantic v2 warnings: `@validator` → `@field_validator` (availability.py), `regex=` → `pattern=` (analytics.py) | 2d29ce2 |
 
+| 18 | Fix Pydantic v2 class Config → ConfigDict in 6 router files (availability, experiments, onboarding, reputation, sla, task_messages) | 7765b58 |
+| 19 | Homepage: replace Rick Roll placeholder with interactive API demo terminal (3 scenarios, typewriter animation) | 7765b58 |
+| 20 | Task detail: Markdown rendering for LLM output with Formatted/Raw toggle (marked.js) | 7765b58 |
+| 21 | Dashboard: improved onboarding banner with credits count + rich empty state with task type tiles | d25e6aa |
+| 22 | new-task form: ?preset=<type> URL param pre-selects task type from dashboard tiles | cb6dcfe |
+| 23 | new-task form: inline field-level validation (blur + submit) for required fields, URL format, JSON syntax, webhook URL | 9683e3d |
+| 24 | Task detail live bar: elapsed timer, worker progress counter, adaptive backoff polling, completion/failure animations | 9afbb14 |
+| 25 | Task detail: Markdown rendering for web_research summary + web_intel report (marked.js, llm-prose CSS) | 3087426 |
+| 26 | Bug fix: compare_rank worker task UI reads inp.items array (form builder format), not legacy option_a/option_b | 3cd8b0c |
+| 27 | Worker home: task feed preview (3 matched tasks), recent activity (5 completions), condensed quick links (8 essentials) | 94d19f6 |
+| 28 | UX: worker submission client-side validation + type-specific review display (stars/verdicts/labels) on review page | ecf2e9a |
+| 29 | Dashboard: pending review counter + human-readable task type labels + worker progress on recent tasks list | adfd938 |
+
 ## Priorities for Next Session 🔜
 
 1. **Deploy blockers** (owner-dependent, needs GitHub Secrets):
    - `NPM_TOKEN` for `@crowdsourcerer/sdk` publish
    - PyPI OIDC for Python package publish
 
-2. **Pydantic v1 class Config → ConfigDict** (remaining):
-   - Multiple model files still use `class Config: from_attributes = True`
-   - Migrate to `model_config = ConfigDict(from_attributes=True)`
+2. **Worker skill recommendations** — personalized task-type recommendations + earnings potential based on history
 
-3. **UX polish**: task creation form could use better validation UX
-   (inline field-level errors instead of generic toast on submit)
+3. **Stale warning ts(6133)** — many unused variables across pages (non-blocking warnings)
 
 ## Known Warnings (non-blocking)
 

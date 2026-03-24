@@ -616,6 +616,35 @@ class WorkerSkillsOut(BaseModel):
     verified_count: int = 0           # number of verified skills
 
 
+# ─── Worker Recommendations ──────────────────────────────────────────────────
+
+class TaskTypeRecommendation(BaseModel):
+    """A recommended task type with earnings and growth context."""
+    task_type: str
+    label: str                          # Human-readable name e.g. "Web Research"
+    category: str                       # "ai" or "human"
+    reason: str                         # Short explanation of why recommended
+    proficiency_level: int              # Current level 1–5 (0 if never tried)
+    accuracy: Optional[float]           # Acceptance rate 0.0–1.0; None if untried
+    tasks_completed: int
+    avg_credits_per_task: float         # Credits earned per completed task
+    estimated_weekly_credits: int       # At 20 tasks/day × 5 days × acceptance_rate
+    estimated_weekly_usd: float
+    is_verified: bool
+    next_level_tasks_needed: int        # Tasks to reach next proficiency threshold; 0 = maxed
+    tasks_to_verification: int          # Approved tasks still needed; 0 = already verified or ineligible
+
+
+class WorkerRecommendationsOut(BaseModel):
+    """Personalised task-type recommendations with earnings potential."""
+    best_types: list[TaskTypeRecommendation]   # Top earners — up to 5
+    try_next: list[TaskTypeRecommendation]     # Untried types likely to suit them — up to 3
+    weekly_earnings_potential: int             # Credits/week focused on best_types
+    weekly_earnings_potential_usd: float
+    current_weekly_rate: int                   # Credits actually earned last 7 days
+    insights: list[str]                        # Actionable tips
+
+
 # ─── Task Dependencies ──────────────────────────────────────────────────────
 
 class TaskDependencyOut(BaseModel):
