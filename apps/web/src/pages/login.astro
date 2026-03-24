@@ -68,7 +68,12 @@ if (Astro.request.method === "POST") {
           />
         </div>
         <div>
-          <label class="block text-sm text-gray-400 mb-1">Password</label>
+          <div class="flex items-center justify-between mb-1">
+            <label class="block text-sm text-gray-400">Password</label>
+            <a href="/forgot-password" class="text-xs text-violet-400 hover:text-violet-300 transition-colors">
+              Forgot password?
+            </a>
+          </div>
           <input
             name="password"
             type="password"

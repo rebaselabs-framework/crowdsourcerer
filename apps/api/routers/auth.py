@@ -1,23 +1,36 @@
-"""Auth endpoints: register, login."""
-from datetime import timedelta
+"""Auth endpoints: register, login, forgot/reset password."""
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Union
+import hashlib
+import os
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
 import bcrypt as _bcrypt
+from pydantic import BaseModel, EmailStr, field_validator
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from core.auth import create_access_token
+from core.auth import create_access_token, get_current_user_id
 from core.config import get_settings
 from core.database import get_db
-from models.db import UserDB
+from models.db import UserDB, PasswordResetTokenDB
 from models.schemas import (
     LoginRequest, RegisterRequest, TokenResponse,
     LoginWith2FAResponse,
 )
+
+_RESET_TOKEN_TTL_MINUTES = 30
+_BASE_URL = "https://crowdsourcerer.rebaselabs.online"
+
+
+def _make_reset_token() -> tuple[str, str]:
+    """Return (raw_token, sha256_hex). Store the hash, email the raw token."""
+    raw = os.urandom(32).hex()  # 64 hex chars = 256 bits of entropy
+    h = hashlib.sha256(raw.encode()).hexdigest()
+    return raw, h
 
 router = APIRouter(prefix="/v1/auth", tags=["auth"])
 settings = get_settings()
@@ -110,3 +123,132 @@ async def login(
         access_token=token,
         expires_in=settings.jwt_expire_minutes * 60,
     )
+
+
+# ─── Password reset ──────────────────────────────────────────────────────────
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def password_length(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters")
+        return v
+
+
+@router.post("/forgot-password", status_code=200)
+@limiter.limit("5/minute")
+async def forgot_password(
+    request: Request,
+    req: ForgotPasswordRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Initiate a password reset. Always returns 200 to avoid user enumeration.
+
+    If the email exists we create a short-lived token and email the reset link.
+    If not, we silently succeed — the response is indistinguishable either way.
+    """
+    result = await db.execute(select(UserDB).where(UserDB.email == req.email))
+    user = result.scalar_one_or_none()
+
+    if user and user.is_active:
+        raw_token, token_hash = _make_reset_token()
+        expires = datetime.now(timezone.utc) + timedelta(minutes=_RESET_TOKEN_TTL_MINUTES)
+
+        reset_rec = PasswordResetTokenDB(
+            user_id=user.id,
+            token_hash=token_hash,
+            expires_at=expires,
+            used=False,
+        )
+        db.add(reset_rec)
+        await db.commit()
+
+        reset_url = f"{_BASE_URL}/reset-password?token={raw_token}"
+        # Send email fire-and-forget — don't block on email failures
+        import asyncio
+        from core.email import send_password_reset
+        asyncio.ensure_future(send_password_reset(user.email, reset_url, user.name))
+
+    # Always return success to prevent email enumeration
+    return {"message": "If an account exists for that email, a reset link has been sent."}
+
+
+@router.post("/reset-password", status_code=200)
+@limiter.limit("10/minute")
+async def reset_password(
+    request: Request,
+    req: ResetPasswordRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Complete a password reset using a token from the reset email."""
+    token_hash = hashlib.sha256(req.token.encode()).hexdigest()
+    now = datetime.now(timezone.utc)
+
+    result = await db.execute(
+        select(PasswordResetTokenDB).where(PasswordResetTokenDB.token_hash == token_hash)
+    )
+    rec = result.scalar_one_or_none()
+
+    if not rec or rec.used or rec.expires_at.replace(tzinfo=timezone.utc) < now:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid or expired reset link. Please request a new one.",
+        )
+
+    # Update password
+    user_result = await db.execute(select(UserDB).where(UserDB.id == rec.user_id))
+    user = user_result.scalar_one_or_none()
+    if not user or not user.is_active:
+        raise HTTPException(status_code=400, detail="Account not found or disabled.")
+
+    user.password_hash = _hash_password(req.new_password)
+    rec.used = True
+    await db.commit()
+
+    return {"message": "Password updated successfully. You can now log in with your new password."}
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def new_password_length(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters")
+        return v
+
+
+@router.post("/change-password", status_code=200)
+@limiter.limit("10/minute")
+async def change_password(
+    request: Request,
+    req: ChangePasswordRequest,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Change password for the currently authenticated user.
+
+    Requires the current password to prevent session-hijack password changes.
+    """
+    from uuid import UUID
+    result = await db.execute(select(UserDB).where(UserDB.id == UUID(user_id)))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if not _verify_password(req.current_password, user.password_hash or ""):
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+
+    user.password_hash = _hash_password(req.new_password)
+    await db.commit()
+    return {"message": "Password changed successfully."}

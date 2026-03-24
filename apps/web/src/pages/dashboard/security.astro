@@ -158,6 +158,43 @@ try {
 
     </div>
 
+    {/* ── Change Password card ─────────────────────── */}
+    <div class="bg-gray-800 border border-gray-700 rounded-xl p-6 mt-6">
+      <h2 class="text-base font-semibold text-white mb-1">Change Password</h2>
+      <p class="text-sm text-gray-400 mb-4">Update your password. You'll need your current password to confirm.</p>
+
+      <div id="pw-success" class="hidden bg-green-900/30 border border-green-700/50 rounded-lg px-4 py-3 text-sm text-green-300 mb-4">
+        ✅ Password changed successfully.
+      </div>
+      <div id="pw-error" class="hidden bg-red-900/30 border border-red-700/50 rounded-lg px-4 py-3 text-sm text-red-300 mb-4"></div>
+
+      <div class="space-y-4 max-w-sm">
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">Current password</label>
+          <input id="pw-current" type="password"
+            class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-gray-100 placeholder-gray-600 focus:outline-none focus:border-violet-500 transition-colors"
+            placeholder="Your current password" />
+        </div>
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">New password</label>
+          <input id="pw-new" type="password"
+            class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-gray-100 placeholder-gray-600 focus:outline-none focus:border-violet-500 transition-colors"
+            placeholder="8+ characters" />
+        </div>
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">Confirm new password</label>
+          <input id="pw-confirm" type="password"
+            class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-gray-100 placeholder-gray-600 focus:outline-none focus:border-violet-500 transition-colors"
+            placeholder="Same as above" />
+        </div>
+        <p id="pw-match" class="text-xs hidden"></p>
+        <button id="btn-change-pw"
+          class="bg-violet-600 hover:bg-violet-500 text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+          Update password
+        </button>
+      </div>
+    </div>
+
     {/* ── Back link ─────────────────────────────────── */}
     <div class="mt-6">
       <a href="/dashboard/profile" class="text-sm text-indigo-400 hover:underline">← Back to Profile</a>
@@ -301,6 +338,72 @@ try {
         disableErr.classList.remove("hidden");
       }
       btnDisable.removeAttribute("disabled");
+    }
+  });
+
+  // ── Change Password ──────────────────────────────────────────────────────────
+  const pwCurrent  = document.getElementById("pw-current") as HTMLInputElement;
+  const pwNew      = document.getElementById("pw-new") as HTMLInputElement;
+  const pwConfirm  = document.getElementById("pw-confirm") as HTMLInputElement;
+  const pwMatch    = document.getElementById("pw-match");
+  const pwSuccess  = document.getElementById("pw-success");
+  const pwError    = document.getElementById("pw-error");
+  const btnChangePw = document.getElementById("btn-change-pw");
+
+  function checkPwMatch() {
+    if (!pwMatch || !pwNew?.value || !pwConfirm?.value) return;
+    if (pwNew.value === pwConfirm.value) {
+      pwMatch.textContent = "✓ Passwords match";
+      pwMatch.className = "text-xs text-green-400";
+    } else {
+      pwMatch.textContent = "✗ Passwords do not match";
+      pwMatch.className = "text-xs text-red-400";
+    }
+    pwMatch.classList.remove("hidden");
+  }
+
+  pwNew?.addEventListener("input", checkPwMatch);
+  pwConfirm?.addEventListener("input", checkPwMatch);
+
+  btnChangePw?.addEventListener("click", async () => {
+    const current = pwCurrent?.value.trim();
+    const newPw   = pwNew?.value;
+    const confirm = pwConfirm?.value;
+
+    pwSuccess?.classList.add("hidden");
+    if (pwError) pwError.classList.add("hidden");
+
+    if (!current) { if (pwError) { pwError.textContent = "Please enter your current password."; pwError.classList.remove("hidden"); } return; }
+    if (!newPw || newPw.length < 8) { if (pwError) { pwError.textContent = "New password must be at least 8 characters."; pwError.classList.remove("hidden"); } return; }
+    if (newPw !== confirm) { if (pwError) { pwError.textContent = "Passwords do not match."; pwError.classList.remove("hidden"); } return; }
+
+    btnChangePw.setAttribute("disabled", "true");
+    (btnChangePw as HTMLElement).textContent = "Updating…";
+
+    try {
+      const res = await fetch("/api/auth/change-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ current_password: current, new_password: newPw }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail ?? "Failed to change password");
+      }
+      pwSuccess?.classList.remove("hidden");
+      // Clear fields
+      if (pwCurrent) pwCurrent.value = "";
+      if (pwNew) pwNew.value = "";
+      if (pwConfirm) pwConfirm.value = "";
+      if (pwMatch) pwMatch.classList.add("hidden");
+    } catch (e: any) {
+      if (pwError) {
+        pwError.textContent = e.message;
+        pwError.classList.remove("hidden");
+      }
+    } finally {
+      btnChangePw.removeAttribute("disabled");
+      (btnChangePw as HTMLElement).textContent = "Update password";
     }
   });
 </script>

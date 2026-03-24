@@ -161,6 +161,32 @@ def _task_timeout_html(task_id: str, task_type: str, worker_name: str) -> str:
 """
 
 
+def _password_reset_html(reset_url: str, name: str | None = None) -> str:
+    greeting = f"Hi {name}," if name else "Hi,"
+    return f"""
+<html><body style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px">
+<h2 style="color:#6366f1">🔐 Reset your password</h2>
+<p>{greeting}</p>
+<p>We received a request to reset your CrowdSorcerer password.
+   Click the button below to set a new one. This link expires in <strong>30 minutes</strong>.</p>
+<p style="margin:24px 0">
+  <a href="{reset_url}"
+     style="background:#6366f1;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block">
+     Reset password →
+  </a>
+</p>
+<p style="color:#6b7280;font-size:13px">
+  If you didn't request a password reset, you can safely ignore this email.
+  Your password will remain unchanged.
+</p>
+<hr style="margin:24px 0;border:none;border-top:1px solid #e5e7eb">
+<p style="color:#9ca3af;font-size:12px">
+  CrowdSorcerer · <a href="https://crowdsourcerer.rebaselabs.online">crowdsourcerer.rebaselabs.online</a>
+</p>
+</body></html>
+"""
+
+
 # ─── Core send function ────────────────────────────────────────────────────
 
 def _send_email_sync(to_email: str, subject: str, html_body: str) -> bool:
@@ -272,6 +298,15 @@ async def notify_worker_approved(
         to_email=to_email,
         subject=f"🎉 Submission approved — you earned {earnings} credits!",
         html_body=_worker_approved_html(task_type, earnings, xp),
+    )
+
+
+async def send_password_reset(to_email: str, reset_url: str, name: str | None = None) -> bool:
+    """Send a password reset email. Always sends regardless of notification prefs — security emails bypass opt-outs."""
+    return await send_email(
+        to_email=to_email,
+        subject="Reset your CrowdSorcerer password",
+        html_body=_password_reset_html(reset_url, name),
     )
 
 
