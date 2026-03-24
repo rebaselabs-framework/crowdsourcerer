@@ -65,7 +65,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["actor_id"], ["users.id"], ondelete="SET NULL"),
     )
     op.create_index("ix_dispute_events_task_id", "dispute_events", ["task_id"])
-    op.create_index("ix_dispute_events_created_at", "dispute_events", ["created_at"])
+    # created_at index already created by index=True in create_table above
 
 
 def downgrade() -> None:
