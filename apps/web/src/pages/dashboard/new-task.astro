@@ -29,6 +29,8 @@ try {
 const urlParams = new URL(Astro.request.url).searchParams;
 const duplicateTaskId = urlParams.get("duplicate") ?? "";
 const savedTplId = urlParams.get("tpl") ?? "";
+// ?preset=<type> — pre-selects a task type from the dashboard quick-launch tiles
+const presetType = urlParams.get("preset") ?? "";
 let duplicateParams: any = null;
 let duplicateTitle = "";
 let savedTplParams: any = null;
@@ -256,7 +258,7 @@ if (Astro.request.method === "POST") {
           {AI_TASK_TYPES.map(({ type, label, icon }) => (
             <label class="cursor-pointer">
               <input type="radio" name="type" value={type} required class="peer sr-only"
-                checked={type === "web_research"} />
+                checked={presetType ? type === presetType : type === "web_research"} />
               <div class="bg-gray-900 border border-gray-800 rounded-lg p-3 text-center
                 peer-checked:border-violet-500 peer-checked:bg-violet-950/30 hover:border-gray-600 transition-colors">
                 <div class="text-xl mb-1">{icon}</div>
@@ -276,7 +278,8 @@ if (Astro.request.method === "POST") {
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
           {HUMAN_TASK_TYPE_LIST.map(({ type, label, icon }) => (
             <label class="cursor-pointer">
-              <input type="radio" name="type" value={type} required class="peer sr-only" />
+              <input type="radio" name="type" value={type} required class="peer sr-only"
+                checked={presetType === type} />
               <div class="bg-gray-900 border border-gray-800 rounded-lg p-3 text-center
                 peer-checked:border-violet-500 peer-checked:bg-violet-950/30 hover:border-gray-600 transition-colors">
                 <div class="text-xl mb-1">{icon}</div>
