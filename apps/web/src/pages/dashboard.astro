@@ -13,6 +13,7 @@ let credits: any = null;
 let tasks: any = null;
 let apiKeys: any = [];
 let onboardingStatus: any = null;
+let pendingReviewCount = 0;
 
 try {
   [user, credits, tasks, apiKeys] = await Promise.all([
@@ -25,10 +26,38 @@ try {
   return Astro.redirect("/login");
 }
 
-// Non-blocking: fetch onboarding status to detect new users
+// Non-blocking: fetch onboarding status + pending review count
 try {
-  onboardingStatus = await apiFetch<any>("/v1/requester-onboarding/status", { token });
+  const [onboardingData, reviewSummary] = await Promise.all([
+    apiFetch<any>("/v1/requester-onboarding/status", { token }).catch(() => null),
+    apiFetch<any>("/v1/tasks/review-summary", { token }).catch(() => null),
+  ]);
+  onboardingStatus = onboardingData;
+  pendingReviewCount = reviewSummary?.pending_count ?? 0;
 } catch (_) {}
+
+const TASK_TYPE_LABELS: Record<string, string> = {
+  web_research: "Web Research",
+  web_intel: "Web Intel",
+  llm_generate: "LLM Generate",
+  llm_transform: "LLM Transform",
+  llm_extract: "LLM Extract",
+  llm_classify: "LLM Classify",
+  llm_score: "LLM Score",
+  llm_compare: "LLM Compare",
+  data_transform: "Data Transform",
+  entity_lookup: "Entity Lookup",
+  screenshot: "Screenshot",
+  pii_detect: "PII Detection",
+  label_image: "Label Image",
+  label_text: "Classify Text",
+  rate_quality: "Rate Quality",
+  verify_fact: "Verify Fact",
+  moderate_content: "Moderate Content",
+  compare_rank: "A/B Compare",
+  answer_question: "Answer Question",
+  transcription_review: "Transcription Review",
+};
 
 // Show onboarding banner if not yet complete and not skipped
 const showOnboardingBanner = Boolean(
@@ -94,7 +123,7 @@ const showOnboardingBanner = Boolean(
     </div>
 
     <!-- Stats -->
-    <div class="grid grid-cols-3 gap-4 mb-8">
+    <div class:list={["grid gap-4 mb-8", pendingReviewCount > 0 ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-3"]}>
       <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
         <div class="flex items-center justify-between mb-1">
           <div class="text-sm text-gray-400">Credits available</div>
@@ -110,6 +139,19 @@ const showOnboardingBanner = Boolean(
         <div class="text-sm text-gray-400 mb-1">Total tasks</div>
         <div class="text-3xl font-bold">{tasks?.total ?? 0}</div>
       </div>
+      {pendingReviewCount > 0 && (
+        <a
+          href="/dashboard/review"
+          class="bg-yellow-950/30 border border-yellow-700/50 hover:border-yellow-600 rounded-xl p-5 transition-colors"
+        >
+          <div class="flex items-center justify-between mb-1">
+            <div class="text-sm text-yellow-400/80">Pending review</div>
+            <span class="text-[10px] font-semibold bg-yellow-500 text-yellow-950 rounded-full px-1.5 py-0.5">!</span>
+          </div>
+          <div class="text-3xl font-bold text-yellow-300">{pendingReviewCount}</div>
+          <div class="text-xs text-yellow-600 mt-0.5">submissions →</div>
+        </a>
+      )}
     </div>
 
     <!-- Recent tasks -->
@@ -155,19 +197,26 @@ const showOnboardingBanner = Boolean(
           {tasks?.items?.map((t: any) => (
             <a href={`/dashboard/tasks/${t.id}`} class="flex items-center justify-between px-6 py-4 hover:bg-gray-800/50 transition-colors">
               <div class="flex items-center gap-3">
-                <span class="font-mono text-sm text-violet-300">{t.type}</span>
+                <span class="text-sm text-gray-200 font-medium">{TASK_TYPE_LABELS[t.type] ?? t.type}</span>
                 <span class:list={[
                   "text-xs px-2 py-0.5 rounded-full",
                   t.status === "completed" ? "bg-green-950 text-green-400" :
                   t.status === "failed" ? "bg-red-950 text-red-400" :
                   t.status === "running" ? "bg-yellow-950 text-yellow-400" :
+                  t.status === "open" ? "bg-emerald-950 text-emerald-400" :
+                  t.status === "queued" ? "bg-blue-950 text-blue-400" :
                   "bg-gray-800 text-gray-400"
                 ]}>
                   {t.status}
                 </span>
               </div>
               <div class="flex items-center gap-4 text-sm text-gray-500">
-                {t.credits_used && <span>{t.credits_used} credits</span>}
+                {t.execution_mode === "human" && (t.assignments_completed ?? 0) > 0 && (
+                  <span class="text-xs text-yellow-500/80">
+                    {t.assignments_completed}/{t.assignments_required} workers
+                  </span>
+                )}
+                {t.credits_used && <span>{t.credits_used} cr</span>}
                 <span>{new Date(t.created_at).toLocaleDateString()}</span>
               </div>
             </a>

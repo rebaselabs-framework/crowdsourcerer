@@ -647,6 +647,27 @@ async def list_scheduled_tasks(
     }
 
 
+@router.get("/review-summary")
+async def get_review_summary(
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(require_scope(SCOPE_TASKS_READ)),
+):
+    """Return count of pending worker submissions awaiting requester review."""
+    from models.db import TaskAssignmentDB
+    stmt = (
+        select(func.count())
+        .select_from(TaskAssignmentDB)
+        .join(TaskDB, TaskAssignmentDB.task_id == TaskDB.id)
+        .where(
+            TaskDB.user_id == user_id,
+            TaskAssignmentDB.status == "submitted",
+        )
+    )
+    result = await db.execute(stmt)
+    count = result.scalar() or 0
+    return {"pending_count": count}
+
+
 @router.get("/tags", response_model=list[TagStats])
 async def list_task_tags(
     db: AsyncSession = Depends(get_db),
