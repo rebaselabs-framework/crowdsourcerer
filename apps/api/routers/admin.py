@@ -19,7 +19,7 @@ from core.auth import get_current_user_id, require_admin
 from core.database import get_db, AsyncSessionLocal
 from core.sweeper import sweep_once, get_sweeper_task, _sweep_scheduled_tasks, _LAST_SWEEP_AT
 from core.audit import log_admin_action
-from models.db import TaskDB, UserDB, CreditTransactionDB, TaskAssignmentDB, WebhookLogDB, PayoutRequestDB, WorkerStrikeDB, AdminAuditLogDB
+from models.db import TaskDB, UserDB, CreditTransactionDB, TaskAssignmentDB, WebhookLogDB, PayoutRequestDB, WorkerStrikeDB, AdminAuditLogDB, SystemAlertDB
 
 logger = structlog.get_logger()
 router = APIRouter(prefix="/v1/admin", tags=["admin"])
@@ -1448,3 +1448,94 @@ async def list_audit_log(
             for e in entries
         ],
     }
+
+
+# ─── System Alerts ─────────────────────────────────────────────────────────
+
+@router.get("/alerts")
+async def list_system_alerts(
+    status: Optional[Literal["active", "resolved", "all"]] = "active",
+    severity: Optional[Literal["critical", "warning"]] = None,
+    alert_type: Optional[str] = None,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    _admin: UUID = Depends(require_admin),
+):
+    """List system health alerts. Defaults to active (unresolved) alerts."""
+    query = select(SystemAlertDB).order_by(SystemAlertDB.created_at.desc())
+
+    if status == "active":
+        query = query.where(SystemAlertDB.resolved_at.is_(None))
+    elif status == "resolved":
+        query = query.where(SystemAlertDB.resolved_at.isnot(None))
+    # "all" → no filter
+
+    if severity:
+        query = query.where(SystemAlertDB.severity == severity)
+    if alert_type:
+        query = query.where(SystemAlertDB.alert_type == alert_type)
+
+    # Count total matching
+    count_query = select(func.count(SystemAlertDB.id))
+    if status == "active":
+        count_query = count_query.where(SystemAlertDB.resolved_at.is_(None))
+    elif status == "resolved":
+        count_query = count_query.where(SystemAlertDB.resolved_at.isnot(None))
+    if severity:
+        count_query = count_query.where(SystemAlertDB.severity == severity)
+    if alert_type:
+        count_query = count_query.where(SystemAlertDB.alert_type == alert_type)
+
+    total = (await db.scalar(count_query)) or 0
+
+    result = await db.execute(query.offset(offset).limit(limit))
+    alerts = result.scalars().all()
+
+    return {
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+        "alerts": [
+            {
+                "id": str(a.id),
+                "alert_type": a.alert_type,
+                "severity": a.severity,
+                "title": a.title,
+                "detail": a.detail,
+                "resolved_at": a.resolved_at.isoformat() if a.resolved_at else None,
+                "notified_at": a.notified_at.isoformat() if a.notified_at else None,
+                "created_at": a.created_at.isoformat(),
+            }
+            for a in alerts
+        ],
+    }
+
+
+@router.post("/alerts/{alert_id}/resolve")
+async def resolve_system_alert(
+    alert_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    admin_id: UUID = Depends(require_admin),
+):
+    """Mark a system alert as resolved."""
+    alert = await db.get(SystemAlertDB, alert_id)
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    if alert.resolved_at is not None:
+        raise HTTPException(status_code=409, detail="Alert is already resolved")
+
+    alert.resolved_at = datetime.now(timezone.utc)
+    await db.commit()
+
+    await log_admin_action(
+        db=db,
+        admin_id=admin_id,
+        action="resolve_system_alert",
+        target_type="system_alert",
+        target_id=str(alert_id),
+        detail={"alert_type": alert.alert_type, "severity": alert.severity},
+    )
+    await db.commit()
+
+    return {"ok": True, "alert_id": str(alert_id), "resolved_at": alert.resolved_at.isoformat()}

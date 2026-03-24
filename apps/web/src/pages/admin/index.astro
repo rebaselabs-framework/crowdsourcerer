@@ -7,11 +7,15 @@ if (!token) return Astro.redirect("/login");
 
 let stats: any = null;
 let sweeperStatus: any = null;
+let activeAlerts: any = null;
 let error: string | null = null;
 
 try {
-  stats = await apiFetch<any>("/v1/admin/stats", { token });
-  sweeperStatus = await apiFetch<any>("/v1/admin/sweeper/status", { token }).catch(() => null);
+  [stats, sweeperStatus, activeAlerts] = await Promise.all([
+    apiFetch<any>("/v1/admin/stats", { token }),
+    apiFetch<any>("/v1/admin/sweeper/status", { token }).catch(() => null),
+    apiFetch<any>("/v1/admin/alerts?status=active&limit=1", { token }).catch(() => null),
+  ]);
 } catch (e: any) {
   if (e.message?.includes("403")) {
     error = "forbidden";
@@ -40,6 +44,9 @@ try {
         <a href="/admin/billing" class="px-4 py-2 bg-emerald-900/50 hover:bg-emerald-900/70 text-sm text-emerald-300 rounded-lg transition-colors border border-emerald-800/50">
           💳 Billing →
         </a>
+        <a href="/admin/alerts" class={`relative px-4 py-2 text-sm rounded-lg transition-colors border ${(activeAlerts?.total ?? 0) > 0 ? "bg-red-900/40 hover:bg-red-900/60 text-red-300 border-red-700/50" : "bg-gray-800/50 hover:bg-gray-700/70 text-gray-300 border-gray-700/50"}`}>
+          🚨 Alerts {(activeAlerts?.total ?? 0) > 0 && <span class="ml-1 bg-red-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full">{activeAlerts.total}</span>}
+        </a>
         <a href="/admin/audit-log" class="px-4 py-2 bg-gray-800/50 hover:bg-gray-700/70 text-sm text-gray-300 rounded-lg transition-colors border border-gray-700/50">
           📋 Audit Log →
         </a>
@@ -62,11 +69,25 @@ try {
       </div>
     ) : stats ? (
       <>
+        <!-- System alerts banner (shown when active alerts exist) -->
+        {(activeAlerts?.total ?? 0) > 0 && (
+          <div class="bg-red-950/30 border border-red-700/50 rounded-xl px-5 py-3 mb-4 flex items-center justify-between">
+            <div class="flex items-center gap-3 text-red-400 text-sm">
+              <span class="w-2 h-2 rounded-full bg-red-500 animate-pulse inline-block"></span>
+              <strong>{activeAlerts.total} active system alert{activeAlerts.total !== 1 ? "s" : ""}</strong>
+              — system health needs attention
+            </div>
+            <a href="/admin/alerts" class="text-xs text-red-300 hover:text-red-200 font-medium">
+              View alerts →
+            </a>
+          </div>
+        )}
+
         <!-- Platform health banner -->
-        <div class="bg-green-950/20 border border-green-800/40 rounded-xl px-5 py-3 mb-4 flex items-center justify-between">
-          <div class="flex items-center gap-2 text-green-400 text-sm">
-            <span class="w-2 h-2 rounded-full bg-green-400 animate-pulse inline-block"></span>
-            Platform is operational
+        <div class={`rounded-xl px-5 py-3 mb-4 flex items-center justify-between ${(activeAlerts?.total ?? 0) > 0 ? "bg-yellow-950/20 border border-yellow-800/40" : "bg-green-950/20 border border-green-800/40"}`}>
+          <div class={`flex items-center gap-2 text-sm ${(activeAlerts?.total ?? 0) > 0 ? "text-yellow-400" : "text-green-400"}`}>
+            <span class={`w-2 h-2 rounded-full animate-pulse inline-block ${(activeAlerts?.total ?? 0) > 0 ? "bg-yellow-400" : "bg-green-400"}`}></span>
+            {(activeAlerts?.total ?? 0) > 0 ? "Platform degraded — check alerts" : "Platform is operational"}
           </div>
           <div class="text-xs text-gray-500">
             Stats as of {new Date(stats.generated_at).toLocaleString()}
@@ -296,6 +317,16 @@ try {
             <div class="text-2xl mb-2">📋</div>
             <div class="font-semibold text-sm mb-1">Audit Log</div>
             <div class="text-xs text-gray-500">All admin actions + history</div>
+          </a>
+          <a href="/admin/alerts" class={`bg-gray-900 rounded-xl p-5 transition-colors border ${(activeAlerts?.total ?? 0) > 0 ? "border-red-700/50 hover:border-red-500/50" : "border-gray-700/30 hover:border-gray-500/50"}`}>
+            <div class="text-2xl mb-2">🚨</div>
+            <div class="font-semibold text-sm mb-1 flex items-center gap-2">
+              System Alerts
+              {(activeAlerts?.total ?? 0) > 0 && (
+                <span class="bg-red-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full">{activeAlerts.total}</span>
+              )}
+            </div>
+            <div class="text-xs text-gray-500">Health alerts: error spikes, sweeper stalls</div>
           </a>
         </div>
       </>

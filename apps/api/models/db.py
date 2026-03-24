@@ -1598,3 +1598,17 @@ class AdminAuditLogDB(Base):
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False, index=True)
 
     admin = relationship("UserDB", foreign_keys=[admin_id], backref="audit_actions")
+
+
+class SystemAlertDB(Base):
+    """System health alerts fired when error rates spike or background jobs stall."""
+    __tablename__ = "system_alerts"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    alert_type = Column(String(64), nullable=False, index=True)   # e.g. "error_rate_spike", "sweeper_stall"
+    severity = Column(String(16), nullable=False, default="warning")  # "warning" | "critical"
+    title = Column(String(256), nullable=False)
+    detail = Column(JSON, nullable=True)                            # contextual metrics at time of alert
+    resolved_at = Column(DateTime(timezone=True), nullable=True)   # null = still active
+    notified_at = Column(DateTime(timezone=True), nullable=True)   # when email was sent
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False, index=True)

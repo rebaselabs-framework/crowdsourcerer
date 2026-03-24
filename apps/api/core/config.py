@@ -54,6 +54,13 @@ class Settings(BaseSettings):
     smtp_pass: str = ""
     smtp_from: str = "noreply@crowdsourcerer.rebaselabs.online"
     smtp_use_tls: bool = True            # True = SSL (port 465), False = STARTTLS (port 587)
+    admin_email: str = ""                # Recipient for system health alert emails (defaults to smtp_from if blank)
+
+    # System alert thresholds
+    alert_error_rate_window_minutes: int = 5    # Rolling window for 5xx error counting
+    alert_error_rate_threshold: int = 10        # Fire alert if >= N errors in window
+    alert_sweeper_stall_minutes: int = 15       # Fire alert if sweeper hasn't run in N minutes
+    alert_cooldown_hours: int = 1               # Don't re-fire same alert type within N hours
 
 
 @lru_cache

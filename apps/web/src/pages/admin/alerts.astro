@@ -1,0 +1,279 @@
+---
+/**
+ * Admin System Alerts — monitor and resolve platform health alerts.
+ */
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Astro.cookies);
+if (!token) return Astro.redirect("/login");
+
+const status    = Astro.url.searchParams.get("status")     ?? "active";
+const severity  = Astro.url.searchParams.get("severity")   ?? "";
+const alertType = Astro.url.searchParams.get("alert_type") ?? "";
+const pageStr   = Astro.url.searchParams.get("page")       ?? "1";
+const page      = Math.max(1, Number(pageStr));
+const limit     = 50;
+const offset    = (page - 1) * limit;
+
+let data: any = null;
+let error: string | null = null;
+let activeCritical = 0;
+let activeWarning  = 0;
+
+try {
+  const p = new URLSearchParams({ status, limit: String(limit), offset: String(offset) });
+  if (severity)  p.set("severity",   severity);
+  if (alertType) p.set("alert_type", alertType);
+  data = await apiFetch<any>(`/v1/admin/alerts?${p}`, { token });
+
+  // Fetch counts for summary badges (always active status)
+  const [critRes, warnRes] = await Promise.all([
+    apiFetch<any>(`/v1/admin/alerts?status=active&severity=critical&limit=1`, { token }),
+    apiFetch<any>(`/v1/admin/alerts?status=active&severity=warning&limit=1`,  { token }),
+  ]);
+  activeCritical = critRes?.total ?? 0;
+  activeWarning  = warnRes?.total ?? 0;
+} catch (e: any) {
+  if (e.message?.includes("401")) return Astro.redirect("/login");
+  if (e.message?.includes("403")) return Astro.redirect("/dashboard");
+  error = "Failed to load alerts";
+}
+
+const alerts = data?.alerts ?? [];
+const total  = data?.total  ?? 0;
+const pages  = Math.ceil(total / limit);
+
+const SEVERITY_STYLES: Record<string, string> = {
+  critical: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
+  warning:  "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
+};
+
+const ALERT_TYPE_LABELS: Record<string, string> = {
+  error_rate_spike:          "Error Rate Spike",
+  sweeper_stall:             "Sweeper Stall",
+  sweeper_consecutive_errors:"Sweeper Errors",
+};
+
+function relTime(iso: string): string {
+  const d = new Date(iso);
+  const diff = Date.now() - d.getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1)  return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24)  return `${hrs}h ago`;
+  return d.toLocaleDateString();
+}
+---
+
+<Layout title="System Alerts — Admin">
+  <div class="max-w-7xl mx-auto px-4 py-8">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-8">
+      <div>
+        <h1 class="text-3xl font-bold text-gray-900 dark:text-white">🚨 System Alerts</h1>
+        <p class="text-gray-500 dark:text-gray-400 mt-1">Platform health monitoring — {total.toLocaleString()} alert{total !== 1 ? "s" : ""} shown</p>
+      </div>
+      <a href="/admin" class="text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">← Admin</a>
+    </div>
+
+    <!-- Summary stats -->
+    <div class="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-8">
+      <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 text-center">
+        <div class={`text-3xl font-bold ${activeCritical > 0 ? "text-red-600" : "text-gray-400"}`}>{activeCritical}</div>
+        <div class="text-xs text-gray-500 mt-1 uppercase tracking-wide">Active Critical</div>
+      </div>
+      <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 text-center">
+        <div class={`text-3xl font-bold ${activeWarning > 0 ? "text-amber-500" : "text-gray-400"}`}>{activeWarning}</div>
+        <div class="text-xs text-gray-500 mt-1 uppercase tracking-wide">Active Warnings</div>
+      </div>
+      <div class={`rounded-xl border p-4 text-center col-span-2 sm:col-span-1 ${activeCritical === 0 && activeWarning === 0 ? "bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-700" : "bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700"}`}>
+        <div class={`text-3xl font-bold ${activeCritical === 0 && activeWarning === 0 ? "text-emerald-600" : "text-gray-400"}`}>
+          {activeCritical === 0 && activeWarning === 0 ? "✓" : "⚠"}
+        </div>
+        <div class="text-xs text-gray-500 mt-1 uppercase tracking-wide">
+          {activeCritical === 0 && activeWarning === 0 ? "All Systems OK" : "Needs Attention"}
+        </div>
+      </div>
+    </div>
+
+    <!-- Filters -->
+    <form method="get" class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 mb-6 flex flex-wrap gap-3 items-end">
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Status</label>
+        <select name="status" class="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 dark:text-white">
+          {["active","resolved","all"].map(s => (
+            <option value={s} selected={status === s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>
+          ))}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Severity</label>
+        <select name="severity" class="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 dark:text-white">
+          <option value="">All</option>
+          <option value="critical" selected={severity === "critical"}>Critical</option>
+          <option value="warning"  selected={severity === "warning"}>Warning</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Alert Type</label>
+        <select name="alert_type" class="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 dark:text-white">
+          <option value="">All types</option>
+          {Object.entries(ALERT_TYPE_LABELS).map(([val, label]) => (
+            <option value={val} selected={alertType === val}>{label}</option>
+          ))}
+        </select>
+      </div>
+      <button type="submit" class="bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
+        Filter
+      </button>
+      {(status !== "active" || severity || alertType) && (
+        <a href="/admin/alerts" class="text-sm text-gray-500 hover:text-gray-700 py-2">✕ Reset</a>
+      )}
+    </form>
+
+    {error && (
+      <div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-xl p-4 mb-6 text-red-700 dark:text-red-300">{error}</div>
+    )}
+
+    <!-- Alerts list -->
+    {alerts.length === 0 ? (
+      <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-16 text-center">
+        <div class="text-5xl mb-4">{status === "active" ? "✅" : "📭"}</div>
+        <p class="text-lg font-semibold text-gray-700 dark:text-gray-300">
+          {status === "active" ? "No active alerts — system is healthy!" : "No alerts found"}
+        </p>
+        <p class="text-sm text-gray-400 mt-1">Alerts appear here when error rates spike or background jobs stall</p>
+      </div>
+    ) : (
+      <div class="space-y-4">
+        {alerts.map((alert: any) => (
+          <div
+            class={`bg-white dark:bg-gray-800 rounded-xl border-l-4 border border-gray-200 dark:border-gray-700 p-5 ${
+              alert.severity === "critical"
+                ? "border-l-red-500"
+                : "border-l-amber-400"
+            } ${alert.resolved_at ? "opacity-60" : ""}`}
+            data-alert-id={alert.id}
+          >
+            <div class="flex items-start justify-between gap-4">
+              <div class="flex-1 min-w-0">
+                <!-- Title row -->
+                <div class="flex items-center gap-2 flex-wrap mb-2">
+                  <span class={`px-2 py-0.5 rounded-full text-xs font-bold uppercase tracking-wide ${SEVERITY_STYLES[alert.severity] ?? "bg-gray-100 text-gray-700"}`}>
+                    {alert.severity}
+                  </span>
+                  <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300 font-mono">
+                    {ALERT_TYPE_LABELS[alert.alert_type] ?? alert.alert_type}
+                  </span>
+                  {alert.resolved_at && (
+                    <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+                      ✓ Resolved
+                    </span>
+                  )}
+                  <span class="text-xs text-gray-400" title={alert.created_at}>{relTime(alert.created_at)}</span>
+                </div>
+
+                <h3 class="text-base font-semibold text-gray-900 dark:text-white mb-2">{alert.title}</h3>
+
+                <!-- Detail table -->
+                {alert.detail && Object.keys(alert.detail).length > 0 && (
+                  <details class="group">
+                    <summary class="cursor-pointer text-xs text-violet-500 hover:text-violet-600 font-medium select-none">
+                      <span class="group-open:hidden">▶ Show details</span>
+                      <span class="hidden group-open:inline">▼ Hide details</span>
+                    </summary>
+                    <div class="mt-2 bg-gray-50 dark:bg-gray-900/50 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+                      <table class="w-full text-xs">
+                        <tbody>
+                          {Object.entries(alert.detail).map(([k, v]: [string, any], i: number) => (
+                            <tr class={i % 2 === 0 ? "" : "bg-white dark:bg-gray-800/50"}>
+                              <td class="px-3 py-2 font-semibold text-gray-600 dark:text-gray-400 w-2/5">
+                                {k.replace(/_/g, " ")}
+                              </td>
+                              <td class="px-3 py-2 font-mono text-gray-800 dark:text-gray-200">
+                                {Array.isArray(v) ? v.join(", ") || "—" : String(v)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </details>
+                )}
+
+                {alert.resolved_at && (
+                  <p class="text-xs text-gray-400 mt-2">Resolved {relTime(alert.resolved_at)}</p>
+                )}
+              </div>
+
+              <!-- Resolve button -->
+              {!alert.resolved_at && (
+                <button
+                  class="resolve-btn flex-shrink-0 text-sm px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-emerald-50 hover:border-emerald-400 hover:text-emerald-700 dark:hover:bg-emerald-900/20 dark:hover:text-emerald-400 text-gray-600 dark:text-gray-400 transition-colors font-medium"
+                  data-id={alert.id}
+                >
+                  ✓ Resolve
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    )}
+
+    <!-- Pagination -->
+    {pages > 1 && (
+      <div class="flex justify-center gap-2 mt-6">
+        {page > 1 && (
+          <a href={`?page=${page-1}&status=${status}&severity=${severity}&alert_type=${alertType}`}
+            class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700">
+            ← Prev
+          </a>
+        )}
+        <span class="px-4 py-2 text-sm text-gray-500">Page {page} of {pages}</span>
+        {page < pages && (
+          <a href={`?page=${page+1}&status=${status}&severity=${severity}&alert_type=${alertType}`}
+            class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700">
+            Next →
+          </a>
+        )}
+      </div>
+    )}
+  </div>
+
+  <script>
+    document.querySelectorAll<HTMLButtonElement>(".resolve-btn").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const id = btn.dataset.id;
+        if (!id) return;
+
+        btn.disabled = true;
+        btn.textContent = "Resolving…";
+
+        try {
+          const res = await fetch(`/api/admin/alerts/${id}/resolve`, { method: "POST" });
+          if (!res.ok) throw new Error("Failed");
+
+          // Fade out the alert card
+          const card = btn.closest("[data-alert-id]") as HTMLElement | null;
+          if (card) {
+            card.style.transition = "opacity 0.4s";
+            card.style.opacity = "0.3";
+            setTimeout(() => {
+              card.remove();
+              // Update summary stats by reloading the page after a brief delay
+              window.location.reload();
+            }, 500);
+          }
+        } catch {
+          btn.disabled = false;
+          btn.textContent = "✓ Resolve";
+          alert("Failed to resolve alert. Please try again.");
+        }
+      });
+    });
+  </script>
+</Layout>

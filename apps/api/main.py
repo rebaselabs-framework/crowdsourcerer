@@ -125,6 +125,7 @@ app.add_middleware(
 
 @app.middleware("http")
 async def request_middleware(request: Request, call_next):
+    from core.system_alerts import record_http_error  # local import to avoid circular  # noqa: PLC0415
     request_id = str(uuid.uuid4())[:8]
     t0 = time.perf_counter()
     request.state.request_id = request_id
@@ -143,6 +144,11 @@ async def request_middleware(request: Request, call_next):
         duration_ms=duration_ms,
         request_id=request_id,
     )
+
+    # Track 5xx errors for system alert monitoring
+    if response.status_code >= 500:
+        record_http_error(path=request.url.path, status_code=response.status_code)
+
     return response
 
 # ─── Routers ──────────────────────────────────────────────────────────────

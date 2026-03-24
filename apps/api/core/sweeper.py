@@ -897,8 +897,12 @@ async def run_sweeper(session_factory: async_sessionmaker, interval: int = SWEEP
         _LAST_SWEEP_AT = datetime.now(timezone.utc)
         try:
             await sweep_once(session_factory)
+            from core.system_alerts import record_sweep_success  # noqa: PLC0415
+            record_sweep_success()
         except Exception:  # noqa: BLE001
             logger.exception("sweeper.unhandled_error")
+            from core.system_alerts import record_sweep_error  # noqa: PLC0415
+            record_sweep_error()
 
         # Activate any tasks whose scheduled_at has arrived
         try:
@@ -966,6 +970,13 @@ async def run_sweeper(session_factory: async_sessionmaker, interval: int = SWEEP
             except Exception:  # noqa: BLE001
                 logger.exception("sweeper.trigger_check_error")
             last_trigger_check = now_ts
+
+        # Check and fire system health alerts every cycle
+        try:
+            from core.system_alerts import check_and_fire_alerts  # noqa: PLC0415
+            await check_and_fire_alerts(session_factory)
+        except Exception:  # noqa: BLE001
+            logger.exception("sweeper.alert_check_error")
 
         await asyncio.sleep(min(interval, trigger_check_interval))
 
