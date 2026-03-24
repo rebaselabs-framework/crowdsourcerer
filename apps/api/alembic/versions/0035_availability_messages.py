@@ -28,7 +28,7 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         sa.UniqueConstraint("worker_id", "day_of_week", "start_hour", name="uq_worker_avail_slot"),
     )
-    op.create_index("ix_worker_availability_worker_id", "worker_availability", ["worker_id"])
+    # ix_worker_availability_worker_id is auto-created by index=True on the column above
 
     # ── worker_blackouts ──────────────────────────────────────────────────────
     op.create_table(
@@ -40,7 +40,7 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         sa.UniqueConstraint("worker_id", "blackout_date", name="uq_worker_blackout"),
     )
-    op.create_index("ix_worker_blackouts_worker_id", "worker_blackouts", ["worker_id"])
+    # ix_worker_blackouts_worker_id is auto-created by index=True on the column above
 
     # ── task_messages ─────────────────────────────────────────────────────────
     op.create_table(
@@ -53,14 +53,11 @@ def upgrade() -> None:
         sa.Column("is_read", sa.Boolean(), nullable=False, server_default="false"),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
     )
-    op.create_index("ix_task_messages_task_id", "task_messages", ["task_id"])
-    op.create_index("ix_task_messages_sender_id", "task_messages", ["sender_id"])
-    op.create_index("ix_task_messages_recipient_id", "task_messages", ["recipient_id"])
+    # ix_task_messages_task_id, ix_task_messages_sender_id, and
+    # ix_task_messages_recipient_id are auto-created by index=True on the columns above
 
 
 def downgrade() -> None:
     op.drop_table("task_messages")
-    op.drop_index("ix_worker_blackouts_worker_id", table_name="worker_blackouts")
     op.drop_table("worker_blackouts")
-    op.drop_index("ix_worker_availability_worker_id", table_name="worker_availability")
     op.drop_table("worker_availability")

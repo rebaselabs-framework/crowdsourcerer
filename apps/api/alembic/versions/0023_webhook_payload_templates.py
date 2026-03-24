@@ -42,16 +42,8 @@ def upgrade() -> None:
         ),
         sa.UniqueConstraint("user_id", "event_type", name="uq_webhook_payload_templates_user_event"),
     )
-    op.create_index(
-        "ix_webhook_payload_templates_user_id",
-        "webhook_payload_templates",
-        ["user_id"],
-    )
+    # ix_webhook_payload_templates_user_id is auto-created by index=True on the column above
 
 
 def downgrade() -> None:
-    op.drop_index(
-        "ix_webhook_payload_templates_user_id",
-        table_name="webhook_payload_templates",
-    )
     op.drop_table("webhook_payload_templates")

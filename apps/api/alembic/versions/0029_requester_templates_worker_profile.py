@@ -47,10 +47,7 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(timezone=True),
                   server_default=sa.text("now()"), nullable=False),
     )
-    op.create_index(
-        "ix_requester_saved_templates_user_id",
-        "requester_saved_templates", ["user_id"],
-    )
+    # ix_requester_saved_templates_user_id is auto-created by index=True on the column above
     op.create_index(
         "ix_requester_saved_templates_task_type",
         "requester_saved_templates", ["task_type"],
@@ -59,8 +56,6 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_index("ix_requester_saved_templates_task_type",
-                  table_name="requester_saved_templates")
-    op.drop_index("ix_requester_saved_templates_user_id",
                   table_name="requester_saved_templates")
     op.drop_table("requester_saved_templates")
     op.drop_column("users", "website_url")

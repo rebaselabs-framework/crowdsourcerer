@@ -43,8 +43,8 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         sa.UniqueConstraint("task_id", "worker_id", name="uq_task_application"),
     )
-    op.create_index("ix_task_applications_task_id", "task_applications", ["task_id"])
-    op.create_index("ix_task_applications_worker_id", "task_applications", ["worker_id"])
+    # ix_task_applications_task_id and ix_task_applications_worker_id are
+    # auto-created by index=True on the columns above
 
 
 def downgrade() -> None:
