@@ -112,7 +112,7 @@ const blackoutDates: any[] = availabilityData?.blackouts ?? [];
             {HOUR_BLOCKS.map((block) => (
               <tr class="border-t border-gray-800/60">
                 <td class="pr-4 py-2 text-gray-500 whitespace-nowrap">{block.label}</td>
-                {DAY_KEYS.map((dayKey, di) => (
+                {DAY_KEYS.map((dayKey, _di) => (
                   <td class="px-2 py-2 text-center">
                     <input
                       type="checkbox"

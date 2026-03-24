@@ -7,7 +7,6 @@ const token = getToken(Astro.cookies);
 if (!token) return Astro.redirect("/login");
 
 let error = "";
-let submittedTaskId = "";
 let templates: any[] = [];
 let savedTemplates: any[] = [];
 
@@ -81,9 +80,6 @@ const HUMAN_TASK_TYPE_LIST = [
   { type: "transcription_review","label": "Review Transcript", icon: "📝", placeholder: '{\n  "audio_url": "https://example.com/audio.mp3",\n  "draft_transcript": "Auto-generated transcript to review and correct"\n}' },
 ];
 
-// Keep backwards compat alias
-const TASK_TYPES = AI_TASK_TYPES;
-
 const HUMAN_TASK_TYPES = new Set([
   "label_image","label_text","rate_quality","verify_fact",
   "moderate_content","compare_rank","answer_question","transcription_review"
@@ -133,12 +129,11 @@ if (Astro.request.method === "POST") {
       if (minSkillLevel && minSkillLevel >= 1 && minSkillLevel <= 5) body.min_skill_level = minSkillLevel;
     }
 
-    const task = await apiFetch<any>("/v1/tasks", {
+    return Astro.redirect(`/dashboard/tasks/${(await apiFetch<any>("/v1/tasks", {
       method: "POST",
       body: JSON.stringify(body),
       token,
-    });
-    return Astro.redirect(`/dashboard/tasks/${task.task_id}`);
+    })).task_id}`);
   } catch (e: any) {
     error = e.message ?? "Failed to submit task";
   }

@@ -174,7 +174,7 @@ const TASK_CREDITS: Record<string, number> = {
     return { headers, rows };
   }
 
-  function validateRow(row, idx) {
+  function validateRow(row, _idx) {
     const errors = [];
     if (!row.type) errors.push("Missing type");
     else if (!TASK_TYPES.includes(row.type)) errors.push(`Unknown type: ${row.type}`);
@@ -229,7 +229,7 @@ const TASK_CREDITS: Record<string, number> = {
     reader.readAsText(file);
   }
 
-  function processText(text, filename) {
+  function processText(text, _filename) {
     parseError.classList.add("hidden");
     previewSection.classList.add("hidden");
 
@@ -354,7 +354,7 @@ const TASK_CREDITS: Record<string, number> = {
     }
   });
 
-  function showResults(data, total) {
+  function showResults(data, _total) {
     previewSection.classList.add("hidden");
     resultsSection.classList.remove("hidden");
 

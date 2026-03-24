@@ -44,7 +44,6 @@ const weeklyJson   = JSON.stringify(weekly);
 const byTypeJson   = JSON.stringify(byType);
 const byPriJson    = JSON.stringify(byPri);
 const byModeJson   = JSON.stringify(byMode);
-const forecastJson = JSON.stringify(forecast);
 
 const TREND_ICON: {[k: string]: string} = {
   increasing: "↗️",
@@ -335,9 +334,6 @@ loadChartJs(() => {
   const wCtx = document.getElementById("weeklyChart");
   if (wCtx && weekly.length) {
     // Add forecast point
-    const forecastEl = document.getElementById("weeklyChart");
-    const lastVal = weekly.length ? weekly[weekly.length-1].credits_spent : 0;
-
     new Chart(wCtx, {
       type: "line",
       data: {

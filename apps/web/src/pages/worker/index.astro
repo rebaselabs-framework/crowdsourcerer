@@ -835,7 +835,6 @@ const feedTasks: any[] = feedPreview?.items ?? [];
 
     document.querySelectorAll<HTMLElement>(".assignment-time-label").forEach(label => {
       const timeoutAt = label.dataset.timeoutAt;
-      const claimedAt = label.dataset.claimedAt;
       if (!timeoutAt) return;
       const remainingMs = Math.max(0, new Date(timeoutAt).getTime() - Date.now());
       const remainMins = Math.floor(remainingMs / 60000);

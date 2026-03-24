@@ -8,13 +8,12 @@ import { apiFetch, getToken } from "@/lib/api";
 const token = getToken(Astro.cookies);
 if (!token) return Astro.redirect("/login");
 
-let user: any = null;
 let refStats: any = null;
 let referrals: any[] = [];
 let error = "";
 
 try {
-  [user, refStats, referrals] = await Promise.all([
+  [, refStats, referrals] = await Promise.all([
     apiFetch<any>("/v1/users/me", { token }),
     apiFetch<any>("/v1/referrals/stats", { token }),
     apiFetch<any[]>("/v1/referrals?page_size=50", { token }),

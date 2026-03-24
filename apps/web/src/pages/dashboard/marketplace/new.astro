@@ -2,7 +2,7 @@
 import Layout from '../../../layouts/Layout.astro';
 import { requireAuth } from '../../../lib/auth';
 
-const { token, user } = await requireAuth(Astro);
+const { token: _token, user } = await requireAuth(Astro);
 ---
 
 <Layout title="Create Template — CrowdSorcerer" user={user}>

@@ -22,10 +22,8 @@ type InboxThread = {
 
 let threads: InboxThread[] = [];
 let error: string | null = null;
-let me: any = null;
-
 try {
-  [threads, me] = await Promise.all([
+  [threads] = await Promise.all([
     apiFetch<InboxThread[]>("/v1/tasks/messages/inbox", { token }),
     apiFetch<any>("/v1/users/me", { token }),
   ]);

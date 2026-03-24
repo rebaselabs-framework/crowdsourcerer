@@ -142,7 +142,6 @@ const PACKS = [
   document.querySelectorAll(".buy-pack").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const credits = Number(btn.dataset.credits);
-      const price = Number(btn.dataset.price);
 
       // Get JWT from cookie (for client-side call)
       const token = document.cookie

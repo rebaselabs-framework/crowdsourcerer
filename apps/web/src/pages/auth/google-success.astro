@@ -10,7 +10,6 @@
  */
 
 const token = Astro.url.searchParams.get("token");
-const next = Astro.url.searchParams.get("next") ?? "/dashboard";
 const oauthError = Astro.url.searchParams.get("oauth_error");
 
 if (oauthError) {
@@ -31,5 +30,9 @@ Astro.cookies.set("cs_token", token, {
 });
 
 // Sanitise next to prevent open redirects (only allow relative paths)
-return Astro.redirect(next.startsWith("/") && !next.startsWith("//") ? next : "/dashboard");
+return Astro.redirect(
+  (Astro.url.searchParams.get("next") ?? "/dashboard").startsWith("/") && !(Astro.url.searchParams.get("next") ?? "/dashboard").startsWith("//")
+    ? (Astro.url.searchParams.get("next") ?? "/dashboard")
+    : "/dashboard"
+);
 ---

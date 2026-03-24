@@ -18,7 +18,6 @@ let logs: any = { items: [], total: 0, page: 1, page_size: 25, has_next: false }
 let stats: any = null;
 let eventTypes: any = { events: [] };
 let payloadTemplates: any[] = [];
-let webhookPrefs: Record<string, boolean> = {};
 let prefEvents: any[] = [];
 let error: string | null = null;
 
@@ -34,7 +33,6 @@ try {
     payloadTemplates = r?.items ?? [];
   } else if (tab === "preferences") {
     const r = await apiFetch<any>("/v1/webhooks/preferences", { token });
-    webhookPrefs = r?.prefs ?? {};
     prefEvents = r?.events ?? [];
   } else {
     const qs = new URLSearchParams({ page: String(page), page_size: "25" });
@@ -878,7 +876,6 @@ if not verify(request.get_data(), YOUR_SECRET, sig):
           const res = await fetch(`/api/webhooks/endpoints/${epId}/rotate-secret`, { method: "POST" });
           const data = await res.json();
           if (res.ok) {
-            const msg = `New secret (copy now — won't be shown again):\n\n${data.secret}`;
             prompt("New signing secret:", data.secret);
           } else {
             alert(data.detail ?? "Failed to rotate");

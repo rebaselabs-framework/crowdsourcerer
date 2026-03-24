@@ -32,14 +32,6 @@ const metricLabels: Record<string, string> = {
   credits_used:    "Credits Used",
 };
 
-function metricValue(v: any, metric: string): string {
-  if (!v) return "—";
-  if (metric === "completion_rate") return `${v.completion_rate ?? 0}%`;
-  if (metric === "accuracy") return v.avg_accuracy != null ? `${(v.avg_accuracy * 100).toFixed(1)}%` : "—";
-  if (metric === "avg_time") return v.avg_duration_ms != null ? `${Math.round(v.avg_duration_ms)}ms` : "—";
-  if (metric === "credits_used") return v.avg_credits_used != null ? `${v.avg_credits_used.toFixed(1)} cr` : "—";
-  return "—";
-}
 ---
 
 <Layout title={`Experiment: ${experiment?.name ?? id} — CrowdSorcerer`}>

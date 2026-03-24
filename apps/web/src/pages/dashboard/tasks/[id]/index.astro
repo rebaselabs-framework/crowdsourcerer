@@ -9,7 +9,6 @@ const { id } = Astro.params;
 
 // Handle approve/reject/rerun POST actions
 let rerunError = "";
-let rerunTaskId: string | null = null;
 
 if (Astro.request.method === "POST") {
   const form = await Astro.request.formData();
@@ -17,12 +16,11 @@ if (Astro.request.method === "POST") {
 
   if (action === "rerun") {
     try {
-      const result = await apiFetch<any>(`/v1/tasks/${id}/rerun`, {
+      // Redirect to the new task
+      return Astro.redirect(`/dashboard/tasks/${(await apiFetch<any>(`/v1/tasks/${id}/rerun`, {
         method: "POST",
         token,
-      });
-      // Redirect to the new task
-      return Astro.redirect(`/dashboard/tasks/${result.task_id}`);
+      })).task_id}`);
     } catch (e: any) {
       rerunError = e.message ?? "Failed to rerun task";
     }
@@ -214,8 +212,6 @@ function formatDuration(secs: number): string {
   const mm = m % 60;
   return mm > 0 ? `${h}h ${mm}m` : `${h}h`;
 }
-
-const duration = durationSecs;
 
 const isLive = task && ["running", "queued", "pending", "open", "assigned"].includes(task.status);
 const pendingSubmissions = submissions.filter((s: any) => s.status === "submitted").length;
@@ -679,7 +675,7 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
                 {richOutput.tables && richOutput.tables.length > 0 && (
                   <div>
                     <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Extracted Tables</h3>
-                    {richOutput.tables.map((table: any[], ti: number) => (
+                    {richOutput.tables.map((table: any[], _ti: number) => (
                       <div class="overflow-x-auto mb-4">
                         <table class="w-full text-xs border-collapse">
                           {table.map((row: any[], ri: number) => (
@@ -2565,7 +2561,6 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
         speedSelect.disabled = false;
         // Restore the active text output view (md-rendered or static-output)
         const mdView = document.getElementById("md-rendered");
-        const rawActive = mdView?.classList.contains("hidden") === false ? false : true;
         // Show whichever was previously visible based on toggle state
         const llmViewRaw = document.getElementById("llm-view-raw");
         if (llmViewRaw?.classList.contains("bg-violet-600")) {
@@ -2774,7 +2769,6 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
 
       // ── Invite modal logic ────────────────────────────────────────────────
       let currentInviteWorkerId = null;
-      let currentInviteWorkerName = "";
 
       const inviteModal       = document.getElementById("invite-modal");
       const inviteBackdrop    = document.getElementById("invite-modal-backdrop");
@@ -2791,7 +2785,6 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
 
       function openInviteModal(workerId, workerName, summaryHtml) {
         currentInviteWorkerId = workerId;
-        currentInviteWorkerName = workerName;
         if (inviteWorkerName) inviteWorkerName.textContent = workerName;
         if (inviteSummary) inviteSummary.innerHTML = summaryHtml;
         if (inviteMsg) inviteMsg.value = "";

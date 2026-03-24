@@ -289,16 +289,13 @@ document.getElementById("newTriggerBtn")?.addEventListener("click", () => {
 });
 
 // Type toggle
-let selectedType = "schedule";
 document.getElementById("typeSchedule")?.addEventListener("click", () => {
-  selectedType = "schedule";
   (document.getElementById("selectedType") as HTMLInputElement).value = "schedule";
   document.getElementById("cronFields")!.classList.remove("hidden");
   document.getElementById("typeSchedule")!.className = "flex-1 py-2 text-sm rounded-lg bg-violet-900/50 text-violet-300 border border-violet-700/50 font-medium";
   document.getElementById("typeWebhook")!.className = "flex-1 py-2 text-sm rounded-lg bg-gray-800 text-gray-400 border border-gray-700";
 });
 document.getElementById("typeWebhook")?.addEventListener("click", () => {
-  selectedType = "webhook";
   (document.getElementById("selectedType") as HTMLInputElement).value = "webhook";
   document.getElementById("cronFields")?.classList.add("hidden");
   document.getElementById("typeWebhook")!.className = "flex-1 py-2 text-sm rounded-lg bg-violet-900/50 text-violet-300 border border-violet-700/50 font-medium";

@@ -99,7 +99,6 @@ const maxCount = daily.reduce((m: number, d: any) => Math.max(m, d.count), 1);
             <div class="flex items-end gap-1 h-20">
               {daily.map((d: any) => {
                 const pct = maxCount > 0 ? Math.round((d.count / maxCount) * 100) : 0;
-                const completedPct = d.count > 0 ? Math.round((d.completed / d.count) * 100) : 0;
                 return (
                   <div
                     class="flex-1 flex flex-col items-center gap-0.5 group relative"

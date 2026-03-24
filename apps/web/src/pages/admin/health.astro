@@ -233,10 +233,8 @@ const queueTotal = health
   // Auto-refresh every 30 seconds
   (function() {
     var INTERVAL = 30000;
-    var refreshTimer = null;
-
     function scheduleRefresh() {
-      refreshTimer = setTimeout(function() {
+      setTimeout(function() {
         fetch('/api/admin/health')
           .then(function(r) { return r.json(); })
           .then(function(data) {

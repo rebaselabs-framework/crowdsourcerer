@@ -12,13 +12,12 @@ if (!token) return Astro.redirect("/login");
 let user: any = null;
 let credits: any = null;
 let overview: any = null;
-let recentTasks: any = null;
 let failedTasks: any = null;
 let costs: any = null;
 let quota: any = null;
 
 try {
-  [user, credits, overview, recentTasks, failedTasks, costs, quota] = await Promise.all([
+  [user, credits, overview, , failedTasks, costs, quota] = await Promise.all([
     apiFetch<any>("/v1/users/me", { token }),
     apiFetch<any>("/v1/credits", { token }),
     apiFetch<any>("/v1/analytics/overview?days=30", { token }).catch(() => null),
@@ -423,12 +422,6 @@ function fmt(d: string) {
 
 <script define:vars={{ creditBalance: credits?.available ?? 0 }}>
   // ── Cost estimator logic ──────────────────────────────────────────────────
-  const AI_COSTS = {
-    llm_generate: 1, data_transform: 2, document_parse: 3, code_execute: 3,
-    screenshot: 2, pii_detect: 2, entity_lookup: 5, web_intel: 5,
-    web_research: 10, audio_transcribe: 8,
-  };
-
   function update() {
     const typeEl = document.getElementById("est-type");
     const volEl  = document.getElementById("est-volume");

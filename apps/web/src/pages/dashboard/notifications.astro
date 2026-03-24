@@ -397,7 +397,7 @@ const totalNotifications = grouped.reduce((s, g) => s + g.items.length, 0);
         });
         document.getElementById("mark-all-btn")?.remove();
         // remove all unread group badges
-        document.querySelectorAll(".tab-btn span.bg-violet-600\\/70, .tab-btn span.bg-violet-600").forEach((s) => {
+        document.querySelectorAll(".tab-btn span.bg-violet-600\\/70, .tab-btn span.bg-violet-600").forEach((_s) => {
           // keep the "All" badge
         });
         const badge = document.getElementById("header-badge");

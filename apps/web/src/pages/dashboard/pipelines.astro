@@ -68,31 +68,6 @@ if (selectedId) {
 const pipelines = pipelinesData.items ?? [];
 const totalPages = Math.ceil((pipelinesData.total ?? 0) / 20);
 
-// Available AI task types for pipeline step creation
-const AI_TYPES = [
-  { value: "web_research", label: "🔍 Web Research", credits: 10 },
-  { value: "entity_lookup", label: "🏷️ Entity Lookup", credits: 5 },
-  { value: "document_parse", label: "📄 Document Parse", credits: 3 },
-  { value: "data_transform", label: "🔄 Data Transform", credits: 2 },
-  { value: "llm_generate", label: "🤖 LLM Generate", credits: 1 },
-  { value: "screenshot", label: "📸 Screenshot", credits: 2 },
-  { value: "audio_transcribe", label: "🎙️ Audio Transcribe", credits: 8 },
-  { value: "pii_detect", label: "🔒 PII Detect", credits: 2 },
-  { value: "code_execute", label: "💻 Code Execute", credits: 3 },
-  { value: "web_intel", label: "🌐 Web Intel", credits: 5 },
-];
-
-const HUMAN_TYPES = [
-  { value: "label_image", label: "🖼️ Label Image" },
-  { value: "label_text", label: "📝 Label Text" },
-  { value: "rate_quality", label: "⭐ Rate Quality" },
-  { value: "verify_fact", label: "✅ Verify Fact" },
-  { value: "moderate_content", label: "🛡️ Moderate Content" },
-  { value: "compare_rank", label: "📊 Compare & Rank" },
-  { value: "answer_question", label: "❓ Answer Question" },
-  { value: "transcription_review", label: "📋 Transcription Review" },
-];
-
 function statusBadge(status: string) {
   const map: Record<string, string> = {
     pending: "bg-gray-800 text-gray-400",

@@ -30,10 +30,8 @@ const page = parseInt(Astro.url.searchParams.get("page") || "1");
 
 let applications: any[] = [];
 let error: string | null = null;
-let me: any = null;
-
 try {
-  [applications, me] = await Promise.all([
+  [applications] = await Promise.all([
     apiFetch<any[]>(`/v1/worker/applications?page=${page}&page_size=20${statusParam ? `&status=${statusParam}` : ""}`, { token }),
     apiFetch<any>("/v1/users/me", { token }),
   ]);

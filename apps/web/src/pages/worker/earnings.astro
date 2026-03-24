@@ -679,7 +679,7 @@ if (analytics && (document.getElementById("weeklyEarningsChart") || document.get
                 ticks: {
                   ...SCALES.x.ticks,
                   maxRotation: 0,
-                  callback(val, idx) {
+                  callback(_val, idx) {
                     // Only show every 2nd label when showing 12 weeks to avoid crowding
                     if (range === 12 && idx % 2 !== 0) return "";
                     return labels[idx];

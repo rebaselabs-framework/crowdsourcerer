@@ -97,7 +97,7 @@ const skippable = new Set(["set_webhook", "invite_team"]);
 
         <!-- Steps -->
         <div class="space-y-3 mb-8">
-          {progress.steps.map((step: any, idx: number) => (
+          {progress.steps.map((step: any, _idx: number) => (
             <div class={`border rounded-xl p-5 transition-all ${
               step.completed
                 ? "bg-green-900/10 border-green-800/40 opacity-75"
