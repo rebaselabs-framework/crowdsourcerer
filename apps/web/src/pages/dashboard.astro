@@ -130,204 +130,107 @@ const showOnboardingBanner = Boolean(
       )}
     </div>
 
-    <!-- Quick links row -->
-    <div class="grid grid-cols-5 gap-4 mb-6">
-      <a href="/dashboard/requester" class="bg-gray-900 border border-violet-800/50 hover:border-violet-600 rounded-xl p-4 transition-colors flex items-center gap-3">
-        <span class="text-xl">🎛️</span>
-        <div>
-          <div class="font-medium text-sm text-violet-200">Requester Hub</div>
-          <div class="text-xs text-gray-500">Mission control</div>
+    <!-- Quick links — organised into sections for clarity -->
+    <div class="space-y-6 mb-6">
+
+      <!-- Tasks & Work -->
+      <div>
+        <h2 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Tasks &amp; Work</h2>
+        <div class="grid grid-cols-5 gap-3">
+          {[
+            { href: "/dashboard/requester", icon: "🎛️", label: "Requester Hub", sub: "Mission control", accent: "border-violet-800/50 hover:border-violet-600 text-violet-200" },
+            { href: "/dashboard/tasks", icon: "📋", label: "All Tasks", sub: "View &amp; filter" },
+            { href: "/dashboard/scheduled", icon: "⏰", label: "Scheduled", sub: "Deferred tasks" },
+            { href: "/dashboard/review", icon: "✅", label: "Review", sub: "Human submissions" },
+            { href: "/dashboard/disputes", icon: "⚖️", label: "Disputes", sub: "Resolve conflicts", accent: "hover:border-red-700" },
+            { href: "/dashboard/quality", icon: "🎯", label: "Quality", sub: "Gold standards" },
+            { href: "/dashboard/pipelines", icon: "⛓️", label: "Pipelines", sub: "Chain tasks", accent: "hover:border-violet-600" },
+            { href: "/dashboard/triggers", icon: "🤖", label: "Triggers", sub: "Automate pipelines", accent: "hover:border-orange-600" },
+            { href: "/dashboard/batch-upload", icon: "📤", label: "Batch Upload", sub: "CSV → tasks", accent: "hover:border-violet-700" },
+            { href: "/dashboard/export", icon: "💾", label: "Export", sub: "Download task data" },
+          ].map(({ href, icon, label, sub, accent }) => (
+            <a href={href} class:list={["bg-gray-900 border border-gray-800 rounded-xl p-4 transition-colors flex items-center gap-3 hover:border-gray-600", accent ?? ""]}>
+              <span class="text-xl flex-shrink-0">{icon}</span>
+              <div class="min-w-0">
+                <div class:list={["font-medium text-sm truncate", accent?.includes("text-") ? "text-violet-200" : ""]}>{label}</div>
+                <div class="text-xs text-gray-500 truncate" set:html={sub}></div>
+              </div>
+            </a>
+          ))}
         </div>
-      </a>
-      <a href="/dashboard/tasks" class="bg-gray-900 border border-gray-800 hover:border-gray-600 rounded-xl p-4 transition-colors flex items-center gap-3">
-        <span class="text-xl">📋</span>
-        <div>
-          <div class="font-medium text-sm">Tasks</div>
-          <div class="text-xs text-gray-500">View all</div>
+      </div>
+
+      <!-- Analytics & Insights -->
+      <div>
+        <h2 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Analytics &amp; Insights</h2>
+        <div class="grid grid-cols-5 gap-3">
+          {[
+            { href: "/dashboard/analytics", icon: "📊", label: "Usage Analytics", sub: "Costs &amp; trends", accent: "hover:border-blue-600" },
+            { href: "/dashboard/revenue", icon: "💰", label: "Revenue", sub: "Spend &amp; forecast", accent: "hover:border-green-600" },
+            { href: "/dashboard/sla", icon: "⏱", label: "SLA Monitor", sub: "Task deadlines", accent: "hover:border-amber-600" },
+            { href: "/dashboard/experiments", icon: "🧪", label: "A/B Tests", sub: "Compare configs", accent: "hover:border-violet-600" },
+            { href: "/dashboard/search", icon: "🔍", label: "Search", sub: "Find anything" },
+          ].map(({ href, icon, label, sub, accent }) => (
+            <a href={href} class:list={["bg-gray-900 border border-gray-800 rounded-xl p-4 transition-colors flex items-center gap-3 hover:border-gray-600", accent ?? ""]}>
+              <span class="text-xl flex-shrink-0">{icon}</span>
+              <div class="min-w-0">
+                <div class="font-medium text-sm truncate">{label}</div>
+                <div class="text-xs text-gray-500 truncate" set:html={sub}></div>
+              </div>
+            </a>
+          ))}
         </div>
-      </a>
-      <a href="/dashboard/review" class="bg-gray-900 border border-gray-800 hover:border-gray-600 rounded-xl p-4 transition-colors flex items-center gap-3">
-        <span class="text-xl">✅</span>
-        <div>
-          <div class="font-medium text-sm">Review</div>
-          <div class="text-xs text-gray-500">Submissions</div>
+      </div>
+
+      <!-- Templates & Integrations -->
+      <div>
+        <h2 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Templates &amp; Integrations</h2>
+        <div class="grid grid-cols-5 gap-3">
+          {[
+            { href: "/dashboard/task-templates", icon: "📝", label: "My Templates", sub: "Saved configs", accent: "hover:border-violet-600" },
+            { href: "/dashboard/marketplace", icon: "🏪", label: "Marketplace", sub: "Community templates", accent: "hover:border-emerald-600" },
+            { href: "/dashboard/webhooks", icon: "📡", label: "Webhooks", sub: "Delivery logs" },
+            { href: "/dashboard/api-keys", icon: "🔑", label: "API Keys", sub: "Manage keys" },
+            { href: "/dashboard/team", icon: "🏢", label: "Teams", sub: "Shared credits", accent: "hover:border-indigo-600" },
+          ].map(({ href, icon, label, sub, accent }) => (
+            <a href={href} class:list={["bg-gray-900 border border-gray-800 rounded-xl p-4 transition-colors flex items-center gap-3 hover:border-gray-600", accent ?? ""]}>
+              <span class="text-xl flex-shrink-0">{icon}</span>
+              <div class="min-w-0">
+                <div class="font-medium text-sm truncate">{label}</div>
+                <div class="text-xs text-gray-500 truncate" set:html={sub}></div>
+              </div>
+            </a>
+          ))}
         </div>
-      </a>
-      <a href="/dashboard/disputes" class="bg-gray-900 border border-gray-800 hover:border-red-700 rounded-xl p-4 transition-colors flex items-center gap-3">
-        <span class="text-xl">⚖️</span>
-        <div>
-          <div class="font-medium text-sm">Disputes</div>
-          <div class="text-xs text-gray-500">Resolve conflicts</div>
+      </div>
+
+      <!-- Account & Settings -->
+      <div>
+        <h2 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Account &amp; Settings</h2>
+        <div class="grid grid-cols-5 gap-3">
+          {[
+            { href: "/dashboard/billing", icon: "💳", label: "Billing", sub: "Plans &amp; credits", accent: "hover:border-green-600" },
+            { href: "/dashboard/quota", icon: "📈", label: "Plan &amp; Quota", sub: "Usage limits" },
+            { href: "/dashboard/profile", icon: "👤", label: "My Profile", sub: "Bio &amp; avatar", accent: "hover:border-indigo-600" },
+            { href: "/dashboard/security", icon: "🔐", label: "Security", sub: "2FA &amp; sessions", accent: "hover:border-red-600" },
+            { href: "/dashboard/notifications", icon: "🔔", label: "Notifications", sub: "Activity feed" },
+            { href: "/dashboard/notification-preferences", icon: "⚙️", label: "Alert Settings", sub: "Email &amp; preferences" },
+            { href: "/dashboard/saved-searches", icon: "📌", label: "Task Alerts", sub: "Saved searches" },
+            { href: "/dashboard/referrals", icon: "🎁", label: "Invite Friends", sub: "Earn bonus credits" },
+            { href: "/dashboard/worker/skill-quiz", icon: "🧠", label: "Skill Assessment", sub: "Level up" },
+            { href: "/dashboard/requester-onboarding", icon: "🚀", label: "Get Started", sub: "Onboarding guide", accent: "hover:border-violet-600" },
+          ].map(({ href, icon, label, sub, accent }) => (
+            <a href={href} class:list={["bg-gray-900 border border-gray-800 rounded-xl p-4 transition-colors flex items-center gap-3 hover:border-gray-600", accent ?? ""]}>
+              <span class="text-xl flex-shrink-0">{icon}</span>
+              <div class="min-w-0">
+                <div class="font-medium text-sm truncate">{label}</div>
+                <div class="text-xs text-gray-500 truncate" set:html={sub}></div>
+              </div>
+            </a>
+          ))}
         </div>
-      </a>
-      <a href="/dashboard/quality" class="bg-gray-900 border border-gray-800 hover:border-gray-600 rounded-xl p-4 transition-colors flex items-center gap-3">
-        <span class="text-xl">🎯</span>
-        <div>
-          <div class="font-medium text-sm">Quality</div>
-          <div class="text-xs text-gray-500">Gold standards</div>
-        </div>
-      </a>
-      <a href="/dashboard/team" class="bg-gray-900 border border-gray-800 hover:border-indigo-600 rounded-xl p-4 transition-colors flex items-center gap-3">
-        <span class="text-xl">🏢</span>
-        <div>
-          <div class="font-medium text-sm">Teams</div>
-          <div class="text-xs text-gray-500">Shared credits</div>
-        </div>
-      </a>
-      <a href="/dashboard/pipelines" class="bg-gray-900 border border-gray-800 hover:border-violet-600 rounded-xl p-4 transition-colors flex items-center gap-3">
-        <span class="text-xl">⛓️</span>
-        <div>
-          <div class="font-medium text-sm">Pipelines</div>
-          <div class="text-xs text-gray-500">Chain tasks</div>
-        </div>
-      </a>
-      <a href="/dashboard/analytics" class="bg-gray-900 border border-gray-800 hover:border-blue-600 rounded-xl p-4 transition-colors flex items-center gap-3">
-        <span class="text-xl">📊</span>
-        <div>
-          <div class="font-medium text-sm">Analytics</div>
-          <div class="text-xs text-gray-500">Usage &amp; costs</div>
-        </div>
-      </a>
-      <a href="/dashboard/marketplace" class="bg-gray-900 border border-gray-800 hover:border-emerald-600 rounded-xl p-4 transition-colors flex items-center gap-3">
-        <span class="text-xl">🏪</span>
-        <div>
-          <div class="font-medium text-sm">Marketplace</div>
-          <div class="text-xs text-gray-500">Task templates</div>
-        </div>
-      </a>
-      <a href="/dashboard/quota" class="bg-gray-900 border border-gray-800 hover:border-yellow-600 rounded-xl p-4 transition-colors flex items-center gap-3">
-        <span class="text-xl">⚡</span>
-        <div>
-          <div class="font-medium text-sm">Plan &amp; Quota</div>
-          <div class="text-xs text-gray-500">Usage limits</div>
-        </div>
-      </a>
-      <a href="/dashboard/webhooks" class="bg-gray-900 border border-gray-800 hover:border-gray-600 rounded-xl p-4 transition-colors flex items-center gap-3">
-        <span class="text-xl">📡</span>
-        <div>
-          <div class="font-medium text-sm">Webhooks</div>
-          <div class="text-xs text-gray-500">Delivery logs</div>
-        </div>
-      </a>
-      <a href="/dashboard/api-keys" class="bg-gray-900 border border-gray-800 hover:border-gray-600 rounded-xl p-4 transition-colors flex items-center gap-3">
-        <span class="text-xl">🔑</span>
-        <div>
-          <div class="font-medium text-sm">API Keys</div>
-          <div class="text-xs text-gray-500">Manage keys</div>
-        </div>
-      </a>
-      <a href="/dashboard/referrals" class="bg-gray-900 border border-gray-800 hover:border-gray-600 rounded-xl p-4 transition-colors flex items-center gap-3">
-        <span class="text-xl">🎁</span>
-        <div>
-          <div class="font-medium text-sm">Invite Friends</div>
-          <div class="text-xs text-gray-500">Earn bonus credits</div>
-        </div>
-      </a>
-      <a href="/dashboard/worker/skill-quiz" class="bg-gray-900 border border-gray-800 hover:border-gray-600 rounded-xl p-4 transition-colors flex items-center gap-3">
-        <span class="text-xl">🧠</span>
-        <div>
-          <div class="font-medium text-sm">Skill Assessment</div>
-          <div class="text-xs text-gray-500">Level up proficiency</div>
-        </div>
-      </a>
-      <a href="/dashboard/notifications" class="bg-gray-900 border border-gray-800 hover:border-gray-600 rounded-xl p-4 transition-colors flex items-center gap-3">
-        <span class="text-xl">🔔</span>
-        <div>
-          <div class="font-medium text-sm">Notifications</div>
-          <div class="text-xs text-gray-500">Activity alerts</div>
-        </div>
-      </a>
-      <a href="/dashboard/notification-preferences" class="bg-gray-900 border border-gray-800 hover:border-gray-600 rounded-xl p-4 transition-colors flex items-center gap-3">
-        <span class="text-xl">⚙️</span>
-        <div>
-          <div class="font-medium text-sm">Notif. Preferences</div>
-          <div class="text-xs text-gray-500">Email &amp; alert settings</div>
-        </div>
-      </a>
-      <a href="/dashboard/batch-upload" class="bg-gray-900 border border-gray-800 hover:border-violet-700 rounded-xl p-4 transition-colors flex items-center gap-3">
-        <span class="text-xl">📤</span>
-        <div>
-          <div class="font-medium text-sm">Batch Upload</div>
-          <div class="text-xs text-gray-500">CSV → many tasks</div>
-        </div>
-      </a>
-      <a href="/dashboard/triggers" class="bg-gray-900 border border-gray-800 hover:border-orange-600 rounded-xl p-4 transition-colors flex items-center gap-3">
-        <span class="text-xl">⚡</span>
-        <div>
-          <div class="font-medium text-sm">Triggers</div>
-          <div class="text-xs text-gray-500">Automate pipelines</div>
-        </div>
-      </a>
-      <a href="/dashboard/search" class="bg-gray-900 border border-gray-800 hover:border-gray-600 rounded-xl p-4 transition-colors flex items-center gap-3">
-        <span class="text-xl">🔍</span>
-        <div>
-          <div class="font-medium text-sm">Search</div>
-          <div class="text-xs text-gray-500">Find anything</div>
-        </div>
-      </a>
-      <a href="/dashboard/experiments" class="bg-gray-900 border border-gray-800 hover:border-violet-600 rounded-xl p-4 transition-colors flex items-center gap-3">
-        <span class="text-xl">🧪</span>
-        <div>
-          <div class="font-medium text-sm">A/B Experiments</div>
-          <div class="text-xs text-gray-500">Compare configs</div>
-        </div>
-      </a>
-      <a href="/dashboard/sla" class="bg-gray-900 border border-gray-800 hover:border-amber-600 rounded-xl p-4 transition-colors flex items-center gap-3">
-        <span class="text-xl">⏱</span>
-        <div>
-          <div class="font-medium text-sm">SLA Dashboard</div>
-          <div class="text-xs text-gray-500">Task deadlines</div>
-        </div>
-      </a>
-      <a href="/dashboard/billing" class="bg-gray-900 border border-gray-800 hover:border-green-600 rounded-xl p-4 transition-colors flex items-center gap-3">
-        <span class="text-xl">💳</span>
-        <div>
-          <div class="font-medium text-sm">Billing & Plan</div>
-          <div class="text-xs text-gray-500">Subscription & credits</div>
-        </div>
-      </a>
-      <a href="/dashboard/profile" class="bg-gray-900 border border-gray-800 hover:border-indigo-600 rounded-xl p-4 transition-colors flex items-center gap-3">
-        <span class="text-xl">👤</span>
-        <div>
-          <div class="font-medium text-sm">My Profile</div>
-          <div class="text-xs text-gray-500">Bio, avatar & visibility</div>
-        </div>
-      </a>
-      <a href="/dashboard/saved-searches" class="bg-gray-900 border border-gray-800 hover:border-yellow-600 rounded-xl p-4 transition-colors flex items-center gap-3">
-        <span class="text-xl">🔔</span>
-        <div>
-          <div class="font-medium text-sm">Task Alerts</div>
-          <div class="text-xs text-gray-500">Saved searches & alerts</div>
-        </div>
-      </a>
-      <a href="/dashboard/security" class="bg-gray-900 border border-gray-800 hover:border-red-600 rounded-xl p-4 transition-colors flex items-center gap-3">
-        <span class="text-xl">🔐</span>
-        <div>
-          <div class="font-medium text-sm">Security</div>
-          <div class="text-xs text-gray-500">Two-factor authentication</div>
-        </div>
-      </a>
-      <a href="/dashboard/scheduled" class="bg-gray-900 border border-gray-800 hover:border-amber-600 rounded-xl p-4 transition-colors flex items-center gap-3">
-        <span class="text-xl">⏰</span>
-        <div>
-          <div class="font-medium text-sm">Scheduled</div>
-          <div class="text-xs text-gray-500">Deferred tasks</div>
-        </div>
-      </a>
-      <a href="/dashboard/requester-onboarding" class="bg-gray-900 border border-gray-800 hover:border-violet-600 rounded-xl p-4 transition-colors flex items-center gap-3">
-        <span class="text-xl">🎯</span>
-        <div>
-          <div class="font-medium text-sm">Get Started</div>
-          <div class="text-xs text-gray-500">Onboarding guide</div>
-        </div>
-      </a>
-      <a href="/dashboard/task-templates" class="bg-gray-900 border border-gray-800 hover:border-violet-600 rounded-xl p-4 transition-colors flex items-center gap-3">
-        <span class="text-xl">📋</span>
-        <div>
-          <div class="font-medium text-sm">My Templates</div>
-          <div class="text-xs text-gray-500">Saved task configs</div>
-        </div>
-      </a>
+      </div>
+
     </div>
 
     <!-- API Keys -->
