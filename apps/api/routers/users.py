@@ -93,7 +93,7 @@ async def create_api_key(
     )
 
 
-@router.delete("/api-keys/{key_id}", status_code=204, response_class=Response)
+@router.delete("/api-keys/{key_id}", status_code=204, response_model=None)
 async def delete_api_key(
     key_id: str,
     db: AsyncSession = Depends(get_db),

@@ -169,7 +169,7 @@ async def update_org(
     return await _org_to_out(org, db)
 
 
-@router.delete("/{org_id}", status_code=204, response_class=Response)
+@router.delete("/{org_id}", status_code=204, response_model=None)
 async def delete_org(
     org_id: UUID,
     db: AsyncSession = Depends(get_db),
@@ -269,7 +269,7 @@ async def update_member_role(
     )
 
 
-@router.delete("/{org_id}/members/{member_user_id}", status_code=204, response_class=Response)
+@router.delete("/{org_id}/members/{member_user_id}", status_code=204, response_model=None)
 async def remove_member(
     org_id: UUID,
     member_user_id: UUID,
@@ -424,7 +424,7 @@ async def list_invites(
     ]
 
 
-@router.delete("/{org_id}/invites/{invite_id}", status_code=204, response_class=Response)
+@router.delete("/{org_id}/invites/{invite_id}", status_code=204, response_model=None)
 async def cancel_invite(
     org_id: UUID,
     invite_id: UUID,

@@ -174,7 +174,7 @@ async def my_payout_summary(
     }
 
 
-@router.delete("/{payout_id}", status_code=204, response_class=Response)
+@router.delete("/{payout_id}", status_code=204, response_model=None)
 async def cancel_payout_request(
     payout_id: UUID,
     user_id: UUID = Depends(get_current_user_id),

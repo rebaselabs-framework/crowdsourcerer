@@ -913,7 +913,7 @@ async def submit_task(
 
 # ─── Release a task ───────────────────────────────────────────────────────
 
-@router.delete("/tasks/{task_id}/release", status_code=204, response_class=Response)
+@router.delete("/tasks/{task_id}/release", status_code=204, response_model=None)
 async def release_task(
     task_id: UUID,
     db: AsyncSession = Depends(get_db),

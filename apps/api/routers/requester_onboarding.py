@@ -126,7 +126,7 @@ async def skip_step(
     return _build_status(rec)
 
 
-@router.post("/reset", status_code=204, response_class=Response)
+@router.post("/reset", status_code=204, response_model=None)
 async def reset_onboarding(
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id),

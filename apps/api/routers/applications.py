@@ -300,7 +300,7 @@ async def reject_application(
     return await _fmt_application(app, db)
 
 
-@router.delete("/v1/tasks/{task_id}/applications", status_code=204, response_class=Response)
+@router.delete("/v1/tasks/{task_id}/applications", status_code=204, response_model=None)
 async def withdraw_application(
     task_id: UUID,
     db: AsyncSession = Depends(get_db),

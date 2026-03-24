@@ -162,7 +162,7 @@ async def enable_2fa(
 
 # ─── POST /v1/auth/2fa/disable ────────────────────────────────────────────────
 
-@router.post("/disable", status_code=204, response_class=Response)
+@router.post("/disable", status_code=204, response_model=None)
 async def disable_2fa(
     req: TwoFADisableRequest,
     db: AsyncSession = Depends(get_db),

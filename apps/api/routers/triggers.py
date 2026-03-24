@@ -332,7 +332,7 @@ async def update_trigger(
 
 # ─── Delete trigger ───────────────────────────────────────────────────────────
 
-@router.delete("/v1/pipelines/triggers/{trigger_id}", status_code=204, response_class=Response)
+@router.delete("/v1/pipelines/triggers/{trigger_id}", status_code=204, response_model=None)
 async def delete_trigger(
     trigger_id: UUID,
     user_id: str = Depends(get_current_user_id),

@@ -943,7 +943,7 @@ async def update_task_tags(
     return task
 
 
-@router.post("/{task_id}/cancel", status_code=204, response_class=Response)
+@router.post("/{task_id}/cancel", status_code=204, response_model=None)
 async def cancel_task(
     task_id: UUID,
     db: AsyncSession = Depends(get_db),
