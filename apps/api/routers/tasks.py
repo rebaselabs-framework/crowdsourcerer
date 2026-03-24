@@ -699,24 +699,35 @@ async def list_tasks(
     execution_mode: Optional[str] = Query(None),
     has_submissions: Optional[bool] = Query(None, description="Filter for human tasks that have worker submissions pending review"),
     tag: Optional[str] = Query(None, description="Filter tasks by tag label"),
+    q: Optional[str] = Query(None, description="Free-text search on task instructions (case-insensitive)"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(require_scope(SCOPE_TASKS_READ)),
 ):
-    q = select(TaskDB).where(TaskDB.user_id == user_id)
+    query = select(TaskDB).where(TaskDB.user_id == user_id)
     if status:
-        q = q.where(TaskDB.status == status)
+        query = query.where(TaskDB.status == status)
     if type:
-        q = q.where(TaskDB.type == type)
+        query = query.where(TaskDB.type == type)
     if execution_mode:
-        q = q.where(TaskDB.execution_mode == execution_mode)
+        query = query.where(TaskDB.execution_mode == execution_mode)
     if tag:
         # JSON array contains this tag
-        q = q.where(TaskDB.tags.contains([tag]))
+        query = query.where(TaskDB.tags.contains([tag]))
+    if q and q.strip():
+        # Case-insensitive search on task_instructions; falls back to type match
+        search_term = f"%{q.strip()}%"
+        from sqlalchemy import or_, cast, Text
+        query = query.where(
+            or_(
+                TaskDB.task_instructions.ilike(search_term),
+                cast(TaskDB.input, Text).ilike(search_term),
+            )
+        )
     if has_submissions is True:
         # Only tasks that have at least one submitted/approved assignment
-        q = q.where(
+        query = query.where(
             TaskDB.id.in_(
                 select(TaskAssignmentDB.task_id).where(
                     TaskAssignmentDB.status.in_(["submitted", "approved", "rejected"])
@@ -725,12 +736,12 @@ async def list_tasks(
         )
 
     total_result = await db.execute(
-        select(func.count()).select_from(q.subquery())
+        select(func.count()).select_from(query.subquery())
     )
     total = total_result.scalar() or 0
 
-    q = q.order_by(TaskDB.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
-    result = await db.execute(q)
+    query = query.order_by(TaskDB.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
+    result = await db.execute(query)
     tasks = result.scalars().all()
 
     return PaginatedTasks(
