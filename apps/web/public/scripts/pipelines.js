@@ -253,7 +253,7 @@ function renderSteps() {
 
 function syncJSON() {
   document.getElementById("steps-json-input").value = JSON.stringify(
-    steps.map((s, i) => ({
+    steps.map((s, _i) => ({
       name: s.name,
       task_type: s.task_type,
       execution_mode: s.execution_mode,

@@ -143,7 +143,7 @@ const currentPath = Astro.url.pathname;
     </style>
 
     <!-- Structured data (JSON-LD) -->
-    <script type="application/ld+json" set:html={JSON.stringify({
+    <script is:inline type="application/ld+json" set:html={JSON.stringify({
       "@context": "https://schema.org",
       "@type": "SoftwareApplication",
       "name": "CrowdSorcerer",

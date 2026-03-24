@@ -30,192 +30,332 @@ logger = structlog.get_logger()
 _settings = get_settings()
 
 
+# ─── Shared email base template ─────────────────────────────────────────────
+
+SITE_URL = "https://crowdsourcerer.rebaselabs.online"
+
+def _cs_base(
+    *,
+    icon: str,
+    title: str,
+    accent: str = "#7c3aed",
+    body_html: str,
+    cta_text: str | None = None,
+    cta_url: str | None = None,
+    footer_note: str | None = None,
+) -> str:
+    """Shared branded wrapper for all CrowdSorcerer transactional emails.
+
+    Produces a light-background email compatible with all major email clients
+    while maintaining the CrowdSorcerer violet brand identity.
+    """
+    cta_block = ""
+    if cta_text and cta_url:
+        cta_block = (
+            f'<table role="presentation" cellpadding="0" cellspacing="0" '
+            f'style="margin:28px 0">'
+            f'<tr><td style="border-radius:8px;background:{accent}">'
+            f'<a href="{cta_url}" style="display:inline-block;padding:12px 28px;'
+            f'color:#ffffff;font-weight:600;font-size:15px;text-decoration:none;'
+            f'border-radius:8px;font-family:sans-serif">{cta_text}</a>'
+            f'</td></tr></table>'
+        )
+
+    footer_extra = ""
+    if footer_note:
+        footer_extra = (
+            f'<p style="color:#9ca3af;font-size:12px;margin:12px 0 0">'
+            f'{footer_note}</p>'
+        )
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>{title}</title>
+</head>
+<body style="margin:0;padding:0;background:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
+  <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#f3f4f6;padding:32px 16px">
+    <tr><td align="center">
+      <table role="presentation" cellpadding="0" cellspacing="0" width="580" style="max-width:580px;width:100%">
+
+        <!-- Header -->
+        <tr><td style="background:{accent};border-radius:12px 12px 0 0;padding:28px 32px;text-align:center">
+          <div style="font-size:36px;line-height:1;margin-bottom:8px">{icon}</div>
+          <h1 style="margin:0;color:#ffffff;font-size:22px;font-weight:700;line-height:1.3">{title}</h1>
+        </td></tr>
+
+        <!-- Body -->
+        <tr><td style="background:#ffffff;padding:32px;border-radius:0 0 12px 12px">
+          <div style="color:#374151;font-size:15px;line-height:1.6">
+            {body_html}
+          </div>
+          {cta_block}
+          <hr style="border:none;border-top:1px solid #e5e7eb;margin:28px 0"/>
+          <p style="color:#9ca3af;font-size:12px;margin:0">
+            CrowdSorcerer &middot;
+            <a href="{SITE_URL}" style="color:#7c3aed">{SITE_URL.replace("https://","")}</a>
+          </p>
+          {footer_extra}
+        </td></tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>"""
+
+
 # ─── Email templates ───────────────────────────────────────────────────────
 
 def _task_completed_html(task_id: str, task_type: str, output_summary: str) -> str:
-    return f"""
-<html><body style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px">
-<h2 style="color:#6366f1">✅ Task Completed</h2>
-<p>Your <strong>{task_type}</strong> task has finished successfully.</p>
-<table style="width:100%;border-collapse:collapse;margin:16px 0">
-  <tr><td style="padding:8px;background:#f8f9fa;font-weight:bold;width:120px">Task ID</td>
-      <td style="padding:8px">{task_id}</td></tr>
-  <tr><td style="padding:8px;font-weight:bold">Type</td>
-      <td style="padding:8px">{task_type}</td></tr>
-  <tr><td style="padding:8px;background:#f8f9fa;font-weight:bold">Result</td>
-      <td style="padding:8px">{output_summary}</td></tr>
+    body = f"""
+<p>Your <strong style="color:#111827">{task_type}</strong> task finished successfully.</p>
+<table role="presentation" cellpadding="0" cellspacing="0" width="100%"
+       style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;margin:20px 0">
+  <tr>
+    <td style="padding:10px 16px;border-bottom:1px solid #e5e7eb">
+      <span style="color:#6b7280;font-size:13px">Task ID</span><br/>
+      <span style="font-family:monospace;font-size:13px;color:#374151">{task_id}</span>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:10px 16px">
+      <span style="color:#6b7280;font-size:13px">Result preview</span><br/>
+      <span style="font-size:14px;color:#374151">{output_summary}</span>
+    </td>
+  </tr>
 </table>
-<p><a href="https://crowdsourcerer.rebaselabs.online/dashboard/tasks/{task_id}"
-   style="background:#6366f1;color:white;padding:10px 20px;border-radius:6px;text-decoration:none">
-   View Task →</a></p>
-<hr style="margin:24px 0;border:none;border-top:1px solid #e5e7eb">
-<p style="color:#9ca3af;font-size:12px">CrowdSorcerer · <a href="https://crowdsourcerer.rebaselabs.online">crowdsourcerer.rebaselabs.online</a></p>
-</body></html>
 """
+    return _cs_base(
+        icon="✅",
+        title="Task Completed",
+        accent="#059669",
+        body_html=body,
+        cta_text="View Full Result →",
+        cta_url=f"{SITE_URL}/dashboard/tasks/{task_id}",
+    )
 
 
 def _task_failed_html(task_id: str, task_type: str, error: str) -> str:
-    return f"""
-<html><body style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px">
-<h2 style="color:#ef4444">❌ Task Failed</h2>
-<p>Unfortunately, your <strong>{task_type}</strong> task encountered an error.</p>
-<table style="width:100%;border-collapse:collapse;margin:16px 0">
-  <tr><td style="padding:8px;background:#f8f9fa;font-weight:bold;width:120px">Task ID</td>
-      <td style="padding:8px">{task_id}</td></tr>
-  <tr><td style="padding:8px;font-weight:bold">Error</td>
-      <td style="padding:8px;color:#ef4444">{error}</td></tr>
+    body = f"""
+<p>Unfortunately, your <strong style="color:#111827">{task_type}</strong> task encountered an error.
+Your credits have been <strong>automatically refunded</strong>.</p>
+<table role="presentation" cellpadding="0" cellspacing="0" width="100%"
+       style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;margin:20px 0">
+  <tr>
+    <td style="padding:10px 16px;border-bottom:1px solid #fecaca">
+      <span style="color:#6b7280;font-size:13px">Task ID</span><br/>
+      <span style="font-family:monospace;font-size:13px;color:#374151">{task_id}</span>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:10px 16px">
+      <span style="color:#6b7280;font-size:13px">Error</span><br/>
+      <span style="font-size:14px;color:#dc2626">{error}</span>
+    </td>
+  </tr>
 </table>
-<p>Your credits have been refunded. You can retry the task from your dashboard.</p>
-<p><a href="https://crowdsourcerer.rebaselabs.online/dashboard/tasks/{task_id}"
-   style="background:#6366f1;color:white;padding:10px 20px;border-radius:6px;text-decoration:none">
-   View Task →</a></p>
-<hr style="margin:24px 0;border:none;border-top:1px solid #e5e7eb">
-<p style="color:#9ca3af;font-size:12px">CrowdSorcerer · <a href="https://crowdsourcerer.rebaselabs.online">crowdsourcerer.rebaselabs.online</a></p>
-</body></html>
+<p style="font-size:14px;color:#6b7280">You can retry the task directly from your dashboard.</p>
 """
+    return _cs_base(
+        icon="❌",
+        title="Task Failed",
+        accent="#dc2626",
+        body_html=body,
+        cta_text="View Task & Retry →",
+        cta_url=f"{SITE_URL}/dashboard/tasks/{task_id}",
+    )
 
 
 def _submission_received_html(task_id: str, task_type: str, worker_name: str) -> str:
-    return f"""
-<html><body style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px">
-<h2 style="color:#10b981">📬 New Submission Received</h2>
-<p>A worker has submitted a response to your <strong>{task_type}</strong> task.</p>
-<table style="width:100%;border-collapse:collapse;margin:16px 0">
-  <tr><td style="padding:8px;background:#f8f9fa;font-weight:bold;width:120px">Task ID</td>
-      <td style="padding:8px">{task_id}</td></tr>
-  <tr><td style="padding:8px;font-weight:bold">Worker</td>
-      <td style="padding:8px">{worker_name}</td></tr>
+    body = f"""
+<p>A worker has submitted a response to your <strong style="color:#111827">{task_type}</strong> task.</p>
+<table role="presentation" cellpadding="0" cellspacing="0" width="100%"
+       style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;margin:20px 0">
+  <tr>
+    <td style="padding:10px 16px;border-bottom:1px solid #e5e7eb">
+      <span style="color:#6b7280;font-size:13px">Worker</span><br/>
+      <span style="font-size:14px;color:#374151;font-weight:600">{worker_name}</span>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:10px 16px">
+      <span style="color:#6b7280;font-size:13px">Task ID</span><br/>
+      <span style="font-family:monospace;font-size:13px;color:#374151">{task_id}</span>
+    </td>
+  </tr>
 </table>
-<p>Please review and approve or reject the submission.</p>
-<p><a href="https://crowdsourcerer.rebaselabs.online/dashboard/tasks/{task_id}"
-   style="background:#6366f1;color:white;padding:10px 20px;border-radius:6px;text-decoration:none">
-   Review Submission →</a></p>
-<hr style="margin:24px 0;border:none;border-top:1px solid #e5e7eb">
-<p style="color:#9ca3af;font-size:12px">CrowdSorcerer · <a href="https://crowdsourcerer.rebaselabs.online">crowdsourcerer.rebaselabs.online</a></p>
-</body></html>
+<p style="font-size:14px;color:#6b7280">Please review and approve or reject the submission.</p>
 """
+    return _cs_base(
+        icon="📬",
+        title="New Submission Received",
+        accent="#0891b2",
+        body_html=body,
+        cta_text="Review Submission →",
+        cta_url=f"{SITE_URL}/dashboard/tasks/{task_id}",
+    )
 
 
 def _daily_challenge_html(challenge_title: str, task_type: str, bonus_xp: int, bonus_credits: int) -> str:
-    return f"""
-<html><body style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px">
-<h2 style="color:#f59e0b">⚡ Daily Challenge Available!</h2>
-<p>A new daily challenge is ready for you on CrowdSorcerer.</p>
-<table style="width:100%;border-collapse:collapse;margin:16px 0">
-  <tr><td style="padding:8px;background:#f8f9fa;font-weight:bold;width:120px">Challenge</td>
-      <td style="padding:8px">{challenge_title}</td></tr>
-  <tr><td style="padding:8px;font-weight:bold">Task Type</td>
-      <td style="padding:8px">{task_type}</td></tr>
-  <tr><td style="padding:8px;background:#f8f9fa;font-weight:bold">Bonus Reward</td>
-      <td style="padding:8px">+{bonus_xp} XP &amp; +{bonus_credits} credits</td></tr>
+    body = f"""
+<p>A new daily challenge is ready — complete it to earn bonus rewards!</p>
+<table role="presentation" cellpadding="0" cellspacing="0" width="100%"
+       style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;margin:20px 0">
+  <tr>
+    <td style="padding:10px 16px;border-bottom:1px solid #fde68a">
+      <span style="color:#6b7280;font-size:13px">Challenge</span><br/>
+      <span style="font-size:15px;font-weight:600;color:#111827">{challenge_title}</span>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:10px 16px;border-bottom:1px solid #fde68a">
+      <span style="color:#6b7280;font-size:13px">Task type</span><br/>
+      <span style="font-size:14px;color:#374151">{task_type}</span>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:10px 16px">
+      <span style="color:#6b7280;font-size:13px">Bonus reward</span><br/>
+      <span style="font-size:15px;font-weight:700;color:#d97706">+{bonus_xp} XP &amp; +{bonus_credits} credits</span>
+    </td>
+  </tr>
 </table>
-<p><a href="https://crowdsourcerer.rebaselabs.online/worker/challenges"
-   style="background:#f59e0b;color:white;padding:10px 20px;border-radius:6px;text-decoration:none">
-   Accept Challenge →</a></p>
-<hr style="margin:24px 0;border:none;border-top:1px solid #e5e7eb">
-<p style="color:#9ca3af;font-size:12px">CrowdSorcerer · <a href="https://crowdsourcerer.rebaselabs.online">crowdsourcerer.rebaselabs.online</a></p>
-</body></html>
 """
+    return _cs_base(
+        icon="⚡",
+        title="Daily Challenge Available!",
+        accent="#d97706",
+        body_html=body,
+        cta_text="Accept Challenge →",
+        cta_url=f"{SITE_URL}/worker/challenges",
+    )
 
 
 def _worker_approved_html(task_type: str, earnings: int, xp: int) -> str:
-    return f"""
-<html><body style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px">
-<h2 style="color:#10b981">🎉 Submission Approved!</h2>
-<p>Your submission for a <strong>{task_type}</strong> task has been approved.</p>
-<table style="width:100%;border-collapse:collapse;margin:16px 0">
-  <tr><td style="padding:8px;background:#f8f9fa;font-weight:bold;width:120px">Earnings</td>
-      <td style="padding:8px">+{earnings} credits</td></tr>
-  <tr><td style="padding:8px;font-weight:bold">XP Earned</td>
-      <td style="padding:8px">+{xp} XP</td></tr>
+    usd = earnings / 100
+    body = f"""
+<p>Great work! Your submission for a <strong style="color:#111827">{task_type}</strong> task
+has been approved. Here's what you earned:</p>
+<table role="presentation" cellpadding="0" cellspacing="0" width="100%"
+       style="margin:20px 0">
+  <tr>
+    <td width="48%" style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;
+                            padding:16px;text-align:center">
+      <div style="font-size:28px;font-weight:700;color:#16a34a">{earnings}</div>
+      <div style="font-size:12px;color:#6b7280;margin-top:4px">credits earned (${usd:.2f})</div>
+    </td>
+    <td width="4%"></td>
+    <td width="48%" style="background:#faf5ff;border:1px solid #d8b4fe;border-radius:8px;
+                            padding:16px;text-align:center">
+      <div style="font-size:28px;font-weight:700;color:#7c3aed">+{xp} XP</div>
+      <div style="font-size:12px;color:#6b7280;margin-top:4px">experience points</div>
+    </td>
+  </tr>
 </table>
-<p><a href="https://crowdsourcerer.rebaselabs.online/worker"
-   style="background:#10b981;color:white;padding:10px 20px;border-radius:6px;text-decoration:none">
-   View Dashboard →</a></p>
-<hr style="margin:24px 0;border:none;border-top:1px solid #e5e7eb">
-<p style="color:#9ca3af;font-size:12px">CrowdSorcerer · <a href="https://crowdsourcerer.rebaselabs.online">crowdsourcerer.rebaselabs.online</a></p>
-</body></html>
 """
+    return _cs_base(
+        icon="🎉",
+        title="Submission Approved!",
+        accent="#16a34a",
+        body_html=body,
+        cta_text="View My Earnings →",
+        cta_url=f"{SITE_URL}/worker/earnings",
+    )
 
 
 def _task_timeout_html(task_id: str, task_type: str, worker_name: str) -> str:
-    return f"""
-<html><body style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px">
-<h2 style="color:#f59e0b">⏱️ Worker Assignment Timed Out</h2>
-<p>A worker's assignment on your <strong>{task_type}</strong> task timed out before they could submit.</p>
-<table style="width:100%;border-collapse:collapse;margin:16px 0">
-  <tr><td style="padding:8px;background:#f8f9fa;font-weight:bold;width:120px">Task ID</td>
-      <td style="padding:8px">{task_id}</td></tr>
-  <tr><td style="padding:8px;font-weight:bold">Task Type</td>
-      <td style="padding:8px">{task_type}</td></tr>
-  <tr><td style="padding:8px;background:#f8f9fa;font-weight:bold">Worker</td>
-      <td style="padding:8px">{worker_name}</td></tr>
+    body = f"""
+<p>A worker's assignment on your <strong style="color:#111827">{task_type}</strong> task
+timed out before they could submit.</p>
+<table role="presentation" cellpadding="0" cellspacing="0" width="100%"
+       style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;margin:20px 0">
+  <tr>
+    <td style="padding:10px 16px;border-bottom:1px solid #fde68a">
+      <span style="color:#6b7280;font-size:13px">Worker</span><br/>
+      <span style="font-size:14px;color:#374151">{worker_name}</span>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:10px 16px">
+      <span style="color:#6b7280;font-size:13px">Task ID</span><br/>
+      <span style="font-family:monospace;font-size:13px;color:#374151">{task_id}</span>
+    </td>
+  </tr>
 </table>
-<p style="color:#6b7280">Your task has been automatically reopened and is now available in the marketplace for another worker to claim.</p>
-<p><a href="https://crowdsourcerer.rebaselabs.online/dashboard/tasks/{task_id}"
-   style="background:#6366f1;color:white;padding:10px 20px;border-radius:6px;text-decoration:none">
-   View Task →</a></p>
-<hr style="margin:24px 0;border:none;border-top:1px solid #e5e7eb">
-<p style="color:#9ca3af;font-size:12px">CrowdSorcerer · <a href="https://crowdsourcerer.rebaselabs.online">crowdsourcerer.rebaselabs.online</a></p>
-</body></html>
+<p style="font-size:14px;color:#6b7280">
+  Good news: your task has been <strong>automatically reopened</strong> and is back in
+  the marketplace for another worker to claim.
+</p>
 """
+    return _cs_base(
+        icon="⏱️",
+        title="Worker Assignment Timed Out",
+        accent="#d97706",
+        body_html=body,
+        cta_text="View Task →",
+        cta_url=f"{SITE_URL}/dashboard/tasks/{task_id}",
+    )
 
 
 def _low_credits_html(balance: int, threshold: int, name: str | None = None) -> str:
     greeting = f"Hi {name}," if name else "Hi,"
     usd = balance / 100
-    return f"""
-<html><body style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px">
-<h2 style="color:#f59e0b">⚠️ Low Credit Balance Alert</h2>
+    body = f"""
 <p>{greeting}</p>
-<p>Your CrowdSorcerer credit balance has dropped below your alert threshold:</p>
-<table style="width:100%;border-collapse:collapse;margin:16px 0;background:#f8f9fa;border-radius:8px">
-  <tr><td style="padding:10px 16px;font-weight:bold">Current balance</td>
-      <td style="padding:10px 16px;color:#ef4444;font-weight:bold">{balance} credits (${usd:.2f})</td></tr>
-  <tr><td style="padding:10px 16px;font-weight:bold;border-top:1px solid #e5e7eb">Your threshold</td>
-      <td style="padding:10px 16px;border-top:1px solid #e5e7eb">{threshold} credits</td></tr>
+<p>Your CrowdSorcerer credit balance has dropped below your alert threshold.</p>
+<table role="presentation" cellpadding="0" cellspacing="0" width="100%"
+       style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;margin:20px 0">
+  <tr>
+    <td style="padding:12px 16px;border-bottom:1px solid #fecaca">
+      <span style="color:#6b7280;font-size:13px">Current balance</span><br/>
+      <span style="font-size:18px;font-weight:700;color:#dc2626">{balance} credits (${usd:.2f})</span>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:12px 16px">
+      <span style="color:#6b7280;font-size:13px">Your alert threshold</span><br/>
+      <span style="font-size:15px;color:#374151">{threshold} credits</span>
+    </td>
+  </tr>
 </table>
-<p>Top up now to keep your tasks running without interruption.</p>
-<p style="margin:24px 0">
-  <a href="https://crowdsourcerer.rebaselabs.online/dashboard/billing"
-     style="background:#6366f1;color:white;padding:10px 20px;border-radius:6px;text-decoration:none;display:inline-block">
-     Buy credits →
-  </a>
-</p>
-<p style="color:#6b7280;font-size:13px">
-  You're receiving this because you set up a low-balance alert.
-  <a href="https://crowdsourcerer.rebaselabs.online/dashboard/notification-preferences" style="color:#6366f1">Manage alerts</a>
-</p>
-<hr style="margin:24px 0;border:none;border-top:1px solid #e5e7eb">
-<p style="color:#9ca3af;font-size:12px">CrowdSorcerer · <a href="https://crowdsourcerer.rebaselabs.online">crowdsourcerer.rebaselabs.online</a></p>
-</body></html>
+<p style="font-size:14px;color:#6b7280">Top up now to keep your tasks running without interruption.</p>
 """
+    return _cs_base(
+        icon="⚠️",
+        title="Low Credit Balance",
+        accent="#d97706",
+        body_html=body,
+        cta_text="Buy Credits →",
+        cta_url=f"{SITE_URL}/dashboard/billing",
+        footer_note=(
+            'You\'re receiving this because you set up a low-balance alert. '
+            f'<a href="{SITE_URL}/dashboard/notification-preferences" style="color:#7c3aed">Manage alerts</a>'
+        ),
+    )
 
 
 def _password_reset_html(reset_url: str, name: str | None = None) -> str:
-    greeting = f"Hi {name}," if name else "Hi,"
-    return f"""
-<html><body style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px">
-<h2 style="color:#6366f1">🔐 Reset your password</h2>
+    greeting = f"Hi {name}," if name else "Hi there,"
+    body = f"""
 <p>{greeting}</p>
 <p>We received a request to reset your CrowdSorcerer password.
-   Click the button below to set a new one. This link expires in <strong>30 minutes</strong>.</p>
-<p style="margin:24px 0">
-  <a href="{reset_url}"
-     style="background:#6366f1;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block">
-     Reset password →
-  </a>
+Click the button below to set a new one.</p>
+<p style="font-size:14px;color:#6b7280">
+  This link expires in <strong style="color:#374151">30 minutes</strong>.
 </p>
-<p style="color:#6b7280;font-size:13px">
-  If you didn't request a password reset, you can safely ignore this email.
-  Your password will remain unchanged.
-</p>
-<hr style="margin:24px 0;border:none;border-top:1px solid #e5e7eb">
-<p style="color:#9ca3af;font-size:12px">
-  CrowdSorcerer · <a href="https://crowdsourcerer.rebaselabs.online">crowdsourcerer.rebaselabs.online</a>
-</p>
-</body></html>
 """
+    return _cs_base(
+        icon="🔐",
+        title="Reset Your Password",
+        accent="#7c3aed",
+        body_html=body,
+        cta_text="Reset Password →",
+        cta_url=reset_url,
+        footer_note="If you didn't request a password reset, you can safely ignore this email. Your password will remain unchanged.",
+    )
 
 
 # ─── Core send function ────────────────────────────────────────────────────
@@ -352,29 +492,22 @@ async def send_password_reset(to_email: str, reset_url: str, name: str | None = 
 
 def _email_verification_html(verify_url: str, name: str | None) -> str:
     greeting = f"Hi {name}," if name else "Hi there,"
-    return f"""
-<html><body style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px">
-<h2 style="color:#6366f1">✉️ Verify your email address</h2>
+    body = f"""
 <p>{greeting}</p>
-<p>Thanks for signing up for CrowdSorcerer! Please verify your email address to unlock
-all platform features.</p>
-<p style="margin:24px 0">
-  <a href="{verify_url}"
-     style="background:#6366f1;color:white;padding:12px 24px;border-radius:6px;
-            text-decoration:none;font-weight:bold;display:inline-block">
-    ✅ Verify my email
-  </a>
+<p>Thanks for signing up for CrowdSorcerer! Please verify your email address to unlock all platform features.</p>
+<p style="font-size:14px;color:#6b7280">
+  This link expires in <strong style="color:#374151">24 hours</strong>.
 </p>
-<p style="color:#6b7280;font-size:14px">
-  This link expires in <strong>24 hours</strong>. If you didn't create an account,
-  you can safely ignore this email.
-</p>
-<hr style="margin:24px 0;border:none;border-top:1px solid #e5e7eb">
-<p style="color:#9ca3af;font-size:12px">
-  CrowdSorcerer · <a href="https://crowdsourcerer.rebaselabs.online">crowdsourcerer.rebaselabs.online</a>
-</p>
-</body></html>
 """
+    return _cs_base(
+        icon="✉️",
+        title="Verify Your Email Address",
+        accent="#7c3aed",
+        body_html=body,
+        cta_text="Verify My Email →",
+        cta_url=verify_url,
+        footer_note="If you didn't create an account, you can safely ignore this email.",
+    )
 
 
 async def send_email_verification(to_email: str, verify_url: str, name: str | None = None) -> bool:
@@ -464,24 +597,33 @@ async def notify_sla_breach_gated(
     prefs = await _get_prefs(user_id)
     if prefs and not prefs.email_sla_breach:
         return
-    html = f"""
-<html><body style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px">
-<h2 style="color:#ef4444">⚠️ SLA Breach Detected</h2>
-<p>Your <strong>{task_type}</strong> task has exceeded its {sla_hours:.0f}-hour SLA target.</p>
-<table style="width:100%;border-collapse:collapse;margin:16px 0">
-  <tr><td style="padding:8px;background:#f8f9fa;font-weight:bold;width:120px">Task ID</td>
-      <td style="padding:8px">{task_id}</td></tr>
-  <tr><td style="padding:8px;font-weight:bold">SLA Target</td>
-      <td style="padding:8px">{sla_hours:.0f} hours</td></tr>
+    body = f"""
+<p>Your <strong style="color:#111827">{task_type}</strong> task has exceeded its
+{sla_hours:.0f}-hour SLA target. We apologize for the delay — your task is still being processed.</p>
+<table role="presentation" cellpadding="0" cellspacing="0" width="100%"
+       style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;margin:20px 0">
+  <tr>
+    <td style="padding:10px 16px;border-bottom:1px solid #fecaca">
+      <span style="color:#6b7280;font-size:13px">Task ID</span><br/>
+      <span style="font-family:monospace;font-size:13px;color:#374151">{task_id}</span>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:10px 16px">
+      <span style="color:#6b7280;font-size:13px">SLA target</span><br/>
+      <span style="font-size:14px;color:#dc2626;font-weight:600">{sla_hours:.0f} hours (exceeded)</span>
+    </td>
+  </tr>
 </table>
-<p>We apologize for the delay. Your task is still being processed.</p>
-<p><a href="https://crowdsourcerer.rebaselabs.online/dashboard/tasks/{task_id}"
-   style="background:#6366f1;color:white;padding:10px 20px;border-radius:6px;text-decoration:none">
-   View Task →</a></p>
-<hr style="margin:24px 0;border:none;border-top:1px solid #e5e7eb">
-<p style="color:#9ca3af;font-size:12px">CrowdSorcerer · <a href="https://crowdsourcerer.rebaselabs.online">crowdsourcerer.rebaselabs.online</a></p>
-</body></html>
 """
+    html = _cs_base(
+        icon="⚠️",
+        title="SLA Breach Detected",
+        accent="#dc2626",
+        body_html=body,
+        cta_text="View Task →",
+        cta_url=f"{SITE_URL}/dashboard/tasks/{task_id}",
+    )
     await send_email(to_email, f"⚠️ SLA Breach: Your {task_type} task is overdue", html)
 
 
@@ -493,23 +635,33 @@ async def notify_payout_update_gated(
     if prefs and not prefs.email_payout_update:
         return
     emoji = {"paid": "💸", "rejected": "❌", "processing": "⏳"}.get(status, "📋")
-    html = f"""
-<html><body style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px">
-<h2 style="color:#6366f1">{emoji} Payout {status.capitalize()}</h2>
-<p>Your payout request of <strong>${amount_usd:.2f}</strong> has been updated.</p>
-<table style="width:100%;border-collapse:collapse;margin:16px 0">
-  <tr><td style="padding:8px;background:#f8f9fa;font-weight:bold;width:120px">Amount</td>
-      <td style="padding:8px">${amount_usd:.2f} USD</td></tr>
-  <tr><td style="padding:8px;font-weight:bold">Status</td>
-      <td style="padding:8px">{status.capitalize()}</td></tr>
+    status_color = {"paid": "#16a34a", "rejected": "#dc2626", "processing": "#d97706"}.get(status, "#374151")
+    body = f"""
+<p>Your payout request status has been updated.</p>
+<table role="presentation" cellpadding="0" cellspacing="0" width="100%"
+       style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;margin:20px 0">
+  <tr>
+    <td style="padding:12px 16px;border-bottom:1px solid #e5e7eb">
+      <span style="color:#6b7280;font-size:13px">Amount</span><br/>
+      <span style="font-size:18px;font-weight:700;color:#111827">${amount_usd:.2f} USD</span>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:12px 16px">
+      <span style="color:#6b7280;font-size:13px">Status</span><br/>
+      <span style="font-size:15px;font-weight:700;color:{status_color}">{status.capitalize()}</span>
+    </td>
+  </tr>
 </table>
-<p><a href="https://crowdsourcerer.rebaselabs.online/worker/earnings"
-   style="background:#6366f1;color:white;padding:10px 20px;border-radius:6px;text-decoration:none">
-   View Earnings →</a></p>
-<hr style="margin:24px 0;border:none;border-top:1px solid #e5e7eb">
-<p style="color:#9ca3af;font-size:12px">CrowdSorcerer · <a href="https://crowdsourcerer.rebaselabs.online">crowdsourcerer.rebaselabs.online</a></p>
-</body></html>
 """
+    html = _cs_base(
+        icon=emoji,
+        title=f"Payout {status.capitalize()}",
+        accent=status_color,
+        body_html=body,
+        cta_text="View Earnings →",
+        cta_url=f"{SITE_URL}/worker/earnings",
+    )
     await send_email(to_email, f"{emoji} Payout {status}: ${amount_usd:.2f}", html)
 
 
@@ -536,35 +688,48 @@ def _task_available_html(
     task_title: str | None,
 ) -> str:
     display_type = task_type.replace("_", " ").title()
-    title_line = f'<p><strong>Task:</strong> {task_title}</p>' if task_title else ""
-    return f"""
-<html><body style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px">
-<h2 style="color:#6366f1">🔔 New Task Available — {display_type}</h2>
-<p>A new task matching your skills has just been posted on CrowdSorcerer.</p>
-{title_line}
-<table style="width:100%;border-collapse:collapse;margin:16px 0">
-  <tr><td style="padding:8px;background:#1f2937;font-weight:bold;width:140px;color:#d1d5db">Task type</td>
-      <td style="padding:8px;color:#f9fafb">{display_type}</td></tr>
-  <tr><td style="padding:8px;font-weight:bold;color:#d1d5db">Reward</td>
-      <td style="padding:8px;color:#10b981"><strong>{reward_credits} credits</strong></td></tr>
+    title_row = ""
+    if task_title:
+        title_row = f"""
+  <tr>
+    <td style="padding:10px 16px;border-bottom:1px solid #e5e7eb">
+      <span style="color:#6b7280;font-size:13px">Task title</span><br/>
+      <span style="font-size:14px;font-weight:600;color:#111827">{task_title}</span>
+    </td>
+  </tr>"""
+    usd = reward_credits / 100
+    body = f"""
+<p>A new task matching your skills has just been posted. Claim it before someone else does!</p>
+<table role="presentation" cellpadding="0" cellspacing="0" width="100%"
+       style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;margin:20px 0">
+  <tr>
+    <td style="padding:10px 16px;border-bottom:1px solid #ddd6fe">
+      <span style="color:#6b7280;font-size:13px">Task type</span><br/>
+      <span style="font-size:14px;font-weight:600;color:#374151">{display_type}</span>
+    </td>
+  </tr>
+  {title_row}
+  <tr>
+    <td style="padding:12px 16px">
+      <span style="color:#6b7280;font-size:13px">Reward</span><br/>
+      <span style="font-size:20px;font-weight:700;color:#7c3aed">{reward_credits} credits</span>
+      <span style="color:#9ca3af;font-size:13px;margin-left:6px">(${usd:.2f})</span>
+    </td>
+  </tr>
 </table>
-<p style="margin:24px 0">
-  <a href="https://crowdsourcerer.rebaselabs.online/worker/marketplace"
-     style="background:#6366f1;color:white;padding:12px 24px;border-radius:6px;
-            text-decoration:none;font-weight:bold;display:inline-block">
-    View Task →
-  </a>
-</p>
-<p style="color:#6b7280;font-size:13px">
-  You received this because you have enabled task availability alerts in your
-  <a href="https://crowdsourcerer.rebaselabs.online/dashboard/notification-preferences"
-     style="color:#6366f1">notification preferences</a>.
-  You can disable this at any time.
-</p>
-<hr style="margin:24px 0;border:none;border-top:1px solid #374151">
-<p style="color:#9ca3af;font-size:12px">CrowdSorcerer · <a href="https://crowdsourcerer.rebaselabs.online" style="color:#6366f1">crowdsourcerer.rebaselabs.online</a></p>
-</body></html>
 """
+    return _cs_base(
+        icon="🔔",
+        title=f"New {display_type} Task Available",
+        accent="#7c3aed",
+        body_html=body,
+        cta_text="View Task in Marketplace →",
+        cta_url=f"{SITE_URL}/worker/marketplace",
+        footer_note=(
+            'You received this because you enabled task availability alerts. '
+            f'<a href="{SITE_URL}/dashboard/notification-preferences" style="color:#7c3aed">Manage preferences</a>'
+        ),
+    )
 
 
 async def notify_task_available_gated(
