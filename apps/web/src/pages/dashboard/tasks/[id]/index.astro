@@ -524,6 +524,14 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
         <div class="bg-gray-900 border border-gray-800 rounded-xl mb-4">
           <div class="px-5 py-3 border-b border-gray-800 flex items-center justify-between">
             <h2 class="text-sm font-semibold text-gray-300">Input</h2>
+            <button
+              id="copy-input-btn"
+              data-json={JSON.stringify(task.input, null, 2)}
+              class="text-xs text-gray-500 hover:text-gray-300 transition-colors px-2 py-1 rounded border border-gray-700 hover:border-gray-500"
+              title="Copy input JSON to clipboard"
+            >
+              📋 Copy JSON
+            </button>
           </div>
           <pre class="px-5 py-4 font-mono text-sm text-gray-300 overflow-x-auto whitespace-pre-wrap">
 {JSON.stringify(task.input, null, 2)}
@@ -547,14 +555,24 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
           <div class="bg-gray-900 border border-gray-800 rounded-xl mb-4">
             <div class="px-5 py-3 border-b border-gray-800 flex items-center justify-between">
               <h2 class="text-sm font-semibold text-green-300">Output</h2>
-              {richOutput && richOutput.kind !== "raw" && (
+              <div class="flex items-center gap-2">
                 <button
-                  id="toggle-raw"
+                  id="copy-output-btn"
+                  data-json={task.output ? JSON.stringify(task.output, null, 2) : ""}
                   class="text-xs text-gray-500 hover:text-gray-300 transition-colors px-2 py-1 rounded border border-gray-700 hover:border-gray-500"
+                  title="Copy output JSON to clipboard"
                 >
-                  View raw JSON
+                  📋 Copy JSON
                 </button>
-              )}
+                {richOutput && richOutput.kind !== "raw" && (
+                  <button
+                    id="toggle-raw"
+                    class="text-xs text-gray-500 hover:text-gray-300 transition-colors px-2 py-1 rounded border border-gray-700 hover:border-gray-500"
+                  >
+                    View raw JSON
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* ── Rich renderers ── */}
@@ -960,6 +978,44 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
               toggleBtn.textContent = showingRaw ? "View formatted" : "View raw JSON";
             });
           }
+
+          // Copy JSON to clipboard helper
+          function setupCopyBtn(btnId) {
+            const btn = document.getElementById(btnId);
+            if (!btn) return;
+            btn.addEventListener("click", async () => {
+              const json = btn.dataset.json || "";
+              const originalHtml = btn.innerHTML;
+              try {
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                  await navigator.clipboard.writeText(json);
+                } else {
+                  // Fallback for older browsers / non-HTTPS
+                  const ta = document.createElement("textarea");
+                  ta.value = json;
+                  ta.style.cssText = "position:fixed;top:-9999px;left:-9999px;opacity:0";
+                  document.body.appendChild(ta);
+                  ta.focus();
+                  ta.select();
+                  document.execCommand("copy");
+                  document.body.removeChild(ta);
+                }
+                btn.innerHTML = "✓ Copied!";
+                btn.classList.add("text-green-400", "border-green-700");
+                btn.classList.remove("text-gray-500", "border-gray-700");
+              } catch (err) {
+                btn.innerHTML = "⚠ Failed";
+                btn.classList.add("text-red-400");
+              }
+              setTimeout(() => {
+                btn.innerHTML = originalHtml;
+                btn.classList.remove("text-green-400", "border-green-700", "text-red-400");
+                btn.classList.add("text-gray-500", "border-gray-700");
+              }, 2000);
+            });
+          }
+          setupCopyBtn("copy-input-btn");
+          setupCopyBtn("copy-output-btn");
         </script>
 
         <!-- Error -->
