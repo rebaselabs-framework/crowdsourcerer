@@ -53,6 +53,23 @@ async def maybe_fire_credit_alert(db: AsyncSession, user) -> None:
             threshold=threshold,
         )
 
+        # Also send email if we have the user's email address
+        import asyncio
+        from core.email import notify_low_credits
+        from sqlalchemy import select
+        from models.db import UserDB
+        result = await db.execute(select(UserDB.email, UserDB.name).where(UserDB.id == user.id))
+        row = result.first()
+        if row and row.email:
+            asyncio.ensure_future(
+                notify_low_credits(
+                    to_email=row.email,
+                    balance=user.credits,
+                    threshold=threshold,
+                    name=row.name,
+                )
+            )
+
 
 async def reset_credit_alert_if_recovered(db: AsyncSession, user) -> None:
     """Reset the fired flag when the user tops up above their threshold.

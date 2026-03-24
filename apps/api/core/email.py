@@ -161,6 +161,37 @@ def _task_timeout_html(task_id: str, task_type: str, worker_name: str) -> str:
 """
 
 
+def _low_credits_html(balance: int, threshold: int, name: str | None = None) -> str:
+    greeting = f"Hi {name}," if name else "Hi,"
+    usd = balance / 100
+    return f"""
+<html><body style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px">
+<h2 style="color:#f59e0b">⚠️ Low Credit Balance Alert</h2>
+<p>{greeting}</p>
+<p>Your CrowdSorcerer credit balance has dropped below your alert threshold:</p>
+<table style="width:100%;border-collapse:collapse;margin:16px 0;background:#f8f9fa;border-radius:8px">
+  <tr><td style="padding:10px 16px;font-weight:bold">Current balance</td>
+      <td style="padding:10px 16px;color:#ef4444;font-weight:bold">{balance} credits (${usd:.2f})</td></tr>
+  <tr><td style="padding:10px 16px;font-weight:bold;border-top:1px solid #e5e7eb">Your threshold</td>
+      <td style="padding:10px 16px;border-top:1px solid #e5e7eb">{threshold} credits</td></tr>
+</table>
+<p>Top up now to keep your tasks running without interruption.</p>
+<p style="margin:24px 0">
+  <a href="https://crowdsourcerer.rebaselabs.online/dashboard/billing"
+     style="background:#6366f1;color:white;padding:10px 20px;border-radius:6px;text-decoration:none;display:inline-block">
+     Buy credits →
+  </a>
+</p>
+<p style="color:#6b7280;font-size:13px">
+  You're receiving this because you set up a low-balance alert.
+  <a href="https://crowdsourcerer.rebaselabs.online/dashboard/notification-preferences" style="color:#6366f1">Manage alerts</a>
+</p>
+<hr style="margin:24px 0;border:none;border-top:1px solid #e5e7eb">
+<p style="color:#9ca3af;font-size:12px">CrowdSorcerer · <a href="https://crowdsourcerer.rebaselabs.online">crowdsourcerer.rebaselabs.online</a></p>
+</body></html>
+"""
+
+
 def _password_reset_html(reset_url: str, name: str | None = None) -> str:
     greeting = f"Hi {name}," if name else "Hi,"
     return f"""
@@ -298,6 +329,15 @@ async def notify_worker_approved(
         to_email=to_email,
         subject=f"🎉 Submission approved — you earned {earnings} credits!",
         html_body=_worker_approved_html(task_type, earnings, xp),
+    )
+
+
+async def notify_low_credits(to_email: str, balance: int, threshold: int, name: str | None = None) -> bool:
+    """Send a low-credit alert email. Only fires once per threshold crossing (gate in credit_alerts.py)."""
+    return await send_email(
+        to_email=to_email,
+        subject=f"⚠️ Low credits: {balance} remaining — CrowdSorcerer",
+        html_body=_low_credits_html(balance, threshold, name),
     )
 
 
