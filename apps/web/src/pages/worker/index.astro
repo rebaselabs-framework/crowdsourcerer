@@ -361,25 +361,54 @@ const TASK_TYPE_LABELS: Record<string, string> = {
           <div class="mb-8">
             <h2 class="text-lg font-semibold mb-4">Active assignments ({stats?.tasks_active ?? 0})</h2>
             <div class="space-y-3">
-              {assignments.map((a: any) => (
-                <a
-                  href={`/worker/tasks/${a.task_id}`}
-                  class="flex items-center justify-between bg-gray-900 border border-amber-800/40 hover:border-amber-600/60 rounded-xl p-4 transition-colors"
-                >
-                  <div class="flex items-center gap-3">
-                    <span class="text-amber-400 text-xs uppercase font-bold tracking-wider bg-amber-900/30 px-2 py-0.5 rounded">
-                      Active
-                    </span>
-                    <span class="text-sm font-medium">{TASK_TYPE_LABELS[a.task_type] ?? a.task_type}</span>
-                  </div>
-                  <div class="text-sm text-gray-400">
-                    Expires {a.timeout_at
-                      ? new Date(a.timeout_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-                      : "—"}
-                    <span class="ml-3 text-emerald-400 text-xs">→</span>
-                  </div>
-                </a>
-              ))}
+              {assignments.map((a: any) => {
+                const claimedMs = a.claimed_at ? new Date(a.claimed_at).getTime() : 0;
+                const timeoutMs = a.timeout_at ? new Date(a.timeout_at).getTime() : 0;
+                const totalMs = timeoutMs - claimedMs;
+                const nowMs = Date.now();
+                const remainingMs = Math.max(0, timeoutMs - nowMs);
+                const pct = totalMs > 0 ? Math.min(100, Math.round((remainingMs / totalMs) * 100)) : 0;
+                const remainMins = Math.floor(remainingMs / 60000);
+                const remainHours = Math.floor(remainMins / 60);
+                const remainMinsLeft = remainMins % 60;
+                const timeLabel = remainHours > 0
+                  ? `${remainHours}h ${remainMinsLeft}m left`
+                  : `${remainMins}m left`;
+                const barColor = pct > 50 ? "bg-emerald-500" : pct > 25 ? "bg-amber-400" : "bg-red-500";
+                return (
+                  <a
+                    href={`/worker/tasks/${a.task_id}`}
+                    class="block bg-gray-900 border border-amber-800/40 hover:border-amber-600/60 rounded-xl p-4 transition-colors"
+                    data-claimed-at={a.claimed_at}
+                    data-timeout-at={a.timeout_at}
+                  >
+                    <div class="flex items-center justify-between mb-2">
+                      <div class="flex items-center gap-3">
+                        <span class="text-amber-400 text-xs uppercase font-bold tracking-wider bg-amber-900/30 px-2 py-0.5 rounded">
+                          Active
+                        </span>
+                        <span class="text-sm font-medium">{TASK_TYPE_LABELS[a.task_type] ?? a.task_type}</span>
+                      </div>
+                      <div class="flex items-center gap-3 text-sm text-gray-400">
+                        <span class="assignment-time-label text-xs" data-timeout-at={a.timeout_at} data-claimed-at={a.claimed_at}>
+                          {a.timeout_at ? timeLabel : "—"}
+                        </span>
+                        <span class="text-emerald-400 text-xs">→</span>
+                      </div>
+                    </div>
+                    {a.timeout_at && (
+                      <div class="w-full bg-gray-800 rounded-full h-1.5 overflow-hidden">
+                        <div
+                          class:list={["h-1.5 rounded-full transition-all assignment-progress-bar", barColor]}
+                          style={`width: ${pct}%`}
+                          data-timeout-at={a.timeout_at}
+                          data-claimed-at={a.claimed_at}
+                        />
+                      </div>
+                    )}
+                  </a>
+                );
+              })}
             </div>
           </div>
         ) : (
@@ -697,4 +726,47 @@ const TASK_TYPE_LABELS: Record<string, string> = {
       btn.removeAttribute("disabled");
     }
   });
+
+  // Live countdown for active assignment progress bars
+  function updateAssignmentTimers() {
+    const bars = document.querySelectorAll<HTMLElement>(".assignment-progress-bar");
+    bars.forEach(bar => {
+      const claimedAt = bar.dataset.claimedAt;
+      const timeoutAt = bar.dataset.timeoutAt;
+      if (!claimedAt || !timeoutAt) return;
+      const claimedMs = new Date(claimedAt).getTime();
+      const timeoutMs = new Date(timeoutAt).getTime();
+      const totalMs = timeoutMs - claimedMs;
+      const remainingMs = Math.max(0, timeoutMs - Date.now());
+      const pct = totalMs > 0 ? Math.min(100, Math.round((remainingMs / totalMs) * 100)) : 0;
+      bar.style.width = `${pct}%`;
+      bar.className = bar.className.replace(/bg-(emerald|amber|red)-\d+/, "");
+      if (pct > 50) {
+        bar.classList.add("bg-emerald-500");
+        bar.classList.remove("bg-amber-400", "bg-red-500");
+      } else if (pct > 25) {
+        bar.classList.add("bg-amber-400");
+        bar.classList.remove("bg-emerald-500", "bg-red-500");
+      } else {
+        bar.classList.add("bg-red-500");
+        bar.classList.remove("bg-emerald-500", "bg-amber-400");
+      }
+    });
+
+    document.querySelectorAll<HTMLElement>(".assignment-time-label").forEach(label => {
+      const timeoutAt = label.dataset.timeoutAt;
+      const claimedAt = label.dataset.claimedAt;
+      if (!timeoutAt) return;
+      const remainingMs = Math.max(0, new Date(timeoutAt).getTime() - Date.now());
+      const remainMins = Math.floor(remainingMs / 60000);
+      const remainHours = Math.floor(remainMins / 60);
+      const remainMinsLeft = remainMins % 60;
+      label.textContent = remainHours > 0
+        ? `${remainHours}h ${remainMinsLeft}m left`
+        : `${remainMins}m left`;
+    });
+  }
+
+  updateAssignmentTimers();
+  setInterval(updateAssignmentTimers, 60000);
 </script>

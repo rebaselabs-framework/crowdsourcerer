@@ -185,6 +185,7 @@ class TaskOut(BaseModel):
     tags: Optional[list[str]] = None
     scheduled_at: Optional[datetime] = None
     priority_escalated_at: Optional[datetime] = None
+    cached: bool = False
     created_at: datetime
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None

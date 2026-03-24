@@ -245,6 +245,9 @@ class TaskDB(Base):
                               ForeignKey("worker_teams.id", ondelete="SET NULL"),
                               nullable=True, index=True)
 
+    # Set to True when the task result was served from the cache
+    cached = Column(Boolean, nullable=False, server_default="false", default=False)
+
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     started_at = Column(DateTime(timezone=True), nullable=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)

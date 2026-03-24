@@ -256,6 +256,11 @@ const STATUS_COLORS: Record<string, string> = {
                       >
                         {t.status}
                       </span>
+                      {t.cached && (
+                        <span class="ml-1 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-xs font-medium bg-emerald-900/40 text-emerald-400 border border-emerald-700/40">
+                          ⚡
+                        </span>
+                      )}
                       {/* Progress for human tasks */}
                       {t.assignments_required > 1 && t.status !== "completed" && t.status !== "failed" && (
                         <div

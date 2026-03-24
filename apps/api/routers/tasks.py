@@ -1757,6 +1757,7 @@ async def _run_task(task_id: str, user_id: str):
 
             task.status = "completed"
             task.output = output
+            task.cached = cache_hit
             task.duration_ms = duration_ms
             task.completed_at = datetime.now(timezone.utc)
             task.credits_used = credits_used
