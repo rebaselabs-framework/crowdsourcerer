@@ -104,9 +104,15 @@ function profLabel(level: number): string {
 
 function taskTypeIcon(type: string): string {
   const icons: Record<string, string> = {
-    label_image: "🖼️", label_text: "🏷️", rate_quality: "⭐",
-    verify_fact: "✅", moderate_content: "🛡️", compare_rank: "📊",
+    // Human task types
+    label_image: "🖼️", label_text: "📝", rate_quality: "⭐",
+    verify_fact: "✅", moderate_content: "🛡️", compare_rank: "🏆",
     answer_question: "💬", transcription_review: "🎧",
+    // AI task types
+    web_research: "🌐", entity_lookup: "🏢", document_parse: "📄",
+    data_transform: "🔄", llm_generate: "🤖", screenshot: "📸",
+    audio_transcribe: "🎙️", pii_detect: "🔒", code_execute: "⚡",
+    web_intel: "🕵️",
   };
   return icons[type] ?? "📋";
 }
@@ -191,11 +197,16 @@ const title = profile ? `${profile.name ?? "Worker"} — CrowdSorcerer` : "Worke
                   ⭐ Level {profile.worker_level} · {levelLabel(profile.worker_level)}
                 </span>
                 <span class={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-gray-700 ${reputationColor(profile.reputation_score)}`}>
-                  🏅 Reputation: {reputationLabel(profile.reputation_score)} ({Math.round(profile.reputation_score)}/100)
+                  🏅 {reputationLabel(profile.reputation_score)} rep
                 </span>
                 {profile.worker_streak_days > 0 && (
                   <span class="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-orange-900/40 text-orange-300">
                     🔥 {profile.worker_streak_days}-day streak
+                  </span>
+                )}
+                {profile.avg_feedback_score != null && profile.total_ratings_received > 0 && (
+                  <span class="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-yellow-900/40 text-yellow-300">
+                    {"★".repeat(Math.round(profile.avg_feedback_score))}{"☆".repeat(5 - Math.round(profile.avg_feedback_score))} {profile.avg_feedback_score.toFixed(1)} ({profile.total_ratings_received})
                   </span>
                 )}
               </div>
@@ -209,7 +220,7 @@ const title = profile ? `${profile.name ?? "Worker"} — CrowdSorcerer` : "Worke
             { label: "Tasks Done",  value: profile.worker_tasks_completed.toLocaleString(), icon: "✅" },
             { label: "Accuracy",    value: pct(profile.worker_accuracy),                     icon: "🎯" },
             { label: "Reliability", value: pct(profile.worker_reliability),                  icon: "⏱️" },
-            { label: "Total XP",    value: profile.worker_xp.toLocaleString(),               icon: "✨" },
+            { label: "Reputation",  value: `${Math.round(profile.reputation_score)}/100`,    icon: "🏅" },
           ].map(s => (
             <div class="bg-gray-800 border border-gray-700 rounded-lg p-4 text-center">
               <div class="text-2xl mb-1">{s.icon}</div>
@@ -217,6 +228,23 @@ const title = profile ? `${profile.name ?? "Worker"} — CrowdSorcerer` : "Worke
               <div class="text-xs text-gray-400 mt-0.5">{s.label}</div>
             </div>
           ))}
+        </div>
+
+        {/* ── Quick actions (auth-gated client-side) ─────────── */}
+        <div id="worker-actions" class="hidden flex-wrap gap-3">
+          <a
+            id="invite-btn"
+            href="/workers/browse"
+            class="inline-flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white rounded-lg text-sm font-medium transition-colors"
+          >
+            ✉️ Invite to task
+          </a>
+          <button
+            id="share-btn"
+            class="inline-flex items-center gap-2 px-4 py-2 border border-gray-600 hover:border-gray-400 text-gray-300 hover:text-white rounded-lg text-sm font-medium transition-colors"
+          >
+            🔗 Share profile
+          </button>
         </div>
 
         {/* ── Verified Skills highlight ────────────────────── */}
@@ -484,3 +512,40 @@ const title = profile ? `${profile.name ?? "Worker"} — CrowdSorcerer` : "Worke
     )}
   </div>
 </Layout>
+
+<script>
+  // ── Worker profile client-side interactions ──────────────────────────────
+
+  // Show action buttons only when user is authenticated (has auth cookie)
+  const hasCookie = document.cookie.includes("cs_token=");
+  if (hasCookie) {
+    const actionsDiv = document.getElementById("worker-actions");
+    if (actionsDiv) {
+      actionsDiv.classList.remove("hidden");
+      actionsDiv.classList.add("flex");
+    }
+  }
+
+  // Share profile
+  const shareBtn = document.getElementById("share-btn");
+  if (shareBtn) {
+    shareBtn.addEventListener("click", async () => {
+      const url = window.location.href;
+      const title = document.title;
+      if (navigator.share) {
+        try {
+          await navigator.share({ title, url });
+        } catch (_) { /* cancelled */ }
+      } else {
+        // Clipboard fallback
+        try {
+          await navigator.clipboard.writeText(url);
+          shareBtn.textContent = "✓ Link copied!";
+          setTimeout(() => { (shareBtn as HTMLButtonElement).textContent = "🔗 Share profile"; }, 2000);
+        } catch (_) {
+          window.prompt("Copy this link:", url);
+        }
+      }
+    });
+  }
+</script>

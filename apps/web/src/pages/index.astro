@@ -2,6 +2,82 @@
 import Layout from "@/layouts/Layout.astro";
 import { TASK_CREDITS } from "@crowdsourcerer/types";
 
+// ── SSR: Load platform stats for initial render ──────────────────────────
+const API_URL = import.meta.env.PUBLIC_API_URL ?? "http://api:8100";
+
+interface TaskTypeStats {
+  task_type: string;
+  completed: number;
+  avg_completion_ms: number | null;
+}
+
+interface PlatformStats {
+  tasks_completed_total: number;
+  tasks_completed_today: number;
+  tasks_completed_this_week: number;
+  active_workers_30d: number;
+  total_requesters: number;
+  avg_completion_ms_overall: number | null;
+  top_task_types: TaskTypeStats[];
+  tasks_running_now: number;
+  platform_uptime_note: string;
+}
+
+let platformStats: PlatformStats | null = null;
+try {
+  const statsRes = await fetch(`${API_URL}/v1/platform/stats`);
+  if (statsRes.ok) platformStats = await statsRes.json();
+} catch {
+  // Stats are optional — page works fine without them
+}
+
+// Precompute top task type rows to avoid template-scoping issues in .map()
+const TASK_TYPE_ICONS: Record<string, string> = {
+  web_research: "🌐", entity_lookup: "🏢", document_parse: "📄",
+  data_transform: "🔄", llm_generate: "🤖", screenshot: "📸",
+  audio_transcribe: "🎙️", pii_detect: "🔒", code_execute: "⚡",
+  web_intel: "🕵️", label_image: "🖼️", label_text: "📝",
+  rate_quality: "⭐", verify_fact: "✅", moderate_content: "🛡️",
+  compare_rank: "🏆", answer_question: "💬", transcription_review: "🎧",
+};
+
+function fmtAvgMs(ms: number): string {
+  if (ms < 1000)  return `${ms}ms`;
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+  return `${Math.round(ms / 60000)}m`;
+}
+
+function fmtCount(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000)     return `${(n / 1000).toFixed(1)}K`;
+  return String(n);
+}
+
+interface TopTypeRow {
+  icon: string;
+  label: string;
+  count: number;
+  countFmt: string;
+  pct: number;
+  avgMsFmt: string | null;
+  delay: string;
+}
+
+const topTypeRows: TopTypeRow[] = platformStats
+  ? platformStats.top_task_types.map((t, idx) => {
+      const maxCount = platformStats!.top_task_types[0]?.completed ?? 1;
+      return {
+        icon: TASK_TYPE_ICONS[t.task_type] ?? "🔮",
+        label: t.task_type.replace(/_/g, " "),
+        count: t.completed,
+        countFmt: fmtCount(t.completed),
+        pct: maxCount > 0 ? Math.round((t.completed / maxCount) * 100) : 0,
+        avgMsFmt: t.avg_completion_ms ? fmtAvgMs(t.avg_completion_ms) : null,
+        delay: `${idx * 0.1}s`,
+      };
+    })
+  : [];
+
 function taskIcon(type: string): string {
   const icons: Record<string, string> = {
     web_research: "🌐",
@@ -304,6 +380,97 @@ console.<span class="text-yellow-400">log</span>(task.output.summary);
       </table>
     </div>
   </section>
+
+  <!-- Live Platform Stats -->
+  {platformStats && platformStats.tasks_completed_total > 0 && (
+  <section class="max-w-5xl mx-auto px-6 pb-20">
+    <div class="text-center mb-10">
+      <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-emerald-800 bg-emerald-950/40 text-emerald-300 text-sm mb-4">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+        Platform operational
+      </div>
+      <h2 class="text-2xl font-bold text-gray-200">Platform activity</h2>
+      <p class="text-gray-500 text-sm mt-1">Live stats — updated every minute</p>
+    </div>
+
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 text-center hover:border-violet-800 transition-colors">
+        <div
+          class="text-3xl font-bold text-violet-300 mb-1 tabular-nums stat-counter"
+          data-target={platformStats.tasks_completed_total}
+          data-fmt="count"
+        >{platformStats.tasks_completed_total.toLocaleString()}</div>
+        <div class="text-sm text-gray-400">Tasks completed</div>
+      </div>
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 text-center hover:border-emerald-800 transition-colors">
+        <div
+          class="text-3xl font-bold text-emerald-300 mb-1 tabular-nums stat-counter"
+          data-target={platformStats.tasks_completed_this_week}
+          data-fmt="count"
+        >{platformStats.tasks_completed_this_week.toLocaleString()}</div>
+        <div class="text-sm text-gray-400">This week</div>
+      </div>
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 text-center hover:border-blue-800 transition-colors">
+        <div
+          class="text-3xl font-bold text-blue-300 mb-1 tabular-nums stat-counter"
+          data-target={platformStats.active_workers_30d}
+          data-fmt="count"
+        >{platformStats.active_workers_30d.toLocaleString()}</div>
+        <div class="text-sm text-gray-400">Active workers</div>
+      </div>
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 text-center hover:border-amber-800 transition-colors">
+        {platformStats.avg_completion_ms_overall ? (
+          <div
+            class="text-3xl font-bold text-amber-300 mb-1 tabular-nums stat-counter"
+            data-target={platformStats.avg_completion_ms_overall}
+            data-fmt="duration"
+          >{
+            platformStats.avg_completion_ms_overall < 1000
+              ? `${platformStats.avg_completion_ms_overall}ms`
+              : platformStats.avg_completion_ms_overall < 60000
+                ? `${(platformStats.avg_completion_ms_overall / 1000).toFixed(1)}s`
+                : `${Math.round(platformStats.avg_completion_ms_overall / 60000)}m`
+          }</div>
+        ) : (
+          <div class="text-3xl font-bold text-amber-300 mb-1">&lt;5s</div>
+        )}
+        <div class="text-sm text-gray-400">Avg completion</div>
+      </div>
+    </div>
+
+    {platformStats.top_task_types.length > 0 && (
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
+      <div class="flex items-center justify-between mb-5">
+        <h3 class="text-sm font-semibold text-gray-300">Most popular task types</h3>
+        {platformStats.tasks_running_now > 0 && (
+          <span class="text-xs px-2 py-0.5 rounded-full bg-violet-900/60 text-violet-300 border border-violet-700/50">
+            {platformStats.tasks_running_now} running now
+          </span>
+        )}
+      </div>
+      <div class="space-y-3">
+        {topTypeRows.map((row) => (
+          <div class="flex items-center gap-3 text-sm">
+            <span class="w-5 text-center flex-shrink-0">{row.icon}</span>
+            <span class="w-36 text-gray-400 capitalize flex-shrink-0 truncate">{row.label}</span>
+            <div class="flex-1 bg-gray-800 rounded-full h-2 overflow-hidden">
+              <div
+                class="h-full bg-violet-600 rounded-full type-bar"
+                style={`width: 0%; transition: width 0.8s ease-out ${row.delay}`}
+                data-width={row.pct}
+              ></div>
+            </div>
+            <span class="text-gray-400 w-12 text-right tabular-nums">{row.countFmt}</span>
+            {row.avgMsFmt && (
+              <span class="text-gray-600 text-xs w-14 text-right tabular-nums">{row.avgMsFmt}</span>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+    )}
+  </section>
+  )}
 
   <!-- Testimonials -->
   <section class="max-w-5xl mx-auto px-6 pb-20">
@@ -623,6 +790,69 @@ for internet businesses.",
 
     // Auto-run once after 1.5s to grab attention
     setTimeout(() => { if (!running) runDemo(); }, 1500);
+  </script>
+
+  <script>
+    // ── Platform Stats: animate counters + bar chart from SSR-rendered values ──
+    function animateCounter(el: HTMLElement) {
+      const target = parseInt(el.dataset.target ?? "0", 10);
+      const fmt = el.dataset.fmt ?? "count";
+      if (!target) return;
+
+      function format(n: number): string {
+        if (fmt === "duration") {
+          if (n < 1000)  return n + "ms";
+          if (n < 60000) return (n / 1000).toFixed(1) + "s";
+          return Math.round(n / 60000) + "m";
+        }
+        // count
+        if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
+        if (n >= 10_000)    return Math.round(n / 1000) + "K";
+        if (n >= 1_000)     return (n / 1000).toFixed(1) + "K";
+        return String(n);
+      }
+
+      const duration = 1400;
+      const startTime = performance.now();
+      function tick(now: number) {
+        const progress = Math.min((now - startTime) / duration, 1);
+        const ease = 1 - Math.pow(1 - progress, 3);
+        el.textContent = format(Math.round(target * ease));
+        if (progress < 1) requestAnimationFrame(tick);
+      }
+      el.textContent = format(0);
+      requestAnimationFrame(tick);
+    }
+
+    // Animate counters when they scroll into view
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          animateCounter(entry.target as HTMLElement);
+          observer.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.2 });
+
+    document.querySelectorAll(".stat-counter[data-target]").forEach(el => observer.observe(el));
+
+    // Animate bar chart widths when section scrolls into view
+    const barObserver = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          (entry.target as HTMLElement).querySelectorAll(".type-bar[data-width]").forEach(bar => {
+            const b = bar as HTMLElement;
+            b.style.width = (b.dataset.width ?? "0") + "%";
+          });
+          barObserver.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.1 });
+
+    document.querySelectorAll(".type-bar[data-width]").forEach(bar => {
+      const section = bar.closest("section");
+      if (section) barObserver.observe(section);
+    });
   </script>
 
   <style is:global>

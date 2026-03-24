@@ -16,7 +16,7 @@ from slowapi.util import get_remote_address
 from core.config import get_settings
 from core.database import Base, engine, AsyncSessionLocal
 from core.sweeper import start_sweeper, stop_sweeper
-from routers import auth, credits, tasks, users, worker, leaderboard, badges, challenges, quality, admin, webhooks, payouts, referrals, notifications, skills, disputes, export, orgs, pipelines, certifications, analytics, marketplace, reputation, triggers, search, experiments, onboarding, sla, comments, stripe_webhooks, profiles, two_factor, saved_searches, api_key_usage, skill_quiz, requester_onboarding, webhook_templates, task_dependencies, endorsements, worker_marketplace, ratings, portfolio, requester_templates, worker_teams, applications, availability, task_messages, notification_digest, global_search, oauth
+from routers import auth, credits, tasks, users, worker, leaderboard, badges, challenges, quality, admin, webhooks, payouts, referrals, notifications, skills, disputes, export, orgs, pipelines, certifications, analytics, marketplace, reputation, triggers, search, experiments, onboarding, sla, comments, stripe_webhooks, profiles, two_factor, saved_searches, api_key_usage, skill_quiz, requester_onboarding, webhook_templates, task_dependencies, endorsements, worker_marketplace, ratings, portfolio, requester_templates, worker_teams, applications, availability, task_messages, notification_digest, global_search, oauth, platform_stats
 from workers.base import get_rebasekit_client
 
 settings = get_settings()
@@ -230,6 +230,7 @@ app.include_router(task_messages.router)
 app.include_router(notification_digest.router)
 app.include_router(global_search.router)
 app.include_router(oauth.router)
+app.include_router(platform_stats.router)
 
 # ─── Health ───────────────────────────────────────────────────────────────
 
