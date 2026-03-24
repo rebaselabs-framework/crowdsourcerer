@@ -240,6 +240,44 @@ const clientApiUrl = import.meta.env.PUBLIC_API_URL ?? "";
         </div>
       )}
 
+      <!-- Weekly Earnings Chart — primary, full-width -->
+      <div class="bg-gray-900 border border-gray-800 rounded-2xl p-6 mb-6">
+        <div class="flex items-center justify-between mb-4 flex-wrap gap-3">
+          <div>
+            <h3 class="text-sm font-semibold text-gray-300">Weekly Earnings</h3>
+            <p class="text-xs text-gray-500 mt-0.5">Credits earned per week — current week highlighted</p>
+          </div>
+          <!-- Range selector -->
+          <div class="flex gap-1 bg-gray-800 rounded-lg p-1" id="weekly-range-btns">
+            {["4W","8W","12W"].map(r=>(
+              <button
+                data-range={r}
+                class={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${r==="12W"?"bg-gray-700 text-emerald-400":"text-gray-400 hover:text-gray-200"}`}
+              >{r}</button>
+            ))}
+          </div>
+        </div>
+        <div style="height:220px"><canvas id="weeklyEarningsChart"></canvas></div>
+        <!-- Summary row below chart -->
+        <div class="grid grid-cols-3 gap-4 mt-5 pt-4 border-t border-gray-800" id="weekly-summary">
+          <div class="text-center">
+            <div class="text-xs text-gray-500 mb-1">This week</div>
+            <div id="weekly-this-week" class="text-lg font-bold text-emerald-400">—</div>
+            <div class="text-xs text-gray-500">credits</div>
+          </div>
+          <div class="text-center">
+            <div class="text-xs text-gray-500 mb-1">Weekly avg</div>
+            <div id="weekly-avg" class="text-lg font-bold text-gray-300">—</div>
+            <div class="text-xs text-gray-500">credits</div>
+          </div>
+          <div class="text-center">
+            <div class="text-xs text-gray-500 mb-1">Best week</div>
+            <div id="weekly-best" class="text-lg font-bold text-violet-400">—</div>
+            <div class="text-xs text-gray-500">credits</div>
+          </div>
+        </div>
+      </div>
+
       <!-- Charts row -->
       <div class="grid lg:grid-cols-2 gap-6 mb-6">
         <div class="bg-gray-900 border border-gray-800 rounded-2xl p-6">
@@ -532,7 +570,7 @@ const API = clientApiUrl;
 const analytics = JSON.parse(analyticsJson);
 
 // Charts
-if (analytics && document.getElementById("monthlyEarningsChart")) {
+if (analytics && (document.getElementById("weeklyEarningsChart") || document.getElementById("monthlyEarningsChart"))) {
   const COLORS = ["#10b981","#6366f1","#f59e0b","#3b82f6","#ec4899","#8b5cf6","#14b8a6","#f97316","#84cc16","#ef4444"];
   const TT = { backgroundColor:"#1f2937", titleColor:"#9ca3af", bodyColor:"#e5e7eb", borderColor:"#374151", borderWidth:1 };
   const SCALES = { x:{ticks:{color:"#6b7280",font:{size:10}},grid:{color:"#1f2937"}}, y:{ticks:{color:"#6b7280",font:{size:10}},grid:{color:"#1f2937"},beginAtZero:true} };
@@ -540,6 +578,140 @@ if (analytics && document.getElementById("monthlyEarningsChart")) {
   const s = document.createElement("script");
   s.src = "https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js";
   s.onload = () => {
+    // ── Weekly Earnings Chart ──────────────────────────────────────────────
+    const weeklyEl = document.getElementById("weeklyEarningsChart");
+    const weekly = analytics.weekly_earnings ?? [];
+    let weeklyRange = 12; // default to 12 weeks
+    let weeklyChart = null;
+
+    function weekLabel(key) {
+      // "2026-W12" → "W12"
+      return key.split("-")[1] ?? key;
+    }
+
+    function buildWeeklyColors(data, range) {
+      return data.slice(-range).map(w =>
+        w.is_current ? "#8b5cf6" : "#10b98160"
+      );
+    }
+    function buildWeeklyBorders(data, range) {
+      return data.slice(-range).map(w =>
+        w.is_current ? "#8b5cf6" : "#10b981"
+      );
+    }
+
+    function updateWeeklySummary(data, range) {
+      const slice = data.slice(-range);
+      const current = data.find(w => w.is_current);
+      const credits = slice.map(w => w.credits);
+      const nonZero = credits.filter(c => c > 0);
+      const avg = nonZero.length > 0 ? Math.round(nonZero.reduce((a,b)=>a+b,0) / nonZero.length) : 0;
+      const best = Math.max(0, ...credits);
+      const thisWeek = current?.credits ?? 0;
+      const el1 = document.getElementById("weekly-this-week");
+      const el2 = document.getElementById("weekly-avg");
+      const el3 = document.getElementById("weekly-best");
+      if (el1) el1.textContent = thisWeek.toLocaleString();
+      if (el2) el2.textContent = avg.toLocaleString();
+      if (el3) el3.textContent = best.toLocaleString();
+    }
+
+    function renderWeeklyChart(range) {
+      if (!weeklyEl) return;
+      const slice = weekly.slice(-range);
+      const labels = slice.map(w => weekLabel(w.week));
+      const data = slice.map(w => w.credits);
+      const bgColors = buildWeeklyColors(weekly, range);
+      const borderColors = buildWeeklyBorders(weekly, range);
+
+      if (weeklyChart) {
+        weeklyChart.data.labels = labels;
+        weeklyChart.data.datasets[0].data = data;
+        weeklyChart.data.datasets[0].backgroundColor = bgColors;
+        weeklyChart.data.datasets[0].borderColor = borderColors;
+        weeklyChart.update("active");
+      } else {
+        weeklyChart = new Chart(weeklyEl, {
+          type: "bar",
+          data: {
+            labels,
+            datasets: [{
+              data,
+              backgroundColor: bgColors,
+              borderColor: borderColors,
+              borderWidth: 1.5,
+              borderRadius: 5,
+              borderSkipped: false,
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: { duration: 300 },
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                ...TT,
+                callbacks: {
+                  title: (items) => {
+                    const w = weekly.slice(-range)[items[0].dataIndex];
+                    return `${w.week}${w.is_current ? " (this week)" : ""}`;
+                  },
+                  label: (c) => {
+                    const w = weekly.slice(-range)[c.dataIndex];
+                    const usd = (c.parsed.y / 100).toFixed(2);
+                    return [
+                      ` ${c.parsed.y.toLocaleString()} credits ($${usd})`,
+                      ` ${w.tasks} task${w.tasks !== 1 ? "s" : ""}`,
+                    ];
+                  },
+                },
+              },
+            },
+            scales: {
+              x: {
+                ...SCALES.x,
+                ticks: {
+                  ...SCALES.x.ticks,
+                  maxRotation: 0,
+                  callback(val, idx) {
+                    // Only show every 2nd label when showing 12 weeks to avoid crowding
+                    if (range === 12 && idx % 2 !== 0) return "";
+                    return labels[idx];
+                  },
+                },
+              },
+              y: {
+                ...SCALES.y,
+                ticks: {
+                  ...SCALES.y.ticks,
+                  callback: (v) => v.toLocaleString(),
+                },
+              },
+            },
+          },
+        });
+      }
+      updateWeeklySummary(weekly, range);
+    }
+
+    // Initial render
+    renderWeeklyChart(weeklyRange);
+
+    // Range selector
+    document.getElementById("weekly-range-btns")?.querySelectorAll("button").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const range = parseInt(btn.dataset.range);
+        weeklyRange = range;
+        document.querySelectorAll("#weekly-range-btns button").forEach(b => {
+          const active = b.dataset.range === btn.dataset.range;
+          b.className = `px-3 py-1 text-xs font-medium rounded-md transition-colors ${active ? "bg-gray-700 text-emerald-400" : "text-gray-400 hover:text-gray-200"}`;
+        });
+        renderWeeklyChart(range);
+      });
+    });
+
+    // ── Monthly charts ─────────────────────────────────────────────────────
     const el1 = document.getElementById("monthlyEarningsChart");
     if (el1) new Chart(el1, {
       type:"bar",

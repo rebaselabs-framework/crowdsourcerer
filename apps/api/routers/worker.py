@@ -1132,7 +1132,45 @@ async def get_earnings_analytics(
 
     best_month_credits = max((m["credits"] for m in monthly_earnings), default=0)
 
-    # ── 5. Projected earnings (linear trend of last 3 months) ─────────────────
+    # ── 5. Weekly earnings (last 12 ISO weeks) ────────────────────────────────
+    from collections import defaultdict
+    twelve_weeks_ago = now - timedelta(weeks=12)
+    weekly_raw = await db.execute(
+        select(
+            TaskAssignmentDB.submitted_at,
+            TaskAssignmentDB.earnings_credits,
+        )
+        .where(
+            TaskAssignmentDB.worker_id == uid,
+            TaskAssignmentDB.status.in_(["submitted", "approved"]),
+            TaskAssignmentDB.submitted_at.isnot(None),
+            TaskAssignmentDB.submitted_at >= twelve_weeks_ago,
+        )
+        .order_by(TaskAssignmentDB.submitted_at)
+    )
+    # Bucket by ISO week key "YYYY-Www"
+    week_buckets: dict = defaultdict(lambda: {"credits": 0, "tasks": 0})
+    for row_at, row_credits in weekly_raw.all():
+        if row_at:
+            iso = row_at.isocalendar()
+            key = f"{iso[0]}-W{iso[1]:02d}"
+            week_buckets[key]["credits"] += int(row_credits or 0)
+            week_buckets[key]["tasks"] += 1
+
+    weekly_earnings: list[dict] = []
+    for i in range(11, -1, -1):
+        target = now - timedelta(weeks=i)
+        iso = target.isocalendar()
+        key = f"{iso[0]}-W{iso[1]:02d}"
+        bucket = week_buckets.get(key, {"credits": 0, "tasks": 0})
+        weekly_earnings.append({
+            "week": key,
+            "credits": bucket["credits"],
+            "tasks": bucket["tasks"],
+            "is_current": i == 0,
+        })
+
+    # ── 6. Projected earnings (linear trend of last 3 months) ─────────────────
     # Uses the last 3 calendar months to compute a simple slope, then extrapolates
     # next month's expected credits. Weekly = monthly / 4.33.
     recent = [m["credits"] for m in monthly_earnings[-3:]]  # last 3 months
@@ -1161,6 +1199,7 @@ async def get_earnings_analytics(
 
     return {
         "by_task_type": by_task_type,
+        "weekly_earnings": weekly_earnings,
         "monthly_earnings": monthly_earnings,
         "monthly_payouts": monthly_payouts,
         "lifetime_credits_earned": lifetime_credits,
