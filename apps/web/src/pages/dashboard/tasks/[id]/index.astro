@@ -1936,14 +1936,28 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
           </div>
         )}
 
-        <!-- Live status bar (SSE-driven) -->
+        <!-- Live status bar (polling-driven) -->
         {isLive && (
           <div id="live-bar" class="mt-6 text-center">
-            <div class="inline-flex items-center gap-2 text-sm text-gray-400">
-              <span class="w-2 h-2 rounded-full bg-yellow-400 animate-pulse"></span>
-              <span id="live-status-text">
-                Task is <strong>{task.status}</strong>. Watching for updates…
+            <div class="inline-flex flex-wrap items-center justify-center gap-2.5 px-5 py-2.5 bg-gray-900/80 border border-gray-800 rounded-xl text-sm">
+              <span class="w-2 h-2 rounded-full bg-yellow-400 animate-pulse flex-shrink-0"></span>
+              <span id="live-status-text" class="text-gray-300">
+                Task is <strong>{task.status}</strong>
               </span>
+              <span class="text-gray-700">·</span>
+              <span class="text-gray-500 font-mono text-xs tabular-nums">
+                ⏱ <span id="live-elapsed">0s</span>
+              </span>
+              {task.execution_mode === "human" && (
+                <>
+                  <span class="text-gray-700">·</span>
+                  <span id="live-progress" class="text-gray-500 text-xs">
+                    <span id="live-progress-text">
+                      {task.assignments_completed ?? 0}/{task.assignments_required ?? 1} workers
+                    </span>
+                  </span>
+                </>
+              )}
             </div>
           </div>
         )}
@@ -2319,11 +2333,11 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
     });
   </script>
 
-  {/* SSE client script — only loaded for non-terminal tasks */}
+  {/* Live polling client script — only loaded for non-terminal tasks */}
   {isLive && (
     <script define:vars={{ taskId: id }}>
-      const TERMINAL = new Set(["completed", "failed", "cancelled"]);
-      const STATUS_COLORS = {
+      var TERMINAL = new Set(["completed", "failed", "cancelled"]);
+      var STATUS_COLORS = {
         completed: "bg-green-950/50 border-green-800 text-green-300",
         failed:    "bg-red-950/50 border-red-800 text-red-300",
         running:   "bg-yellow-950/50 border-yellow-800 text-yellow-300",
@@ -2333,50 +2347,117 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
         assigned:  "bg-amber-950/50 border-amber-800 text-amber-300",
         cancelled: "bg-gray-800/50 border-gray-700 text-gray-500",
       };
+      var STATUS_LABELS = {
+        running:  ["text-yellow-300", "running"],
+        queued:   ["text-blue-300",   "queued — waiting to start"],
+        pending:  ["text-gray-300",   "pending"],
+        open:     ["text-violet-300", "open for workers"],
+        assigned: ["text-amber-300",  "assigned to a worker"],
+      };
 
-      // We need the bearer token from the cookie to auth the SSE request.
-      // Since SSE is a GET, we add it as a query param via a one-time token exchange.
-      // Simpler: just poll via fetch since EventSource doesn't support custom headers.
-      let lastStatus = null;
-      let lastCompleted = null;
+      var lastStatus = null;
+      var pollCount = 0;
+      var pollTimer = null;
+      var startTime = Date.now();
 
-      async function poll() {
+      // ── Elapsed timer ────────────────────────────────────────────────────
+      function fmtElapsed(ms) {
+        var secs = Math.floor(ms / 1000);
+        if (secs < 60) return secs + "s";
+        var m = Math.floor(secs / 60), s = secs % 60;
+        if (m < 60) return s > 0 ? m + "m " + s + "s" : m + "m";
+        var h = Math.floor(m / 60), mm = m % 60;
+        return mm > 0 ? h + "h " + mm + "m" : h + "h";
+      }
+
+      var elapsedEl = document.getElementById("live-elapsed");
+      var elapsedTimer = setInterval(function() {
+        if (elapsedEl) elapsedEl.textContent = fmtElapsed(Date.now() - startTime);
+      }, 1000);
+
+      // ── Main poll function ────────────────────────────────────────────────
+      function schedulePoll() {
+        pollCount++;
+        var delay = pollCount < 10 ? 2000
+                  : pollCount < 30 ? 3000
+                  : pollCount < 60 ? 5000
+                  : 10000;
+        pollTimer = setTimeout(doPoll, delay);
+      }
+
+      async function doPoll() {
         try {
-          const res = await fetch(`/api/tasks/${taskId}/status`);
-          if (!res.ok) return;
-          const data = await res.json();
+          var res = await fetch("/api/tasks/" + taskId + "/status");
+          if (!res.ok) { schedulePoll(); return; }
+          var data = await res.json();
+
+          // Update worker progress counter
+          var progressEl = document.getElementById("live-progress-text");
+          if (progressEl && data.assignments_required > 0) {
+            progressEl.textContent =
+              (data.assignments_completed || 0) + "/" + data.assignments_required + " workers";
+          }
 
           if (data.status !== lastStatus) {
             lastStatus = data.status;
 
             // Update status badge
-            const badge = document.getElementById("status-badge");
+            var badge = document.getElementById("status-badge");
             if (badge) {
               badge.textContent = data.status;
-              badge.className = `px-4 py-1.5 rounded-full border text-sm font-medium transition-all ${
-                STATUS_COLORS[data.status] ?? "bg-gray-800 border-gray-700 text-gray-300"
-              }`;
+              badge.className = "px-4 py-1.5 rounded-full border text-sm font-medium transition-all " +
+                (STATUS_COLORS[data.status] || "bg-gray-800 border-gray-700 text-gray-300");
             }
 
-            // Update live text
-            const txt = document.getElementById("live-status-text");
+            // Update live status text
+            var txt = document.getElementById("live-status-text");
             if (txt) {
-              txt.innerHTML = `Task is <strong>${data.status}</strong>. Watching for updates…`;
+              var parts = STATUS_LABELS[data.status];
+              if (parts) {
+                txt.innerHTML = 'Task is <strong class="' + parts[0] + '">' + parts[1] + "</strong>";
+              } else {
+                txt.innerHTML = "Task is <strong>" + data.status + "</strong>";
+              }
             }
 
-            // If terminal, reload for full details
+            // Terminal state: animate then reload
             if (TERMINAL.has(data.status)) {
-              setTimeout(() => location.reload(), 800);
+              clearInterval(elapsedTimer);
+              if (pollTimer) clearTimeout(pollTimer);
+
+              var liveBar = document.getElementById("live-bar");
+              if (liveBar) {
+                if (data.status === "completed") {
+                  liveBar.innerHTML =
+                    '<div class="inline-flex items-center gap-2 px-5 py-2.5 bg-green-950/50 border border-green-800 rounded-xl text-sm text-green-300 font-medium">' +
+                    '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>' +
+                    '<span>Completed! Loading results…</span></div>';
+                } else if (data.status === "failed") {
+                  var errMsg = data.error ? "Failed: " + data.error : "Task failed";
+                  liveBar.innerHTML =
+                    '<div class="inline-flex items-center gap-2 px-5 py-2.5 bg-red-950/50 border border-red-800 rounded-xl text-sm text-red-300">' +
+                    '<span>✗</span><span>' + errMsg.replace(/</g, "&lt;") + " — reloading…</span></div>";
+                } else {
+                  liveBar.innerHTML =
+                    '<div class="inline-flex items-center gap-2 px-5 py-2.5 bg-gray-800/50 border border-gray-700 rounded-xl text-sm text-gray-400">' +
+                    "<span>Task " + data.status + " — reloading…</span></div>";
+                }
+              }
+              setTimeout(function() { location.reload(); }, 1500);
+              return;
             }
           }
         } catch (_) {}
+        schedulePoll();
       }
 
-      // Poll every 2 seconds
-      const intervalId = setInterval(poll, 2000);
+      // Kick off first poll after 2s
+      pollTimer = setTimeout(doPoll, 2000);
 
-      // Stop polling when page unloads
-      window.addEventListener("beforeunload", () => clearInterval(intervalId));
+      window.addEventListener("beforeunload", function() {
+        if (pollTimer) clearTimeout(pollTimer);
+        clearInterval(elapsedTimer);
+      });
     </script>
   )}
 
