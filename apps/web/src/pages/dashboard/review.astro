@@ -200,10 +200,88 @@ const TYPE_LABELS: Record<string, string> = {
                           </div>
                         )}
 
-                        <!-- Response preview -->
+                        <!-- Response preview — type-specific rendering -->
                         {sub.response && (
-                          <div class="mt-2 bg-gray-950 border border-gray-800 rounded-lg p-3 max-h-32 overflow-y-auto">
-                            <pre class="text-xs text-gray-300 whitespace-pre-wrap font-mono break-all">{JSON.stringify(sub.response, null, 2)}</pre>
+                          <div class="mt-2">
+                            {(task.type === "label_image" || task.type === "label_text") ? (
+                              <div>
+                                {(sub.response.labels ?? []).length > 0 ? (
+                                  <div class="flex flex-wrap gap-1.5">
+                                    {(sub.response.labels as string[]).map((l) => (
+                                      <span class="px-2.5 py-1 bg-emerald-900/30 border border-emerald-700/50 text-emerald-300 text-xs rounded-lg">{l}</span>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <span class="text-xs text-gray-500 italic">No labels selected</span>
+                                )}
+                              </div>
+                            ) : task.type === "rate_quality" ? (
+                              <div>
+                                <span class="text-amber-400 text-sm font-semibold">
+                                  {"⭐".repeat(Math.max(0, Math.min(5, sub.response.rating ?? 0)))}
+                                  <span class="text-gray-300 font-normal ml-1">{sub.response.rating ?? 0}/5</span>
+                                </span>
+                                {sub.response.justification && (
+                                  <p class="text-xs text-gray-400 mt-1 italic">"{sub.response.justification}"</p>
+                                )}
+                              </div>
+                            ) : task.type === "verify_fact" ? (
+                              <div>
+                                <span class:list={[
+                                  "text-sm font-semibold",
+                                  sub.response.verdict === "true" ? "text-emerald-400" :
+                                  sub.response.verdict === "false" ? "text-red-400" : "text-gray-400"
+                                ]}>
+                                  {sub.response.verdict === "true" ? "✅ True" :
+                                   sub.response.verdict === "false" ? "❌ False" : "❓ Can't tell"}
+                                </span>
+                                {sub.response.citation && (
+                                  <div class="text-xs text-gray-500 mt-1">
+                                    Citation:{" "}
+                                    <a href={sub.response.citation} target="_blank" rel="noopener"
+                                       class="text-violet-400 hover:underline break-all">
+                                      {sub.response.citation}
+                                    </a>
+                                  </div>
+                                )}
+                              </div>
+                            ) : task.type === "moderate_content" ? (
+                              <div>
+                                <span class:list={[
+                                  "text-sm font-semibold",
+                                  sub.response.decision === "approve" ? "text-emerald-400" :
+                                  sub.response.decision === "reject" ? "text-red-400" : "text-amber-400"
+                                ]}>
+                                  {sub.response.decision === "approve" ? "✅ Approved" :
+                                   sub.response.decision === "reject" ? "🚫 Rejected" : "⚠️ Escalated"}
+                                </span>
+                                {sub.response.reason && (
+                                  <p class="text-xs text-gray-400 mt-1 italic">"{sub.response.reason}"</p>
+                                )}
+                              </div>
+                            ) : task.type === "compare_rank" ? (
+                              <div>
+                                <span class="text-sm text-gray-300">
+                                  Chose: <strong class="text-violet-300 uppercase">{sub.response.choice ?? "—"}</strong>
+                                  {sub.response.choice === "tie" && " (about equal)"}
+                                </span>
+                                {sub.response.reason && (
+                                  <p class="text-xs text-gray-400 mt-1 italic">"{sub.response.reason}"</p>
+                                )}
+                              </div>
+                            ) : task.type === "answer_question" ? (
+                              <p class="text-sm text-gray-300 leading-relaxed bg-gray-950/50 rounded-lg p-3 border border-gray-800">
+                                {sub.response.answer ?? <span class="text-gray-600 italic">No answer provided</span>}
+                              </p>
+                            ) : task.type === "transcription_review" ? (
+                              <div class="bg-gray-950 border border-gray-800 rounded-lg p-3 max-h-32 overflow-y-auto">
+                                <p class="text-xs text-gray-300 font-mono whitespace-pre-wrap">{sub.response.corrected_text}</p>
+                              </div>
+                            ) : (
+                              <div class="bg-gray-950 border border-gray-800 rounded-lg p-3 max-h-32 overflow-y-auto">
+                                <pre class="text-xs text-gray-300 whitespace-pre-wrap font-mono break-all">{JSON.stringify(sub.response, null, 2)}</pre>
+                              </div>
+                            )}
                           </div>
                         )}
 
@@ -216,32 +294,25 @@ const TYPE_LABELS: Record<string, string> = {
                     </div>
 
                     <!-- Actions -->
-                    <div class="flex items-center gap-2 flex-shrink-0">
+                    <div class="flex-shrink-0 text-right">
+                      <div class="text-xs text-gray-500 mb-2">
+                        {sub.earnings_credits} cr · {sub.xp_earned} XP
+                      </div>
                       {sub.status === "submitted" && (
-                        <>
-                          <form method="POST">
-                            <input type="hidden" name="action" value="approve" />
-                            <input type="hidden" name="task_id" value={task.id} />
-                            <input type="hidden" name="assignment_id" value={sub.id} />
-                            <button
-                              type="submit"
-                              class="px-3 py-1.5 bg-green-900/50 border border-green-700 text-green-300 text-xs font-medium rounded-lg hover:bg-green-800/50 transition-colors"
-                            >
-                              ✓ Approve
-                            </button>
-                          </form>
-                          <form method="POST">
-                            <input type="hidden" name="action" value="reject" />
-                            <input type="hidden" name="task_id" value={task.id} />
-                            <input type="hidden" name="assignment_id" value={sub.id} />
-                            <button
-                              type="submit"
-                              class="px-3 py-1.5 bg-red-900/50 border border-red-700 text-red-300 text-xs font-medium rounded-lg hover:bg-red-800/50 transition-colors"
-                            >
-                              ✕ Reject
-                            </button>
-                          </form>
-                        </>
+                        <div class="review-actions flex gap-2 justify-end" data-sub-id={sub.id} data-task-id={task.id}>
+                          <button
+                            type="button"
+                            class="approve-btn px-3 py-1.5 bg-green-900/50 border border-green-700 text-green-300 text-xs font-medium rounded-lg hover:bg-green-800/50 transition-colors"
+                          >
+                            ✓ Approve
+                          </button>
+                          <button
+                            type="button"
+                            class="reject-btn px-3 py-1.5 bg-red-900/50 border border-red-700 text-red-300 text-xs font-medium rounded-lg hover:bg-red-800/50 transition-colors"
+                          >
+                            ✕ Reject
+                          </button>
+                        </div>
                       )}
                       {sub.status === "approved" && (
                         <span class="text-green-400 text-xs font-medium">✓ Approved</span>
@@ -249,9 +320,6 @@ const TYPE_LABELS: Record<string, string> = {
                       {sub.status === "rejected" && (
                         <span class="text-red-400 text-xs font-medium">✕ Rejected</span>
                       )}
-                      <div class="text-xs text-gray-500 ml-2">
-                        {sub.earnings_credits} cr · {sub.xp_earned} XP
-                      </div>
                     </div>
                   </div>
                 </div>
@@ -292,3 +360,83 @@ const TYPE_LABELS: Record<string, string> = {
     )}
   </div>
 </Layout>
+
+<script>
+// ── Review action buttons: approve / reject with optional reason ───────────
+
+async function postReviewAction(
+  taskId: string,
+  subId: string,
+  action: "approve" | "reject",
+  reason?: string
+) {
+  const form = new FormData();
+  form.set("action", action);
+  form.set("task_id", taskId);
+  form.set("assignment_id", subId);
+  if (reason) form.set("reason", reason);
+
+  const res = await fetch("/dashboard/review", { method: "POST", body: form });
+  if (res.ok || res.redirected) {
+    window.location.reload();
+  } else {
+    throw new Error("Request failed");
+  }
+}
+
+document.querySelectorAll<HTMLElement>(".review-actions").forEach(container => {
+  const subId = container.dataset.subId!;
+  const taskId = container.dataset.taskId!;
+
+  const approveBtn = container.querySelector<HTMLButtonElement>(".approve-btn")!;
+  const rejectBtn = container.querySelector<HTMLButtonElement>(".reject-btn")!;
+
+  approveBtn.addEventListener("click", async () => {
+    approveBtn.textContent = "Approving…";
+    approveBtn.disabled = true;
+    rejectBtn.disabled = true;
+    try {
+      await postReviewAction(taskId, subId, "approve");
+    } catch {
+      approveBtn.textContent = "✓ Approve";
+      approveBtn.disabled = false;
+      rejectBtn.disabled = false;
+    }
+  });
+
+  rejectBtn.addEventListener("click", () => {
+    // First click: expand reason textarea
+    if (!container.querySelector(".reject-reason-wrap")) {
+      const wrap = document.createElement("div");
+      wrap.className = "reject-reason-wrap mt-2 w-48 text-left";
+      wrap.innerHTML = `
+        <textarea
+          class="reject-reason-input w-full text-xs bg-gray-900 border border-red-800/60 rounded-lg p-2 text-gray-300 placeholder-gray-600 focus:outline-none focus:border-red-600 resize-none"
+          rows="2"
+          placeholder="Reason (optional)…"
+        ></textarea>
+        <button type="button" class="reject-confirm-btn mt-1.5 w-full px-3 py-1.5 bg-red-900/60 border border-red-700 text-red-300 text-xs font-semibold rounded-lg hover:bg-red-800/60 transition-colors">
+          Confirm reject
+        </button>
+      `;
+      container.appendChild(wrap);
+      wrap.querySelector<HTMLElement>(".reject-reason-input")?.focus();
+
+      wrap.querySelector<HTMLButtonElement>(".reject-confirm-btn")!.addEventListener("click", async () => {
+        const reason = (wrap.querySelector<HTMLTextAreaElement>(".reject-reason-input")?.value ?? "").trim();
+        rejectBtn.textContent = "Rejecting…";
+        rejectBtn.disabled = true;
+        approveBtn.disabled = true;
+        try {
+          await postReviewAction(taskId, subId, "reject", reason || undefined);
+        } catch {
+          rejectBtn.textContent = "✕ Reject";
+          rejectBtn.disabled = false;
+          approveBtn.disabled = false;
+          wrap.remove();
+        }
+      });
+    }
+  });
+});
+</script>

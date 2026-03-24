@@ -548,16 +548,73 @@ document.getElementById("claim-btn")?.addEventListener("click", async (e) => {
   }
 });
 
+// ─── Submission validation ────────────────────────────────────────────────
+function validateResponse(type: string): string {
+  switch (type) {
+    case "label_image":
+    case "label_text": {
+      const selected = document.querySelectorAll(".label-btn.selected");
+      if (selected.length === 0) return "Please select at least one label before submitting.";
+      return "";
+    }
+    case "rate_quality": {
+      const ratingEl = document.querySelector(".star-btn.selected");
+      if (!ratingEl) return "Please select a quality rating (1–5 stars) before submitting.";
+      return "";
+    }
+    case "verify_fact": {
+      const verdictEl = document.querySelector(".verdict-btn.selected");
+      if (!verdictEl) return "Please select a verdict (True / False / Can't tell) before submitting.";
+      return "";
+    }
+    case "moderate_content": {
+      const decisionEl = document.querySelector(".mod-btn.selected");
+      if (!decisionEl) return "Please select a moderation decision before submitting.";
+      return "";
+    }
+    case "compare_rank": {
+      const choiceEl = document.querySelector(".rank-btn.selected");
+      if (!choiceEl) return "Please select the best option before submitting.";
+      return "";
+    }
+    case "answer_question": {
+      const ans = ((document.getElementById("free-answer") as HTMLTextAreaElement)?.value ?? "").trim();
+      if (!ans) return "Please write an answer before submitting.";
+      if (ans.length < 5) return "Your answer seems too short. Please provide more detail.";
+      return "";
+    }
+    case "transcription_review": {
+      const txt = ((document.getElementById("corrected-text") as HTMLTextAreaElement)?.value ?? "").trim();
+      if (!txt) return "Please provide the corrected transcript before submitting.";
+      return "";
+    }
+    default:
+      return "";
+  }
+}
+
 // ─── Submit ───────────────────────────────────────────────────────────────
 document.getElementById("submit-btn")?.addEventListener("click", async (e) => {
   const btn = e.currentTarget as HTMLButtonElement;
   const taskId = btn.dataset.taskId;
   const errEl = document.getElementById("submit-error")!;
+  const originalText = btn.textContent ?? "Submit answer";
+
+  // Client-side validation
+  const type = (document.getElementById("task-type") as HTMLInputElement)?.value ?? "";
+  const validationError = validateResponse(type);
+  if (validationError) {
+    errEl.textContent = validationError;
+    errEl.classList.remove("hidden");
+    errEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    return;
+  }
+  errEl.classList.add("hidden");
 
   const response = getResponse();
   const note = (document.getElementById("worker-note") as HTMLTextAreaElement)?.value ?? "";
 
-  btn.textContent = "Submitting...";
+  btn.textContent = "Submitting…";
   btn.disabled = true;
 
   try {
@@ -579,13 +636,13 @@ document.getElementById("submit-btn")?.addEventListener("click", async (e) => {
       errEl.textContent = body.detail ?? "Submission failed. Try again.";
       errEl.classList.remove("hidden");
       btn.disabled = false;
-      btn.textContent = "Submit answer";
+      btn.textContent = originalText;
     }
   } catch {
     errEl.textContent = "Network error. Please try again.";
     errEl.classList.remove("hidden");
     btn.disabled = false;
-    btn.textContent = "Submit answer";
+    btn.textContent = originalText;
   }
 });
 
