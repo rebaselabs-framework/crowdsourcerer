@@ -20,21 +20,21 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     # ── Enums ─────────────────────────────────────────────────────────────────
-    op.execute("CREATE TYPE plan_enum AS ENUM ('free', 'starter', 'pro', 'enterprise')")
+    op.execute("CREATE TYPE IF NOT EXISTS plan_enum AS ENUM ('free', 'starter', 'pro', 'enterprise')")
     op.execute("""
-        CREATE TYPE task_type_enum AS ENUM (
+        CREATE TYPE IF NOT EXISTS task_type_enum AS ENUM (
             'web_research', 'entity_lookup', 'document_parse', 'data_transform',
             'llm_generate', 'screenshot', 'audio_transcribe', 'pii_detect',
             'code_execute', 'web_intel'
         )
     """)
     op.execute("""
-        CREATE TYPE task_status_enum AS ENUM (
+        CREATE TYPE IF NOT EXISTS task_status_enum AS ENUM (
             'pending', 'queued', 'running', 'completed', 'failed', 'cancelled'
         )
     """)
-    op.execute("CREATE TYPE task_priority_enum AS ENUM ('low', 'normal', 'high', 'urgent')")
-    op.execute("CREATE TYPE transaction_type_enum AS ENUM ('charge', 'credit', 'refund')")
+    op.execute("CREATE TYPE IF NOT EXISTS task_priority_enum AS ENUM ('low', 'normal', 'high', 'urgent')")
+    op.execute("CREATE TYPE IF NOT EXISTS transaction_type_enum AS ENUM ('charge', 'credit', 'refund')")
 
     # ── users ─────────────────────────────────────────────────────────────────
     op.create_table(

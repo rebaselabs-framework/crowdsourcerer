@@ -19,7 +19,7 @@ depends_on = None
 
 def upgrade() -> None:
     # ── 1. Add role to users ───────────────────────────────────────────────
-    op.execute("CREATE TYPE user_role_enum AS ENUM ('requester', 'worker', 'both')")
+    op.execute("CREATE TYPE IF NOT EXISTS user_role_enum AS ENUM ('requester', 'worker', 'both')")
     op.add_column("users", sa.Column(
         "role",
         sa.Enum("requester", "worker", "both", name="user_role_enum"),
@@ -50,7 +50,7 @@ def upgrade() -> None:
     op.execute("ALTER TYPE task_status_enum ADD VALUE IF NOT EXISTS 'assigned'")
 
     # ── 5. Add execution_mode enum and column ──────────────────────────────
-    op.execute("CREATE TYPE execution_mode_enum AS ENUM ('ai', 'human')")
+    op.execute("CREATE TYPE IF NOT EXISTS execution_mode_enum AS ENUM ('ai', 'human')")
     op.add_column("tasks", sa.Column(
         "execution_mode",
         sa.Enum("ai", "human", name="execution_mode_enum"),
@@ -70,7 +70,7 @@ def upgrade() -> None:
 
     # ── 8. Create task_assignments table ──────────────────────────────────
     op.execute("""
-        CREATE TYPE assignment_status_enum AS ENUM (
+        CREATE TYPE IF NOT EXISTS assignment_status_enum AS ENUM (
             'active', 'submitted', 'approved', 'rejected', 'released', 'timed_out'
         )
     """)

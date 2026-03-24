@@ -18,7 +18,7 @@ depends_on = None
 def upgrade() -> None:
     # invite_status_enum
     op.execute(
-        "CREATE TYPE invite_status_enum AS ENUM "
+        "CREATE TYPE IF NOT EXISTS invite_status_enum AS ENUM "
         "('pending', 'accepted', 'declined', 'expired')"
     )
 

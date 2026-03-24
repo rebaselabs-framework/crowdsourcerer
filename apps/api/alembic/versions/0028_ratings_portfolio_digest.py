@@ -34,7 +34,7 @@ def upgrade() -> None:
 
     # ── notification_preferences: digest_frequency ──────────────────────────
     op.execute(
-        "CREATE TYPE digest_frequency_enum AS ENUM ('none', 'daily', 'weekly')"
+        "CREATE TYPE IF NOT EXISTS digest_frequency_enum AS ENUM ('none', 'daily', 'weekly')"
     )
     op.add_column(
         "notification_preferences",
