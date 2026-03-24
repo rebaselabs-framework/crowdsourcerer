@@ -70,7 +70,7 @@ for (const c of myCerts) {
   <div class="max-w-6xl mx-auto px-4 py-8">
     <!-- Header -->
     <div class="mb-8">
-      <h1 class="text-3xl font-bold text-gray-900">🎓 Worker Certifications</h1>
+      <h1 class="text-3xl font-bold text-white">🎓 Worker Certifications</h1>
       <p class="text-gray-500 mt-1">Earn certifications to unlock higher-value tasks and boost your credibility</p>
     </div>
 
@@ -103,8 +103,8 @@ for (const c of myCerts) {
 
     <!-- Take Certification Test -->
     {certDetail && (
-      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 mb-8">
-        <div class="p-6 border-b border-gray-100 flex items-center justify-between">
+      <div class="bg-gray-900 border border-gray-800 rounded-2xl mb-8">
+        <div class="p-6 border-b border-gray-800 flex items-center justify-between">
           <div>
             <h2 class="text-xl font-bold">{certDetail.badge_icon} {certDetail.name}</h2>
             <p class="text-gray-500 text-sm mt-1">{certDetail.question_count} questions • Pass with {certDetail.passing_score}%+</p>
@@ -122,11 +122,11 @@ for (const c of myCerts) {
                   <span class="w-7 h-7 rounded-full bg-violet-100 text-violet-700 text-sm font-bold flex-shrink-0 flex items-center justify-center mt-0.5">
                     {i + 1}
                   </span>
-                  <p class="font-medium text-gray-900">{q.question}</p>
+                  <p class="font-medium text-gray-200">{q.question}</p>
                 </div>
                 <div class="ml-10 space-y-2">
                   {q.question_type === "single_choice" && q.options?.map((opt: any) => (
-                    <label class="flex items-center gap-3 p-3 rounded-xl border border-gray-200 hover:border-violet-300 hover:bg-violet-50 cursor-pointer transition">
+                    <label class="flex items-center gap-3 p-3 rounded-xl border border-gray-700 hover:border-violet-500 hover:bg-violet-900/20 cursor-pointer transition">
                       <input
                         type="radio"
                         name={`q_${q.id}`}
@@ -136,11 +136,11 @@ for (const c of myCerts) {
                         onchange="updateAnswers()"
                         class="text-violet-600"
                       />
-                      <span class="text-sm">{opt.text}</span>
+                      <span class="text-sm text-gray-200">{opt.text}</span>
                     </label>
                   ))}
                   {q.question_type === "multi_choice" && q.options?.map((opt: any) => (
-                    <label class="flex items-center gap-3 p-3 rounded-xl border border-gray-200 hover:border-violet-300 hover:bg-violet-50 cursor-pointer transition">
+                    <label class="flex items-center gap-3 p-3 rounded-xl border border-gray-700 hover:border-violet-500 hover:bg-violet-900/20 cursor-pointer transition">
                       <input
                         type="checkbox"
                         name={`q_${q.id}`}
@@ -150,7 +150,7 @@ for (const c of myCerts) {
                         onchange="updateAnswers()"
                         class="text-violet-600 rounded"
                       />
-                      <span class="text-sm">{opt.text}</span>
+                      <span class="text-sm text-gray-200">{opt.text}</span>
                     </label>
                   ))}
                 </div>
@@ -160,7 +160,7 @@ for (const c of myCerts) {
 
           <div class="mt-8 flex gap-4">
             <a href="/worker/certifications"
-              class="flex-1 text-center border border-gray-300 text-gray-700 px-4 py-3 rounded-xl text-sm font-medium hover:bg-gray-50">
+              class="flex-1 text-center border border-gray-700 text-gray-300 px-4 py-3 rounded-xl text-sm font-medium hover:bg-gray-800">
               Cancel
             </a>
             <button
@@ -178,18 +178,18 @@ for (const c of myCerts) {
     <!-- My Certifications -->
     {myCerts.length > 0 && !certDetail && (
       <div class="mb-8">
-        <h2 class="text-xl font-bold text-gray-900 mb-4">My Certifications ({myCerts.length})</h2>
+        <h2 class="text-xl font-bold text-white mb-4">My Certifications ({myCerts.length})</h2>
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {myCerts.map((c: any) => (
-            <div class={`p-5 rounded-2xl border-2 ${c.passed ? "border-green-300 bg-green-50" : "border-gray-200 bg-gray-50"}`}>
+            <div class={`p-5 rounded-2xl border-2 ${c.passed ? "border-emerald-700 bg-emerald-900/20" : "border-gray-700 bg-gray-800"}`}>
               <div class="flex items-center justify-between mb-3">
                 <div class="text-3xl">{c.passed ? "✅" : "❌"}</div>
-                <span class={`text-sm font-bold px-2 py-0.5 rounded-full ${c.passed ? "bg-green-200 text-green-800" : "bg-red-100 text-red-700"}`}>
+                <span class={`text-sm font-bold px-2 py-0.5 rounded-full ${c.passed ? "bg-emerald-900/40 text-emerald-300" : "bg-red-900/40 text-red-400"}`}>
                   {c.score}%
                 </span>
               </div>
-              <h3 class="font-bold text-gray-900">{c.cert_name}</h3>
-              <p class="text-xs text-gray-500 mt-1">{c.task_type}</p>
+              <h3 class="font-bold text-white">{c.cert_name}</h3>
+              <p class="text-xs text-gray-400 mt-1">{c.task_type}</p>
               {c.passed && c.certified_at && (
                 <p class="text-xs text-green-600 mt-2">Certified {new Date(c.certified_at).toLocaleDateString()}</p>
               )}
@@ -211,23 +211,23 @@ for (const c of myCerts) {
     <!-- Available Certifications -->
     {!certDetail && (
       <div>
-        <h2 class="text-xl font-bold text-gray-900 mb-4">Available Certifications</h2>
+        <h2 class="text-xl font-bold text-white mb-4">Available Certifications</h2>
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {certifications.map((cert: any) => {
             const my = myMap[cert.task_type];
             return (
-              <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 hover:shadow-md transition">
+              <div class="bg-gray-900 border border-gray-800 rounded-2xl p-6 hover:border-gray-700 transition-colors">
                 <div class="flex items-start justify-between mb-4">
                   <div class="text-4xl">{cert.badge_icon || "🏅"}</div>
                   {my?.passed && (
-                    <span class="bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded-full">✓ Certified</span>
+                    <span class="bg-emerald-900/40 text-emerald-300 text-xs font-bold px-2 py-1 rounded-full">✓ Certified</span>
                   )}
                   {my && !my.passed && (
-                    <span class="bg-orange-100 text-orange-700 text-xs font-bold px-2 py-1 rounded-full">Best: {my.best_score}%</span>
+                    <span class="bg-orange-900/40 text-orange-300 text-xs font-bold px-2 py-1 rounded-full">Best: {my.best_score}%</span>
                   )}
                 </div>
-                <h3 class="font-bold text-gray-900 mb-1">{cert.name}</h3>
-                <p class="text-sm text-gray-500 mb-3">{cert.description}</p>
+                <h3 class="font-bold text-white mb-1">{cert.name}</h3>
+                <p class="text-sm text-gray-400 mb-3">{cert.description}</p>
                 <div class="flex items-center justify-between text-xs text-gray-400 mb-4">
                   <span>📋 {cert.question_count} questions</span>
                   <span>🎯 Pass at {cert.passing_score}%</span>
@@ -236,7 +236,7 @@ for (const c of myCerts) {
                   href={`/worker/certifications?take=${cert.task_type}`}
                   class={`block text-center py-2 rounded-xl text-sm font-medium transition ${
                     my?.passed
-                      ? "bg-green-50 text-green-700 border border-green-200 hover:bg-green-100"
+                      ? "bg-emerald-900/30 text-emerald-300 border border-emerald-800 hover:bg-emerald-900/50"
                       : "bg-violet-600 hover:bg-violet-700 text-white"
                   }`}
                 >
@@ -248,7 +248,7 @@ for (const c of myCerts) {
         </div>
 
         {certifications.length === 0 && (
-          <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-12 text-center text-gray-400">
+          <div class="bg-gray-900 border border-gray-800 rounded-2xl p-12 text-center text-gray-400">
             <div class="text-5xl mb-4">🎓</div>
             <p class="text-lg font-medium">No certifications available yet</p>
           </div>

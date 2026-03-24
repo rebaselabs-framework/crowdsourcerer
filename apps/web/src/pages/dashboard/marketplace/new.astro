@@ -8,13 +8,13 @@ const { token, user } = await requireAuth(Astro);
 <Layout title="Create Template — CrowdSorcerer" user={user}>
   <div class="max-w-2xl mx-auto px-4 py-8">
     <div class="flex items-center gap-3 mb-6">
-      <a href="/dashboard/marketplace" class="text-gray-400 hover:text-gray-600">←</a>
-      <h1 class="text-2xl font-bold text-gray-900">Create Template</h1>
+      <a href="/dashboard/marketplace" class="text-gray-400 hover:text-gray-200">←</a>
+      <h1 class="text-2xl font-bold text-white">Create Template</h1>
     </div>
 
     <form id="templateForm" class="space-y-6">
-      <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-6 space-y-5">
-        <h2 class="font-semibold text-gray-700">Basic Info</h2>
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 space-y-5">
+        <h2 class="font-semibold text-gray-200">Basic Info</h2>
 
         <div>
           <label class="label">Template Name *</label>
@@ -85,25 +85,25 @@ const { token, user } = await requireAuth(Astro);
         <div>
           <label class="flex items-center gap-2 cursor-pointer">
             <input id="isPublic" type="checkbox" checked class="rounded" />
-            <span class="text-sm text-gray-700">Make public (visible to all users)</span>
+            <span class="text-sm text-gray-300">Make public (visible to all users)</span>
           </label>
         </div>
       </div>
 
-      <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-6 space-y-5">
-        <h2 class="font-semibold text-gray-700">Default Configuration</h2>
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 space-y-5">
+        <h2 class="font-semibold text-gray-200">Default Configuration</h2>
         <p class="text-xs text-gray-400">JSON object with default values that will pre-fill the task creation form.</p>
         <textarea id="taskConfig" class="input w-full h-40 font-mono text-sm resize-y" placeholder='{"labels": ["cat", "dog", "other"]}'>{}</textarea>
-        <p id="configError" class="text-xs text-red-500 hidden">Invalid JSON</p>
+        <p id="configError" class="text-xs text-red-400 hidden">Invalid JSON</p>
       </div>
 
-      <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-6 space-y-5">
-        <h2 class="font-semibold text-gray-700">Example Input (optional)</h2>
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 space-y-5">
+        <h2 class="font-semibold text-gray-200">Example Input (optional)</h2>
         <p class="text-xs text-gray-400">Show users what a real task input looks like.</p>
         <textarea id="exampleInput" class="input w-full h-32 font-mono text-sm resize-y" placeholder='{"image_url": "https://example.com/photo.jpg"}'></textarea>
       </div>
 
-      <div id="errorMsg" class="hidden bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm"></div>
+      <div id="errorMsg" class="hidden bg-gray-800 border border-red-700 text-red-400 rounded-lg px-4 py-3 text-sm"></div>
 
       <div class="flex justify-end gap-3">
         <a href="/dashboard/marketplace" class="btn-secondary">Cancel</a>
@@ -114,10 +114,10 @@ const { token, user } = await requireAuth(Astro);
 </Layout>
 
 <style>
-  .label { @apply block text-sm font-medium text-gray-700 mb-1; }
-  .input { @apply border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500; }
-  .btn-primary { @apply bg-indigo-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors; }
-  .btn-secondary { @apply bg-gray-100 text-gray-700 px-5 py-2 rounded-lg text-sm font-medium hover:bg-gray-200 transition-colors; }
+  .label { @apply block text-sm font-medium text-gray-300 mb-1; }
+  .input { @apply bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-violet-500; }
+  .btn-primary { @apply bg-violet-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-violet-500 transition-colors; }
+  .btn-secondary { @apply border border-gray-700 text-gray-300 px-5 py-2 rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors; }
 </style>
 
 <script>
