@@ -222,6 +222,7 @@ async def create_task(
             task_type=task.type,
             priority=task.priority,
             reward_credits=task.worker_reward_credits,
+            task_id=str(task.id),
         ))
 
     return TaskCreateResponse(
@@ -235,13 +236,26 @@ async def _trigger_saved_search_alerts(
     task_type: str,
     priority: str,
     reward_credits,
+    task_id: str = "",
+    task_title: Optional[str] = None,
 ) -> None:
     """Background task: notify workers whose saved searches match a new human task."""
     from core.database import AsyncSessionLocal
     from routers.saved_searches import notify_matching_saved_searches
+    from core.email import notify_matched_workers_of_task
     async with AsyncSessionLocal() as db:
         try:
             await notify_matching_saved_searches(task_type, priority, reward_credits, db)
+        except Exception:
+            pass  # Never crash task creation
+        try:
+            await notify_matched_workers_of_task(
+                task_id=task_id,
+                task_type=task_type,
+                reward_credits=reward_credits or 0,
+                task_title=task_title,
+                db=db,
+            )
         except Exception:
             pass  # Never crash task creation
 

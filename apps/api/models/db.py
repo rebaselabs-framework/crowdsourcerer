@@ -983,6 +983,7 @@ class NotificationPreferencesDB(Base):
     email_worker_approved = Column(Boolean, default=True, nullable=False)
     email_payout_update = Column(Boolean, default=True, nullable=False)
     email_daily_challenge = Column(Boolean, default=False, nullable=False)  # opt-in only
+    email_task_available = Column(Boolean, default=False, nullable=False)  # opt-in: notify when new task matches skills
     email_referral_bonus = Column(Boolean, default=True, nullable=False)
     email_sla_breach = Column(Boolean, default=True, nullable=False)
 

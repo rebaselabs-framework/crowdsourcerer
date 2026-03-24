@@ -529,6 +529,118 @@ async def notify_task_timeout_gated(
     )
 
 
+def _task_available_html(
+    task_id: str,
+    task_type: str,
+    reward_credits: int,
+    task_title: str | None,
+) -> str:
+    display_type = task_type.replace("_", " ").title()
+    title_line = f'<p><strong>Task:</strong> {task_title}</p>' if task_title else ""
+    return f"""
+<html><body style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px">
+<h2 style="color:#6366f1">🔔 New Task Available — {display_type}</h2>
+<p>A new task matching your skills has just been posted on CrowdSorcerer.</p>
+{title_line}
+<table style="width:100%;border-collapse:collapse;margin:16px 0">
+  <tr><td style="padding:8px;background:#1f2937;font-weight:bold;width:140px;color:#d1d5db">Task type</td>
+      <td style="padding:8px;color:#f9fafb">{display_type}</td></tr>
+  <tr><td style="padding:8px;font-weight:bold;color:#d1d5db">Reward</td>
+      <td style="padding:8px;color:#10b981"><strong>{reward_credits} credits</strong></td></tr>
+</table>
+<p style="margin:24px 0">
+  <a href="https://crowdsourcerer.rebaselabs.online/worker/marketplace"
+     style="background:#6366f1;color:white;padding:12px 24px;border-radius:6px;
+            text-decoration:none;font-weight:bold;display:inline-block">
+    View Task →
+  </a>
+</p>
+<p style="color:#6b7280;font-size:13px">
+  You received this because you have enabled task availability alerts in your
+  <a href="https://crowdsourcerer.rebaselabs.online/dashboard/notification-preferences"
+     style="color:#6366f1">notification preferences</a>.
+  You can disable this at any time.
+</p>
+<hr style="margin:24px 0;border:none;border-top:1px solid #374151">
+<p style="color:#9ca3af;font-size:12px">CrowdSorcerer · <a href="https://crowdsourcerer.rebaselabs.online" style="color:#6366f1">crowdsourcerer.rebaselabs.online</a></p>
+</body></html>
+"""
+
+
+async def notify_task_available_gated(
+    to_email: str,
+    user_id: str,
+    task_id: str,
+    task_type: str,
+    reward_credits: int,
+    task_title: str | None = None,
+) -> bool:
+    """Send new-task-available email if worker has opted in (email_task_available)."""
+    prefs = await _get_prefs(user_id)
+    # task_available is opt-in (default False) — only send if explicitly enabled
+    if not prefs or not prefs.email_task_available:
+        return False
+    return await send_email(
+        to_email=to_email,
+        subject=f"🔔 New {task_type.replace('_', ' ').title()} task available — {reward_credits} credits",
+        html_body=_task_available_html(task_id, task_type, reward_credits, task_title),
+    )
+
+
+async def notify_matched_workers_of_task(
+    task_id: str,
+    task_type: str,
+    reward_credits: int,
+    task_title: str | None,
+    db: "AsyncSession",
+    limit: int = 50,
+) -> int:
+    """
+    Find workers with skills matching `task_type` who have opted in to task-available
+    emails and send each of them a notification. Returns the count of emails sent.
+
+    Limited to `limit` workers (default 50) to avoid spam on large worker pools.
+    Workers are ranked by proficiency_level DESC so the most skilled get notified first.
+    """
+    from sqlalchemy import select
+    from models.db import WorkerSkillDB, UserDB, NotificationPreferencesDB
+
+    # Workers with a skill row for this task type AND opted-in email pref
+    result = await db.execute(
+        select(UserDB, NotificationPreferencesDB)
+        .join(WorkerSkillDB, WorkerSkillDB.worker_id == UserDB.id)
+        .join(
+            NotificationPreferencesDB,
+            NotificationPreferencesDB.user_id == UserDB.id,
+        )
+        .where(
+            WorkerSkillDB.task_type == task_type,
+            NotificationPreferencesDB.email_task_available == True,  # noqa: E712
+            UserDB.email.isnot(None),
+        )
+        .order_by(WorkerSkillDB.proficiency_level.desc())
+        .limit(limit)
+    )
+    rows = result.all()
+
+    sent = 0
+    for user, _prefs in rows:
+        try:
+            ok = await send_email(
+                to_email=user.email,
+                subject=f"🔔 New {task_type.replace('_', ' ').title()} task available — {reward_credits} credits",
+                html_body=_task_available_html(task_id, task_type, reward_credits, task_title),
+            )
+            if ok:
+                sent += 1
+        except Exception:
+            logger.exception("task_available_email_failed", user_id=str(user.id))
+
+    if sent:
+        logger.info("task_available_emails_sent", task_id=task_id, task_type=task_type, count=sent)
+    return sent
+
+
 # ─── Weekly Analytics Digest ─────────────────────────────────────────────────
 
 def _weekly_digest_html(

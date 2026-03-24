@@ -234,6 +234,7 @@ class NotificationPreferencesUpdate(BaseModel):
     email_worker_approved: Optional[bool] = None
     email_payout_update: Optional[bool] = None
     email_daily_challenge: Optional[bool] = None
+    email_task_available: Optional[bool] = None
     email_referral_bonus: Optional[bool] = None
     email_sla_breach: Optional[bool] = None
     # In-app
@@ -254,6 +255,7 @@ def _prefs_to_dict(prefs: NotificationPreferencesDB) -> dict:
         "email_worker_approved": prefs.email_worker_approved,
         "email_payout_update": prefs.email_payout_update,
         "email_daily_challenge": prefs.email_daily_challenge,
+        "email_task_available": prefs.email_task_available,
         "email_referral_bonus": prefs.email_referral_bonus,
         "email_sla_breach": prefs.email_sla_breach,
         "notif_task_events": prefs.notif_task_events,
@@ -275,6 +277,7 @@ def _default_prefs_dict() -> dict:
         "email_worker_approved": True,
         "email_payout_update": True,
         "email_daily_challenge": False,
+        "email_task_available": False,
         "email_referral_bonus": True,
         "email_sla_breach": True,
         "notif_task_events": True,
