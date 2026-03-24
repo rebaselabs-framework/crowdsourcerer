@@ -17,8 +17,6 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.execute(sa.text("DO $$ BEGIN CREATE TYPE team_invite_status AS ENUM ('pending', 'accepted', 'declined'); EXCEPTION WHEN duplicate_object THEN NULL; END $$"))
-
     # ── worker_teams ─────────────────────────────────────────────────────────
     op.create_table(
         "worker_teams",
@@ -52,7 +50,7 @@ def upgrade() -> None:
         sa.Column("invited_by", PGUUID(as_uuid=True), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
         sa.Column(
             "status",
-            sa.Enum("pending", "accepted", "declined", name="team_invite_status", create_type=False),
+            sa.Enum("pending", "accepted", "declined", name="team_invite_status"),
             nullable=False,
             server_default="'pending'",
         ),

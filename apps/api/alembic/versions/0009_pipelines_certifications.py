@@ -18,13 +18,6 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # ── Enums ──────────────────────────────────────────────────────────────
-    for stmt in [
-        "CREATE TYPE pipeline_run_status_enum AS ENUM ('pending', 'running', 'completed', 'failed', 'cancelled')",
-        "CREATE TYPE step_run_status_enum AS ENUM ('pending', 'running', 'completed', 'failed')",
-    ]:
-        op.execute(sa.text(f"DO $$ BEGIN {stmt}; EXCEPTION WHEN duplicate_object THEN NULL; END $$"))
-
     # ── Task Pipelines ────────────────────────────────────────────────────
     op.create_table(
         "task_pipelines",
@@ -67,7 +60,7 @@ def upgrade() -> None:
         sa.Column(
             "status",
             sa.Enum("pending", "running", "completed", "failed", "cancelled",
-                    name="pipeline_run_status_enum", create_type=False),
+                    name="pipeline_run_status_enum"),
             nullable=False,
             server_default="pending",
         ),
@@ -96,7 +89,7 @@ def upgrade() -> None:
         sa.Column(
             "status",
             sa.Enum("pending", "running", "completed", "failed",
-                    name="step_run_status_enum", create_type=False),
+                    name="step_run_status_enum"),
             nullable=False,
             server_default="pending",
         ),

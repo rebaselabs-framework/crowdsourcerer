@@ -22,7 +22,7 @@ def upgrade() -> None:
     op.execute("CREATE TYPE user_role_enum AS ENUM ('requester', 'worker', 'both')")
     op.add_column("users", sa.Column(
         "role",
-        sa.Enum("requester", "worker", "both", name="user_role_enum", create_type=False),
+        postgresql.ENUM("requester", "worker", "both", name="user_role_enum", create_type=False),
         nullable=False,
         server_default="requester",
     ))
@@ -53,7 +53,7 @@ def upgrade() -> None:
     op.execute("CREATE TYPE execution_mode_enum AS ENUM ('ai', 'human')")
     op.add_column("tasks", sa.Column(
         "execution_mode",
-        sa.Enum("ai", "human", name="execution_mode_enum", create_type=False),
+        postgresql.ENUM("ai", "human", name="execution_mode_enum", create_type=False),
         nullable=False,
         server_default="ai",
     ))
@@ -69,7 +69,6 @@ def upgrade() -> None:
     op.execute("ALTER TYPE transaction_type_enum ADD VALUE IF NOT EXISTS 'earning'")
 
     # ── 8. Create task_assignments table ──────────────────────────────────
-    op.execute("CREATE TYPE assignment_status_enum AS ENUM ('active', 'submitted', 'approved', 'rejected', 'released', 'timed_out')")
     op.create_table(
         "task_assignments",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
@@ -79,7 +78,7 @@ def upgrade() -> None:
                   sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
         sa.Column("status",
                   sa.Enum("active", "submitted", "approved", "rejected", "released", "timed_out",
-                          name="assignment_status_enum", create_type=False),
+                          name="assignment_status_enum"),
                   nullable=False,
                   server_default="active"),
         sa.Column("response", sa.JSON(), nullable=True),

@@ -19,14 +19,8 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # ── Enums ─────────────────────────────────────────────────────────────────
-    op.execute("CREATE TYPE plan_enum AS ENUM ('free', 'starter', 'pro', 'enterprise')")
-    op.execute("CREATE TYPE task_type_enum AS ENUM ('web_research', 'entity_lookup', 'document_parse', 'data_transform', 'llm_generate', 'screenshot', 'audio_transcribe', 'pii_detect', 'code_execute', 'web_intel')")
-    op.execute("CREATE TYPE task_status_enum AS ENUM ('pending', 'queued', 'running', 'completed', 'failed', 'cancelled')")
-    op.execute("CREATE TYPE task_priority_enum AS ENUM ('low', 'normal', 'high', 'urgent')")
-    op.execute("CREATE TYPE transaction_type_enum AS ENUM ('charge', 'credit', 'refund')")
-
     # ── users ─────────────────────────────────────────────────────────────────
+    # Enum types are auto-created by sa.Enum() during create_table.
     op.create_table(
         "users",
         sa.Column("id", UUID(as_uuid=True), primary_key=True),
@@ -35,7 +29,7 @@ def upgrade() -> None:
         sa.Column("password_hash", sa.String(255), nullable=True),
         sa.Column(
             "plan",
-            sa.Enum("free", "starter", "pro", "enterprise", name="plan_enum", create_type=False),
+            sa.Enum("free", "starter", "pro", "enterprise", name="plan_enum"),
             nullable=False,
             server_default="free",
         ),
@@ -94,7 +88,7 @@ def upgrade() -> None:
                 "llm_generate", "screenshot", "audio_transcribe", "pii_detect",
                 "code_execute", "web_intel",
                 name="task_type_enum",
-                create_type=False,
+
             ),
             nullable=False,
         ),
@@ -103,14 +97,14 @@ def upgrade() -> None:
             sa.Enum(
                 "pending", "queued", "running", "completed", "failed", "cancelled",
                 name="task_status_enum",
-                create_type=False,
+
             ),
             nullable=False,
             server_default="pending",
         ),
         sa.Column(
             "priority",
-            sa.Enum("low", "normal", "high", "urgent", name="task_priority_enum", create_type=False),
+            sa.Enum("low", "normal", "high", "urgent", name="task_priority_enum"),
             nullable=False,
             server_default="normal",
         ),
@@ -153,7 +147,7 @@ def upgrade() -> None:
         sa.Column("amount", sa.Integer, nullable=False),
         sa.Column(
             "type",
-            sa.Enum("charge", "credit", "refund", name="transaction_type_enum", create_type=False),
+            sa.Enum("charge", "credit", "refund", name="transaction_type_enum"),
             nullable=False,
         ),
         sa.Column("description", sa.String(512), nullable=False),

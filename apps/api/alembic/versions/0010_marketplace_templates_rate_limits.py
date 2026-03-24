@@ -16,7 +16,6 @@ depends_on = None
 
 def upgrade() -> None:
     # ── Task Template Marketplace ────────────────────────────────────────────
-    op.execute(sa.text("DO $$ BEGIN CREATE TYPE template_exec_mode_enum AS ENUM ('ai', 'human'); EXCEPTION WHEN duplicate_object THEN NULL; END $$"))
     op.create_table(
         "task_templates_marketplace",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
@@ -26,7 +25,7 @@ def upgrade() -> None:
         sa.Column("description", sa.Text, nullable=True),
         sa.Column("task_type", sa.String(64), nullable=False),
         sa.Column("execution_mode",
-                  sa.Enum("ai", "human", name="template_exec_mode_enum", create_type=False),
+                  sa.Enum("ai", "human", name="template_exec_mode_enum"),
                   nullable=False, server_default="ai"),
         sa.Column("category", sa.String(64), nullable=True),
         sa.Column("tags", sa.JSON, nullable=True),

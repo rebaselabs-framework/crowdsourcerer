@@ -10,6 +10,7 @@ Changes:
 from __future__ import annotations
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 
 revision = "0030"
@@ -20,9 +21,9 @@ depends_on = None
 
 def upgrade() -> None:
     # Create enum type first
-    op.execute(sa.text("DO $$ BEGIN CREATE TYPE availability_status_enum AS ENUM ('available', 'busy', 'away'); EXCEPTION WHEN duplicate_object THEN NULL; END $$"))
+    op.execute("CREATE TYPE availability_status_enum AS ENUM ('available', 'busy', 'away')")
     op.add_column("users", sa.Column("availability_status",
-                                     sa.Enum("available", "busy", "away", name="availability_status_enum", create_type=False),
+                                     postgresql.ENUM("available", "busy", "away", name="availability_status_enum", create_type=False),
                                      server_default="available", nullable=False))
 
 

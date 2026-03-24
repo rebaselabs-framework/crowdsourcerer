@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.dialects.postgresql import UUID
 
 
@@ -38,7 +39,7 @@ def upgrade() -> None:
         "notification_preferences",
         sa.Column(
             "digest_frequency",
-            sa.Enum("none", "daily", "weekly", name="digest_frequency_enum", create_type=False),
+            postgresql.ENUM("none", "daily", "weekly", name="digest_frequency_enum", create_type=False),
             nullable=False,
             server_default="weekly",
         ),

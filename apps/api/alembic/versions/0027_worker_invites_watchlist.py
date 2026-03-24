@@ -17,8 +17,6 @@ depends_on = None
 
 def upgrade() -> None:
     # invite_status_enum
-    op.execute("CREATE TYPE invite_status_enum AS ENUM ('pending', 'accepted', 'declined', 'expired')")
-
     # worker_invites
     op.create_table(
         "worker_invites",
@@ -32,7 +30,7 @@ def upgrade() -> None:
         sa.Column("message", sa.Text, nullable=True),
         sa.Column("status",
                   sa.Enum("pending", "accepted", "declined", "expired",
-                          name="invite_status_enum", create_type=False),
+                          name="invite_status_enum"),
                   nullable=False, server_default="pending"),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False,
                   server_default=sa.func.now()),
