@@ -1,5 +1,6 @@
 """Task router — maps task types to RebaseKit API workers."""
 from __future__ import annotations
+import json
 from typing import Any
 
 import structlog
@@ -59,27 +60,30 @@ async def execute_task(
 # ─── Worker implementations ────────────────────────────────────────────────
 
 async def _web_research(client: RebaseKitClient, inp: dict) -> dict:
-    result = await client.post("/webtask/task", {
+    # POST /webtask/api/task — AI agent up to 20 steps; requires `url` + `task`
+    result = await client.post("/webtask/api/task", {
         "url": inp["url"],
-        "instruction": inp.get("instruction", "Extract the main content"),
-        "extract_tables": inp.get("extract_tables", False),
-        "extract_links": inp.get("extract_links", False),
-        "wait_for_selector": inp.get("wait_for_selector"),
+        "task": inp.get("instruction") or inp.get("task", "Extract the main content from this page"),
     })
-    return {"raw": result, "summary": result.get("summary") or result.get("content", "")[:500]}
+    return {"raw": result, "summary": result.get("summary") or result.get("result", "")[:500]}
 
 
 async def _entity_lookup(client: RebaseKitClient, inp: dict) -> dict:
-    payload: dict[str, Any] = {"entity_type": inp.get("entity_type", "company")}
-    if inp.get("name"):
-        payload["name"] = inp["name"]
-    if inp.get("domain"):
-        payload["domain"] = inp["domain"]
-    if inp.get("linkedin_url"):
-        payload["linkedin_url"] = inp["linkedin_url"]
-    if inp.get("enrich_fields"):
-        payload["fields"] = inp["enrich_fields"]
-    result = await client.post("/entity-enrichment/enrich", payload)
+    entity_type = inp.get("entity_type", "company")
+    if entity_type == "person":
+        # POST /enrich/api/enrich/person — requires name + domain
+        result = await client.post("/enrich/api/enrich/person", {
+            "name": inp.get("name", ""),
+            "domain": inp.get("domain", ""),
+        })
+    else:
+        # POST /enrich/api/enrich/company — single `company` field (domain/URL/name)
+        company = inp.get("domain") or inp.get("name") or inp.get("company", "")
+        result = await client.post("/enrich/api/enrich/company", {
+            "company": company,
+            "use_ai": True,
+            "include_confidence": False,
+        })
     return {"raw": result, "summary": _entity_summary(result)}
 
 
@@ -90,23 +94,28 @@ def _entity_summary(r: dict) -> str:
 
 
 async def _document_parse(client: RebaseKitClient, inp: dict) -> dict:
+    # POST /docparse/api/parse — auto-detect format from URL or base64 content
     payload: dict[str, Any] = {}
     if inp.get("url"):
         payload["url"] = inp["url"]
     if inp.get("base64_content"):
-        payload["content"] = inp["base64_content"]
-        payload["mime_type"] = inp.get("mime_type", "application/pdf")
-    payload["extract_tables"] = inp.get("extract_tables", True)
-    payload["extract_images"] = inp.get("extract_images", False)
-    result = await client.post("/doc-parse/parse", payload)
-    return {"raw": result, "summary": (result.get("text") or "")[:500]}
+        payload["content_base64"] = inp["base64_content"]  # field is content_base64, not content
+    payload["include_tables"] = inp.get("extract_tables", True)   # was extract_tables
+    payload["include_markdown"] = True
+    result = await client.post("/docparse/api/parse", payload)
+    return {"raw": result, "summary": (result.get("text") or result.get("markdown") or "")[:500]}
 
 
 async def _data_transform(client: RebaseKitClient, inp: dict) -> dict:
-    result = await client.post("/data-transform/transform", {
-        "data": inp["data"],
-        "transform": inp["transform"],
+    # POST /transform/api/transform — requires input_format, output_format, data (as string)
+    data = inp["data"]
+    if not isinstance(data, str):
+        data = json.dumps(data)
+    result = await client.post("/transform/api/transform", {
+        "data": data,
+        "input_format": inp.get("input_format", "json"),
         "output_format": inp.get("output_format", "json"),
+        "field_mapping": inp.get("field_mapping"),
     })
     return {"raw": result}
 
@@ -115,7 +124,7 @@ async def _llm_generate(client: RebaseKitClient, inp: dict) -> dict:
     messages = inp.get("messages", [])
     if inp.get("system_prompt") and not any(m.get("role") == "system" for m in messages):
         messages = [{"role": "system", "content": inp["system_prompt"]}] + list(messages)
-    result = await client.post("/llm-router/v1/chat/completions", {
+    result = await client.post("/llm/v1/chat/completions", {
         "messages": messages,
         "model": inp.get("model", "claude-3-5-haiku-20241022"),
         "temperature": inp.get("temperature", 0.7),
@@ -128,55 +137,53 @@ async def _llm_generate(client: RebaseKitClient, inp: dict) -> dict:
 
 
 async def _screenshot(client: RebaseKitClient, inp: dict) -> dict:
-    result = await client.post("/screenshot/screenshot", {
+    # POST /screenshot/api/screenshot — Playwright Chromium screenshot
+    result = await client.post("/screenshot/api/screenshot", {
         "url": inp["url"],
         "width": inp.get("width", 1280),
         "height": inp.get("height", 800),
         "full_page": inp.get("full_page", False),
         "format": inp.get("format", "png"),
-        "wait_for_selector": inp.get("wait_for_selector"),
     })
     return {"raw": result, "summary": f"Screenshot of {inp['url']}"}
 
 
 async def _audio_transcribe(client: RebaseKitClient, inp: dict) -> dict:
+    # POST /audio/transcribe — URL-based transcription via OpenAI Whisper
+    # Note: only URL-based audio is supported; base64_audio is not supported by this service.
     payload: dict[str, Any] = {
+        "url": inp["url"],  # required: URL of the audio file
         "language": inp.get("language"),
-        "diarize": inp.get("diarize", False),
+        "export_format": "json",
     }
-    if inp.get("url"):
-        payload["url"] = inp["url"]
-    if inp.get("base64_audio"):
-        payload["audio"] = inp["base64_audio"]
-    result = await client.post("/audio-to-text/transcribe", payload)
+    result = await client.post("/audio/transcribe", payload)
     return {"raw": result, "summary": (result.get("text") or "")[:500]}
 
 
 async def _pii_detect(client: RebaseKitClient, inp: dict) -> dict:
-    result = await client.post("/pii/detect", {
+    # POST /pii/api/detect — find all PII in text
+    result = await client.post("/pii/api/detect", {
         "text": inp["text"],
         "entities": inp.get("entities"),
-        "mask": inp.get("mask", False),
-        "vault": inp.get("vault", False),
     })
     count = len(result.get("entities", []))
     return {"raw": result, "summary": f"Found {count} PII entities"}
 
 
 async def _code_execute(client: RebaseKitClient, inp: dict) -> dict:
-    result = await client.post("/code-exec/execute", {
+    # POST /code/api/execute — run Python or JavaScript code in a sandbox
+    result = await client.post("/code/api/execute", {
         "code": inp["code"],
         "language": inp.get("language", "python"),
         "timeout": inp.get("timeout_seconds", 30),
-        "stdin": inp.get("stdin"),
     })
-    return {"raw": result, "summary": (result.get("stdout") or result.get("output") or "")[:500]}
+    return {"raw": result, "summary": (result.get("stdout") or result.get("output") or result.get("result", ""))[:500]}
 
 
 async def _web_intel(client: RebaseKitClient, inp: dict) -> dict:
-    result = await client.post("/web-intel/intel", {
+    # POST /webtask/api/research/auto — self-directed research: search→fetch→synthesize
+    result = await client.post("/webtask/api/research/auto", {
         "query": inp["query"],
-        "sources": inp.get("sources"),
-        "max_results": inp.get("max_results", 10),
+        "num_sources": min(inp.get("max_results", 5), 10),
     })
-    return {"raw": result, "summary": (result.get("summary") or "")[:500]}
+    return {"raw": result, "summary": (result.get("summary") or result.get("answer") or "")[:500]}

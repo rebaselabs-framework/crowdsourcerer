@@ -26,12 +26,16 @@ class RebaseKitClient:
     @property
     def client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
+            api_key = settings.rebasekit_api_key
+            headers: dict[str, str] = {"X-Client": "crowdsourcerer/0.1.0"}
+            if api_key:
+                # Only set Authorization header when key is present.
+                # An empty key produces "Bearer " (trailing space) which h11
+                # rejects as an illegal header value → LocalProtocolError.
+                headers["Authorization"] = f"Bearer {api_key}"
             self._client = httpx.AsyncClient(
                 base_url=settings.rebasekit_base_url,
-                headers={
-                    "Authorization": f"Bearer {settings.rebasekit_api_key}",
-                    "X-Client": "crowdsourcerer/0.1.0",
-                },
+                headers=headers,
                 timeout=120.0,
             )
         return self._client
@@ -41,6 +45,12 @@ class RebaseKitClient:
             await self._client.aclose()
 
     async def post(self, path: str, json: dict[str, Any]) -> dict[str, Any]:
+        # Fail fast with a clear error if the API key is not configured.
+        if not settings.rebasekit_api_key:
+            raise WorkerError(
+                "RebaseKit API key not configured. Set REBASEKIT_API_KEY in environment.",
+                status_code=503,
+            )
         t0 = time.perf_counter()
         try:
             r = await self.client.post(path, json=json)
@@ -55,6 +65,13 @@ class RebaseKitClient:
             )
         except httpx.TimeoutException:
             raise WorkerError("RebaseKit API timed out", status_code=504)
+        except httpx.RequestError as e:
+            # Covers LocalProtocolError, ConnectError, RemoteProtocolError, etc.
+            logger.error("rebasekit_request_error", path=path, error=type(e).__name__)
+            raise WorkerError(
+                f"RebaseKit connection error: {type(e).__name__}",
+                status_code=502,
+            )
         finally:
             elapsed = (time.perf_counter() - t0) * 1000
             logger.debug("rebasekit_call", path=path, duration_ms=round(elapsed))
