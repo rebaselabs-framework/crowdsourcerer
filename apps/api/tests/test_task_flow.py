@@ -246,7 +246,9 @@ class TestCreateHumanTask:
         try:
             with (
                 patch("core.quotas.enforce_task_creation_quota", new=AsyncMock()),
+                patch("core.quotas.enforce_task_burst_limit",    new=AsyncMock()),
                 patch("core.quotas.record_task_creation",        new=AsyncMock()),
+                patch("core.quotas.record_task_burst",           new=AsyncMock()),
                 patch("core.credit_alerts.maybe_fire_credit_alert", new=AsyncMock()),
             ):
                 async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
@@ -277,7 +279,9 @@ class TestCreateHumanTask:
         try:
             with (
                 patch("core.quotas.enforce_task_creation_quota", new=AsyncMock()),
+                patch("core.quotas.enforce_task_burst_limit",    new=AsyncMock()),
                 patch("core.quotas.record_task_creation",        new=AsyncMock()),
+                patch("core.quotas.record_task_burst",           new=AsyncMock()),
             ):
                 async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
                     r = await c.post("/v1/tasks", json={
@@ -837,7 +841,9 @@ class TestFullHappyPath:
         try:
             with (
                 patch("core.quotas.enforce_task_creation_quota", new=AsyncMock()),
+                patch("core.quotas.enforce_task_burst_limit",    new=AsyncMock()),
                 patch("core.quotas.record_task_creation",        new=AsyncMock()),
+                patch("core.quotas.record_task_burst",           new=AsyncMock()),
                 patch("core.credit_alerts.maybe_fire_credit_alert", new=AsyncMock()),
             ):
                 async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:

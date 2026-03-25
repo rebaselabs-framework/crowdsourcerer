@@ -172,8 +172,10 @@ class TaskOut(BaseModel):
     error: Optional[str] = None
     credits_used: Optional[int] = None
     duration_ms: Optional[int] = None
-    # validation_alias maps the ORM attribute (task_metadata) to this Pydantic field (metadata)
-    metadata: Optional[dict[str, Any]] = Field(None, validation_alias=AliasChoices("metadata", "task_metadata"))
+    # Use only "task_metadata" as the ORM alias. Never use "metadata" — on SQLAlchemy
+    # declarative models, `obj.metadata` returns the SQLAlchemy MetaData object (not our
+    # column data), which causes Pydantic serialization to blow up with a 500.
+    metadata: Optional[dict[str, Any]] = Field(None, validation_alias="task_metadata")
     worker_reward_credits: Optional[int] = None
     assignments_required: int = 1
     assignments_completed: int = 0
