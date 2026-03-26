@@ -435,7 +435,7 @@ const TASK_ICONS: Record<string, string> = {
     // Save button handler (works for both empty-state picker and skills-page manager)
     document.addEventListener("click", function(e) {
       var btn = e.target.closest("#save-interests-btn");
-      if (!btn || !TOKEN) return;
+      if (!btn) return;  // TOKEN check removed — /api/worker/interests proxy handles auth
 
       btn.disabled = true;
       btn.textContent = "Saving…";

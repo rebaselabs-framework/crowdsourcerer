@@ -404,9 +404,9 @@ async function submitEvidence(taskId) {
   };
 
   try {
-    const res = await fetch(`${API}/v1/disputes/tasks/${taskId}/evidence`, {
+    const res = await fetch(`/api/disputes/${taskId}/evidence`, {
       method: "POST",
-      headers: { "Content-Type":"application/json", Authorization:`Bearer ${TOKEN}` },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
     const data = await res.json();

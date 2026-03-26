@@ -16,7 +16,7 @@ export const GET: APIRoute = async ({ cookies, url }) => {
   }
 
   const params = url.searchParams.toString();
-  const apiUrl = `${API_URL}/v1/template-marketplace${params ? `?${params}` : ""}`;
+  const apiUrl = `${API_URL}/v1/marketplace/templates${params ? `?${params}` : ""}`;
 
   try {
     const res = await fetch(apiUrl, {

@@ -778,7 +778,7 @@ document.getElementById("payout-form")?.addEventListener("submit", async e => {
     details={network,address};
   }
   try {
-    const res = await fetch(`${API}/v1/payouts`,{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${TOKEN}`},body:JSON.stringify({credits_requested:credits,payout_method:method,payout_details:details})});
+    const res = await fetch(`/api/payouts`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({credits_requested:credits,payout_method:method,payout_details:details})});
     const data = await res.json();
     if(!res.ok) throw new Error(data.detail??"Request failed");
     if(ok){ok.textContent=`✅ Withdrawal request submitted! $${data.usd_amount.toFixed(2)} is being processed.`;ok.classList.remove("hidden");}
@@ -791,7 +791,7 @@ document.querySelectorAll(".cancel-payout").forEach(btn=>{
   btn.addEventListener("click", async()=>{
     const id=btn.dataset.id;
     if(!confirm("Cancel this request? Credits will be refunded.")) return;
-    const res=await fetch(`${API}/v1/payouts/${id}`,{method:"DELETE",headers:{Authorization:`Bearer ${TOKEN}`}});
+    const res=await fetch(`/api/payouts/${id}`,{method:"DELETE"});
     if(res.ok||res.status===204) window.location.reload();
     else{const d=await res.json().catch(()=>({}));alert(d.detail??"Failed to cancel");}
   });
@@ -807,9 +807,7 @@ document.getElementById("export-csv-btn")?.addEventListener("click", async () =>
 
   try {
     // Fetch up to 500 payouts for export
-    const res = await fetch(`${API}/v1/payouts?page=1&page_size=500`, {
-      headers: { Authorization: `Bearer ${TOKEN}` },
-    });
+    const res = await fetch(`/api/payouts?page=1&page_size=500`);
     const data = await res.json();
     const items = data?.items ?? [];
 

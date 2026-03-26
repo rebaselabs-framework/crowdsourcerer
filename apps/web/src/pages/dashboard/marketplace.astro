@@ -25,8 +25,6 @@ const categoriesData = categoriesRes.ok ? await categoriesRes.json() : [];
 const featuredTemplates = (featuredData.items || []).filter((t: any) => t.is_featured).slice(0, 4);
 const templates = templatesData.items || [];
 const categories = categoriesData;
-const clientApiUrl = import.meta.env.PUBLIC_API_URL ?? '';
-
 function starHtml(rating: number, count: number): string {
   if (count === 0) return '<span class="text-gray-300 text-xs">No ratings</span>';
   const filled = Math.round(rating);
@@ -240,10 +238,8 @@ function starHtml(rating: number, count: number): string {
   .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 </style>
 
-<script is:inline define:vars={{ clientApiUrl }}>
-  const API = clientApiUrl;
-  const token = document.cookie.match(/cs_token=([^;]+)/)?.[1] || '';
-  const authHeader = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
+<script is:inline>
+  // API calls use Astro proxy routes — no client-side token needed (httpOnly cookie)
 
   let activeTemplateId = null;
   let currentPage = 1;
@@ -271,7 +267,7 @@ function starHtml(rating: number, count: number): string {
   // ── Load & Render templates ───────────────────────────────────────────────
   async function loadTemplates(params = {}) {
     const qs = new URLSearchParams({ page: String(currentPage), page_size: String(PAGE_SIZE), ...params });
-    const res = await fetch(`${API}/v1/marketplace/templates?${qs}`, { headers: authHeader });
+    const res = await fetch(`/api/template-marketplace?${qs}`);
     if (!res.ok) return;
     const data = await res.json();
     renderTemplates(data.items || []);
@@ -341,7 +337,8 @@ function starHtml(rating: number, count: number): string {
 
   // ── useTemplate: prefill new-task form ───────────────────────────────────
   async function useTemplate(id, taskType, mode) {
-    await fetch(`${API}/v1/marketplace/templates/${id}/use`, { method:'POST', headers: authHeader });
+    // /api/template-marketplace/[id]/use proxy handles auth server-side
+    await fetch(`/api/template-marketplace/${id}/use`, { method:'POST' });
     window.location.href = `/dashboard/new-task?template=${id}&type=${taskType}&mode=${mode}`;
   }
 
@@ -351,9 +348,8 @@ function starHtml(rating: number, count: number): string {
     const origText = btn?.textContent;
     if (btn) btn.textContent = '⏳';
     try {
-      const res = await fetch(`${API}/v1/marketplace/templates/${id}/clone-task`, {
+      const res = await fetch(`/api/template-marketplace/${id}/clone-task`, {
         method: 'POST',
-        headers: authHeader,
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail ?? 'Failed to create task');
@@ -367,7 +363,7 @@ function starHtml(rating: number, count: number): string {
 
   // ── Modal ─────────────────────────────────────────────────────────────────
   async function openModal(id) {
-    const res = await fetch(`${API}/v1/marketplace/templates/${id}`, { headers: authHeader });
+    const res = await fetch(`/api/template-marketplace/${id}`);
     if (!res.ok) return;
     const t = await res.json();
     activeTemplateId = id;
@@ -408,8 +404,8 @@ function starHtml(rating: number, count: number): string {
       cloneBtn.textContent = '⏳ Creating…';
       cloneBtn.disabled = true;
       try {
-        const res = await fetch(`${API}/v1/marketplace/templates/${id}/clone-task`, {
-          method:'POST', headers: authHeader,
+        const res = await fetch(`/api/template-marketplace/${id}/clone-task`, {
+          method:'POST',
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail??'Failed');
@@ -461,8 +457,9 @@ function starHtml(rating: number, count: number): string {
     btn.addEventListener('click', async () => {
       if (!activeTemplateId) return;
       const rating = parseInt(btn.dataset.star);
-      await fetch(`${API}/v1/marketplace/templates/${activeTemplateId}/rate`, {
-        method:'POST', headers: authHeader,
+      await fetch(`/api/template-marketplace/${activeTemplateId}/rate`, {
+        method:'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ rating }),
       });
       document.querySelectorAll('.star-btn').forEach(s => {
