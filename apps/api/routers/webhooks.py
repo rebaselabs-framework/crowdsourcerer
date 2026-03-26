@@ -78,6 +78,7 @@ async def list_endpoints(
         select(WebhookEndpointDB)
         .where(WebhookEndpointDB.user_id == user_id)
         .order_by(WebhookEndpointDB.created_at.desc())
+        .limit(100)
     )
     endpoints = result.scalars().all()
     # Don't expose secret on list

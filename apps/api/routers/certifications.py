@@ -296,13 +296,21 @@ async def list_certifications(
     result = await db.execute(select(CertificationDB).order_by(CertificationDB.task_type))
     certs = result.scalars().all()
 
+    # Bulk-load question counts for all certs in one GROUP BY query
+    cert_ids = [c.id for c in certs]
+    qcount_map: dict = {}
+    if cert_ids:
+        qc_res = await db.execute(
+            select(CertificationQuestionDB.cert_id, func.count().label("cnt"))
+            .where(CertificationQuestionDB.cert_id.in_(cert_ids))
+            .group_by(CertificationQuestionDB.cert_id)
+        )
+        qcount_map = {str(r.cert_id): r.cnt for r in qc_res}
+
     out = []
     for cert in certs:
-        q_count = (await db.execute(
-            select(func.count()).where(CertificationQuestionDB.cert_id == cert.id)
-        )).scalar() or 0
         item = CertificationOut.model_validate(cert)
-        item.question_count = q_count
+        item.question_count = qcount_map.get(str(cert.id), 0)
         out.append(item)
     return out
 

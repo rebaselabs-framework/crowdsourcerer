@@ -58,10 +58,16 @@ async def _get_org_and_require_role(
     return org, member
 
 
-async def _org_to_out(org: OrganizationDB, db: AsyncSession) -> OrgOut:
-    member_count = await db.scalar(
-        select(func.count()).where(OrgMemberDB.org_id == org.id)
-    ) or 0
+async def _org_to_out(
+    org: OrganizationDB,
+    db: AsyncSession,
+    *,
+    member_count: Optional[int] = None,
+) -> OrgOut:
+    if member_count is None:
+        member_count = await db.scalar(
+            select(func.count()).where(OrgMemberDB.org_id == org.id)
+        ) or 0
     return OrgOut(
         id=org.id,
         name=org.name,
@@ -133,7 +139,22 @@ async def list_my_orgs(
         .order_by(OrgMemberDB.joined_at.asc())
     )
     orgs = result.scalars().all()
-    return [await _org_to_out(org, db) for org in orgs]
+    if not orgs:
+        return []
+
+    # Bulk-load member counts for all orgs in one query
+    org_ids = [o.id for o in orgs]
+    mc_res = await db.execute(
+        select(OrgMemberDB.org_id, func.count().label("cnt"))
+        .where(OrgMemberDB.org_id.in_(org_ids))
+        .group_by(OrgMemberDB.org_id)
+    )
+    member_counts = {str(r.org_id): r.cnt for r in mc_res}
+
+    return [
+        await _org_to_out(org, db, member_count=member_counts.get(str(org.id), 0))
+        for org in orgs
+    ]
 
 
 @router.get("/{org_id}", response_model=OrgOut)
