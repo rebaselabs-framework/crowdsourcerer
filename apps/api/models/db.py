@@ -161,7 +161,8 @@ class TaskDB(Base):
     __tablename__ = "tasks"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    # index=True deferred to migration 0050 (composite ix_tasks_user_id_created_at)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     type = Column(
         SAEnum(
             # AI-powered task types (executed by RebaseKit APIs)
@@ -300,7 +301,7 @@ class CreditTransactionDB(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    task_id = Column(UUID(as_uuid=True), ForeignKey("tasks.id", ondelete="SET NULL"), nullable=True)
+    task_id = Column(UUID(as_uuid=True), ForeignKey("tasks.id", ondelete="SET NULL"), nullable=True, index=True)
     amount = Column(Integer, nullable=False)  # positive = credit, negative = charge
     type = Column(
         SAEnum("charge", "credit", "refund", "earning", name="transaction_type_enum"),
