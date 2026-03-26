@@ -16,6 +16,7 @@ Payloads always include:
   - event       (string)
   - task_id     (UUID string)
   - occurred_at (ISO-8601 UTC)
+  - webhook_id  (UUID string) — unique per delivery attempt; use for idempotency
   - ...event-specific fields...
 """
 from __future__ import annotations
@@ -64,22 +65,36 @@ def _utcnow_iso() -> str:
 # ---------------------------------------------------------------------------
 
 def _render_payload_template(template_str: str, context: dict[str, Any]) -> dict:
-    """Replace {{key}} placeholders in template_str with values from context dict."""
+    """Replace {{key}} or {{nested.key}} placeholders in template_str with values from context.
+
+    Supports one level of dot notation: {{data.field}} traverses context["data"]["field"].
+    """
     import json
     import re
 
     def replacer(m: Any) -> str:
         key = m.group(1).strip()
-        value = context.get(key, "")
+        # Support dot-notation traversal (e.g. {{extra.plan}})
+        value: Any = context
+        for part in key.split("."):
+            if isinstance(value, dict):
+                value = value.get(part, "")
+            else:
+                value = ""
+                break
         if isinstance(value, (dict, list)):
             return json.dumps(value)
         return str(value) if value is not None else ""
 
-    rendered = re.sub(r"\{\{(\s*\w[\w.]*\s*)\}\}", replacer, template_str)
+    rendered = re.sub(r"\{\{(\s*[\w][\w.]*\s*)\}\}", replacer, template_str)
     try:
         return json.loads(rendered)
     except Exception:
-        # Fall back to raw rendered string if not valid JSON
+        logger.warning(
+            "webhooks.template_render_invalid_json",
+            template_preview=template_str[:120],
+            rendered_preview=rendered[:120],
+        )
         return {"_raw": rendered}
 
 
@@ -139,6 +154,7 @@ async def fire_webhook(
         "event": event_type,
         "task_id": task_id,
         "occurred_at": _utcnow_iso(),
+        "webhook_id": str(uuid.uuid4()),  # unique per delivery; use for idempotency
     }
     if extra:
         payload.update(extra)
@@ -268,6 +284,7 @@ async def _deliver_to_endpoint(
         "task_id": task_id,
         "occurred_at": _utcnow_iso(),
         "endpoint_id": str(endpoint.id),
+        "webhook_id": str(uuid.uuid4()),  # unique per delivery; use for idempotency
     }
     if extra:
         default_payload.update(extra)
