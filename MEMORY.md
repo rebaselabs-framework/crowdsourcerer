@@ -319,13 +319,49 @@ Pages fixed:
 
 Also: template-marketplace index.ts had wrong backend URL (`/v1/template-marketplace` → `/v1/marketplace/templates`), now also fixed.
 
+## Session 2026-03-26 (continued) — N+1 sweep, race conditions, test expansion (commits f557099–76af644)
+
+**Proxy URL + safety limit fixes (f557099):**
+- `template-marketplace/[id]/import.ts`: proxy was calling `/v1/template-marketplace/{id}/import` (non-existent) → fixed to `/v1/marketplace/templates/{id}/use`
+- `sweeper.py send_weekly_digests`: added `.limit(10_000)` on all-active-users fetch
+- `sweeper.py send_daily_digests`: added `.limit(10_000)` on all-daily-prefs fetch
+- `sweeper.py _escalate_priority`: added `.limit(1_000)` on open/pending tasks fetch
+- `webhooks.py fire_webhook_event + replay_webhook_log`: added `.limit(100)` on active endpoints fetch (both call sites)
+
+**N+1 fixes — pipelines + skill_quiz + worker (d625680):**
+- `pipelines.py list_pipelines`: 2N per-pipeline COUNT queries → 2 bulk GROUP BY queries (41 → 3 queries per page)
+- `pipelines.py list_pipeline_runs`: N per-run step_runs queries → single IN query (21 → 2 queries per page)
+- `skill_quiz.py get_quiz_questions`: added `.limit(QUESTIONS_PER_QUIZ * 20)` safety cap before Python random.sample
+- `worker.py submit_task badge check`: replaced `.all()` → `len()` with `func.count()` scalar aggregate
+
+**Race conditions fixed (3a9cac0):**
+- `tasks.py approve_submission`: assignment fetch lacked `with_for_update()` — concurrent approvals would both call `update_worker_skill` and fire notifications; second caller now waits and returns "Already approved" idempotently
+- `payouts.py admin_review_payout`: payout + user (refund path) fetches both lacked `with_for_update()` — double-approval or double-refund race fixed
+- `credits.py stripe_webhook`: user row fetch lacked `with_for_update()` before `credits +=`; the unique DB constraint on stripe_event_id already prevents double-crediting at the transaction level, but the lock ensures correct serialisation for concurrent events on the same user
+
+**N+1 + silent exception fixes (0f6baf0):**
+- `task_messages.py get_task_messages`: per-message sender lookup (N+1) → single bulk IN query; added `.limit(500)` safety cap (was unbounded)
+- `applications.py`: 4 bare `except Exception: pass` on notification helpers → `logger.warning(..., exc_info=True)`
+- `worker_teams.py`: 1 bare `except Exception: pass` on team member notification → `logger.warning`
+- `profiles.py`: 2 bare `except Exception: pass` in bg onboarding helpers → `logger.warning`
+
+**applications.py N+1 + tests (56de93d, 76af644):**
+- `list_applications`: `_fmt_application()` called N times (per-application UserDB query) → bulk-load workers with single IN query; also added `.limit(500)` safety cap (was unbounded)
+- `list_my_applications`: same N+1 fix
+- Refactored: `_build_application_out()` sync helper takes pre-loaded worker; `_fmt_application()` preserved for single-app paths (accept/reject/submit)
+- `skill_quiz.py submit_quiz`: loads all quiz questions without limit → added `.limit(1_000)` safety cap
+- 6 race condition tests in `test_race_conditions.py` (approve idempotency, reject non-submitted, already-paid payout, processing sets status, rejection refunds credits)
+- 7 application tests in `test_applications.py` including N+1 regression test (confirms 3 execute calls not N+1)
+
+**Test count: 343 → 356**
+
 ## Priorities for Next Session 🔜
 
 PHASE: Pre-alpha development. Focus on quality/depth. NOT in scope: launch tasks, marketing, directory listings.
 
-1. **Test coverage for new proxy routes**: 13+ new Astro proxy routes were created across these sessions with no tests. Add at minimum a test that each proxy correctly reads the cookie and forwards to the right URL (mock the upstream fetch). Prevents regressions like the wrong-URL bug found in `/api/template-marketplace/index.ts`.
-2. **Investigate `admin/payouts.astro` upstream URL**: The new `/api/admin/payouts/[payoutId]/review` proxy calls `/v1/admin/payouts/{id}/review` — verify that FastAPI endpoint exists (the payout review might be at a different path).
-3. **Worker completeness score in onboarding**: Check if the `worker/onboarding.astro` page reflects the newly-added completeness indicators (location, website, skills, certs) — or if it still only checks 3 fields.
+1. **Feature additions**: The core quality/correctness audit is now thorough. Consider new user-facing features — e.g., task scheduling improvements, better admin analytics, or worker dashboard enhancements.
+2. **DB indexes for new query patterns**: The bulk IN queries and GROUP BY queries added this session could benefit from composite indexes. Check if `TaskPipelineStepDB.pipeline_id`, `TaskPipelineStepRunDB.run_id`, `TaskApplicationDB.worker_id + task_id`, `TaskMessageDB.task_id + sender_id` have indexes.
+3. **Proxy route test coverage**: 13+ Astro proxy routes still lack tests. Would need Vitest setup in the web package first.
 
 ## Known Warnings (non-blocking)
 
