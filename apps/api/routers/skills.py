@@ -12,7 +12,7 @@ from sqlalchemy import select, func, and_
 
 from core.auth import get_current_user_id
 from core.database import get_db
-from models.db import UserDB, TaskDB, TaskAssignmentDB, WorkerSkillDB
+from models.db import UserDB, TaskDB, TaskAssignmentDB, WorkerSkillDB, TaskApplicationDB
 from models.schemas import (
     WorkerSkillOut,
     WorkerSkillsOut,
@@ -283,6 +283,19 @@ async def get_recommended_tasks(
     total = len(available)
     page = available[offset: offset + limit]
 
+    # Bulk-check which page tasks this worker has already applied to
+    page_task_ids = [t.id for t in page]
+    applied_ids: set = set()
+    if page_task_ids:
+        applied_res = await db.execute(
+            select(TaskApplicationDB.task_id).where(
+                TaskApplicationDB.worker_id == uid,
+                TaskApplicationDB.task_id.in_(page_task_ids),
+                TaskApplicationDB.status.in_(("pending", "accepted")),
+            )
+        )
+        applied_ids = {row[0] for row in applied_res}
+
     items = []
     for t in page:
         items.append(
@@ -296,6 +309,8 @@ async def get_recommended_tasks(
                 priority=t.priority,
                 claim_timeout_minutes=t.claim_timeout_minutes,
                 created_at=t.created_at,
+                application_mode=bool(t.application_mode),
+                user_applied=t.id in applied_ids,
             )
         )
 

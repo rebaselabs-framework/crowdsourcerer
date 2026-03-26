@@ -1,0 +1,247 @@
+---
+/**
+ * Worker referral programme dashboard.
+ *
+ * Shows:
+ *  - The worker's unique referral link (copy-to-clipboard)
+ *  - Stats: total referrals, pending bonus credits, paid bonus credits
+ *  - Paginated table of referred users with masked email & bonus status
+ *
+ * Data fetched SSR via Astro proxy routes so the httpOnly cs_token is used.
+ */
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Astro.cookies);
+if (!token) return Astro.redirect("/login?next=/worker/referrals");
+
+const url = new URL(Astro.request.url);
+const page = Math.max(1, parseInt(url.searchParams.get("page") ?? "1"));
+const PAGE_SIZE = 20;
+
+let stats: any = null;
+let referrals: any[] = [];
+let total = 0;
+let error: string | null = null;
+
+try {
+  [stats, referrals] = await Promise.all([
+    apiFetch<any>("/v1/referrals/stats", { token }),
+    apiFetch<any[]>(`/v1/referrals?page=${page}&page_size=${PAGE_SIZE}`, { token }).catch(() => []),
+  ]);
+  referrals = referrals ?? [];
+  total = referrals.length; // API returns a plain list (not paginated envelope)
+} catch (e: any) {
+  error = e.message ?? "Failed to load referral data";
+}
+
+const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+const hasNext = page < totalPages;
+const hasPrev = page > 1;
+---
+
+<Layout title="Referrals — CrowdSorcerer">
+  <div class="max-w-3xl mx-auto px-6 py-10">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-8">
+      <div>
+        <h1 class="text-2xl font-bold">🔗 Referral Programme</h1>
+        <p class="text-gray-400 text-sm mt-0.5">
+          Earn <span class="text-emerald-400 font-medium">50 credits</span> for every person you refer who completes their first task
+        </p>
+      </div>
+      <a href="/worker" class="text-sm text-gray-400 hover:text-white transition-colors">
+        ← Dashboard
+      </a>
+    </div>
+
+    {error && (
+      <div class="bg-red-900/20 border border-red-800/40 rounded-xl p-5 text-red-400 mb-8">
+        {error}
+      </div>
+    )}
+
+    {stats && (
+      <>
+        <!-- Stats row -->
+        <div class="grid grid-cols-3 gap-4 mb-8">
+          <div class="bg-gray-900 border border-gray-800 rounded-2xl p-5 text-center">
+            <div class="text-3xl font-bold text-white">{stats.total_referrals}</div>
+            <div class="text-xs text-gray-400 mt-1">Total referrals</div>
+          </div>
+          <div class="bg-gray-900 border border-gray-800 rounded-2xl p-5 text-center">
+            <div class="text-3xl font-bold text-amber-400">{stats.pending_bonus_credits}</div>
+            <div class="text-xs text-gray-400 mt-1">Pending credits</div>
+          </div>
+          <div class="bg-gray-900 border border-gray-800 rounded-2xl p-5 text-center">
+            <div class="text-3xl font-bold text-emerald-400">{stats.paid_bonus_credits}</div>
+            <div class="text-xs text-gray-400 mt-1">Paid credits</div>
+          </div>
+        </div>
+
+        <!-- Referral link card -->
+        <div class="bg-gray-900 border border-gray-800 rounded-2xl p-6 mb-8">
+          <h2 class="text-base font-semibold mb-1">Your referral link</h2>
+          <p class="text-sm text-gray-400 mb-4">
+            Share this link. Anyone who signs up through it gets 50 bonus credits, and you earn 50 once they complete their first task.
+          </p>
+          <div class="flex items-center gap-3">
+            <input
+              id="referral-url"
+              type="text"
+              value={stats.referral_url}
+              readonly
+              class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 font-mono select-all focus:outline-none focus:border-violet-500 transition-colors"
+            />
+            <button
+              id="copy-btn"
+              class="shrink-0 px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              Copy
+            </button>
+          </div>
+          <div class="flex items-center gap-2 mt-3">
+            <span class="text-xs text-gray-500">Your code:</span>
+            <code class="text-xs bg-gray-800 text-violet-300 px-2 py-0.5 rounded font-mono">{stats.referral_code}</code>
+          </div>
+        </div>
+
+        <!-- How it works -->
+        <div class="bg-gray-900/50 border border-gray-800 rounded-2xl p-6 mb-8">
+          <h2 class="text-sm font-semibold text-gray-300 mb-4">How it works</h2>
+          <div class="space-y-3">
+            {[
+              ["1", "Share your unique link with friends, communities, or social media"],
+              ["2", "They sign up and immediately get +50 bonus credits on their account"],
+              ["3", "Once they complete their first task, you receive +50 credits"],
+            ].map(([step, desc]) => (
+              <div class="flex items-start gap-3">
+                <div class="w-6 h-6 rounded-full bg-violet-900/60 border border-violet-700 flex items-center justify-center text-xs text-violet-300 font-bold shrink-0 mt-0.5">
+                  {step}
+                </div>
+                <p class="text-sm text-gray-300">{desc}</p>
+              </div>
+            ))}
+          </div>
+          <div class="mt-4 pt-4 border-t border-gray-800 text-xs text-gray-500">
+            Pending credits are confirmed when the referred user completes their first task.
+            They appear in your balance automatically — no action needed.
+          </div>
+        </div>
+
+        <!-- Referrals table -->
+        <div class="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
+          <div class="px-6 py-4 border-b border-gray-800 flex items-center justify-between">
+            <h2 class="text-base font-semibold">People you've referred</h2>
+            <span class="text-xs text-gray-500 bg-gray-800 px-2.5 py-1 rounded-full">
+              {stats.total_referrals} total
+            </span>
+          </div>
+
+          {referrals.length === 0 ? (
+            <div class="px-6 py-12 text-center">
+              <div class="text-4xl mb-3">🤝</div>
+              <p class="text-gray-300 font-medium mb-1">No referrals yet</p>
+              <p class="text-sm text-gray-500">
+                Share your link above to start earning bonus credits
+              </p>
+            </div>
+          ) : (
+            <div>
+              <table class="w-full text-sm">
+                <thead>
+                  <tr class="text-xs text-gray-500 uppercase tracking-wide border-b border-gray-800">
+                    <th class="px-6 py-3 text-left font-medium">Email (masked)</th>
+                    <th class="px-6 py-3 text-left font-medium">Joined</th>
+                    <th class="px-6 py-3 text-left font-medium">Bonus</th>
+                    <th class="px-6 py-3 text-left font-medium">Status</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-800/60">
+                  {referrals.map((r: any) => (
+                    <tr class="hover:bg-gray-800/30 transition-colors">
+                      <td class="px-6 py-3.5 text-gray-300 font-mono text-xs">
+                        {r.referred_email ?? "—"}
+                      </td>
+                      <td class="px-6 py-3.5 text-gray-400">
+                        {new Date(r.created_at).toLocaleDateString("en-US", {
+                          month: "short",
+                          day: "numeric",
+                          year: "numeric",
+                        })}
+                      </td>
+                      <td class="px-6 py-3.5 text-emerald-400 font-medium">
+                        +{r.referrer_bonus_credits} cr
+                      </td>
+                      <td class="px-6 py-3.5">
+                        {r.bonus_paid ? (
+                          <span class="inline-flex items-center gap-1.5 text-xs bg-emerald-900/40 text-emerald-400 border border-emerald-800/40 px-2.5 py-1 rounded-full">
+                            ✓ Paid
+                          </span>
+                        ) : (
+                          <span class="inline-flex items-center gap-1.5 text-xs bg-amber-900/30 text-amber-400 border border-amber-800/30 px-2.5 py-1 rounded-full">
+                            ⏳ Pending
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              <!-- Pagination -->
+              {(hasPrev || hasNext) && (
+                <div class="px-6 py-4 border-t border-gray-800 flex items-center justify-between">
+                  <span class="text-xs text-gray-500">Page {page} of {totalPages}</span>
+                  <div class="flex gap-2">
+                    {hasPrev && (
+                      <a
+                        href={`?page=${page - 1}`}
+                        class="px-3 py-1.5 text-xs bg-gray-800 hover:bg-gray-700 rounded-lg text-gray-300 transition-colors"
+                      >
+                        ← Prev
+                      </a>
+                    )}
+                    {hasNext && (
+                      <a
+                        href={`?page=${page + 1}`}
+                        class="px-3 py-1.5 text-xs bg-gray-800 hover:bg-gray-700 rounded-lg text-gray-300 transition-colors"
+                      >
+                        Next →
+                      </a>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </>
+    )}
+
+    {!stats && !error && (
+      <div class="text-center py-20 text-gray-500">Loading…</div>
+    )}
+
+  </div>
+</Layout>
+
+<script is:inline>
+  const copyBtn = document.getElementById("copy-btn");
+  const referralInput = document.getElementById("referral-url");
+  if (copyBtn && referralInput) {
+    copyBtn.addEventListener("click", () => {
+      navigator.clipboard.writeText(referralInput.value).then(() => {
+        copyBtn.textContent = "Copied!";
+        copyBtn.classList.replace("bg-violet-600", "bg-emerald-600");
+        copyBtn.classList.replace("hover:bg-violet-500", "hover:bg-emerald-500");
+        setTimeout(() => {
+          copyBtn.textContent = "Copy";
+          copyBtn.classList.replace("bg-emerald-600", "bg-violet-600");
+          copyBtn.classList.replace("hover:bg-emerald-500", "hover:bg-violet-500");
+        }, 2000);
+      });
+    });
+  }
+</script>

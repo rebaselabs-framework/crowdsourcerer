@@ -781,7 +781,9 @@ async def trigger_weekly_digest(
     ]
 
     users_res = await db.execute(
-        select(UserDB).where(UserDB.is_active == True, UserDB.is_banned == False)
+        select(UserDB)
+        .where(UserDB.is_active == True, UserDB.is_banned == False)
+        .limit(10_000)  # safety cap — batch jobs use sweeper for larger fleets
     )
     users = users_res.scalars().all()
 
@@ -897,43 +899,67 @@ async def trigger_daily_digest(
     sent = 0
 
     prefs_res = await db.execute(
-        select(NotificationPreferencesDB).where(
-            NotificationPreferencesDB.digest_frequency == "daily"
-        )
+        select(NotificationPreferencesDB)
+        .where(NotificationPreferencesDB.digest_frequency == "daily")
+        .limit(10_000)  # safety cap
     )
     all_prefs = prefs_res.scalars().all()
 
-    for prefs in all_prefs:
-        user_res = await db.execute(
-            select(UserDB).where(
-                UserDB.id == prefs.user_id,
-                UserDB.is_active == True,
-                UserDB.is_banned == False,
-            )
+    if not all_prefs:
+        return {"sent": 0, "date": date_label}
+
+    # ── Bulk-load all matching active users in one query (avoids N+1) ───────
+    pref_user_ids = [p.user_id for p in all_prefs]
+    users_bulk_res = await db.execute(
+        select(UserDB).where(
+            UserDB.id.in_(pref_user_ids),
+            UserDB.is_active == True,
+            UserDB.is_banned == False,
         )
-        user = user_res.scalar_one_or_none()
+    )
+    users_by_id = {u.id: u for u in users_bulk_res.scalars().all()}
+    active_user_ids = list(users_by_id.keys())
+
+    if not active_user_ids:
+        return {"sent": 0, "date": date_label}
+
+    # ── Bulk-load unread counts per user via GROUP BY (avoids N queries) ────
+    unread_res = await db.execute(
+        select(NotificationDB.user_id, sqlfunc.count(NotificationDB.id).label("cnt"))
+        .where(
+            NotificationDB.user_id.in_(active_user_ids),
+            NotificationDB.is_read == False,
+            NotificationDB.created_at >= since,
+        )
+        .group_by(NotificationDB.user_id)
+    )
+    unread_by_user = {r.user_id: r.cnt for r in unread_res}
+
+    # ── Bulk-load recent notifications for all users (at most 8 each) ───────
+    # ORDER BY user_id, created_at DESC ensures each user's most-recent arrive
+    # first within their group; the Python loop below caps at 8 per user.
+    notifs_bulk_res = await db.execute(
+        select(NotificationDB)
+        .where(
+            NotificationDB.user_id.in_(active_user_ids),
+            NotificationDB.is_read == False,
+            NotificationDB.created_at >= since,
+        )
+        .order_by(NotificationDB.user_id, NotificationDB.created_at.desc())
+        .limit(len(active_user_ids) * 8)
+    )
+    notifs_by_user: dict = {}
+    for n in notifs_bulk_res.scalars().all():
+        bucket = notifs_by_user.setdefault(n.user_id, [])
+        if len(bucket) < 8:
+            bucket.append(n)
+
+    for prefs in all_prefs:
+        user = users_by_id.get(prefs.user_id)
         if not user:
             continue
 
-        unread_count = await db.scalar(
-            select(sqlfunc.count(NotificationDB.id)).where(
-                NotificationDB.user_id == user.id,
-                NotificationDB.is_read == False,
-                NotificationDB.created_at >= since,
-            )
-        ) or 0
-
-        notifs_res = await db.execute(
-            select(NotificationDB)
-            .where(
-                NotificationDB.user_id == user.id,
-                NotificationDB.is_read == False,
-                NotificationDB.created_at >= since,
-            )
-            .order_by(NotificationDB.created_at.desc())
-            .limit(8)
-        )
-        notifs = notifs_res.scalars().all()
+        notifs = notifs_by_user.get(user.id, [])
         highlights = [
             {"title": n.title or n.notif_type, "body": n.body or "", "link": n.link or ""}
             for n in notifs
@@ -944,7 +970,7 @@ async def trigger_daily_digest(
             to_email=user.email,
             user_name=user_name,
             date_label=date_label,
-            unread_count=unread_count,
+            unread_count=unread_by_user.get(user.id, 0),
             highlights=highlights,
             credits_balance=user.credits,
         )
@@ -1257,6 +1283,7 @@ async def list_worker_strikes(
         select(WorkerStrikeDB)
         .where(WorkerStrikeDB.worker_id == worker_id)
         .order_by(WorkerStrikeDB.created_at.desc())
+        .limit(100)
     )
     strikes = result.scalars().all()
     return [
