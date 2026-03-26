@@ -14,7 +14,7 @@ from core.auth import get_current_user_id, require_admin  # noqa: F401
 from core.database import get_db
 from core.reputation import compute_reputation, refresh_worker_reputation, reputation_tier
 from core.notify import create_notification, NotifType
-from models.db import UserDB, WorkerStrikeDB
+from models.db import UserDB, WorkerStrikeDB, WorkerCertificationDB
 
 logger = structlog.get_logger()
 router = APIRouter(tags=["reputation"])
@@ -371,12 +371,43 @@ async def recalculate_all_reputations(
         select(UserDB).where(UserDB.role.in_(["worker", "both"]))
     )
     workers = result.scalars().all()
+    if not workers:
+        return {"message": "Recalculated 0 worker reputations"}
+
+    worker_ids = [w.id for w in workers]
+
+    # Bulk-fetch cert counts for all workers in a single GROUP BY query
+    cert_res = await db.execute(
+        select(WorkerCertificationDB.worker_id, func.count().label("cnt"))
+        .where(
+            WorkerCertificationDB.worker_id.in_(worker_ids),
+            WorkerCertificationDB.passed == True,  # noqa: E712
+        )
+        .group_by(WorkerCertificationDB.worker_id)
+    )
+    cert_counts: dict = {str(r.worker_id): r.cnt for r in cert_res}
+
+    # Bulk-fetch active strike severities grouped by worker
+    strike_res = await db.execute(
+        select(WorkerStrikeDB.worker_id, WorkerStrikeDB.severity)
+        .where(
+            WorkerStrikeDB.worker_id.in_(worker_ids),
+            WorkerStrikeDB.is_active == True,  # noqa: E712
+        )
+    )
+    strikes_by_worker: dict[str, list[str]] = {}
+    for row in strike_res:
+        strikes_by_worker.setdefault(str(row.worker_id), []).append(row.severity)
+
     updated = 0
     for w in workers:
-        # Call compute_reputation directly on the already-fetched object rather
-        # than refresh_worker_reputation(w.id, db) which re-fetches the user row
-        # (a redundant N queries when we already have the full object).
-        score = await compute_reputation(w, db)
+        wid = str(w.id)
+        score = await compute_reputation(
+            w,
+            db,
+            _cert_count=cert_counts.get(wid, 0),
+            _strike_severities=strikes_by_worker.get(wid, []),
+        )
         w.reputation_score = score
         updated += 1
     await db.commit()

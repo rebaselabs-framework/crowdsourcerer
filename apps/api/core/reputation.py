@@ -15,7 +15,7 @@ Modifiers:
 from __future__ import annotations
 
 import math
-from typing import Optional
+from typing import Optional, Sequence
 from uuid import UUID
 
 import structlog
@@ -34,10 +34,20 @@ STRIKE_PENALTIES = {
 }
 
 
-async def compute_reputation(worker: UserDB, db: AsyncSession) -> float:
+async def compute_reputation(
+    worker: UserDB,
+    db: AsyncSession,
+    *,
+    _cert_count: Optional[int] = None,
+    _strike_severities: Optional[Sequence[str]] = None,
+) -> float:
     """Compute and return the reputation score (0–100) for a worker.
 
     This does NOT save the value — call `refresh_worker_reputation()` for that.
+
+    Optional keyword-only arguments allow callers doing bulk recalculation to
+    supply pre-fetched cert counts and strike severities from a single GROUP BY
+    query, avoiding 2 extra round-trips per worker.
     """
     if worker.is_banned:
         return 0.0
@@ -61,13 +71,14 @@ async def compute_reputation(worker: UserDB, db: AsyncSession) -> float:
     level_score = ((level - 1) / 19) * 100  # level 1 = 0, level 20 = 100
 
     # ── 5. Certification bonus (0–100, weight 10%) ──────────────────────────
-    cert_count_result = await db.scalar(
-        select(func.count()).where(
-            WorkerCertificationDB.worker_id == worker.id,
-            WorkerCertificationDB.passed == True,  # noqa: E712
-        )
-    ) or 0
-    cert_score = min(cert_count_result * 25, 100)  # 4 certs = 100
+    if _cert_count is None:
+        _cert_count = await db.scalar(
+            select(func.count()).where(
+                WorkerCertificationDB.worker_id == worker.id,
+                WorkerCertificationDB.passed == True,  # noqa: E712
+            )
+        ) or 0
+    cert_score = min(_cert_count * 25, 100)  # 4 certs = 100
 
     # ── 6. Streak bonus (0–100, weight 5%) ──────────────────────────────────
     streak = worker.worker_streak_days or 0
@@ -84,14 +95,15 @@ async def compute_reputation(worker: UserDB, db: AsyncSession) -> float:
     )
 
     # ── Strike penalties (subtract, floor at 0) ──────────────────────────────
-    active_strikes_result = await db.execute(
-        select(WorkerStrikeDB.severity).where(
-            WorkerStrikeDB.worker_id == worker.id,
-            WorkerStrikeDB.is_active == True,  # noqa: E712
+    if _strike_severities is None:
+        active_strikes_result = await db.execute(
+            select(WorkerStrikeDB.severity).where(
+                WorkerStrikeDB.worker_id == worker.id,
+                WorkerStrikeDB.is_active == True,  # noqa: E712
+            )
         )
-    )
-    active_strikes = active_strikes_result.scalars().all()
-    total_penalty = sum(STRIKE_PENALTIES.get(s, 5) for s in active_strikes)
+        _strike_severities = active_strikes_result.scalars().all()
+    total_penalty = sum(STRIKE_PENALTIES.get(s, 5) for s in _strike_severities)
 
     final = max(0.0, min(100.0, raw - total_penalty))
     return round(final, 2)
