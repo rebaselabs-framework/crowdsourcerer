@@ -46,7 +46,6 @@ const chartData = billing ? {
 ---
 
 <Layout title="Billing Analytics — CrowdSorcerer Admin">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" is:inline></script>
 
   <div class="max-w-7xl mx-auto px-6 py-10">
     <!-- Header -->
@@ -203,6 +202,14 @@ const chartData = billing ? {
 
   {chartData && (
     <script is:inline define:vars={{ chartData }}>
+      function _loadChartJs(cb) {
+        if (window.Chart) { cb(); return; }
+        const s = document.createElement("script");
+        s.src = "https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js";
+        s.onload = cb;
+        document.head.appendChild(s);
+      }
+      _loadChartJs(function() {
       const CHART_DEFAULTS = {
         responsive: true,
         maintainAspectRatio: false,
@@ -292,6 +299,7 @@ const chartData = billing ? {
         },
         options: { ...CHART_DEFAULTS },
       });
+      }); // end _loadChartJs
     </script>
   )}
 </Layout>
