@@ -133,13 +133,33 @@ Fixed this round:
 - **Worker assignment countdown**: Replaced static "Expires at HH:MM" with live `MM:SS remaining` countdown. Turns red < 5 min. On expiry: disables submit button + shows prominent red banner with re-claim link. Prevents confusing 410 errors.
 - **Marketplace sort/filter**: Added `sort_by` API param (reward_desc, newest, default=priority+age). Exposed min_reward filter + sort dropdown in browse UI. Fixed pagination bug — "Next/Prev" was losing `mode=browse` param so clicking Next in browse mode silently switched to feed mode.
 
+## Session 2026-03-26 (continued) — Streak XP multiplier, dispute N+1, bulk op tests (commits 8e3e9bf, ffe0f49)
+
+**Streak XP multiplier system (8e3e9bf):**
+- Added `STREAK_MULTIPLIER_TIERS` (3d=1.1×, 7d=1.25×, 14d=1.5×, 30d=2×) and `streak_xp_multiplier()` to worker.py
+- Fixed `compute_xp_for_task()` to accept `streak_days` kwarg and apply multiplier
+- Fixed `submit_task` to load worker BEFORE computing XP, then passes `streak_days=worker.worker_streak_days`
+- Extended `WorkerTaskSubmitResponse` with `streak_multiplier: float` and `streak_days: int` fields
+- Rewrote `/worker/submitted.astro` to show streak bonus banner + progressive tier tips
+- Updated `/worker/tasks/[id].astro` submit redirect to pass streak params
+- Added 18 new tests in test_workers.py for multiplier tiers, monotonicity, and compute_xp_for_task (238 → 256 total)
+
+**Disputes page improvements (ffe0f49):**
+- **N+1 SSR fixed**: replaced `for` loop with 2 sequential awaits per task → `Promise.all` fan-out (all tasks + consensus fetched concurrently)
+- **12 dark-mode CSS fixes**: `border-gray-100` → `border-gray-800`, `bg-gray-50` → `bg-gray-800`, `text-gray-900` → `text-gray-100` inside `bg-gray-900` cards, vote bars `bg-gray-200` → `bg-gray-700`, timeline spine `bg-gray-200` → `bg-gray-700`
+- **Skill-aware empty state on worker dashboard**: detects `profileStatus.missing.includes("skills")` and shows targeted "Add skills →" + "Browse all tasks" CTAs instead of generic "Check back soon"
+
+**32 new bulk operations unit tests (ffe0f49):**
+- `test_bulk_operations.py`: bulk_cancel (3 cancellable statuses, 2 non-cancellable, not-owned, mixed batch), bulk_archive (3 terminal, 2 non-terminal, all-terminal batch), bulk_action cancel+retry (success paths, wrong-status to failed list, human task rejected for retry, mixed batch), rerun credit calculation (human formula with 20% fee + floor-1, AI TASK_CREDITS lookup, HUMAN_TASK_BASE_CREDITS coverage)
+- **Test count**: 238 → 270 (32 new tests)
+
 ## Priorities for Next Session 🔜
 
 PHASE: Pre-alpha development. Focus on quality/depth. NOT in scope: launch tasks, marketing, directory listings.
 
-1. **Deeper E2E coverage**: The core happy paths are tested but dispute resolution (requester picks winner), rerun task flow, and bulk operations (cancel/archive multiple tasks) lack integration tests.
-2. **Worker profile completeness**: Workers with incomplete profiles (no skills, no availability) still get shown in the marketplace but won't get matched tasks. Consider a "complete your profile" prompt on the task completion page or dashboard.
-3. **Streak bonus implementation**: The submitted page says "complete a task every day for bonus multipliers" but `compute_xp_for_task` doesn't apply streak multipliers. The streak data exists (worker_streak_days) but isn't used in XP calculation.
+1. **Worker skills page UX**: The `/worker/skills` page is linked from multiple empty states but has not been audited — verify it's fully functional, has good empty state, and skill add/remove works without N+1.
+2. **Notification delivery reliability**: Worker task-available emails exist but there's no confirmation that the notification endpoints are working end-to-end. Check for silent failures in the notification queue.
+3. **Task detail page robustness for human tasks**: The task detail page for in-progress human tasks shows submission previews but doesn't handle the case where a worker has submitted and the task is now in dispute. Check the submission display and status transitions.
 
 ## Known Warnings (non-blocking)
 
