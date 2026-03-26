@@ -69,7 +69,12 @@ async def create_task(
         estimated_credits = TASK_CREDITS.get(req.type, 5)
 
     # Check credits — may come from personal account or org pool
-    result = await db.execute(select(UserDB).where(UserDB.id == user_id))
+    # with_for_update() serialises concurrent task-creation requests so two
+    # requests with the same user can't both pass the balance check and both
+    # deduct credits before either commits (classic lost-update race condition).
+    result = await db.execute(
+        select(UserDB).where(UserDB.id == user_id).with_for_update()
+    )
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -313,7 +318,10 @@ async def create_tasks_batch(
     # Pre-flight: calculate total cost
     total_credits = sum(_calc_credits(t) for t in req.tasks)
 
-    result = await db.execute(select(UserDB).where(UserDB.id == user_id))
+    # Lock user row to prevent concurrent batch requests from racing on balance.
+    result = await db.execute(
+        select(UserDB).where(UserDB.id == user_id).with_for_update()
+    )
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -2140,8 +2148,10 @@ async def rerun_task(
     else:
         estimated_credits = TASK_CREDITS.get(original.type, 5)
 
-    # Deduct credits
-    user_result = await db.execute(select(UserDB).where(UserDB.id == user_id))
+    # Deduct credits — lock user row to prevent concurrent rerun races.
+    user_result = await db.execute(
+        select(UserDB).where(UserDB.id == user_id).with_for_update()
+    )
     user = user_result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
