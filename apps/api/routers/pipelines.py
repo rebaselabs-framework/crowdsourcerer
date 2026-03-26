@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
 
 from core.auth import get_current_user_id
+from core.background import safe_create_task
 from core.scopes import require_scope, SCOPE_PIPELINES_READ, SCOPE_PIPELINES_WRITE
 from core.database import get_db
 from models.db import (
@@ -954,7 +955,7 @@ async def resume_pipeline_after_human_step(
     )
 
     # Fire the continuation as a background task (non-blocking)
-    asyncio.create_task(
+    safe_create_task(
         _execute_pipeline_run(
             run_id=run.id,
             pipeline_id=str(pipeline.id),

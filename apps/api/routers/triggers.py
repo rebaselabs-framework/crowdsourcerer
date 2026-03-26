@@ -21,6 +21,7 @@ from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from core.auth import get_current_user_id
+from core.background import safe_create_task
 from core.database import get_db
 from models.db import PipelineTriggerDB, TaskPipelineDB, TaskPipelineStepDB, UserDB
 
@@ -169,7 +170,7 @@ async def _fire_trigger(trigger: PipelineTriggerDB, db: AsyncSession,
         )  # quota recording failure shouldn't block trigger
 
     # Fire pipeline execution as asyncio task (non-blocking)
-    asyncio.create_task(_execute_pipeline_run(run.id, str(pipeline.id), str(trigger.user_id)))
+    safe_create_task(_execute_pipeline_run(run.id, str(pipeline.id), str(trigger.user_id)))
 
     trigger.last_fired_at = now
     trigger.run_count = (trigger.run_count or 0) + 1

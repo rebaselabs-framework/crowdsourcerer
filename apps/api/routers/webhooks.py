@@ -18,6 +18,7 @@ from sqlalchemy import select, func
 
 from pydantic import BaseModel
 from core.auth import get_current_user_id
+from core.background import safe_create_task
 from core.database import get_db
 from core.scopes import (
     require_scope,
@@ -146,7 +147,6 @@ async def create_endpoint(
     logger.info("webhook_endpoint_created", endpoint_id=str(ep.id), user_id=str(user_id))
 
     # Advance requester onboarding: set_webhook step
-    import asyncio as _asyncio
     async def _adv_onboarding():
         from core.database import AsyncSessionLocal
         from routers.requester_onboarding import complete_step_internal
@@ -160,7 +160,7 @@ async def create_endpoint(
                     step="set_webhook",
                     exc_info=True,
                 )
-    _asyncio.create_task(_adv_onboarding())
+    safe_create_task(_adv_onboarding(), name="onboarding.set_webhook")
 
     data = {
         "id": str(ep.id),

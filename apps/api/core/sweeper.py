@@ -23,6 +23,7 @@ from sqlalchemy import select, and_, func, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from models.db import TaskDB, TaskAssignmentDB, UserDB, SLABreachDB, TaskDependencyDB, NotificationDB, TaskWatchlistDB, NotificationPreferencesDB
+from core.background import safe_create_task
 from core.webhooks import fire_webhook_for_task
 from core.notify import create_notification, NotifType
 
@@ -160,7 +161,7 @@ async def sweep_once(session_factory: async_sessionmaker) -> dict:
                             # Fire email to requester (fire-and-forget)
                             requester = requesters_by_id.get(str(task.user_id))
                             if requester and requester.email:
-                                asyncio.create_task(
+                                safe_create_task(
                                     _notify_timeout_email(
                                         to_email=requester.email,
                                         user_id=str(requester.id),
@@ -289,7 +290,7 @@ async def _sweep_sla_breaches(session_factory: async_sessionmaker) -> int:
                 )
                 # Fire sla.breach webhook if task has one
                 if task.webhook_url:
-                    asyncio.create_task(fire_webhook_for_task(
+                    safe_create_task(fire_webhook_for_task(
                         task=task,
                         event_type="sla.breach",
                         extra={"plan": plan, "priority": priority,
@@ -588,13 +589,13 @@ async def _sweep_scheduled_tasks(session_factory: async_sessionmaker) -> int:
                         task.status = "queued"
                         await db.commit()
                         # Fire off AI execution
-                        asyncio.create_task(_run_scheduled_ai_task(str(task.id), str(task.user_id)))
+                        safe_create_task(_run_scheduled_ai_task(str(task.id), str(task.user_id)))
                     else:
                         # Human task → publish to marketplace
                         task.status = "open"
                         await db.commit()
                         # Notify workers whose saved searches match
-                        asyncio.create_task(_notify_scheduled_human_task(
+                        safe_create_task(_notify_scheduled_human_task(
                             task_type=task.type,
                             priority=task.priority,
                             reward_credits=task.worker_reward_credits,
@@ -670,10 +671,10 @@ async def _run_scheduled_ai_task(task_id: str, user_id: str) -> None:
                 **({"result_preview": preview} if preview else {}),
             }
             if task.webhook_url:
-                asyncio.create_task(fire_webhook_for_task(
+                safe_create_task(fire_webhook_for_task(
                     task=task, event_type="task.completed", extra=wh_extra,
                 ))
-            asyncio.create_task(fire_persistent_endpoints(
+            safe_create_task(fire_persistent_endpoints(
                 user_id=str(task.user_id),
                 task_id=str(task_id),
                 event_type="task.completed",
@@ -760,7 +761,7 @@ async def _sweep_task_dependencies(session_factory: async_sessionmaker) -> int:
                     if task.execution_mode == "ai":
                         task.status = "queued"
                         await db.commit()
-                        asyncio.create_task(_run_scheduled_ai_task(str(task.id), str(task.user_id)))
+                        safe_create_task(_run_scheduled_ai_task(str(task.id), str(task.user_id)))
                     else:
                         task.status = "open"
                         await db.commit()
@@ -849,12 +850,12 @@ async def _sweep_priority_escalation(session_factory: async_sessionmaker) -> int
                         "task_type": task.type,
                     }
                     if task.webhook_url:
-                        asyncio.create_task(fire_webhook_for_task(
+                        safe_create_task(fire_webhook_for_task(
                             task=task,
                             event_type="task.priority_escalated",
                             extra=wh_extra,
                         ))
-                    asyncio.create_task(fire_persistent_endpoints(
+                    safe_create_task(fire_persistent_endpoints(
                         user_id=str(task.user_id),
                         task_id=str(task.id),
                         event_type="task.priority_escalated",
@@ -1047,7 +1048,7 @@ _sweeper_task: Optional[asyncio.Task] = None
 def start_sweeper(session_factory: async_sessionmaker, interval: int = SWEEP_INTERVAL_SECONDS):
     """Start the sweeper as an asyncio background task. Call once at startup."""
     global _sweeper_task  # noqa: PLW0603
-    _sweeper_task = asyncio.create_task(
+    _sweeper_task = safe_create_task(
         run_sweeper(session_factory, interval),
         name="assignment-timeout-sweeper",
     )

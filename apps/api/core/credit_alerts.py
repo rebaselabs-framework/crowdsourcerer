@@ -13,6 +13,8 @@ from __future__ import annotations
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.background import safe_create_task
+
 logger = structlog.get_logger()
 
 
@@ -54,20 +56,20 @@ async def maybe_fire_credit_alert(db: AsyncSession, user) -> None:
         )
 
         # Also send email if we have the user's email address
-        import asyncio
         from core.email import notify_low_credits
         from sqlalchemy import select
         from models.db import UserDB
         result = await db.execute(select(UserDB.email, UserDB.name).where(UserDB.id == user.id))
         row = result.first()
         if row and row.email:
-            asyncio.ensure_future(
+            safe_create_task(
                 notify_low_credits(
                     to_email=row.email,
                     balance=user.credits,
                     threshold=threshold,
                     name=row.name,
-                )
+                ),
+                name="email.low_credits",
             )
 
 

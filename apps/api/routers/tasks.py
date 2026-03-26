@@ -254,6 +254,7 @@ async def _trigger_saved_search_alerts(
                 "background_task.saved_search_alerts_failed",
                 task_id=task_id,
                 task_type=task_type,
+                exc_info=True,
             )
         try:
             await notify_matched_workers_of_task(
@@ -268,6 +269,7 @@ async def _trigger_saved_search_alerts(
                 "background_task.worker_email_notification_failed",
                 task_id=task_id,
                 task_type=task_type,
+                exc_info=True,
             )
 
 
@@ -283,6 +285,7 @@ async def _mark_requester_onboarding(user_id: str, step: str) -> None:
                 "background_task.requester_onboarding_failed",
                 user_id=user_id,
                 step=step,
+                exc_info=True,
             )
 
 

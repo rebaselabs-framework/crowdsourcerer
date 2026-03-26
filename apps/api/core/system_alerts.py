@@ -30,6 +30,7 @@ from typing import Optional
 import structlog
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from core.background import safe_create_task
 from core.config import get_settings
 
 logger = structlog.get_logger()
@@ -179,7 +180,10 @@ async def _fire_alert(
         logger.exception("system_alert.db_error", alert_type=alert_type)
 
     # Send email (fire-and-forget)
-    asyncio.create_task(_send_alert_email(alert_type, severity, title, detail))
+    safe_create_task(
+        _send_alert_email(alert_type, severity, title, detail),
+        name="email.system_alert",
+    )
 
 
 async def _send_alert_email(

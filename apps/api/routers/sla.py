@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import asyncio
 
 from core.auth import get_current_user_id, require_admin
+from core.background import safe_create_task
 from core.database import get_db
 from core.sla import get_sla_hours, sla_status, compute_sla_deadline, PRIORITY_CREDIT_MULTIPLIER
 from core.webhooks import fire_webhook_for_task, fire_persistent_endpoints
@@ -337,12 +338,12 @@ async def record_sla_breach(task: TaskDB, user: UserDB, db: AsyncSession) -> Non
     _sla_extra = {"type": task.type, "plan": plan, "priority": priority,
                   "sla_hours": hours, "deadline": deadline.isoformat()}
     if task.webhook_url:
-        asyncio.create_task(fire_webhook_for_task(
+        safe_create_task(fire_webhook_for_task(
             task=task,
             event_type="sla.breach",
             extra=_sla_extra,
         ))
-    asyncio.create_task(fire_persistent_endpoints(
+    safe_create_task(fire_persistent_endpoints(
         user_id=str(task.user_id),
         task_id=str(task.id),
         event_type="sla.breach",

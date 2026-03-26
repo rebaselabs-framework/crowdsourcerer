@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, case
 
 from core.auth import get_current_user_id
+from core.background import safe_create_task
 from core.database import get_db
 from core.notify import create_notification, NotifType
 from models.db import OrganizationDB, OrgMemberDB, OrgInviteDB, UserDB, CreditTransactionDB, TaskDB
@@ -391,7 +392,6 @@ async def invite_member(
     logger.info("org_invite_sent", org_id=str(org_id), email=req.email, invited_by=user_id)
 
     # Advance requester onboarding: invite_team step
-    import asyncio as _asyncio
     async def _adv_onboarding():
         from core.database import AsyncSessionLocal
         from routers.requester_onboarding import complete_step_internal
@@ -405,7 +405,7 @@ async def invite_member(
                     step="invite_team",
                     exc_info=True,
                 )
-    _asyncio.create_task(_adv_onboarding())
+    safe_create_task(_adv_onboarding(), name="onboarding.invite_team")
 
     return OrgInviteOut(
         id=invite.id,
