@@ -55,19 +55,21 @@ Auto-updated by autonomous sessions. Tracks what was done and what's next.
 | 47 | Marketplace text search + sort + reward filter (API + UI) + Save search CTA + /worker/saved-searches page | d688a1b |
 | 48 | Admin health: stuck task detection (AI >30m, human >24h, timed-out assignments) + health page stuck panel | d688a1b |
 
+## Session 2026-03-26 — Quality audit, 5 real bugs fixed (commit 642cdb9)
+
+- **Sweeper N+1 fixed**: `sweep_once()` was doing O(N) DB queries per expired assignment; now loads all workers/tasks/requesters in 4 bulk queries. Same fix in `_sweep_sla_breaches()` (user plan lookup was per-task).
+- **Stripe double-credit fixed**: `/v1/credits/webhook` lacked idempotency — replayed events would credit users twice. Added `StripeEventLogDB` guard matching the proper handler.
+- **Task claim race condition fixed**: Added `SELECT ... FOR UPDATE` on task row in `claim_task()` to serialise concurrent claims.
+- **Silent exceptions replaced with logging**: All `except Exception: pass` in worker.py now use `logger.warning()`.
+- **Wrong test assertions fixed**: test_openapi_schema had `/v1/auth/token` (wrong) and `/openapi.json` (include_in_schema=False).
+
 ## Priorities for Next Session 🔜
 
-1. **Deploy blockers** (owner-dependent, needs GitHub Secrets):
-   - `NPM_TOKEN` for `@crowdsourcerer/sdk` publish
-   - PyPI OIDC for Python package publish
+PHASE: Pre-alpha development. Focus on quality/depth. NOT in scope: launch tasks, marketing, directory listings.
 
-2. **Worker onboarding completion rate** — track which onboarding steps workers abandon; show completion nudge in dashboard
-
-3. **Requester task analytics** — "time to first claim", "average completion time per type", "worker quality scores" per task
-
-4. **Notification preferences UI** — allow workers to fine-tune which notification types they receive (in-app vs email per event type)
-
-5. **Public leaderboard improvements** — monthly/weekly tabs, show worker specialisations and badge count
+1. **Continue quality audit**: Look for more runtime bugs in tasks.py (credit atomicity, background task crash handling). The audit found several more medium-severity issues.
+2. **Add credit atomicity tests**: Test that task creation failure doesn't leave orphaned credit deductions.
+3. **Investigate `except Exception: pass` in tasks.py**: routers/tasks.py has similar silent failures in background task execution.
 
 ## Known Warnings (non-blocking)
 

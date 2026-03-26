@@ -30,9 +30,14 @@ build:
 	docker compose build
 
 # Test
+# Uses uv run to avoid needing pytest in system PATH
 test:
-	cd apps/api && pytest tests/ -v
+	cd apps/api && uv run pytest tests/ -v
 	pnpm test
+
+# Quick API test (no frontend, faster)
+test-api:
+	cd apps/api && uv run pytest tests/ -q
 
 # Lint
 lint:
