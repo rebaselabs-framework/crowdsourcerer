@@ -40,6 +40,7 @@ from models.db import (
     WorkerSkillDB, WorkerCertificationDB, WorkerEndorsementDB,
     WorkerInviteDB, TaskWatchlistDB,
 )
+from models.schemas import BulkInviteRequest
 
 logger = structlog.get_logger()
 router = APIRouter(tags=["worker_marketplace"])
@@ -362,7 +363,7 @@ async def invite_worker(
 @router.post("/v1/tasks/{task_id}/bulk-invite", status_code=201)
 async def bulk_invite_workers(
     task_id: UUID,
-    req: "BulkInviteRequest",
+    req: BulkInviteRequest,
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(require_scope(SCOPE_TASKS_WRITE)),
 ):
@@ -371,7 +372,6 @@ async def bulk_invite_workers(
     Workers already invited or not found are silently skipped.
     Returns counts of invited vs skipped workers.
     """
-    from models.schemas import BulkInviteRequest as BulkInviteRequest  # local import to avoid circular
     task_result = await db.execute(
         select(TaskDB).where(TaskDB.id == task_id, TaskDB.user_id == user_id)
     )
