@@ -2215,10 +2215,11 @@ async def rerun_task(
     )
     db.add(new_task)
 
-    # Credit transaction log
+    # Credit transaction log — type is NOT NULL; "charge" for credit deductions.
     txn = CreditTransactionDB(
         user_id=user_id,
         amount=-estimated_credits,
+        type="charge",
         description=f"Task rerun: {original.type} (from {original.id})",
         task_id=new_task.id,
     )
