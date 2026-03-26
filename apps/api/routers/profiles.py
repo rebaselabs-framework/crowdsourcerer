@@ -9,6 +9,7 @@ from sqlalchemy import select, func, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth import get_current_user_id
+from core.background import safe_create_task
 from core.database import get_db
 from models.db import UserDB, WorkerSkillDB, WorkerBadgeDB, WorkerCertificationDB, TaskDB, TaskAssignmentDB
 from models.schemas import (
@@ -220,7 +221,24 @@ async def update_my_profile(
 
     await db.commit()
     await db.refresh(user)
+
+    # Auto-advance the requester onboarding "welcome" step.  The step's CTA
+    # directs users to this page — any saved profile update counts as done.
+    # Fires in the background so it never adds latency to the profile save.
+    safe_create_task(_advance_onboarding(user_id, "welcome"), name="onboarding.welcome")
+
     return user
+
+
+async def _advance_onboarding(user_id: str, step: str) -> None:
+    """Background helper: advance a requester onboarding step without blocking."""
+    from core.database import AsyncSessionLocal
+    from routers.requester_onboarding import complete_step_internal
+    async with AsyncSessionLocal() as _db:
+        try:
+            await complete_step_internal(user_id, step, _db)
+        except Exception:
+            pass  # non-critical — onboarding step completion is best-effort
 
 
 @router.get("/users/me/profile-status", response_model=dict)

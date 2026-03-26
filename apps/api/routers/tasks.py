@@ -1018,6 +1018,16 @@ async def get_task(
     task = result.scalar_one_or_none()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+
+    # Auto-advance requester onboarding "view_results" step when the owner
+    # opens a completed task.  Fires in the background — idempotent (the helper
+    # bails out immediately if the step is already done).
+    if task.status == "completed":
+        safe_create_task(
+            _mark_requester_onboarding(user_id, "view_results"),
+            name="onboarding.view_results",
+        )
+
     return task
 
 

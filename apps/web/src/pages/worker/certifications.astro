@@ -82,19 +82,19 @@ for (const c of myCerts) {
 
     <!-- Attempt Result -->
     {resultType && (
-      <div class={`rounded-2xl p-6 mb-8 border-2 ${resultPassed === "true" ? "bg-green-50 border-green-300" : "bg-red-50 border-red-300"}`}>
+      <div class={`rounded-2xl p-6 mb-8 border-2 ${resultPassed === "true" ? "bg-emerald-950/30 border-emerald-700" : "bg-red-950/30 border-red-800"}`}>
         <div class="flex items-center gap-4">
           <div class="text-5xl">{resultPassed === "true" ? "🎉" : "😞"}</div>
           <div>
-            <h2 class="text-2xl font-bold">{resultPassed === "true" ? "Certification Passed!" : "Not Passed This Time"}</h2>
-            <p class="text-gray-600 mt-1">
-              Score: <strong>{resultScore}%</strong> — Got {resultCorrect} of {resultCount} questions right
+            <h2 class="text-2xl font-bold text-white">{resultPassed === "true" ? "Certification Passed!" : "Not Passed This Time"}</h2>
+            <p class="text-gray-400 mt-1">
+              Score: <strong class="text-gray-200">{resultScore}%</strong> — Got {resultCorrect} of {resultCount} questions right
               ({resultEarned} / {resultTotal} points)
             </p>
             {resultPassed === "true" ? (
-              <p class="text-green-700 mt-2">✅ You are now certified for <strong>{resultType}</strong> tasks!</p>
+              <p class="text-emerald-400 mt-2">✅ You are now certified for <strong>{resultType}</strong> tasks!</p>
             ) : (
-              <p class="text-red-700 mt-2">You can retake this certification after 60 minutes.</p>
+              <p class="text-red-400 mt-2">You can retake this certification after 60 minutes.</p>
             )}
           </div>
         </div>
@@ -172,6 +172,22 @@ for (const c of myCerts) {
             </button>
           </div>
         </form>
+      </div>
+    )}
+
+    <!-- First-timer prompt: no earned certs yet -->
+    {myCerts.length === 0 && !certDetail && !resultType && (
+      <div class="mb-8 bg-violet-950/20 border border-violet-800 rounded-2xl p-6">
+        <div class="flex items-start gap-4">
+          <div class="text-4xl flex-shrink-0">🎓</div>
+          <div>
+            <h2 class="font-bold text-white text-lg">Earn your first certification</h2>
+            <p class="text-sm text-gray-400 mt-1">
+              Certifications unlock higher-paying tasks and show requesters you're qualified.
+              Pick a category below — the quiz takes just a few minutes!
+            </p>
+          </div>
+        </div>
       </div>
     )}
 
