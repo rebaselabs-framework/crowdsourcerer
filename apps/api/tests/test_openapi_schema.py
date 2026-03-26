@@ -72,13 +72,13 @@ def test_openapi_key_routes_present(app):
 
     required_paths = [
         "/v1/auth/register",
-        "/v1/auth/token",
+        "/v1/auth/login",
         "/v1/tasks",
         "/v1/platform/stats",
         "/v1/leaderboard",
         "/v1/webhooks/events",
         "/v1/scopes",
-        "/openapi.json",
+        # /openapi.json uses include_in_schema=False, so it's NOT in schema["paths"]
     ]
 
     for path in required_paths:

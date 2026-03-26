@@ -9,7 +9,7 @@ from sqlalchemy import select, func
 from core.auth import get_current_user_id
 from core.config import get_settings
 from core.database import get_db
-from models.db import UserDB, CreditTransactionDB
+from models.db import UserDB, CreditTransactionDB, StripeEventLogDB
 from models.schemas import (
     CheckoutRequest, CheckoutResponse,
     CreditBalanceOut, CreditTransactionOut, PaginatedTransactions
@@ -150,7 +150,12 @@ async def create_checkout(
 
 @router.post("/webhook")
 async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
-    """Stripe webhook — credit user after successful payment."""
+    """Stripe webhook — credit user after successful payment.
+
+    Note: the canonical webhook handler is at POST /v1/webhooks/stripe which
+    handles the full event lifecycle with idempotency. This endpoint handles
+    checkout.session.completed only, with its own idempotency guard.
+    """
     payload = await request.body()
     sig = request.headers.get("stripe-signature", "")
 
@@ -161,7 +166,20 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid webhook signature")
 
+    event_id = event.get("id", "")
+
     if event["type"] == "checkout.session.completed":
+        # Idempotency guard — reject duplicate deliveries
+        if event_id:
+            existing = await db.scalar(
+                select(func.count()).where(
+                    StripeEventLogDB.stripe_event_id == event_id,
+                    StripeEventLogDB.processed == True,  # noqa: E712
+                )
+            )
+            if existing:
+                return {"status": "ok", "duplicate": True}
+
         session = event["data"]["object"]
         user_id = session.get("metadata", {}).get("user_id")
         credits = int(session.get("metadata", {}).get("credits", 0))
@@ -179,6 +197,13 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
                     stripe_payment_intent=session.get("payment_intent"),
                 )
                 db.add(txn)
+                # Mark event as processed to prevent double-crediting on replay
+                if event_id:
+                    db.add(StripeEventLogDB(
+                        stripe_event_id=event_id,
+                        event_type=event["type"],
+                        processed=True,
+                    ))
                 # Reset low-credit alert if balance recovered
                 from core.credit_alerts import reset_credit_alert_if_recovered
                 await reset_credit_alert_if_recovered(db, user)

@@ -19,7 +19,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 import structlog
-from sqlalchemy import select, and_, func
+from sqlalchemy import select, and_, func, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from models.db import TaskDB, TaskAssignmentDB, UserDB, SLABreachDB, TaskDependencyDB, NotificationDB, TaskWatchlistDB, NotificationPreferencesDB
@@ -39,7 +39,11 @@ _LAST_SWEEP_AT: Optional[datetime] = None
 
 
 async def sweep_once(session_factory: async_sessionmaker) -> dict:
-    """Run a single sweep pass. Returns a summary dict."""
+    """Run a single sweep pass. Returns a summary dict.
+
+    Optimised: pre-loads all workers, tasks, and active-assignment counts in
+    bulk (3 queries total) rather than issuing per-assignment queries (N+1).
+    """
     now = datetime.now(timezone.utc)
     timed_out_assignments: list[str] = []
     reopened_tasks: list[str] = []
@@ -57,42 +61,76 @@ async def sweep_once(session_factory: async_sessionmaker) -> dict:
                     )
                 )
             )
-            expired = result.scalars().all()
+            expired = list(result.scalars().all())
+            if not expired:
+                await db.commit()
+                return {
+                    "swept_at": now.isoformat(),
+                    "timed_out": 0,
+                    "reopened": 0,
+                    "errors": 0,
+                    "assignment_ids": [],
+                    "task_ids": [],
+                }
 
+            # ── Bulk-load all workers and tasks referenced by expired assignments ──
+            worker_ids = list({a.worker_id for a in expired if a.worker_id})
+            task_ids_needed = list({a.task_id for a in expired if a.task_id})
+
+            workers_res = await db.execute(
+                select(UserDB).where(UserDB.id.in_(worker_ids))
+            )
+            workers_by_id: dict = {str(u.id): u for u in workers_res.scalars()}
+
+            tasks_res = await db.execute(
+                select(TaskDB).where(TaskDB.id.in_(task_ids_needed))
+            )
+            tasks_by_id: dict = {str(t.id): t for t in tasks_res.scalars()}
+
+            # ── Bulk-load active assignment counts per task ──────────────
+            # One query returning (task_id, count) pairs
+            active_counts_res = await db.execute(
+                select(TaskAssignmentDB.task_id, func.count().label("cnt"))
+                .where(
+                    and_(
+                        TaskAssignmentDB.task_id.in_(task_ids_needed),
+                        TaskAssignmentDB.status.in_(["active", "submitted", "approved"]),
+                    )
+                )
+                .group_by(TaskAssignmentDB.task_id)
+            )
+            active_counts: dict = {str(row.task_id): row.cnt for row in active_counts_res}
+
+            # ── Bulk-load requester emails for notifications ─────────────
+            requester_ids = list({tasks_by_id[str(a.task_id)].user_id
+                                   for a in expired
+                                   if str(a.task_id) in tasks_by_id})
+            requesters_res = await db.execute(
+                select(UserDB).where(UserDB.id.in_(requester_ids))
+            )
+            requesters_by_id: dict = {str(u.id): u for u in requesters_res.scalars()}
+
+            # ── Process each expired assignment ──────────────────────────
             for assignment in expired:
                 try:
                     assignment.status = "timed_out"
                     assignment.released_at = now
                     timed_out_assignments.append(str(assignment.id))
 
-                    # Penalise worker reliability slightly
-                    worker_result = await db.execute(
-                        select(UserDB).where(UserDB.id == assignment.worker_id)
-                    )
-                    worker = worker_result.scalar_one_or_none()
+                    # Penalise worker reliability
+                    worker = workers_by_id.get(str(assignment.worker_id))
                     if worker:
                         current_reliability = worker.worker_reliability or 1.0
-                        # Exponential moving average: new = 0.9*old + 0.1*0.0 (timeout = 0 score)
                         worker.worker_reliability = round(current_reliability * 0.9, 4)
 
                     # Check the parent task
-                    task_result = await db.execute(
-                        select(TaskDB).where(TaskDB.id == assignment.task_id)
-                    )
-                    task = task_result.scalar_one_or_none()
+                    task = tasks_by_id.get(str(assignment.task_id))
                     if task and task.status == "assigned":
-                        # Count remaining active/submitted assignments
-                        active_count = await db.scalar(
-                            select(func.count()).where(
-                                and_(
-                                    TaskAssignmentDB.task_id == task.id,
-                                    TaskAssignmentDB.status.in_(["active", "submitted", "approved"]),
-                                )
-                            )
-                        ) or 0
+                        # After marking this assignment timed_out, how many remain?
+                        # Subtract 1 because this assignment is no longer "active"
+                        active_count = max(0, active_counts.get(str(task.id), 0) - 1)
 
                         if active_count < task.assignments_required:
-                            # Reopen the task so another worker can claim it
                             task.status = "open"
                             reopened_tasks.append(str(task.id))
                             logger.info(
@@ -110,17 +148,14 @@ async def sweep_once(session_factory: async_sessionmaker) -> dict:
                                 db,
                                 task.user_id,
                                 NotifType.TASK_TIMED_OUT,
-                                f"Worker timed out — task reopened ⏱️",
+                                "Worker timed out — task reopened ⏱️",
                                 f"{worker_name.capitalize()} didn't complete your {task_label} task in time. "
                                 "It's been reopened and is back in the marketplace.",
                                 link=f"/dashboard/tasks/{task.id}",
                             )
 
                             # Fire email to requester (fire-and-forget)
-                            requester_result = await db.execute(
-                                select(UserDB).where(UserDB.id == task.user_id)
-                            )
-                            requester = requester_result.scalar_one_or_none()
+                            requester = requesters_by_id.get(str(task.user_id))
                             if requester and requester.email:
                                 asyncio.create_task(
                                     _notify_timeout_email(
@@ -181,7 +216,11 @@ async def _notify_timeout_email(
 
 
 async def _sweep_sla_breaches(session_factory: async_sessionmaker) -> int:
-    """Check all open/assigned human tasks for SLA breaches and log them."""
+    """Check all open/assigned human tasks for SLA breaches and log them.
+
+    Optimised: loads all relevant users in a single query (no N+1),
+    and pre-loads already-breached task IDs to skip them without per-task queries.
+    """
     from core.sla import compute_sla_deadline
     breached = 0
     now = datetime.now(timezone.utc)
@@ -196,32 +235,41 @@ async def _sweep_sla_breaches(session_factory: async_sessionmaker) -> int:
                 )
             )
             tasks = list(res.scalars().all())
+            if not tasks:
+                return 0
+
+            # Bulk-load all user plans in a single query — avoid N+1
+            user_ids = list({task.user_id for task in tasks})
+            user_res = await db.execute(
+                select(UserDB.id, UserDB.plan).where(UserDB.id.in_(user_ids))
+            )
+            user_plans: dict[str, str] = {
+                str(row.id): (row.plan or "free") for row in user_res
+            }
+
+            # Bulk-load already-breached task IDs — avoid per-task count query
+            task_ids = [task.id for task in tasks]
+            already_breached_res = await db.execute(
+                select(SLABreachDB.task_id).where(SLABreachDB.task_id.in_(task_ids))
+            )
+            already_breached: set = {row[0] for row in already_breached_res}
 
             for task in tasks:
+                if task.user_id not in user_plans:
+                    continue  # user not found / deleted
+                if task.id in already_breached:
+                    continue  # breach already recorded
+
                 priority = task.priority or "normal"
-
-                # Get the requester's plan
-                user_res = await db.execute(select(UserDB).where(UserDB.id == task.user_id))
-                user = user_res.scalar_one_or_none()
-                if not user:
-                    continue
-
-                plan = user.plan or "free"
+                plan = user_plans[str(task.user_id)]
                 deadline = compute_sla_deadline(task.created_at, plan, priority)
 
                 if now <= deadline:
                     continue  # still within SLA
 
-                # Check if already recorded
-                existing = await db.scalar(
-                    select(func.count()).where(SLABreachDB.task_id == task.id)
-                )
-                if existing:
-                    continue
-
                 breach = SLABreachDB(
                     task_id=task.id,
-                    user_id=user.id,
+                    user_id=task.user_id,
                     plan=plan,
                     priority=priority,
                     sla_hours=(now - task.created_at).total_seconds() / 3600,

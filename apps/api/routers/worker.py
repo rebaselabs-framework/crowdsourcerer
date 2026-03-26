@@ -494,12 +494,16 @@ async def claim_task(
     if user.is_banned:
         raise HTTPException(status_code=403, detail="Your worker account has been suspended.")
 
+    # with_for_update() acquires a row-level lock on the task row for the
+    # duration of this transaction. This serialises concurrent claim requests
+    # so that two workers can't both pass the slot-availability check at the
+    # same time and over-assign a task.
     result = await db.execute(
         select(TaskDB).where(
             TaskDB.id == task_id,
             TaskDB.execution_mode == "human",
             TaskDB.status == "open",
-        )
+        ).with_for_update()
     )
     task = result.scalar_one_or_none()
     if not task:
@@ -638,7 +642,7 @@ async def claim_task(
         await mark_onboarding_step(_uuid_onboard.UUID(user_id), "explore", db)
         await db.flush()
     except Exception:
-        pass
+        logger.warning("claim_task.onboarding_step_failed", user_id=user_id)
 
     return WorkerTaskClaimResponse(
         assignment_id=assignment.id,
@@ -781,7 +785,7 @@ async def submit_task(
                 credits_earned=earnings,
             )
         except Exception:
-            pass
+            logger.warning("submit_task.skill_update_failed", user_id=user_id, task_id=str(task_id))
 
     # ── Daily challenge progress ───────────────────────────────────────────
     if task and worker:
@@ -841,10 +845,10 @@ async def submit_task(
                             link="/worker/achievements",
                         )
                 except Exception:
-                    pass
+                    logger.warning("submit_task.badge_notification_failed", user_id=user_id)
                 await db.commit()
         except Exception:
-            pass  # Badge errors never block task submission
+            logger.warning("submit_task.badge_award_failed", user_id=user_id, task_id=str(task_id))
 
     logger.info(
         "task_submitted",
@@ -901,7 +905,7 @@ async def submit_task(
                 extra=_wh_sub_extra,
             ))
         except Exception:
-            pass  # Notification errors never block submission response
+            logger.warning("submit_task.webhook_notification_failed", task_id=str(task_id))
 
     # ── Pay referral bonus on first task completion ───────────────────────
     if worker and worker.worker_tasks_completed == 1:
@@ -909,7 +913,7 @@ async def submit_task(
             from routers.referrals import pay_referral_bonus_on_first_task
             await pay_referral_bonus_on_first_task(user_id, db)
         except Exception:
-            pass  # Referral errors never block submission
+            logger.warning("submit_task.referral_bonus_failed", user_id=user_id)
 
     # ── Onboarding: mark first_task step ──────────────────────────────────
     try:
@@ -918,7 +922,7 @@ async def submit_task(
         await mark_onboarding_step(_uuid_mod2.UUID(user_id), "first_task", db)
         await db.flush()
     except Exception:
-        pass  # Onboarding errors never block submission
+        logger.warning("submit_task.onboarding_step_failed", user_id=user_id)
 
     # ── Consensus check (for non-any_first strategies) ────────────────────
     if task and task.consensus_strategy != "any_first":
@@ -948,7 +952,7 @@ async def submit_task(
         await refresh_worker_reputation(_uuid_mod.UUID(user_id), db)
         await db.commit()
     except Exception:
-        pass  # Reputation errors never block submission
+        logger.warning("submit_task.reputation_refresh_failed", user_id=user_id)
 
     msg = f"Submitted! You earned {earnings} credits and {xp} XP."
     if new_badge_ids:

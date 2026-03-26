@@ -41,7 +41,11 @@ async def test_sweep_once_no_expired():
 
 @pytest.mark.asyncio
 async def test_sweep_once_expired_assignment():
-    """Expired assignments are marked timed_out and tasks may be reopened."""
+    """Expired assignments are marked timed_out and tasks may be reopened.
+
+    The sweeper now uses bulk queries (not per-assignment queries), so the mock
+    must return iterables for workers/tasks/requesters via .scalars().
+    """
     from core.sweeper import sweep_once
 
     now = datetime.now(timezone.utc)
@@ -54,18 +58,30 @@ async def test_sweep_once_expired_assignment():
     assignment.timeout_at = now - timedelta(minutes=35)
     assignment.status = "active"
 
-    # Fake worker
+    # Fake worker (returned as iterable from bulk query)
     worker = MagicMock()
+    worker.id = "test-worker-id"
     worker.worker_reliability = 1.0
 
-    # Fake task (assigned, not enough active assignments)
+    # Fake task (assigned, needs 1, has 1 active — after expiry: 0 left → reopen)
     task = MagicMock()
     task.id = "test-task-id"
     task.type = "label_image"
     task.status = "assigned"
+    task.user_id = "test-requester-id"
     task.assignments_required = 1
+    task.webhook_url = None
 
-    # Mock DB calls
+    # Fake requester
+    requester = MagicMock()
+    requester.id = "test-requester-id"
+    requester.email = None  # no email so no email task is fired
+
+    # Fake active-count row: (task_id, count)
+    active_count_row = MagicMock()
+    active_count_row.task_id = "test-task-id"
+    active_count_row.cnt = 1  # 1 active → after expiry treated as 0
+
     mock_db = AsyncMock()
     call_count = [0]
 
@@ -73,21 +89,24 @@ async def test_sweep_once_expired_assignment():
         call_count[0] += 1
         result = MagicMock()
         if call_count[0] == 1:
-            # First call: expired assignments
+            # Expired assignments
             result.scalars.return_value.all.return_value = [assignment]
         elif call_count[0] == 2:
-            # Worker lookup
-            result.scalar_one_or_none.return_value = worker
+            # Bulk workers: UserDB.id.in_([...])
+            result.scalars.return_value = iter([worker])
         elif call_count[0] == 3:
-            # Task lookup
-            result.scalar_one_or_none.return_value = task
+            # Bulk tasks: TaskDB.id.in_([...])
+            result.scalars.return_value = iter([task])
         elif call_count[0] == 4:
-            # Active count
-            result = 0  # No active assignments left
+            # Bulk active counts: group_by
+            result.__iter__ = lambda s: iter([active_count_row])
+        elif call_count[0] == 5:
+            # Bulk requesters: UserDB.id.in_([...])
+            result.scalars.return_value = iter([requester])
         return result
 
     mock_db.execute = mock_execute
-    mock_db.scalar = AsyncMock(return_value=0)
+    mock_db.add = MagicMock()
     mock_db.commit = AsyncMock()
     mock_db.rollback = AsyncMock()
     mock_db.__aenter__ = AsyncMock(return_value=mock_db)
@@ -96,11 +115,12 @@ async def test_sweep_once_expired_assignment():
     mock_factory = MagicMock()
     mock_factory.return_value = mock_db
 
-    result = await sweep_once(mock_factory)
+    with patch("core.sweeper.create_notification", new_callable=AsyncMock):
+        result = await sweep_once(mock_factory)
 
     # The assignment should have been marked timed_out
     assert assignment.status == "timed_out"
-    # Worker reliability should be penalised
+    # Worker reliability should be penalised (0.9 * 1.0 = 0.9)
     assert worker.worker_reliability < 1.0
 
 
