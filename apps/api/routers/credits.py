@@ -1,6 +1,7 @@
 """Credits endpoints: balance, transactions, checkout."""
 from typing import Optional
 
+import structlog
 import stripe
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,6 +16,7 @@ from models.schemas import (
     CreditBalanceOut, CreditTransactionOut, PaginatedTransactions
 )
 
+logger = structlog.get_logger()
 router = APIRouter(prefix="/v1/credits", tags=["credits"])
 settings = get_settings()
 
@@ -105,6 +107,7 @@ async def create_checkout(
         )
         user.stripe_customer_id = customer.id
         await db.commit()
+        logger.info("stripe.customer_created", user_id=user_id, customer_id=customer.id)
 
     usd_amount = req.credits // settings.credits_per_usd  # in dollars
     if usd_amount < 1:
@@ -137,8 +140,8 @@ async def create_checkout(
             "quantity": 1,
         }],
         mode="payment",
-        success_url=req.success_url,
-        cancel_url=req.cancel_url,
+        success_url=str(req.success_url),
+        cancel_url=str(req.cancel_url),
         metadata={
             "user_id": user_id,
             "credits": str(total_credits),  # includes any bonus
@@ -163,12 +166,14 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
         event = stripe.Webhook.construct_event(
             payload, sig, settings.stripe_webhook_secret
         )
-    except Exception:
+    except Exception as exc:
+        logger.warning("stripe_webhook.invalid_signature", error=str(exc))
         raise HTTPException(status_code=400, detail="Invalid webhook signature")
 
     event_id = event.get("id", "")
+    event_type = event.get("type", "")
 
-    if event["type"] == "checkout.session.completed":
+    if event_type == "checkout.session.completed":
         # Idempotency guard — reject duplicate deliveries
         if event_id:
             existing = await db.scalar(
@@ -178,46 +183,73 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
                 )
             )
             if existing:
+                logger.info("stripe_webhook.duplicate_event", event_id=event_id)
                 return {"status": "ok", "duplicate": True}
 
         session = event["data"]["object"]
         user_id = session.get("metadata", {}).get("user_id")
-        credits = int(session.get("metadata", {}).get("credits", 0))
+        try:
+            credits = int(session.get("metadata", {}).get("credits", 0))
+        except (ValueError, TypeError):
+            logger.error(
+                "stripe_webhook.invalid_credits_metadata",
+                event_id=event_id,
+                raw=session.get("metadata", {}).get("credits"),
+            )
+            return {"status": "ok"}
 
-        if user_id and credits > 0:
-            result = await db.execute(select(UserDB).where(UserDB.id == user_id))
-            user = result.scalar_one_or_none()
-            if user:
-                user.credits += credits
-                txn = CreditTransactionDB(
-                    user_id=user_id,
-                    amount=credits,
-                    type="credit",
-                    description=f"Purchased {credits:,} credits",
-                    stripe_payment_intent=session.get("payment_intent"),
-                )
-                db.add(txn)
-                # Mark event as processed to prevent double-crediting on replay
-                if event_id:
-                    db.add(StripeEventLogDB(
-                        stripe_event_id=event_id,
-                        event_type=event["type"],
-                        processed=True,
-                    ))
-                # Reset low-credit alert if balance recovered
-                from core.credit_alerts import reset_credit_alert_if_recovered
-                await reset_credit_alert_if_recovered(db, user)
+        if not user_id or credits <= 0:
+            logger.warning(
+                "stripe_webhook.skipped",
+                event_id=event_id,
+                user_id=user_id,
+                credits=credits,
+            )
+            return {"status": "ok"}
 
-                # In-app payment notification
-                from core.notify import create_notification, NotifType
-                new_balance = user.credits
-                await create_notification(
-                    db, user_id,
-                    NotifType.PAYMENT_RECEIVED,
-                    "Credits added 💳",
-                    f"{credits:,} credits added. New balance: {new_balance:,} credits.",
-                    link="/dashboard/billing",
-                )
-                await db.commit()
+        result = await db.execute(select(UserDB).where(UserDB.id == user_id))
+        user = result.scalar_one_or_none()
+        if not user:
+            logger.error("stripe_webhook.user_not_found", event_id=event_id, user_id=user_id)
+            return {"status": "ok"}
+
+        user.credits += credits
+        txn = CreditTransactionDB(
+            user_id=user_id,
+            amount=credits,
+            type="credit",
+            description=f"Purchased {credits:,} credits",
+            stripe_payment_intent=session.get("payment_intent"),
+        )
+        db.add(txn)
+        # Mark event as processed to prevent double-crediting on replay
+        if event_id:
+            db.add(StripeEventLogDB(
+                stripe_event_id=event_id,
+                event_type=event_type,
+                processed=True,
+            ))
+        # Reset low-credit alert if balance recovered
+        from core.credit_alerts import reset_credit_alert_if_recovered
+        await reset_credit_alert_if_recovered(db, user)
+
+        # In-app payment notification
+        from core.notify import create_notification, NotifType
+        new_balance = user.credits
+        await create_notification(
+            db, user_id,
+            NotifType.PAYMENT_RECEIVED,
+            "Credits added 💳",
+            f"{credits:,} credits added. New balance: {new_balance:,} credits.",
+            link="/dashboard/billing",
+        )
+        await db.commit()
+        logger.info(
+            "stripe_webhook.credits_added",
+            event_id=event_id,
+            user_id=user_id,
+            credits=credits,
+            new_balance=new_balance,
+        )
 
     return {"status": "ok"}

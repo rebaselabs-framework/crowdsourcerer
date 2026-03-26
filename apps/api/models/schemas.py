@@ -4,7 +4,7 @@ from datetime import datetime, date
 from typing import Any, Literal, Optional, Union
 from uuid import UUID
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, EmailStr, Field, model_validator
+from pydantic import AliasChoices, AnyHttpUrl, BaseModel, ConfigDict, EmailStr, Field, model_validator
 
 
 # ─── Auth ─────────────────────────────────────────────────────────────────
@@ -292,8 +292,8 @@ class PaginatedTransactions(BaseModel):
 
 class CheckoutRequest(BaseModel):
     credits: int = Field(ge=100, le=100_000)
-    success_url: str
-    cancel_url: str
+    success_url: AnyHttpUrl
+    cancel_url: AnyHttpUrl
 
 
 class CheckoutResponse(BaseModel):
