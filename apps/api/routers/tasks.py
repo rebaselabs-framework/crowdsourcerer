@@ -249,7 +249,11 @@ async def _trigger_saved_search_alerts(
         try:
             await notify_matching_saved_searches(task_type, priority, reward_credits, db)
         except Exception:
-            pass  # Never crash task creation
+            logger.warning(
+                "background_task.saved_search_alerts_failed",
+                task_id=task_id,
+                task_type=task_type,
+            )
         try:
             await notify_matched_workers_of_task(
                 task_id=task_id,
@@ -259,7 +263,11 @@ async def _trigger_saved_search_alerts(
                 db=db,
             )
         except Exception:
-            pass  # Never crash task creation
+            logger.warning(
+                "background_task.worker_email_notification_failed",
+                task_id=task_id,
+                task_type=task_type,
+            )
 
 
 async def _mark_requester_onboarding(user_id: str, step: str) -> None:
@@ -270,7 +278,11 @@ async def _mark_requester_onboarding(user_id: str, step: str) -> None:
         try:
             await complete_step_internal(user_id, step, db)
         except Exception:
-            pass
+            logger.warning(
+                "background_task.requester_onboarding_failed",
+                user_id=user_id,
+                step=step,
+            )
 
 
 def _calc_credits(req: TaskCreateRequest) -> int:
@@ -1162,7 +1174,12 @@ async def approve_submission(
             credits_earned=assignment.earnings_credits,
         )
     except Exception:
-        pass
+        logger.warning(
+            "approve_submission.skill_update_failed",
+            task_id=str(task_id),
+            assignment_id=str(assignment_id),
+            exc_info=True,
+        )
 
     # In-app notification to worker
     try:
@@ -1176,7 +1193,12 @@ async def approve_submission(
             link="/worker/earnings",
         )
     except Exception:
-        pass
+        logger.warning(
+            "approve_submission.notification_failed",
+            task_id=str(task_id),
+            assignment_id=str(assignment_id),
+            exc_info=True,
+        )
 
     await db.commit()
 
@@ -1200,7 +1222,12 @@ async def approve_submission(
                 xp=assignment.xp_earned,
             ))
     except Exception:
-        pass
+        logger.warning(
+            "approve_submission.email_notification_failed",
+            task_id=str(task_id),
+            assignment_id=str(assignment_id),
+            exc_info=True,
+        )
 
     # If task is now completed (requester_review strategy), resume any waiting pipeline
     if task.status == "completed" and task.output is not None:
@@ -1208,7 +1235,11 @@ async def approve_submission(
             from routers.pipelines import resume_pipeline_after_human_step
             await resume_pipeline_after_human_step(task.id, task.output, db)
         except Exception:
-            pass
+            logger.warning(
+                "approve_submission.pipeline_resume_failed",
+                task_id=str(task_id),
+                exc_info=True,
+            )
 
     # Webhook: task.approved / task.completed (per-task + persistent endpoints)
     _wh_approved_extra = {"type": task.type, "assignment_id": str(assignment_id),
@@ -1299,7 +1330,12 @@ async def reject_submission(
             credits_earned=0,
         )
     except Exception:
-        pass
+        logger.warning(
+            "reject_submission.skill_update_failed",
+            task_id=str(task_id),
+            assignment_id=str(assignment_id),
+            exc_info=True,
+        )
 
     # Refund worker reward to requester
     refund_amount = assignment.earnings_credits
@@ -1334,7 +1370,12 @@ async def reject_submission(
             link="/worker/marketplace",
         )
     except Exception:
-        pass
+        logger.warning(
+            "reject_submission.notification_failed",
+            task_id=str(task_id),
+            assignment_id=str(assignment_id),
+            exc_info=True,
+        )
 
     await db.commit()
 
@@ -1957,7 +1998,11 @@ async def _run_task(task_id: str, user_id: str):
                         extra=_wh_fail_extra,
                     ))
             except Exception:
-                pass
+                logger.error(
+                    "task_run.error_recovery_failed",
+                    task_id=task_id,
+                    exc_info=True,
+                )
 
         except Exception as e:
             logger.exception("task_unexpected_error", task_id=task_id)
@@ -2000,7 +2045,11 @@ async def _run_task(task_id: str, user_id: str):
                         extra=_wh_unexp_extra,
                     ))
             except Exception:
-                pass
+                logger.error(
+                    "task_run.error_recovery_failed",
+                    task_id=task_id,
+                    exc_info=True,
+                )
 
 
 # _send_webhook / _log_webhook removed — logic moved to core/webhooks.py
@@ -2130,7 +2179,12 @@ async def rerun_task(
             extra={"rerun_of": str(task_id)},
         )
     except Exception:
-        pass
+        logger.warning(
+            "task_rerun.webhook_schedule_failed",
+            task_id=str(task_id),
+            new_task_id=str(new_task.id),
+            exc_info=True,
+        )
 
     # Queue for AI execution immediately
     if not is_human:
