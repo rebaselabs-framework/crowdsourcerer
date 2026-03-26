@@ -279,7 +279,7 @@ const CRON_EXAMPLES = [
 </Layout>
 
 <script>
-const token = document.cookie.split(";").map(c => c.trim()).find(c => c.startsWith("cs_token="))?.split("=")[1] ?? "";
+// Proxy routes handle auth via httpOnly cookie — no client-side token needed
 const pipelineId = new URLSearchParams(location.search).get("pipeline_id") ?? "";
 
 // Show/hide new trigger panel
@@ -336,7 +336,7 @@ document.getElementById("createTriggerForm")?.addEventListener("submit", async (
   try {
     const res = await fetch(`/api/triggers/pipelines/${pipelineId}/create`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
     if (res.ok) {
@@ -362,10 +362,7 @@ document.querySelectorAll(".delete-trigger-btn").forEach(btn => {
   btn.addEventListener("click", async () => {
     if (!confirm("Delete this trigger?")) return;
     const triggerId = btn.getAttribute("data-trigger-id")!;
-    await fetch(`/api/triggers/${triggerId}`, {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    await fetch(`/api/triggers/${triggerId}`, { method: "DELETE" });
     location.reload();
   });
 });
@@ -377,10 +374,7 @@ document.querySelectorAll(".fire-btn").forEach(btn => {
     btn.textContent = "⏳ Firing…";
     (btn as HTMLButtonElement).disabled = true;
     try {
-      const res = await fetch(`/api/triggers/${triggerId}/fire`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await fetch(`/api/triggers/${triggerId}/fire`, { method: "POST" });
       const data = await res.json();
       if (res.ok) {
         alert(`✅ Pipeline run started! Run ID: ${data.run_id}`);

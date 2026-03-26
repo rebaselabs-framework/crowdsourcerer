@@ -7,6 +7,8 @@ import Layout from "@/layouts/Layout.astro";
 import { apiFetch } from "@/lib/api";
 
 const { id } = Astro.params as { id: string };
+// Check auth server-side — cs_token is httpOnly and cannot be read from client JS
+const isLoggedIn = !!Astro.cookies.get("cs_token")?.value;
 
 let profile: any = null;
 let verifiedSkills: any[] = [];
@@ -231,7 +233,7 @@ const title = profile ? `${profile.name ?? "Worker"} — CrowdSorcerer` : "Worke
         </div>
 
         {/* ── Quick actions (auth-gated client-side) ─────────── */}
-        <div id="worker-actions" class="hidden flex-wrap gap-3">
+        <div id="worker-actions" class={`${isLoggedIn ? "flex" : "hidden"} flex-wrap gap-3`}>
           <a
             id="invite-btn"
             href="/workers/browse"
@@ -515,16 +517,6 @@ const title = profile ? `${profile.name ?? "Worker"} — CrowdSorcerer` : "Worke
 
 <script>
   // ── Worker profile client-side interactions ──────────────────────────────
-
-  // Show action buttons only when user is authenticated (has auth cookie)
-  const hasCookie = document.cookie.includes("cs_token=");
-  if (hasCookie) {
-    const actionsDiv = document.getElementById("worker-actions");
-    if (actionsDiv) {
-      actionsDiv.classList.remove("hidden");
-      actionsDiv.classList.add("flex");
-    }
-  }
 
   // Share profile
   const shareBtn = document.getElementById("share-btn");

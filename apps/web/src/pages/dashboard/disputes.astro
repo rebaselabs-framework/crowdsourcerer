@@ -5,8 +5,6 @@ import { apiFetch, getToken } from "@/lib/api";
 const token = getToken(Astro.cookies);
 if (!token) return Astro.redirect("/login");
 
-const clientApiUrl = import.meta.env.PUBLIC_API_URL ?? "";
-
 // Handle dispute resolution POST
 if (Astro.request.method === "POST") {
   const form = await Astro.request.formData();
@@ -384,9 +382,8 @@ const EVENT_ICONS: Record<string, string> = {
 </div>
 </Layout>
 
-<script is:inline define:vars={{ clientApiUrl }}>
-const TOKEN = document.cookie.split(";").find(c=>c.trim().startsWith("cs_token="))?.split("=")[1];
-const API = clientApiUrl;
+<script is:inline>
+// API calls use Astro proxy routes — no client-side token needed (httpOnly cookie)
 
 async function submitEvidence(taskId) {
   const typeEl = document.getElementById(`ev-type-${taskId}`);
@@ -426,10 +423,10 @@ async function assignMediator(taskId) {
   if (!mediatorId) { showMsg(msgEl,"Enter mediator user ID.","red"); return; }
 
   try {
-    const res = await fetch(`${API}/v1/disputes/admin/tasks/${taskId}/assign-mediator`, {
-      method:"POST",
-      headers:{"Content-Type":"application/json", Authorization:`Bearer ${TOKEN}`},
-      body:JSON.stringify({mediator_user_id: mediatorId}),
+    const res = await fetch(`/api/disputes/${taskId}/assign-mediator`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mediator_user_id: mediatorId }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail ?? "Failed");
