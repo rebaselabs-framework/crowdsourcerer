@@ -184,7 +184,9 @@ async def claim_daily_bonus(
     user_id: str = Depends(get_current_user_id),
 ):
     """Claim the daily challenge bonus (if challenge is complete and bonus not yet claimed)."""
-    result = await db.execute(select(UserDB).where(UserDB.id == user_id))
+    # Lock the user row so that a double-click / concurrent request cannot award
+    # the bonus twice before the first commit sets bonus_claimed=True.
+    result = await db.execute(select(UserDB).where(UserDB.id == user_id).with_for_update())
     user = result.scalar_one_or_none()
     if not user or user.role not in ("worker", "both"):
         raise HTTPException(status_code=403, detail="Not enrolled as a worker.")

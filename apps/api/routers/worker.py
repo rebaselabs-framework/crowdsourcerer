@@ -790,8 +790,13 @@ async def submit_task(
     # Track whether this submission completes a pipeline step
     _pipeline_task_completed: Optional[tuple] = None  # (task_id, output)
 
-    # Load task to get type
-    task_result = await db.execute(select(TaskDB).where(TaskDB.id == task_id))
+    # Load task — lock it so concurrent submissions from different workers don't
+    # race on assignments_completed (two workers submitting simultaneously would
+    # both read the same count and both increment it, but the last write wins,
+    # leaving the counter under-counted).
+    task_result = await db.execute(
+        select(TaskDB).where(TaskDB.id == task_id).with_for_update()
+    )
     task = task_result.scalar_one_or_none()
     if task:
         task_type_for_xp = task.type
@@ -815,9 +820,13 @@ async def submit_task(
             # Reopen for more workers if needed
             task.status = "open"
 
-    # Update worker stats
+    # Update worker stats.  Lock the worker row so concurrent task submissions
+    # (two different tasks finishing at the same time for the same worker) don't
+    # race on credits / XP / streak fields.
     applied_xp_multiplier: float = 1.0
-    worker_result = await db.execute(select(UserDB).where(UserDB.id == user_id))
+    worker_result = await db.execute(
+        select(UserDB).where(UserDB.id == user_id).with_for_update()
+    )
     worker = worker_result.scalar_one_or_none()
     if worker:
         # Compute XP with streak multiplier using the streak BEFORE today's update

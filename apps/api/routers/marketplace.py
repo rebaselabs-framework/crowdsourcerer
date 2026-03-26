@@ -428,8 +428,9 @@ async def clone_template_as_task(
     timeout = cfg.get("timeout_minutes", 30)
     instructions = cfg.get("instructions", "")
 
-    # Load user and check credits
-    user_res = await db.execute(select(UserDB).where(UserDB.id == uid))
+    # Load user with row-level lock to prevent concurrent clone requests racing
+    # on the credits balance check (read-then-deduct pattern).
+    user_res = await db.execute(select(UserDB).where(UserDB.id == uid).with_for_update())
     user = user_res.scalar_one_or_none()
     if not user:
         raise HTTPException(404, "User not found")

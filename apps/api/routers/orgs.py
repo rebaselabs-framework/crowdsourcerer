@@ -565,7 +565,10 @@ async def transfer_credits(
     """
     org, member = await _get_org_and_require_role(org_id, user_id, db, min_role="admin")
 
-    user_result = await db.execute(select(UserDB).where(UserDB.id == user_id))
+    # Lock user row so concurrent transfers don't race on the balance check.
+    user_result = await db.execute(
+        select(UserDB).where(UserDB.id == user_id).with_for_update()
+    )
     user = user_result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")

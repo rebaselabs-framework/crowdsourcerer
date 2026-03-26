@@ -374,7 +374,11 @@ async def submit_quiz(
         prev_count = prev_passes.scalar_one() or 0
         if prev_count == 0:  # This is the first pass (not yet committed)
             from models.db import UserDB, CreditTransactionDB
-            user_res = await db.execute(select(UserDB).where(UserDB.id == uid))
+            # Lock the user row so two concurrent first-pass submissions cannot
+            # both read prev_count=0 and double-award the bonus credits.
+            user_res = await db.execute(
+                select(UserDB).where(UserDB.id == uid).with_for_update()
+            )
             user = user_res.scalar_one_or_none()
             if user:
                 user.credits += CREDITS_FOR_PASSING

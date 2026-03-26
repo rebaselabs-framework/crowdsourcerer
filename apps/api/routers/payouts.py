@@ -60,8 +60,11 @@ async def create_payout_request(
     if method == "crypto" and not all(k in details for k in ("network", "address")):
         raise HTTPException(400, "payout_details must include 'network' and 'address' for crypto")
 
-    # Load user
-    result = await db.execute(select(UserDB).where(UserDB.id == user_id))
+    # Load user with row-level lock so two concurrent payout requests from the
+    # same worker cannot both pass the balance check before either commits.
+    result = await db.execute(
+        select(UserDB).where(UserDB.id == user_id).with_for_update()
+    )
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(404, "User not found")

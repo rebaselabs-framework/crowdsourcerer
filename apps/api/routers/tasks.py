@@ -1345,12 +1345,13 @@ async def reject_submission(
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    # Load assignment
+    # Load assignment with row-level lock so two concurrent rejection requests
+    # can't both pass the status check and both refund credits (double refund).
     a_result = await db.execute(
         select(TaskAssignmentDB).where(
             TaskAssignmentDB.id == assignment_id,
             TaskAssignmentDB.task_id == task_id,
-        )
+        ).with_for_update()
     )
     assignment = a_result.scalar_one_or_none()
     if not assignment:
