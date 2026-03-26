@@ -288,13 +288,44 @@ Pages fixed:
 
 **Zero `document.cookie` cs_token reads remain in the codebase.**
 
+## Session 2026-03-26 (continued) — Certifications redirect, badge icon bug, full cookie audit sweep 2
+
+**certifications.astro redirect refactor (fb3c2a9):**
+- Replaced template-literal redirect URL with `URLSearchParams` construction to avoid Astro checker false-positive and ensure proper URL encoding of query params
+
+**Public profile badge AttributeError fix (917d110):**
+- `profiles.py` was reading `b.badge_slug`, `b.badge_name`, `b.badge_description` from `WorkerBadgeDB` — those fields don't exist (only `badge_id` + `earned_at`). Would have crashed on any worker with badges.
+- Fixed by importing `_BADGE_MAP` from `routers/badges.py` and looking up name/description/icon by `b.badge_id`
+- Added `badge_icon: Optional[str] = None` to `PublicProfileBadge` schema
+- Updated `/workers/[id].astro` to use `badge.badge_icon ?? "🏆"` instead of hardcoded `🏆`
+
+**Second full `document.cookie` sweep — 9 more pages fixed (16eb555):**
+
+New proxy routes:
+- `/api/template-marketplace` (POST) — create template; was calling `/api/v1/marketplace/templates` → 404
+- `/api/admin/payouts/[payoutId]/review` (POST) — admin payout review; was `/api/v1/payouts/[id]/review` → 404
+- `/api/worker/portfolio` (POST)
+- `/api/worker/portfolio/[pinId]` (PATCH + DELETE)
+
+Pages fixed:
+- `admin/reputation.astro`: dead `token=` var + 4 useless auth headers removed (proxy reads cookie)
+- `admin/payouts.astro`: dead `token=` var + fixed 404 URL
+- `experiments/[id].astro`: dead `token=` var + useless auth header removed
+- `marketplace/new.astro`: dead `token=` var + authHeader removed; URL fixed
+- `worker/portfolio.astro`: 3 direct API calls → proxy routes
+- `worker/skills.astro`: dead `TOKEN` variable removed (guard already removed prior)
+
+**Zero `document.cookie` auth reads remain anywhere in the codebase.**
+
+Also: template-marketplace index.ts had wrong backend URL (`/v1/template-marketplace` → `/v1/marketplace/templates`), now also fixed.
+
 ## Priorities for Next Session 🔜
 
 PHASE: Pre-alpha development. Focus on quality/depth. NOT in scope: launch tasks, marketing, directory listings.
 
-1. **Fix `worker/certifications.astro` unused `res` warning**: Line 17 discards the cert attempt response (`res` declared but never read). The worker score/pass status is not displayed — they get no feedback after attempting a cert. Read `res` and show a result banner (score, pass/fail, earned_points).
-2. **Public worker profile cert badges**: `/workers/[id].astro` shows the public profile. Now that `PublicWorkerProfileOut` exposes `avg_feedback_score` + `total_ratings_received`, verify the star display works. Also check if earned cert badges should be shown on the public profile (via `badges: list[PublicProfileBadge]`).
-3. **API proxy smoke tests**: The 9+ new Astro proxy routes have no test coverage. Add integration tests (or at least type-level checks) to catch issues like wrong URL paths (like the `/v1/template-marketplace` bug that was fixed).
+1. **Test coverage for new proxy routes**: 13+ new Astro proxy routes were created across these sessions with no tests. Add at minimum a test that each proxy correctly reads the cookie and forwards to the right URL (mock the upstream fetch). Prevents regressions like the wrong-URL bug found in `/api/template-marketplace/index.ts`.
+2. **Investigate `admin/payouts.astro` upstream URL**: The new `/api/admin/payouts/[payoutId]/review` proxy calls `/v1/admin/payouts/{id}/review` — verify that FastAPI endpoint exists (the payout review might be at a different path).
+3. **Worker completeness score in onboarding**: Check if the `worker/onboarding.astro` page reflects the newly-added completeness indicators (location, website, skills, certs) — or if it still only checks 3 fields.
 
 ## Known Warnings (non-blocking)
 
