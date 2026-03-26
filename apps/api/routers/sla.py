@@ -8,7 +8,7 @@ from uuid import UUID
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func, and_, case
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import asyncio
@@ -253,26 +253,43 @@ async def sla_summary(
     )
     total = total_res.scalar_one() or 0
 
-    breach_res = await db.execute(
-        select(SLABreachDB).where(SLABreachDB.breach_at >= since)
+    # Aggregate breach counts with SQL instead of loading all rows into Python
+    # ── total breach count + unresolved/resolved split ──────────────────────
+    counts_res = await db.execute(
+        select(
+            func.count().label("total_breaches"),
+            func.sum(
+                case((SLABreachDB.resolved_at.is_(None), 1), else_=0)
+            ).label("unresolved"),
+        ).where(SLABreachDB.breach_at >= since)
     )
-    breaches = list(breach_res.scalars().all())
+    counts_row = counts_res.one()
+    total_breaches: int = counts_row.total_breaches or 0
+    breached_unresolved: int = int(counts_row.unresolved or 0)
+    breached_resolved = total_breaches - breached_unresolved
 
-    breached_unresolved = sum(1 for b in breaches if b.resolved_at is None)
-    breached_resolved = sum(1 for b in breaches if b.resolved_at is not None)
+    # ── by priority ──────────────────────────────────────────────────────────
+    prio_res = await db.execute(
+        select(SLABreachDB.priority, func.count().label("cnt"))
+        .where(SLABreachDB.breach_at >= since)
+        .group_by(SLABreachDB.priority)
+    )
+    by_priority: dict[str, int] = {row.priority: row.cnt for row in prio_res}
 
-    by_priority: dict[str, int] = {}
-    by_plan: dict[str, int] = {}
-    for b in breaches:
-        by_priority[b.priority] = by_priority.get(b.priority, 0) + 1
-        by_plan[b.plan] = by_plan.get(b.plan, 0) + 1
+    # ── by plan ───────────────────────────────────────────────────────────────
+    plan_res = await db.execute(
+        select(SLABreachDB.plan, func.count().label("cnt"))
+        .where(SLABreachDB.breach_at >= since)
+        .group_by(SLABreachDB.plan)
+    )
+    by_plan: dict[str, int] = {row.plan: row.cnt for row in plan_res}
 
     return SLASummaryOut(
         total_tasks=total,
-        on_track=max(0, total - len(breaches)),
+        on_track=max(0, total - total_breaches),
         breached_unresolved=breached_unresolved,
         breached_resolved=breached_resolved,
-        breach_rate_pct=round(len(breaches) / max(total, 1) * 100, 2),
+        breach_rate_pct=round(total_breaches / max(total, 1) * 100, 2),
         by_priority=by_priority,
         by_plan=by_plan,
     )
