@@ -11,7 +11,8 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func
 
 from core.auth import get_current_user_id
 from core.database import get_db
@@ -68,27 +69,42 @@ def _result_snippet(task: TaskDB, max_chars: int = 200) -> Optional[str]:
     return text[:max_chars] if text else None
 
 
-def _build_item(pin: WorkerPortfolioItemDB, db: Session) -> PortfolioItemOut:
-    task = pin.task
-    # Get avg rating for this task (worker_id = pin.worker_id)
-    ratings = (
-        db.query(TaskRatingDB.score)
-        .filter(TaskRatingDB.task_id == pin.task_id, TaskRatingDB.worker_id == pin.worker_id)
-        .all()
+async def _build_item(pin: WorkerPortfolioItemDB, db: AsyncSession) -> PortfolioItemOut:
+    """Build a PortfolioItemOut, explicitly loading the task and its rating."""
+    task = await db.get(TaskDB, pin.task_id)
+
+    # Get avg rating for this specific task × worker combination
+    avg_rating: Optional[float] = None
+    agg_res = await db.execute(
+        select(func.avg(TaskRatingDB.score).label("avg"))
+        .where(
+            TaskRatingDB.task_id == pin.task_id,
+            TaskRatingDB.worker_id == pin.worker_id,
+        )
     )
-    avg_rating = None
-    if ratings:
-        avg_rating = round(sum(r.score for r in ratings) / len(ratings), 1)
+    avg_row = agg_res.one_or_none()
+    if avg_row and avg_row.avg is not None:
+        avg_rating = round(float(avg_row.avg), 1)
+
+    task_title: Optional[str] = None
+    task_type = "unknown"
+    snippet: Optional[str] = None
+    if task:
+        task_type = task.type
+        # Title can live in the input dict or as a direct column
+        if isinstance(task.input, dict):
+            task_title = task.input.get("title")
+        snippet = _result_snippet(task) if task.status == "completed" else None
 
     return PortfolioItemOut(
         id=pin.id,
         task_id=pin.task_id,
-        task_type=task.task_type if task else "unknown",
-        task_title=getattr(task, "title", None) if task else None,
+        task_type=task_type,
+        task_title=task_title,
         caption=pin.caption,
         display_order=pin.display_order,
         pinned_at=pin.pinned_at.isoformat(),
-        result_snippet=_result_snippet(task) if task else None,
+        result_snippet=snippet,
         avg_rating=avg_rating,
     )
 
@@ -96,14 +112,14 @@ def _build_item(pin: WorkerPortfolioItemDB, db: Session) -> PortfolioItemOut:
 # ─── My portfolio (authenticated) ────────────────────────────────────────────
 
 @router.post("/portfolio", response_model=PortfolioItemOut, status_code=status.HTTP_201_CREATED)
-def pin_task(
+async def pin_task(
     body: PinTaskRequest,
     user_id: UUID = Depends(get_current_user_id),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Pin a completed task to my portfolio showcase."""
     # Verify task exists and worker was the assignee
-    task = db.query(TaskDB).filter(TaskDB.id == body.task_id).first()
+    task = await db.get(TaskDB, body.task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
@@ -111,37 +127,35 @@ def pin_task(
         raise HTTPException(status_code=400, detail="Only completed tasks can be pinned")
 
     # Worker must have been assigned (and submitted) this task
-    assignment = (
-        db.query(TaskAssignmentDB)
-        .filter(
+    assignment_res = await db.execute(
+        select(TaskAssignmentDB).where(
             TaskAssignmentDB.task_id == body.task_id,
             TaskAssignmentDB.worker_id == user_id,
         )
-        .first()
     )
-    # Also allow AI tasks created by the worker themselves (execution_mode='ai')
+    assignment = assignment_res.scalar_one_or_none()
+
+    # Also allow AI tasks created by the worker themselves
     is_ai_task_owner = (task.execution_mode == "ai" and str(task.user_id) == str(user_id))
     if not assignment and not is_ai_task_owner:
         raise HTTPException(status_code=403, detail="You did not work on this task")
 
     # Check duplicate
-    existing = (
-        db.query(WorkerPortfolioItemDB)
-        .filter(
+    existing_res = await db.execute(
+        select(WorkerPortfolioItemDB).where(
             WorkerPortfolioItemDB.worker_id == user_id,
             WorkerPortfolioItemDB.task_id == body.task_id,
         )
-        .first()
     )
-    if existing:
+    if existing_res.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Task already pinned to portfolio")
 
-    # Enforce max cap
-    count = (
-        db.query(WorkerPortfolioItemDB)
-        .filter(WorkerPortfolioItemDB.worker_id == user_id)
-        .count()
-    )
+    # Enforce max cap (scalar COUNT)
+    count = await db.scalar(
+        select(func.count()).select_from(WorkerPortfolioItemDB).where(
+            WorkerPortfolioItemDB.worker_id == user_id
+        )
+    ) or 0
     if count >= _MAX_PORTFOLIO:
         raise HTTPException(
             status_code=400,
@@ -155,39 +169,42 @@ def pin_task(
         display_order=body.display_order,
     )
     db.add(pin)
-    db.commit()
-    db.refresh(pin)
+    await db.commit()
+    await db.refresh(pin)
 
-    return _build_item(pin, db)
+    return await _build_item(pin, db)
 
 
 @router.get("/portfolio", response_model=list[PortfolioItemOut])
-def get_my_portfolio(
+async def get_my_portfolio(
     user_id: UUID = Depends(get_current_user_id),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Get my portfolio pins."""
-    pins = (
-        db.query(WorkerPortfolioItemDB)
-        .filter(WorkerPortfolioItemDB.worker_id == user_id)
+    pins_res = await db.execute(
+        select(WorkerPortfolioItemDB)
+        .where(WorkerPortfolioItemDB.worker_id == user_id)
         .order_by(WorkerPortfolioItemDB.display_order, WorkerPortfolioItemDB.pinned_at)
-        .all()
     )
-    return [_build_item(p, db) for p in pins]
+    pins = pins_res.scalars().all()
+    return [await _build_item(p, db) for p in pins]
 
 
 @router.patch("/portfolio/{pin_id}", response_model=PortfolioItemOut)
-def update_pin(
+async def update_pin(
     pin_id: UUID,
     body: UpdatePinRequest,
     user_id: UUID = Depends(get_current_user_id),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Update caption or display order for a pinned task."""
-    pin = db.query(WorkerPortfolioItemDB).filter(
-        WorkerPortfolioItemDB.id == pin_id,
-        WorkerPortfolioItemDB.worker_id == user_id,
-    ).first()
+    pin_res = await db.execute(
+        select(WorkerPortfolioItemDB).where(
+            WorkerPortfolioItemDB.id == pin_id,
+            WorkerPortfolioItemDB.worker_id == user_id,
+        )
+    )
+    pin = pin_res.scalar_one_or_none()
     if not pin:
         raise HTTPException(status_code=404, detail="Pin not found")
 
@@ -195,57 +212,64 @@ def update_pin(
         pin.caption = body.caption
     if body.display_order is not None:
         pin.display_order = body.display_order
-    db.commit()
-    db.refresh(pin)
+    await db.commit()
+    await db.refresh(pin)
 
-    return _build_item(pin, db)
+    return await _build_item(pin, db)
 
 
-@router.delete("/portfolio/{pin_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_pin(
+@router.delete("/portfolio/{pin_id}", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
+async def delete_pin(
     pin_id: UUID,
     user_id: UUID = Depends(get_current_user_id),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Remove a task from my portfolio."""
-    pin = db.query(WorkerPortfolioItemDB).filter(
-        WorkerPortfolioItemDB.id == pin_id,
-        WorkerPortfolioItemDB.worker_id == user_id,
-    ).first()
+    pin_res = await db.execute(
+        select(WorkerPortfolioItemDB).where(
+            WorkerPortfolioItemDB.id == pin_id,
+            WorkerPortfolioItemDB.worker_id == user_id,
+        )
+    )
+    pin = pin_res.scalar_one_or_none()
     if not pin:
         raise HTTPException(status_code=404, detail="Pin not found")
 
-    db.delete(pin)
-    db.commit()
+    await db.delete(pin)
+    await db.commit()
 
 
 # ─── Public portfolio ─────────────────────────────────────────────────────────
 
 @public_router.get("/{worker_id}/portfolio")
-def public_portfolio(
+async def public_portfolio(
     worker_id: UUID,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Public portfolio for a worker profile page."""
-    worker = db.query(UserDB).filter(UserDB.id == worker_id).first()
+    worker_res = await db.execute(select(UserDB).where(UserDB.id == worker_id))
+    worker = worker_res.scalar_one_or_none()
     if not worker or not worker.profile_public:
         raise HTTPException(status_code=404, detail="Worker not found")
 
-    pins = (
-        db.query(WorkerPortfolioItemDB)
-        .filter(WorkerPortfolioItemDB.worker_id == worker_id)
+    pins_res = await db.execute(
+        select(WorkerPortfolioItemDB)
+        .where(WorkerPortfolioItemDB.worker_id == worker_id)
         .order_by(WorkerPortfolioItemDB.display_order, WorkerPortfolioItemDB.pinned_at)
-        .all()
     )
+    pins = pins_res.scalars().all()
 
     items = []
     for pin in pins:
-        task = pin.task
+        task = await db.get(TaskDB, pin.task_id)
+        task_title: Optional[str] = None
+        if task and isinstance(task.input, dict):
+            task_title = task.input.get("title")
         items.append({
             "id": str(pin.id),
             "task_id": str(pin.task_id),
-            "task_type": task.task_type if task else "unknown",
-            "task_title": getattr(task, "title", None) if task else None,
+            "task_type": task.type if task else "unknown",
+            "task_title": task_title,
             "caption": pin.caption,
             "display_order": pin.display_order,
             "pinned_at": pin.pinned_at.isoformat(),
