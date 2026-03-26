@@ -113,10 +113,36 @@ def compute_level(xp: int) -> tuple[int, int]:
     return level, max(0, xp_to_next)
 
 
-def compute_xp_for_task(task_type: str, accurate: bool = True) -> int:
-    """XP earned for completing a task. Bonus for accuracy."""
+# Streak multiplier tiers: (min_streak_days, multiplier)
+# The UI on /worker/submitted promises "daily streak bonus multipliers".
+STREAK_MULTIPLIER_TIERS: list[tuple[int, float]] = [
+    (30, 2.0),   # 30+ consecutive days → 2× XP
+    (14, 1.5),   # 14+ days → 1.5×
+    (7,  1.25),  # 7+ days → 1.25×
+    (3,  1.1),   # 3+ days → 1.1×
+    (0,  1.0),   # no streak → 1×
+]
+
+
+def streak_xp_multiplier(streak_days: int) -> float:
+    """Return the XP multiplier for a given streak length."""
+    for threshold, multiplier in STREAK_MULTIPLIER_TIERS:
+        if streak_days >= threshold:
+            return multiplier
+    return 1.0
+
+
+def compute_xp_for_task(task_type: str, accurate: bool = True, streak_days: int = 0) -> int:
+    """XP earned for completing a task.
+
+    Bonuses applied in order:
+    - Accuracy bonus: inaccurate submissions get half XP (minimum 1)
+    - Streak bonus: consecutive daily completions multiply XP (see STREAK_MULTIPLIER_TIERS)
+    """
     base = TASK_XP_BASE.get(task_type, 10)
-    return base if accurate else max(1, base // 2)
+    raw = base if accurate else max(1, base // 2)
+    multiplier = streak_xp_multiplier(streak_days)
+    return round(raw * multiplier)
 
 
 # ─── Become a worker ──────────────────────────────────────────────────────
@@ -699,8 +725,9 @@ async def submit_task(
     assignment.worker_note = req.worker_note
     assignment.submitted_at = now
 
-    # Compute XP
-    xp = compute_xp_for_task(assignment.task.type if hasattr(assignment, "task") else "label_image")
+    # Placeholder XP — will be recomputed with streak once worker is loaded
+    task_type_for_xp = "label_image"  # fallback
+    xp = 0
 
     # Track whether this submission completes a pipeline step
     _pipeline_task_completed: Optional[tuple] = None  # (task_id, output)
@@ -709,7 +736,7 @@ async def submit_task(
     task_result = await db.execute(select(TaskDB).where(TaskDB.id == task_id))
     task = task_result.scalar_one_or_none()
     if task:
-        xp = compute_xp_for_task(task.type)
+        task_type_for_xp = task.type
         task.assignments_completed += 1
 
         # Determine task lifecycle based on consensus strategy
@@ -730,12 +757,15 @@ async def submit_task(
             # Reopen for more workers if needed
             task.status = "open"
 
-    assignment.xp_earned = xp
-
     # Update worker stats
+    applied_xp_multiplier: float = 1.0
     worker_result = await db.execute(select(UserDB).where(UserDB.id == user_id))
     worker = worker_result.scalar_one_or_none()
     if worker:
+        # Compute XP with streak multiplier using the streak BEFORE today's update
+        xp = compute_xp_for_task(task_type_for_xp, streak_days=worker.worker_streak_days)
+        applied_xp_multiplier = streak_xp_multiplier(worker.worker_streak_days)
+
         worker.worker_xp += xp
         worker.worker_tasks_completed += 1
         new_level, _ = compute_level(worker.worker_xp)
@@ -750,11 +780,16 @@ async def submit_task(
                 worker.worker_streak_days += 1
             elif days_since > 1:
                 worker.worker_streak_days = 1  # Streak broken
-            # days_since == 0: same day, no change
+            # days_since == 0: same day, no change to streak
         else:
             worker.worker_streak_days = 1
         worker.worker_last_active_date = now
+    else:
+        xp = compute_xp_for_task(task_type_for_xp)
 
+    assignment.xp_earned = xp
+
+    if worker:
         # Compute reliability: ratio of submitted/(submitted+released+timed_out)
         completed = worker.worker_tasks_completed
         released = await db.scalar(
@@ -976,6 +1011,8 @@ async def submit_task(
         status="submitted",
         earnings_credits=earnings,
         xp_earned=xp,
+        streak_multiplier=applied_xp_multiplier,
+        streak_days=worker.worker_streak_days if worker else 0,
         message=msg,
     )
 

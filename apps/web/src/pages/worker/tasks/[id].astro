@@ -637,6 +637,8 @@ document.getElementById("submit-btn")?.addEventListener("click", async (e) => {
       const params = new URLSearchParams({
         credits: String(data.earnings_credits ?? 0),
         xp: String(data.xp_earned ?? 0),
+        streak_multiplier: String(data.streak_multiplier ?? 1),
+        streak_days: String(data.streak_days ?? 0),
       });
       window.location.href = `/worker/submitted?${params}`;
     } else {

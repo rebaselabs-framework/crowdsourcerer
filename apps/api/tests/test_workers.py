@@ -163,3 +163,128 @@ def test_xp_base_covers_all_human_task_types():
     for t in human_types:
         assert t in TASK_XP_BASE, f"Missing XP reward for task type: {t}"
         assert TASK_XP_BASE[t] > 0, f"XP reward for {t} must be positive"
+
+
+# ── streak_xp_multiplier() ────────────────────────────────────────────────────
+
+def multiplier(streak):
+    from routers.worker import streak_xp_multiplier
+    return streak_xp_multiplier(streak)
+
+
+def test_streak_multiplier_zero_days():
+    """New worker with 0 days gets 1× (no bonus)."""
+    assert multiplier(0) == 1.0
+
+
+def test_streak_multiplier_1_day():
+    """1-day streak is below the first bonus tier (3 days) → 1×."""
+    assert multiplier(1) == 1.0
+
+
+def test_streak_multiplier_2_days():
+    """2-day streak is below the first bonus tier → 1×."""
+    assert multiplier(2) == 1.0
+
+
+def test_streak_multiplier_3_days():
+    """3-day streak hits the first bonus tier → 1.1×."""
+    assert multiplier(3) == 1.1
+
+
+def test_streak_multiplier_6_days():
+    """6-day streak (below 7) → 1.1×."""
+    assert multiplier(6) == 1.1
+
+
+def test_streak_multiplier_7_days():
+    """7-day streak → 1.25×."""
+    assert multiplier(7) == 1.25
+
+
+def test_streak_multiplier_13_days():
+    """13-day streak (below 14) → 1.25×."""
+    assert multiplier(13) == 1.25
+
+
+def test_streak_multiplier_14_days():
+    """14-day streak → 1.5×."""
+    assert multiplier(14) == 1.5
+
+
+def test_streak_multiplier_29_days():
+    """29-day streak (below 30) → 1.5×."""
+    assert multiplier(29) == 1.5
+
+
+def test_streak_multiplier_30_days():
+    """30-day streak → 2× (max bonus)."""
+    assert multiplier(30) == 2.0
+
+
+def test_streak_multiplier_100_days():
+    """100-day streak still caps at 2×."""
+    assert multiplier(100) == 2.0
+
+
+def test_streak_multiplier_tiers_are_monotone():
+    """Each higher streak tier must have a multiplier >= lower tier."""
+    from routers.worker import STREAK_MULTIPLIER_TIERS
+    # Tiers are sorted descending by threshold: (30, 2.0), (14, 1.5), ...
+    multipliers = [m for _, m in STREAK_MULTIPLIER_TIERS]
+    for i in range(len(multipliers) - 1):
+        assert multipliers[i] >= multipliers[i + 1], (
+            f"Tier {i} multiplier {multipliers[i]} < tier {i+1} multiplier {multipliers[i+1]}"
+        )
+
+
+# ── compute_xp_for_task with streak ──────────────────────────────────────────
+
+def xp(task_type, accurate=True, streak_days=0):
+    from routers.worker import compute_xp_for_task
+    return compute_xp_for_task(task_type, accurate=accurate, streak_days=streak_days)
+
+
+def test_compute_xp_no_streak():
+    """Without a streak, XP equals the base value."""
+    from routers.worker import TASK_XP_BASE
+    for t, base in TASK_XP_BASE.items():
+        assert xp(t, streak_days=0) == base
+
+
+def test_compute_xp_7_day_streak():
+    """7-day streak applies 1.25× multiplier."""
+    from routers.worker import TASK_XP_BASE
+    base = TASK_XP_BASE["verify_fact"]  # 12 XP base
+    assert xp("verify_fact", streak_days=7) == round(base * 1.25)
+
+
+def test_compute_xp_30_day_streak():
+    """30-day streak applies 2× multiplier."""
+    from routers.worker import TASK_XP_BASE
+    base = TASK_XP_BASE["answer_question"]  # 15 XP base
+    assert xp("answer_question", streak_days=30) == round(base * 2.0)
+
+
+def test_compute_xp_inaccurate_halved():
+    """Inaccurate submission halves base XP before streak multiplier."""
+    from routers.worker import TASK_XP_BASE
+    base = TASK_XP_BASE["label_image"]  # 10 XP
+    # Inaccurate: base//2 = 5, then no streak = 5
+    assert xp("label_image", accurate=False, streak_days=0) == 5
+
+
+def test_compute_xp_inaccurate_with_streak():
+    """Inaccurate submissions still get a streak multiplier."""
+    from routers.worker import TASK_XP_BASE
+    base = TASK_XP_BASE["label_image"]  # 10 XP → inaccurate = 5
+    # 7-day streak: 5 * 1.25 = 6.25 → round = 6
+    result = xp("label_image", accurate=False, streak_days=7)
+    assert result == round(5 * 1.25)
+
+
+def test_compute_xp_always_positive():
+    """XP is always at least 1 even for inaccurate submissions."""
+    # The minimum 1 comes from max(1, base//2) before multiplier
+    result = xp("label_text", accurate=False, streak_days=0)
+    assert result >= 1

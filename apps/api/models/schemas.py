@@ -342,6 +342,8 @@ class WorkerTaskSubmitResponse(BaseModel):
     status: str
     earnings_credits: int
     xp_earned: int
+    streak_multiplier: float = 1.0  # XP multiplier applied (1.0 = no bonus)
+    streak_days: int = 0             # Worker's streak at time of submission
     message: str
 
 

@@ -1,6 +1,7 @@
 ---
 /**
  * Task submitted success page — shown after worker submits a task.
+ * Shows earned credits, XP, and streak bonus if applicable.
  */
 import Layout from "@/layouts/Layout.astro";
 import { getToken } from "@/lib/api";
@@ -12,6 +13,21 @@ if (!token) return Astro.redirect("/login");
 const url = new URL(Astro.request.url);
 const credits = parseInt(url.searchParams.get("credits") ?? "0");
 const xp = parseInt(url.searchParams.get("xp") ?? "0");
+// streak_multiplier and streak_days are passed from the submit handler
+const streakMultiplier = parseFloat(url.searchParams.get("streak_multiplier") ?? "1");
+const streakDays = parseInt(url.searchParams.get("streak_days") ?? "0");
+const hasStreakBonus = streakMultiplier > 1.0;
+
+// Human-readable multiplier label
+function streakLabel(days: number): string {
+  if (days >= 30) return "🔥 30-day streak!";
+  if (days >= 14) return "🔥 2-week streak!";
+  if (days >= 7) return "🔥 7-day streak!";
+  if (days >= 3) return "🔥 3-day streak!";
+  return "";
+}
+const streakBadgeLabel = streakLabel(streakDays);
+const multiplierDisplay = `${streakMultiplier}×`;
 ---
 
 <Layout title="Task Submitted — CrowdSorcerer">
@@ -21,6 +37,17 @@ const xp = parseInt(url.searchParams.get("xp") ?? "0");
 
     <h1 class="text-3xl font-bold mb-3">Task Submitted!</h1>
     <p class="text-gray-400 mb-10">Your answer has been recorded. Thanks for contributing!</p>
+
+    <!-- Streak bonus banner (shown only when multiplier > 1×) -->
+    {hasStreakBonus && (
+      <div class="mb-6 px-4 py-3 bg-orange-900/30 border border-orange-700/50 rounded-xl flex items-center justify-center gap-3 text-sm">
+        <span class="text-2xl">🔥</span>
+        <div class="text-left">
+          <span class="text-orange-300 font-semibold">{streakBadgeLabel}</span>
+          <span class="text-orange-400 ml-2">{multiplierDisplay} XP bonus applied</span>
+        </div>
+      </div>
+    )}
 
     <!-- Rewards -->
     <div class="grid grid-cols-2 gap-4 mb-10">
@@ -32,7 +59,9 @@ const xp = parseInt(url.searchParams.get("xp") ?? "0");
       <div class="bg-gray-900 border border-violet-800/50 rounded-2xl p-6">
         <div class="text-4xl font-bold text-violet-400 mb-1">+{xp}</div>
         <div class="text-sm text-gray-400">XP gained</div>
-        <div class="text-xs text-gray-600 mt-1">Progress to next level</div>
+        <div class="text-xs text-gray-600 mt-1">
+          {hasStreakBonus ? `${multiplierDisplay} streak bonus` : "Progress to next level"}
+        </div>
       </div>
     </div>
 
@@ -52,9 +81,19 @@ const xp = parseInt(url.searchParams.get("xp") ?? "0");
       </a>
     </div>
 
-    <!-- Motivational tip -->
+    <!-- Streak tip / progress -->
     <div class="mt-12 text-sm text-gray-600">
-      <span class="text-orange-400">🔥</span> Keep your streak going — complete a task every day for bonus multipliers!
+      {hasStreakBonus ? (
+        streakDays >= 30
+          ? <span><span class="text-orange-400">🔥</span> Amazing! {streakDays}-day streak — you're at max XP multiplier!</span>
+          : streakDays >= 14
+            ? <span><span class="text-orange-400">🔥</span> {streakDays}-day streak — keep going to reach 30 days for 2× XP!</span>
+            : streakDays >= 7
+              ? <span><span class="text-orange-400">🔥</span> {streakDays}-day streak — keep going to reach 14 days for 1.5× XP!</span>
+              : <span><span class="text-orange-400">🔥</span> {streakDays}-day streak — keep going to reach 7 days for 1.25× XP!</span>
+      ) : (
+        <span><span class="text-orange-400">🔥</span> Complete tasks every day to build a streak and earn up to 2× XP!</span>
+      )}
     </div>
   </div>
 </Layout>
