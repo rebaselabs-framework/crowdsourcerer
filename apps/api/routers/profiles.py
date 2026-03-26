@@ -244,7 +244,7 @@ async def _advance_requester_onboarding(user_id: str) -> None:
         try:
             await complete_step_internal(user_id, "welcome", _db)
         except Exception:
-            pass  # non-critical
+            logger.warning("onboarding.requester_welcome_advance_failed", user_id=user_id, exc_info=True)
 
 
 async def _advance_worker_onboarding_profile(user_id: str) -> None:
@@ -257,7 +257,7 @@ async def _advance_worker_onboarding_profile(user_id: str) -> None:
             await mark_onboarding_step(_uuid.UUID(user_id), "profile", _db)
             await _db.commit()
         except Exception:
-            pass  # non-critical
+            logger.warning("onboarding.worker_profile_advance_failed", user_id=user_id, exc_info=True)
 
 
 @router.get("/users/me/profile-status", response_model=dict)

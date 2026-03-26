@@ -139,7 +139,7 @@ async def submit_application(
             link=f"/dashboard/tasks/{task_id}",
         )
     except Exception:  # noqa: BLE001
-        pass
+        logger.warning("application.notify_requester_failed", task_id=str(task_id), exc_info=True)
 
     await db.commit()
     await db.refresh(app)
@@ -219,7 +219,7 @@ async def accept_application(
                 link=f"/worker/applications",
             )
         except Exception:  # noqa: BLE001
-            pass
+            logger.warning("application.notify_rejected_worker_failed", task_id=str(task_id), exc_info=True)
 
     # Create task assignment for the accepted worker
     from datetime import timedelta
@@ -245,7 +245,7 @@ async def accept_application(
             link=f"/worker/tasks",
         )
     except Exception:  # noqa: BLE001
-        pass
+        logger.warning("application.notify_accepted_worker_failed", task_id=str(task_id), exc_info=True)
 
     await db.commit()
     await db.refresh(app)
@@ -291,7 +291,7 @@ async def reject_application(
             link=f"/worker/applications",
         )
     except Exception:  # noqa: BLE001
-        pass
+        logger.warning("application.notify_rejection_failed", task_id=str(task_id), app_id=str(app_id), exc_info=True)
 
     await db.commit()
     await db.refresh(app)

@@ -136,6 +136,7 @@ async def get_task_messages(
             ),
         )
         .order_by(TaskMessageDB.created_at.asc())
+        .limit(500)  # safety cap — task message threads are bounded in practice
     )
     msgs = msgs_result.scalars().all()
 
@@ -145,14 +146,17 @@ async def get_task_messages(
             m.is_read = True
     await db.commit()
 
+    # Bulk-fetch all senders in one query (avoids N+1 per-message lookup)
+    sender_ids = list({m.sender_id for m in msgs})
+    senders_by_id: dict = {}
+    if sender_ids:
+        s_res = await db.execute(select(UserDB).where(UserDB.id.in_(sender_ids)))
+        senders_by_id = {u.id: u for u in s_res.scalars()}
+
     result = []
     for m in msgs:
-        sender_result = await db.execute(select(UserDB).where(UserDB.id == m.sender_id))
-        sender = sender_result.scalar_one_or_none()
-        if sender:
-            sender_username = sender.name or sender.email or "unknown"
-        else:
-            sender_username = "unknown"
+        sender = senders_by_id.get(m.sender_id)
+        sender_username = (sender.name or sender.email or "unknown") if sender else "unknown"
         result.append(MessageOut(
             id=m.id,
             task_id=m.task_id,

@@ -535,7 +535,7 @@ async def assign_team_to_task(
                 link=f"/worker/marketplace",
             )
         except Exception:  # noqa: BLE001
-            pass
+            logger.warning("worker_teams.notify_member_failed", task_id=str(task_id), team_id=str(req.team_id), exc_info=True)
 
     await db.commit()
     logger.info("team_task.assigned", task_id=str(task_id), team_id=str(req.team_id))
