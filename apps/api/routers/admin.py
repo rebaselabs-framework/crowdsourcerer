@@ -246,27 +246,48 @@ async def get_user(
     }
 
 
+class AdminUpdateUserRequest(BaseModel):
+    plan: Optional[Literal["free", "starter", "pro", "enterprise"]] = None
+    is_active: Optional[bool] = None
+    is_admin: Optional[bool] = None
+    # Credits adjustment is capped to prevent accidental or malicious overwrites.
+    # Use the Stripe webhook / manual credit-purchase flow for large top-ups.
+    credits: Optional[int] = Field(None, ge=0, le=1_000_000)
+
+
 @router.patch("/users/{user_id}")
 async def update_user(
     user_id: UUID,
-    body: dict,
+    body: AdminUpdateUserRequest,
     db: AsyncSession = Depends(get_db),
     _: str = Depends(require_admin),
 ):
-    """Update user fields (plan, is_active, is_admin, credits adjustment)."""
+    """Update user fields (plan, is_active, is_admin, credits)."""
     result = await db.execute(select(UserDB).where(UserDB.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    allowed = {"plan", "is_active", "is_admin", "credits"}
-    for key, val in body.items():
-        if key in allowed:
-            setattr(user, key, val)
+    changes: list[str] = []
+    if body.plan is not None:
+        user.plan = body.plan
+        changes.append("plan")
+    if body.is_active is not None:
+        user.is_active = body.is_active
+        changes.append("is_active")
+    if body.is_admin is not None:
+        user.is_admin = body.is_admin
+        changes.append("is_admin")
+    if body.credits is not None:
+        user.credits = body.credits
+        changes.append("credits")
+
+    if not changes:
+        return {"updated": False, "user_id": str(user_id), "reason": "no fields provided"}
 
     await db.commit()
-    logger.info("admin_user_updated", target_user_id=str(user_id), changes=list(body.keys()))
-    return {"updated": True, "user_id": str(user_id)}
+    logger.info("admin_user_updated", target_user_id=str(user_id), changes=changes)
+    return {"updated": True, "user_id": str(user_id), "changes": changes}
 
 
 # ─── Task Management ───────────────────────────────────────────────────────
