@@ -1163,6 +1163,8 @@ class PublicWorkerProfileOut(BaseModel):
     worker_reliability: Optional[float]
     reputation_score: float
     worker_streak_days: int
+    avg_feedback_score: Optional[float] = None  # 1.0–5.0 star average from ratings
+    total_ratings_received: int = 0              # total rating count
     skills: list[PublicProfileSkill]
     badges: list[PublicProfileBadge]
     member_since: datetime   # created_at

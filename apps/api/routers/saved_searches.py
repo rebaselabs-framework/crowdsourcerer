@@ -6,7 +6,7 @@ from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth import get_current_user_id
@@ -40,6 +40,7 @@ async def list_saved_searches(
         select(SavedSearchDB)
         .where(SavedSearchDB.user_id == user_id)
         .order_by(SavedSearchDB.created_at.desc())
+        .limit(_MAX_SAVED_SEARCHES)  # cap matches the per-user max — no user can have more
     )
     return result.scalars().all()
 
@@ -51,11 +52,11 @@ async def create_saved_search(
     user_id: str = Depends(get_current_user_id),
 ):
     """Save a search filter set with optional task alert."""
-    # Enforce per-user cap
-    count_result = await db.execute(
-        select(SavedSearchDB).where(SavedSearchDB.user_id == user_id)
-    )
-    if len(count_result.scalars().all()) >= _MAX_SAVED_SEARCHES:
+    # Enforce per-user cap — use aggregate count instead of fetching all rows
+    current_count = await db.scalar(
+        select(func.count()).select_from(SavedSearchDB).where(SavedSearchDB.user_id == user_id)
+    ) or 0
+    if current_count >= _MAX_SAVED_SEARCHES:
         raise HTTPException(
             status_code=400,
             detail=f"Maximum {_MAX_SAVED_SEARCHES} saved searches reached",
@@ -163,7 +164,7 @@ async def notify_matching_saved_searches(
         select(SavedSearchDB).where(
             SavedSearchDB.alert_enabled == True,  # noqa: E712
             SavedSearchDB.alert_frequency == "instant",
-        )
+        ).limit(10_000)  # safety cap — at scale, alert fanout should move to a queue
     )
     searches = result.scalars().all()
 

@@ -14,7 +14,7 @@ let transactions: any = null;
 try {
   [credits, transactions] = await Promise.all([
     apiFetch("/v1/credits", { token }),
-    apiFetch("/v1/credits/transactions?page_size=20", { token }),
+    apiFetch("/v1/credits/transactions?page_size=50", { token }),
   ]);
 } catch (e) {
   return Astro.redirect("/login");
@@ -102,68 +102,76 @@ const PACKS = [
     </div>
 
     <!-- Transaction history -->
-    <h2 class="text-xl font-bold mb-4">Transaction history</h2>
+    <h2 class="text-xl font-bold mb-4">
+      Transaction history
+      {transactions?.total > 0 && (
+        <span class="text-sm font-normal text-gray-500 ml-2">{transactions.total} total</span>
+      )}
+    </h2>
     <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
       {!transactions?.items?.length ? (
         <div class="px-6 py-10 text-center text-gray-500 text-sm">No transactions yet.</div>
       ) : (
-        <table class="w-full text-sm">
-          <thead>
-            <tr class="border-b border-gray-800 text-left">
-              <th class="px-6 py-3 text-gray-400 font-medium">Description</th>
-              <th class="px-6 py-3 text-gray-400 font-medium text-right">Amount</th>
-              <th class="px-6 py-3 text-gray-400 font-medium text-right">Date</th>
-            </tr>
-          </thead>
-          <tbody>
-            {transactions.items.map((t: any) => (
-              <tr class="border-b border-gray-800/50 hover:bg-gray-800/20 transition-colors">
-                <td class="px-6 py-3 text-gray-300">{t.description}</td>
-                <td class:list={[
-                  "px-6 py-3 text-right font-mono font-medium",
-                  t.amount > 0 ? "text-green-400" : "text-red-400"
-                ]}>
-                  {t.amount > 0 ? "+" : ""}{t.amount}
-                </td>
-                <td class="px-6 py-3 text-right text-gray-500">
-                  {new Date(t.created_at).toLocaleDateString()}
-                </td>
+        <>
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b border-gray-800 text-left">
+                <th class="px-6 py-3 text-gray-400 font-medium">Description</th>
+                <th class="px-6 py-3 text-gray-400 font-medium text-right">Amount</th>
+                <th class="px-6 py-3 text-gray-400 font-medium text-right">Date</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody id="txn-tbody">
+              {transactions.items.map((t: any) => (
+                <tr class="border-b border-gray-800/50 hover:bg-gray-800/20 transition-colors">
+                  <td class="px-6 py-3 text-gray-300">{t.description}</td>
+                  <td class:list={[
+                    "px-6 py-3 text-right font-mono font-medium",
+                    t.amount > 0 ? "text-green-400" : "text-red-400"
+                  ]}>
+                    {t.amount > 0 ? "+" : ""}{t.amount}
+                  </td>
+                  <td class="px-6 py-3 text-right text-gray-500">
+                    {new Date(t.created_at).toLocaleDateString()}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {transactions.total > transactions.items.length && (
+            <div class="px-6 py-4 border-t border-gray-800 text-center">
+              <button
+                id="load-more-txn"
+                data-page="2"
+                data-total={transactions.total}
+                class="text-sm text-indigo-400 hover:underline"
+              >
+                Load more ({transactions.total - transactions.items.length} remaining)
+              </button>
+            </div>
+          )}
+        </>
       )}
     </div>
   </div>
 </Layout>
 
-<script is:inline define:vars={{ apiUrl: import.meta.env.PUBLIC_API_URL ?? "" }}>
-  // Client-side: clicking a pack calls /v1/credits/checkout
+<script>
+  // ── Buy credits ────────────────────────────────────────────────────────────
+  // Use /api/credits/checkout proxy — cs_token is httpOnly so client JS
+  // cannot read it directly from document.cookie.
   document.querySelectorAll(".buy-pack").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const credits = Number(btn.dataset.credits);
-
-      // Get JWT from cookie (for client-side call)
-      const token = document.cookie
-        .split("; ")
-        .find((r) => r.startsWith("cs_token="))
-        ?.split("=")[1];
-
-      if (!token) {
-        window.location.href = "/login";
-        return;
-      }
-
-      btn.textContent = "Redirecting…";
-      btn.disabled = true;
+    const button = btn as HTMLButtonElement;
+    button.addEventListener("click", async () => {
+      const credits = Number(button.dataset.credits);
+      const origLabel = button.querySelector(".buy-pack-label")?.textContent ?? "Buy";
+      button.textContent = "Redirecting…";
+      button.disabled = true;
 
       try {
-        const res = await fetch(`${apiUrl || "https://crowdsourcerer.rebaselabs.online"}/v1/credits/checkout`, {
+        const res = await fetch("/api/credits/checkout", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${token}`,
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             credits,
             success_url: `${window.location.origin}/dashboard/credits?success=1`,
@@ -171,25 +179,73 @@ const PACKS = [
           }),
         });
 
+        if (res.status === 401) {
+          window.location.href = "/login";
+          return;
+        }
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));
           alert(err.detail ?? "Checkout failed. Please try again.");
-          btn.disabled = false;
-          // Restore label
-          btn.textContent = null;
+          button.textContent = origLabel;
+          button.disabled = false;
           return;
         }
 
         const { checkout_url } = await res.json();
         window.location.href = checkout_url;
-      } catch (e) {
+      } catch {
         alert("Failed to create checkout session.");
-        btn.disabled = false;
+        button.textContent = origLabel;
+        button.disabled = false;
       }
     });
   });
 
-  // Show success banner
+  // ── Load more transactions ─────────────────────────────────────────────────
+  const loadMoreBtn = document.getElementById("load-more-txn") as HTMLButtonElement | null;
+  const tbody = document.getElementById("txn-tbody");
+
+  loadMoreBtn?.addEventListener("click", async () => {
+    const page = Number(loadMoreBtn.dataset.page ?? 2);
+    const total = Number(loadMoreBtn.dataset.total ?? 0);
+    const originalText = loadMoreBtn.textContent ?? "Load more";
+    loadMoreBtn.textContent = "Loading…";
+    loadMoreBtn.disabled = true;
+
+    try {
+      const res = await fetch(`/api/credits/transactions?page=${page}&page_size=50`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const items: any[] = data.items ?? [];
+
+      items.forEach((t) => {
+        const tr = document.createElement("tr");
+        tr.className = "border-b border-gray-800/50 hover:bg-gray-800/20 transition-colors";
+        const amt = Number(t.amount);
+        const amtClass = amt > 0 ? "text-green-400" : "text-red-400";
+        tr.innerHTML = `
+          <td class="px-6 py-3 text-gray-300">${t.description ?? ""}</td>
+          <td class="px-6 py-3 text-right font-mono font-medium ${amtClass}">${amt > 0 ? "+" : ""}${amt}</td>
+          <td class="px-6 py-3 text-right text-gray-500">${new Date(t.created_at).toLocaleDateString()}</td>
+        `;
+        tbody?.appendChild(tr);
+      });
+
+      const loaded = page * 50;
+      if (loaded < total) {
+        loadMoreBtn.dataset.page = String(page + 1);
+        loadMoreBtn.textContent = `Load more (${total - loaded} remaining)`;
+        loadMoreBtn.disabled = false;
+      } else {
+        loadMoreBtn.parentElement?.remove(); // hide the button row
+      }
+    } catch {
+      loadMoreBtn.textContent = originalText;
+      loadMoreBtn.disabled = false;
+    }
+  });
+
+  // ── Success banner ─────────────────────────────────────────────────────────
   const params = new URLSearchParams(window.location.search);
   if (params.get("success") === "1") {
     const banner = document.createElement("div");

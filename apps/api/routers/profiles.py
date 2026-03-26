@@ -104,6 +104,8 @@ async def get_public_profile(
         worker_reliability=user.worker_reliability,
         reputation_score=user.reputation_score,
         worker_streak_days=user.worker_streak_days,
+        avg_feedback_score=user.avg_feedback_score,
+        total_ratings_received=user.total_ratings_received or 0,
         skills=skills,
         badges=badges,
         member_since=user.created_at,
