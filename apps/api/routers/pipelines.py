@@ -275,17 +275,30 @@ async def list_pipelines(
     result = await db.execute(q)
     pipelines = result.scalars().all()
 
+    # Bulk-fetch step_count + run_count in 2 GROUP BY queries (avoids N+1)
+    pipeline_ids = [p.id for p in pipelines]
+    step_counts: dict = {}
+    run_counts: dict = {}
+    if pipeline_ids:
+        sc_rows = (await db.execute(
+            select(TaskPipelineStepDB.pipeline_id, func.count().label("cnt"))
+            .where(TaskPipelineStepDB.pipeline_id.in_(pipeline_ids))
+            .group_by(TaskPipelineStepDB.pipeline_id)
+        )).all()
+        step_counts = {r.pipeline_id: r.cnt for r in sc_rows}
+
+        rc_rows = (await db.execute(
+            select(TaskPipelineRunDB.pipeline_id, func.count().label("cnt"))
+            .where(TaskPipelineRunDB.pipeline_id.in_(pipeline_ids))
+            .group_by(TaskPipelineRunDB.pipeline_id)
+        )).all()
+        run_counts = {r.pipeline_id: r.cnt for r in rc_rows}
+
     items = []
     for p in pipelines:
-        step_count = (await db.execute(
-            select(func.count()).where(TaskPipelineStepDB.pipeline_id == p.id)
-        )).scalar() or 0
-        run_count = (await db.execute(
-            select(func.count()).where(TaskPipelineRunDB.pipeline_id == p.id)
-        )).scalar() or 0
         out = PipelineOut.model_validate(p)
-        out.step_count = step_count
-        out.run_count = run_count
+        out.step_count = step_counts.get(p.id, 0)
+        out.run_count = run_counts.get(p.id, 0)
         items.append(out)
 
     return PaginatedPipelines(items=items, total=total, page=page, page_size=page_size)
@@ -442,16 +455,22 @@ async def list_pipeline_runs(
     )
     runs = runs_result.scalars().all()
 
+    # Bulk-fetch all step_runs for all runs in one query (avoids N+1)
+    run_ids = [r.id for r in runs]
+    step_runs_by_run: dict = {}
+    if run_ids:
+        sr_rows = (await db.execute(
+            select(TaskPipelineStepRunDB)
+            .where(TaskPipelineStepRunDB.run_id.in_(run_ids))
+            .order_by(TaskPipelineStepRunDB.run_id, TaskPipelineStepRunDB.step_order)
+        )).scalars().all()
+        for sr in sr_rows:
+            step_runs_by_run.setdefault(sr.run_id, []).append(sr)
+
     items = []
     for run in runs:
-        step_runs_result = await db.execute(
-            select(TaskPipelineStepRunDB)
-            .where(TaskPipelineStepRunDB.run_id == run.id)
-            .order_by(TaskPipelineStepRunDB.step_order)
-        )
-        step_runs = step_runs_result.scalars().all()
         out = PipelineRunOut.model_validate(run)
-        out.step_runs = [_step_run_out(sr) for sr in step_runs]
+        out.step_runs = [_step_run_out(sr) for sr in step_runs_by_run.get(run.id, [])]
         items.append(out)
 
     return PaginatedPipelineRuns(items=items, total=total, page=page, page_size=page_size)

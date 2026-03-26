@@ -250,7 +250,7 @@ async def get_quiz_questions(
     res = await db.execute(
         select(SkillQuizQuestionDB).where(
             SkillQuizQuestionDB.skill_category == skill_category
-        )
+        ).limit(QUESTIONS_PER_QUIZ * 20)  # safety cap; random.sample picks from this pool
     )
     all_qs = res.scalars().all()
     chosen = random.sample(all_qs, min(QUESTIONS_PER_QUIZ, len(all_qs)))

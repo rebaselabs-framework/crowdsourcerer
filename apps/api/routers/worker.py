@@ -937,14 +937,13 @@ async def submit_task(
     if worker:
         try:
             from routers.badges import award_new_badges
-            # Count challenge completions for badge check
-            chall_count_result = await db.execute(
-                select(DailyChallengeProgressDB).where(
+            # Count challenge completions for badge check (scalar aggregate — no row fetch)
+            chall_count = await db.scalar(
+                select(func.count()).where(
                     DailyChallengeProgressDB.user_id == user_id,
                     DailyChallengeProgressDB.bonus_claimed == True,
                 )
-            )
-            chall_count = len(chall_count_result.scalars().all())
+            ) or 0
             new_badge_ids = await award_new_badges(worker, db, challenge_completions=chall_count)
             if new_badge_ids:
                 # In-app notification per badge
