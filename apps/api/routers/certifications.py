@@ -516,6 +516,7 @@ async def my_certifications(
             cert_id=wc.cert_id,
             task_type=cert.task_type,
             cert_name=cert.name,
+            badge_icon=cert.badge_icon,
             score=wc.score,
             passed=wc.passed,
             attempt_count=wc.attempt_count,

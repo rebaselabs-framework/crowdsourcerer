@@ -1,16 +1,17 @@
 ---
 /**
  * My Profile — /dashboard/profile
- * Workers can edit their public profile (name, bio, avatar, visibility).
+ * Workers can edit their public profile (name, bio, avatar, location, website, visibility).
  */
 import Layout from "@/layouts/Layout.astro";
-import { apiFetch, getToken } from "@/lib/api";
+import { apiFetch, getToken, withTimeout } from "@/lib/api";
 
 const token = getToken(Astro.cookies);
 if (!token) return Astro.redirect("/login");
 
 let me: any = null;
 let status: any = null;
+let myCerts: any[] = [];
 let error = "";
 
 try {
@@ -23,6 +24,35 @@ try {
 }
 
 const isWorker = me?.role === "worker" || me?.role === "both";
+
+// Fetch earned certifications for workers only (non-critical — use withTimeout)
+if (isWorker) {
+  try {
+    myCerts = await withTimeout(
+      apiFetch<any>("/v1/certifications/me/earned", { token }),
+      3000,
+      [],
+    );
+    myCerts = myCerts ?? [];
+  } catch {
+    myCerts = [];
+  }
+}
+
+// Completeness items — mirrors the server-side score breakdown
+const completenessItems = [
+  { key: "has_name",     label: "Name",     done: status?.has_name },
+  { key: "has_bio",      label: "Bio",      done: status?.has_bio },
+  { key: "has_avatar",   label: "Avatar",   done: status?.has_avatar },
+  { key: "has_location", label: "Location", done: status?.has_location },
+  { key: "has_website",  label: "Website",  done: status?.has_website },
+  ...(isWorker ? [
+    { key: "has_skills", label: "Skills",   done: (status?.skill_count ?? 0) > 0 },
+    { key: "has_cert",   label: "Certified", done: (status?.cert_count ?? 0) > 0 },
+  ] : []),
+];
+
+const earnedCerts = myCerts.filter((c: any) => c.passed);
 ---
 
 <Layout title="My Profile — CrowdSorcerer">
@@ -52,16 +82,18 @@ const isWorker = me?.role === "worker" || me?.role === "both";
             />
           </div>
           <div class="mt-3 flex flex-wrap gap-2 text-xs">
-            {[
-              { key: "has_name",   label: "Name",   done: status?.has_name },
-              { key: "has_bio",    label: "Bio",    done: status?.has_bio },
-              { key: "has_avatar", label: "Avatar", done: status?.has_avatar },
-            ].map(f => (
+            {completenessItems.map(f => (
               <span class={`px-2 py-0.5 rounded-full border ${f.done ? "border-green-700 bg-green-900/30 text-green-400" : "border-gray-600 bg-gray-700/30 text-gray-400"}`}>
                 {f.done ? "✓" : "○"} {f.label}
               </span>
             ))}
           </div>
+          {isWorker && (status?.skill_count ?? 0) === 0 && (
+            <p class="mt-3 text-xs text-amber-400">
+              💡 Add skills to unlock the worker marketplace and earn the full completeness score.{" "}
+              <a href="/worker/skills" class="underline hover:text-amber-300">Add skills →</a>
+            </p>
+          )}
         </div>
 
         {/* ── Edit form ─────────────────────────────────── */}
@@ -108,6 +140,31 @@ const isWorker = me?.role === "worker" || me?.role === "both";
               <p class="text-xs text-gray-500 mt-1">Link to a publicly accessible image</p>
             </div>
 
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="block text-sm font-medium text-gray-300 mb-1">Location</label>
+                <input
+                  type="text"
+                  name="location"
+                  value={me.location ?? ""}
+                  maxlength="128"
+                  class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  placeholder="City, Country"
+                />
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-300 mb-1">Website</label>
+                <input
+                  type="url"
+                  name="website_url"
+                  value={me.website_url ?? ""}
+                  maxlength="512"
+                  class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  placeholder="https://yoursite.com"
+                />
+              </div>
+            </div>
+
             <div class="flex items-center justify-between p-4 bg-gray-700/50 rounded-lg border border-gray-600">
               <div>
                 <p class="text-sm font-medium text-gray-200">Public profile</p>
@@ -144,6 +201,76 @@ const isWorker = me?.role === "worker" || me?.role === "both";
             </div>
           </form>
         </div>
+
+        {/* ── Certifications (workers only) ──────────────── */}
+        {isWorker && (
+          <div class="bg-gray-800 border border-gray-700 rounded-xl p-6">
+            <div class="flex items-center justify-between mb-4">
+              <h2 class="text-base font-semibold text-white">Certifications</h2>
+              <a href="/worker/certifications" class="text-sm text-indigo-400 hover:underline">
+                {earnedCerts.length > 0 ? "Manage" : "Earn your first"} →
+              </a>
+            </div>
+
+            {earnedCerts.length === 0 ? (
+              <div class="text-center py-6 text-gray-400">
+                <div class="text-4xl mb-2">🎓</div>
+                <p class="text-sm">No certifications yet.</p>
+                <p class="text-xs mt-1">
+                  Certifications unlock higher-paying tasks and show requesters you're qualified.
+                </p>
+                <a
+                  href="/worker/certifications"
+                  class="inline-block mt-3 text-xs text-indigo-400 hover:underline"
+                >
+                  Browse certifications →
+                </a>
+              </div>
+            ) : (
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {earnedCerts.map((cert: any) => (
+                  <div class="flex items-center gap-3 p-3 bg-gray-700/50 border border-gray-600 rounded-xl">
+                    <div class="text-3xl flex-shrink-0 w-10 h-10 flex items-center justify-center">
+                      {cert.badge_icon || "🏅"}
+                    </div>
+                    <div class="min-w-0">
+                      <p class="text-sm font-medium text-white truncate">{cert.cert_name}</p>
+                      <p class="text-xs text-gray-400">
+                        Score: <span class="text-green-400 font-medium">{cert.best_score}%</span>
+                        {cert.certified_at && (
+                          <span class="ml-2 text-gray-500">
+                            · {new Date(cert.certified_at).toLocaleDateString("en-US", { month: "short", year: "numeric" })}
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                    <div class="ml-auto flex-shrink-0">
+                      <span class="text-xs px-2 py-0.5 rounded-full border border-green-700 bg-green-900/30 text-green-400">✓ Certified</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {myCerts.filter((c: any) => !c.passed).length > 0 && (
+              <div class="mt-4 pt-4 border-t border-gray-700">
+                <p class="text-xs text-gray-500 mb-2">In progress</p>
+                <div class="flex flex-wrap gap-2">
+                  {myCerts.filter((c: any) => !c.passed).map((cert: any) => (
+                    <a
+                      href={`/worker/certifications?type=${cert.task_type}`}
+                      class="flex items-center gap-1.5 px-3 py-1.5 bg-gray-700/30 border border-gray-600 rounded-lg text-xs text-gray-400 hover:border-indigo-600 hover:text-indigo-400 transition-colors"
+                    >
+                      <span>{cert.badge_icon || "🎯"}</span>
+                      <span>{cert.cert_name}</span>
+                      <span class="text-gray-500">({cert.best_score}%)</span>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* ── Security shortcuts ─────────────────────────── */}
         <div class="bg-gray-800 border border-gray-700 rounded-xl p-6">
@@ -183,6 +310,8 @@ const isWorker = me?.role === "worker" || me?.role === "both";
       name: (fd.get("name") as string).trim() || null,
       bio: (fd.get("bio") as string).trim() || null,
       avatar_url: (fd.get("avatar_url") as string).trim() || null,
+      location: (fd.get("location") as string).trim() || null,
+      website_url: (fd.get("website_url") as string).trim() || null,
       profile_public: (document.getElementById("profile_public_toggle") as HTMLInputElement)?.checked ?? true,
     };
 

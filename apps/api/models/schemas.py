@@ -1012,6 +1012,7 @@ class WorkerCertificationOut(BaseModel):
     cert_id: UUID
     task_type: str
     cert_name: str
+    badge_icon: Optional[str] = None  # emoji or icon name from CertificationDB
     score: int
     passed: bool
     attempt_count: int
