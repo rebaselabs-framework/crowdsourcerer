@@ -1081,7 +1081,7 @@ async def get_billing_analytics(
 
 # ─── Worker Management ────────────────────────────────────────────────────
 
-class BanWorkerRequest(BaseModel):
+class AdminBanWorkerRequest(BaseModel):
     reason: str = Field(..., min_length=1, max_length=500)
     expires_at: Optional[datetime] = None  # None = permanent
 
@@ -1156,7 +1156,7 @@ async def list_workers(
 @router.post("/workers/{worker_id}/ban", status_code=200)
 async def ban_worker(
     worker_id: UUID,
-    payload: BanWorkerRequest,
+    payload: AdminBanWorkerRequest,
     db: AsyncSession = Depends(get_db),
     admin_id: str = Depends(require_admin),
 ):

@@ -35,7 +35,7 @@ class MessageOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class UnreadCountOut(BaseModel):
+class MessageUnreadCountOut(BaseModel):
     count: int
 
 
@@ -166,7 +166,7 @@ async def get_task_messages(
     return result
 
 
-@router.get("/messages/unread-count", response_model=UnreadCountOut)
+@router.get("/messages/unread-count", response_model=MessageUnreadCountOut)
 async def get_unread_message_count(
     user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
@@ -179,7 +179,7 @@ async def get_unread_message_count(
         )
     )
     count = count_result.scalar_one()
-    return UnreadCountOut(count=count)
+    return MessageUnreadCountOut(count=count)
 
 
 @router.get("/messages/inbox", response_model=List[InboxThreadOut])
