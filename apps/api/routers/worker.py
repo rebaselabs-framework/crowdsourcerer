@@ -737,7 +737,7 @@ async def claim_task(
         from routers.onboarding import mark_onboarding_step
         import uuid as _uuid_onboard
         await mark_onboarding_step(_uuid_onboard.UUID(user_id), "explore", db)
-        await db.flush()
+        await db.commit()  # flush → commit so the step is actually persisted
     except Exception:
         logger.warning("claim_task.onboarding_step_failed", user_id=user_id)
 

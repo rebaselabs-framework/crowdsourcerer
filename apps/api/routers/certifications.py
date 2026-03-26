@@ -472,7 +472,7 @@ async def attempt_certification(
     try:
         from routers.onboarding import mark_onboarding_step
         await mark_onboarding_step(uid, "cert", db)
-        await db.flush()
+        await db.commit()  # flush → commit so the step is actually persisted
     except Exception:
         logger.warning(
             "certifications.onboarding_step_failed",

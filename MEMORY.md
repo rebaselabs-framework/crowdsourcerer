@@ -196,13 +196,41 @@ All remaining unprotected credit mutation sites received `SELECT … FOR UPDATE`
 
 All 299 tests pass.
 
+## Session 2026-03-26 (continued) — Onboarding auto-triggers, CreditTransactionDB fixes, UX (commits 5ae28cb–dc7ca8b)
+
+**Onboarding auto-trigger gaps fixed:**
+- **Requester `welcome` step**: Had no trigger — added `_advance_requester_onboarding()` fire-and-forget bg task from `update_my_profile` (profiles.py)
+- **Requester `view_results` step**: Had no trigger — added `_mark_requester_onboarding(user_id, "view_results")` bg task from `get_task` when `task.status == "completed"` (tasks.py)
+- **Worker `profile` step**: Had no trigger — added `_advance_worker_onboarding_profile()` fire-and-forget bg task from `update_my_profile` (profiles.py)
+- **Worker `skills` step**: Was calling `db.flush()` after `mark_onboarding_step()` but no `db.commit()` — changes always rolled back. Fixed `db.flush()` → `db.commit()` (skills.py)
+- All bg helpers use `AsyncSessionLocal()` context managers with broad `except Exception: pass` so they never block responses
+
+**CreditTransactionDB schema bug fixes (2 sites):**
+- **Worker onboarding bonus** (`onboarding.py`): Constructor used phantom `tx_type=` + `balance_after=` kwargs (non-existent columns) and was missing `type` (NOT NULL, no default). Fixed to `type="credit"`, phantom kwargs removed. Would have caused DB constraint violation on first worker to complete all 5 steps.
+- **Rerun task** (`tasks.py`): Missing `type` (NOT NULL, no default) on the charge transaction. Fixed to `type="charge"`.
+- Added `with_for_update()` to user fetch in both onboarding bonus code paths (worker + requester) to prevent double-award under concurrent final-step completions
+
+**Certification UX fixes:**
+- Dark-mode CSS on attempt result banner: `bg-green-50` / `bg-red-50` → `bg-emerald-950/30` / `bg-red-950/30`; `text-green-700` → `text-emerald-400`, `text-red-700` → `text-red-400`, `text-gray-600` → `text-gray-400`
+- Empty state banner on certifications page (shown when `myCerts.length === 0 && !certDetail && !resultType`): violet card explaining certifications unlock higher-paying tasks
+
+**Analytics + UX fixes (dc7ca8b):**
+- `analytics.py org_analytics`: Added `.limit(500)` safety cap on org members query (was unbounded)
+- `worker/onboarding.astro` profile step: CTA href `/worker` → `/dashboard/profile`, label "Go to Profile" → "Edit Profile"
+
+**Tests:**
+- 21 new tests in `test_onboarding.py` (requester onboarding: `_build_status`, `_set_step`, `complete_step_internal`, constants, bonus, auth guards)
+- **Test count**: 299 → 320
+
+**SSE live updates audit**: Task detail already uses adaptive polling on `/api/tasks/[id]/status` — assignments_completed and status updates covered. No gap found.
+
 ## Priorities for Next Session 🔜
 
 PHASE: Pre-alpha development. Focus on quality/depth. NOT in scope: launch tasks, marketing, directory listings.
 
-1. **Requester onboarding completion funnel analysis**: The onboarding funnel admin page was built but never audited for actual completion rates. Check the step counts in the DB, identify which steps have the most abandonment, and fix any UX gaps in those steps.
-2. **Worker certification system UX audit**: Certifications exist (`/worker/certifications`) but the flow from "no certifications" to "certified" is not smooth — check empty state, quiz UX, and the certification badge on the worker profile.
-3. **SSE live updates for task detail**: The task detail page has a "live" indicator and polls via SSE but the SSE endpoint behaviour on human tasks (worker claims, submissions arriving) has not been tested. Verify the SSE feed correctly pushes assignment count updates.
+1. **Worker onboarding missing auto-triggers**: Check `explore` (visit marketplace), `first_task` (complete a task), and `cert` (attempt certification) steps — do they have auto-triggers? The `explore` step should fire when a worker hits the marketplace endpoint; `first_task` should fire when `submit_task` completes successfully; `cert` should fire from the certifications attempt endpoint. Wire up any that are missing.
+2. **Requester onboarding `set_webhook` + `invite_team` auto-triggers**: Verify these hooks are actually wired in `webhooks.py` (endpoint creation) and `orgs.py` (invite creation). If not, add `complete_step_internal("set_webhook")` / `complete_step_internal("invite_team")` calls.
+3. **Worker certification badges on profile**: The `/dashboard/profile` page likely has no display of earned certification badges. Add a "Certifications" section showing earned certs with their badges — pulls from `GET /v1/certifications/mine` and renders cert name + pass date.
 
 ## Known Warnings (non-blocking)
 
