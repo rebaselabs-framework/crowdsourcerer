@@ -242,13 +242,59 @@ All 299 tests pass.
 
 **All 10 onboarding step triggers across both flows are now correctly wired and guaranteed to persist.**
 
+## Session 2026-03-26 (continued) — Worker profile + onboarding tests + httpOnly cookie audit (commits 2c7905c–4bad8a5)
+
+**Worker profile improvements (2c7905c):**
+- `/dashboard/profile` now shows earned certification badges (badge_icon, cert name, best score, certified date, "✓ Certified" pill; in-progress certs as chips)
+- Completeness score expanded from 3 → 7 indicators (added location, website, skills, cert)
+- Added location + website_url fields to edit form (were in API but missing from UI)
+- "Add skills" prompt when skill_count == 0
+- `WorkerCertificationOut` schema: added `badge_icon: Optional[str]` field
+- `PublicWorkerProfileOut` schema: added `avg_feedback_score` + `total_ratings_received` (were in UserDB but missing from API response — `/workers/[id].astro` star-rating display was silently broken)
+- 23 new tests in `test_worker_onboarding.py` (flush→commit persistence contracts, step constants, auth guards); test count 320 → 343
+
+**`saved_searches.py` fixes (401c24e):**
+- `list_saved_searches`: added `.limit(_MAX_SAVED_SEARCHES)` cap
+- `create_saved_search`: replaced full-table fetch-to-count with `select(func.count()).scalar()`
+- `notify_matching_saved_searches`: added `.limit(10_000)` safety cap
+
+**Critical credits checkout fix (401c24e):**
+- Checkout called FastAPI directly with broken `document.cookie` token → always 401
+- Created `/api/credits/checkout` Astro proxy; credits.astro now uses it
+- Added `/api/credits/transactions` proxy + "Load more" pagination in credits.astro
+
+**Systemic httpOnly cookie anti-pattern — full audit + fix (commits 1325440–4bad8a5):**
+
+`cs_token` is httpOnly — `document.cookie` reads always return `undefined`. Nine pages were silently broken. All fixed:
+
+New proxy routes created:
+- `/api/payouts` (GET + POST)
+- `/api/payouts/[payoutId]` (DELETE)
+- `/api/disputes/[taskId]/evidence` (POST)
+- `/api/disputes/[taskId]/assign-mediator` (POST)  ← admin action
+- `/api/template-marketplace` — fixed wrong URL (`/v1/template-marketplace` → `/v1/marketplace/templates`)
+- `/api/template-marketplace/[id]` (GET single template)
+- `/api/template-marketplace/[id]/use` (POST)
+- `/api/template-marketplace/[id]/clone-task` (POST)
+- `/api/template-marketplace/[id]/rate` (POST)
+
+Pages fixed:
+- `worker/earnings.astro`: payout CRUD → proxies; removed dead TOKEN/API vars
+- `dashboard/disputes.astro`: evidence upload + mediator assign → proxies; removed dead vars
+- `dashboard/marketplace.astro`: all 5 client-side API calls → proxies; removed `define:vars`/`authHeader`
+- `worker/skills.astro`: removed broken `!TOKEN` guard (proxy already handled auth)
+- `dashboard/triggers.astro`: removed dead `token` var + useless `Authorization` headers on existing proxy calls
+- `workers/[id].astro`: `hasCookie` auth check (to show action buttons) moved to SSR via `Astro.cookies.get`
+
+**Zero `document.cookie` cs_token reads remain in the codebase.**
+
 ## Priorities for Next Session 🔜
 
 PHASE: Pre-alpha development. Focus on quality/depth. NOT in scope: launch tasks, marketing, directory listings.
 
-1. **Worker certification badges on profile**: The `/dashboard/profile` page likely has no display of earned certification badges. Add a "Certifications" section showing earned certs with their badges — pulls from `GET /v1/certifications/me/earned` and renders cert name + pass date + badge icon.
-2. **Onboarding tests for the flush→commit fix**: The newly fixed `explore` and `cert` steps have no unit tests. Add tests that verify `mark_onboarding_step` is called AND committed — mock `db.commit()` to verify it was awaited after the step mark.
-3. **Worker profile completeness score**: The worker profile page at `/worker/profile` (or `/dashboard/profile`) may not show how "complete" the profile is. Add a profile completeness indicator (% based on name/bio/skills/certs filled in) to motivate users to fill gaps.
+1. **Fix `worker/certifications.astro` unused `res` warning**: Line 17 discards the cert attempt response (`res` declared but never read). The worker score/pass status is not displayed — they get no feedback after attempting a cert. Read `res` and show a result banner (score, pass/fail, earned_points).
+2. **Public worker profile cert badges**: `/workers/[id].astro` shows the public profile. Now that `PublicWorkerProfileOut` exposes `avg_feedback_score` + `total_ratings_received`, verify the star display works. Also check if earned cert badges should be shown on the public profile (via `badges: list[PublicProfileBadge]`).
+3. **API proxy smoke tests**: The 9+ new Astro proxy routes have no test coverage. Add integration tests (or at least type-level checks) to catch issues like wrong URL paths (like the `/v1/template-marketplace` bug that was fixed).
 
 ## Known Warnings (non-blocking)
 
