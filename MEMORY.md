@@ -153,13 +153,35 @@ Fixed this round:
 - `test_bulk_operations.py`: bulk_cancel (3 cancellable statuses, 2 non-cancellable, not-owned, mixed batch), bulk_archive (3 terminal, 2 non-terminal, all-terminal batch), bulk_action cancel+retry (success paths, wrong-status to failed list, human task rejected for retry, mixed batch), rerun credit calculation (human formula with 20% fee + floor-1, AI TASK_CREDITS lookup, HUMAN_TASK_BASE_CREDITS coverage)
 - **Test count**: 238 → 270 (32 new tests)
 
+## Session 2026-03-26 (continued) — Skills interests, notification reliability, dispute robustness (commits e45e77b, 2cf2131, 9dc8ac9)
+
+**Worker skill interests system (e45e77b):**
+- Migration 0049: adds `worker_skill_interests` JSON column to users table
+- API: `GET/PATCH /v1/worker/interests` — declare which task types you want to work on
+- Enrollment: `BecomeWorkerRequest.skills` now actually saved to `worker_skill_interests`
+- Feed seeding: 1.5× `match_weight` boost in `rank_tasks_for_worker` for new workers with no earned proficiency but a declared interest
+- Frontend: `/worker/skills` empty state is now an interactive picker (8 task type toggles → save → redirect to marketplace); existing-skills view has compact interest manager panel
+- Astro API proxy: `/api/worker/interests.ts` (GET + PATCH)
+- 11 new tests (validator, HUMAN_TASK_TYPES_SET, match boost); 288 → 299 total
+
+**Notification reliability (2cf2131):**
+- `core/background.py`: new `safe_create_task()` utility — wraps `asyncio.create_task()` with error-logging done callback
+- `core/email.py`: `get_running_loop()` (was deprecated `get_event_loop()`); `email.disabled_skipped` INFO (was DEBUG); `email.sent` success log added
+- `routers/tasks.py`: 21× `asyncio.create_task()` → `safe_create_task()`
+- `routers/worker.py`: 2× `create_task()` calls hardened
+- `routers/auth.py`: 3× `asyncio.ensure_future()` → `safe_create_task()`
+
+**Dispute state visibility (9dc8ac9):**
+- Dashboard task detail: prominent ⚠️ dispute banner (explains cause, links to /dashboard/disputes), ✅ resolved banner; consensus strategy badges (Majority vote / Unanimous / Manual review) + dispute pill in submissions panel header; "Resolve dispute →" replaces "Review queue →" when disputed
+- Worker task detail: detects already-submitted / approved / rejected assignments (4-way parallel fetch, non-fatal); shows outcome panel (⏳ / ✅ / ❌) instead of confusing "Claim & Start"
+
 ## Priorities for Next Session 🔜
 
 PHASE: Pre-alpha development. Focus on quality/depth. NOT in scope: launch tasks, marketing, directory listings.
 
-1. **Worker skills page UX**: The `/worker/skills` page is linked from multiple empty states but has not been audited — verify it's fully functional, has good empty state, and skill add/remove works without N+1.
-2. **Notification delivery reliability**: Worker task-available emails exist but there's no confirmation that the notification endpoints are working end-to-end. Check for silent failures in the notification queue.
-3. **Task detail page robustness for human tasks**: The task detail page for in-progress human tasks shows submission previews but doesn't handle the case where a worker has submitted and the task is now in dispute. Check the submission display and status transitions.
+1. **Requester onboarding completion funnel analysis**: The onboarding funnel admin page was built but never audited for actual completion rates. Check the step counts in the DB, identify which steps have the most abandonment, and fix any UX gaps in those steps.
+2. **Worker certification system UX audit**: Certifications exist (`/worker/certifications`) but the flow from "no certifications" to "certified" is not smooth — check empty state, quiz UX, and the certification badge on the worker profile.
+3. **SSE live updates for task detail**: The task detail page has a "live" indicator and polls via SSE but the SSE endpoint behaviour on human tasks (worker claims, submissions arriving) has not been tested. Verify the SSE feed correctly pushes assignment count updates.
 
 ## Known Warnings (non-blocking)
 
