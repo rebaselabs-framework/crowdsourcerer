@@ -409,6 +409,9 @@ class MarketplaceTaskOut(BaseModel):
     # Skill-based matching fields (populated when using /v1/worker/tasks/feed)
     match_score: Optional[float] = None     # 0.0–1.0; None = not yet computed
     min_skill_level: Optional[int] = None   # Required proficiency (1–5) set by requester
+    # Application-mode fields
+    application_mode: bool = False          # True = requires proposal; False = direct claim
+    user_applied: bool = False              # True = requesting worker already has a pending application
 
 
 class PaginatedMarketplaceTasks(BaseModel):

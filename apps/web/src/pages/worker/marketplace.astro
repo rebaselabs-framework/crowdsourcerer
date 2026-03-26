@@ -299,9 +299,19 @@ const HUMAN_TASK_TYPES = Object.keys(TASK_TYPE_META);
                       >
                         🔖
                       </button>
-                      <span class="px-3 py-1.5 bg-emerald-700 group-hover:bg-emerald-600 text-white text-xs font-medium rounded-lg transition-colors">
-                        Claim →
-                      </span>
+                      {task.user_applied ? (
+                        <span class="px-3 py-1.5 bg-gray-700 text-gray-400 text-xs font-medium rounded-lg cursor-default" title="You already applied to this task">
+                          ✓ Applied
+                        </span>
+                      ) : task.application_mode ? (
+                        <span class="px-3 py-1.5 bg-violet-700 group-hover:bg-violet-600 text-white text-xs font-medium rounded-lg transition-colors">
+                          Apply →
+                        </span>
+                      ) : (
+                        <span class="px-3 py-1.5 bg-emerald-700 group-hover:bg-emerald-600 text-white text-xs font-medium rounded-lg transition-colors">
+                          Claim →
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>

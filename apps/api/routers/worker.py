@@ -19,7 +19,7 @@ from core.reputation import refresh_worker_reputation
 from core.webhooks import fire_webhook_for_task, fire_persistent_endpoints
 from models.db import (
     TaskDB, UserDB, TaskAssignmentDB, CreditTransactionDB,
-    DailyChallengeDB, DailyChallengeProgressDB,
+    DailyChallengeDB, DailyChallengeProgressDB, TaskApplicationDB,
 )
 from models.schemas import (
     BecomeWorkerRequest,
@@ -427,6 +427,19 @@ async def skill_matched_task_feed(
     offset = (page - 1) * page_size
     page_items = ranked[offset: offset + page_size]
 
+    # Bulk-check if the worker already has a pending application for any of these tasks
+    page_task_ids = [t.id for t, _ in page_items]
+    applied_ids: set = set()
+    if page_task_ids:
+        applied_res = await db.execute(
+            select(TaskApplicationDB.task_id).where(
+                TaskApplicationDB.worker_id == UUID(user_id),
+                TaskApplicationDB.task_id.in_(page_task_ids),
+                TaskApplicationDB.status.in_(("pending", "accepted")),
+            )
+        )
+        applied_ids = {row[0] for row in applied_res}
+
     items = [
         MarketplaceTaskOut(
             id=t.id,
@@ -441,6 +454,8 @@ async def skill_matched_task_feed(
             created_at=t.created_at,
             match_score=round(score, 3),
             min_skill_level=t.min_skill_level,
+            application_mode=bool(t.application_mode),
+            user_applied=t.id in applied_ids,
         )
         for t, score in page_items
     ]
@@ -523,6 +538,19 @@ async def list_marketplace_tasks(
     result = await db.execute(q)
     tasks = result.scalars().all()
 
+    # Bulk-check if the worker already has a pending application for any of these tasks
+    task_ids_page = [t.id for t in tasks]
+    applied_ids_browse: set = set()
+    if task_ids_page:
+        applied_res_b = await db.execute(
+            select(TaskApplicationDB.task_id).where(
+                TaskApplicationDB.worker_id == UUID(user_id),
+                TaskApplicationDB.task_id.in_(task_ids_page),
+                TaskApplicationDB.status.in_(("pending", "accepted")),
+            )
+        )
+        applied_ids_browse = {row[0] for row in applied_res_b}
+
     items = [
         MarketplaceTaskOut(
             id=t.id,
@@ -536,6 +564,8 @@ async def list_marketplace_tasks(
             task_instructions=t.task_instructions,
             created_at=t.created_at,
             min_skill_level=t.min_skill_level,
+            application_mode=bool(t.application_mode),
+            user_applied=t.id in applied_ids_browse,
         )
         for t in tasks
     ]
