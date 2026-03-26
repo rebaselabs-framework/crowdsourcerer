@@ -6,7 +6,7 @@ from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, func, and_, desc
+from sqlalchemy import select, func, and_, desc, case
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth import get_current_user_id
@@ -65,33 +65,32 @@ async def get_usage_overview(
     )
     total_errors = total_errors_q.scalar_one() or 0
 
-    # Per-key summary
+    # Per-key summary — single GROUP BY replaces the previous 2N-query loop.
+    kstats_res = await db.execute(
+        select(
+            ApiKeyUsageLogDB.api_key_id,
+            func.count().label("reqs"),
+            func.coalesce(func.sum(ApiKeyUsageLogDB.credits_used), 0).label("credits"),
+            func.sum(
+                case((ApiKeyUsageLogDB.status_code >= 400, 1), else_=0)
+            ).label("errs"),
+        ).where(
+            ApiKeyUsageLogDB.api_key_id.in_(key_ids),
+            ApiKeyUsageLogDB.created_at >= since,
+        ).group_by(ApiKeyUsageLogDB.api_key_id)
+    )
+    kstats: dict = {row.api_key_id: row for row in kstats_res}
+
     keys_summary = []
     for k in keys:
-        kq = await db.execute(
-            select(
-                func.count().label("reqs"),
-                func.coalesce(func.sum(ApiKeyUsageLogDB.credits_used), 0).label("credits"),
-            ).where(
-                ApiKeyUsageLogDB.api_key_id == k.id,
-                ApiKeyUsageLogDB.created_at >= since,
-            )
-        )
-        kr = kq.one()
-        errs_q = await db.execute(
-            select(func.count()).where(
-                ApiKeyUsageLogDB.api_key_id == k.id,
-                ApiKeyUsageLogDB.created_at >= since,
-                ApiKeyUsageLogDB.status_code >= 400,
-            )
-        )
+        s = kstats.get(k.id)
         keys_summary.append({
             "id": str(k.id),
             "name": k.name,
             "prefix": k.key_prefix,
-            "requests": kr.reqs or 0,
-            "errors": errs_q.scalar_one() or 0,
-            "credits_used": kr.credits or 0,
+            "requests": s.reqs if s else 0,
+            "errors": s.errs if s else 0,
+            "credits_used": s.credits if s else 0,
             "last_used_at": k.last_used_at.isoformat() if k.last_used_at else None,
         })
 

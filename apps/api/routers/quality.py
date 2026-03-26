@@ -179,11 +179,35 @@ async def evaluate_submissions(
         else:
             rejected_workers.append(str(assignment.worker_id))
 
-    # Bulk-load all affected workers in one query, then update accuracy
+    # Bulk-load all affected workers and recompute accuracy in a single
+    # aggregate query — avoids N separate queries (one per worker).
     all_worker_ids = list({a.worker_id for a in assignments})
     workers_result = await db.execute(select(UserDB).where(UserDB.id.in_(all_worker_ids)))
-    for worker in workers_result.scalars():
-        await _update_accuracy(worker, db)
+    workers = list(workers_result.scalars())
+
+    acc_res = await db.execute(
+        select(
+            TaskAssignmentDB.worker_id,
+            func.count().label("total"),
+            func.sum(case((TaskAssignmentDB.status == "approved", 1), else_=0)).label("approved"),
+        )
+        .select_from(TaskAssignmentDB)
+        .join(TaskDB, TaskAssignmentDB.task_id == TaskDB.id)
+        .where(
+            TaskAssignmentDB.worker_id.in_(all_worker_ids),
+            TaskAssignmentDB.status.in_(["approved", "rejected"]),
+            TaskDB.is_gold_standard == True,  # noqa: E712
+        )
+        .group_by(TaskAssignmentDB.worker_id)
+    )
+    accuracy_map = {
+        row.worker_id: (row.approved or 0) / row.total
+        for row in acc_res
+        if (row.total or 0) > 0
+    }
+    for worker in workers:
+        if worker.id in accuracy_map:
+            worker.worker_accuracy = accuracy_map[worker.id]
 
     await db.commit()
 
