@@ -14,6 +14,7 @@ const { id } = Astro.params;
 let task: any = null;
 let hasActiveAssignment = false;
 let activeAssignment: any = null;
+let priorAssignment: any = null;  // submitted / approved / rejected — already done
 let error = "";
 let user: any = null;
 
@@ -25,12 +26,24 @@ try {
   if (!user || (user.role !== "worker" && user.role !== "both")) {
     return Astro.redirect("/worker");
   }
-  // Check active assignment
-  const myAssignments = await apiFetch<any[]>(
-    `/v1/worker/assignments?status=active&page_size=50`, { token }
-  );
-  activeAssignment = myAssignments?.find((a: any) => a.task_id === id) ?? null;
+  // Check active assignment AND prior submissions in parallel
+  const [activeAssignments, submittedAssignments, approvedAssignments, rejectedAssignments] =
+    await Promise.all([
+      apiFetch<any[]>(`/v1/worker/assignments?status=active&page_size=50`, { token }),
+      apiFetch<any[]>(`/v1/worker/assignments?status=submitted&page_size=50`, { token }).catch(() => []),
+      apiFetch<any[]>(`/v1/worker/assignments?status=approved&page_size=50`, { token }).catch(() => []),
+      apiFetch<any[]>(`/v1/worker/assignments?status=rejected&page_size=50`, { token }).catch(() => []),
+    ]);
+  activeAssignment = activeAssignments?.find((a: any) => a.task_id === id) ?? null;
   hasActiveAssignment = !!activeAssignment;
+  if (!hasActiveAssignment) {
+    // Check if worker already submitted/was approved/rejected for this task
+    priorAssignment =
+      submittedAssignments?.find((a: any) => a.task_id === id) ??
+      approvedAssignments?.find((a: any) => a.task_id === id) ??
+      rejectedAssignments?.find((a: any) => a.task_id === id) ??
+      null;
+  }
 } catch (e: any) {
   error = (e as Error).message ?? "Task not found";
 }
@@ -238,7 +251,56 @@ const timeoutIso = activeAssignment?.timeout_at ?? null;
         </div>
 
         <!-- Response area -->
-        {!hasActiveAssignment ? (
+        {priorAssignment ? (
+          <!-- Already submitted: show outcome panel instead of claim button -->
+          <div class:list={[
+            "rounded-2xl border p-6 text-center",
+            priorAssignment.status === "approved"
+              ? "bg-emerald-950/30 border-emerald-800"
+              : priorAssignment.status === "rejected"
+                ? "bg-red-950/30 border-red-800"
+                : "bg-blue-950/30 border-blue-800"
+          ]}>
+            <div class="text-4xl mb-3">
+              {priorAssignment.status === "approved" ? "✅" : priorAssignment.status === "rejected" ? "❌" : "⏳"}
+            </div>
+            <h2 class:list={[
+              "text-lg font-bold mb-2",
+              priorAssignment.status === "approved" ? "text-emerald-300"
+                : priorAssignment.status === "rejected" ? "text-red-300"
+                : "text-blue-300"
+            ]}>
+              {priorAssignment.status === "approved"
+                ? "Submission accepted!"
+                : priorAssignment.status === "rejected"
+                  ? "Submission not selected"
+                  : "Submission under review"}
+            </h2>
+            <p class="text-sm text-gray-400 mb-4">
+              {priorAssignment.status === "approved"
+                ? "Your answer was chosen as the winning response. Great work!"
+                : priorAssignment.status === "rejected"
+                  ? "Another worker's response was selected for this task."
+                  : "Your answer has been recorded and is awaiting consensus or requester review."}
+            </p>
+            {priorAssignment.submitted_at && (
+              <p class="text-xs text-gray-500 mb-5">
+                Submitted {new Date(priorAssignment.submitted_at).toLocaleString()}
+                {priorAssignment.earnings_credits != null && (
+                  <span class="ml-2 text-emerald-400 font-medium">
+                    +{priorAssignment.earnings_credits} cr earned
+                  </span>
+                )}
+              </p>
+            )}
+            <a
+              href="/worker/marketplace"
+              class="inline-block px-6 py-3 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium rounded-xl transition-colors"
+            >
+              ← Back to marketplace
+            </a>
+          </div>
+        ) : !hasActiveAssignment ? (
           <!-- Pre-claim: show claim button -->
           <div class="text-center">
             <button
