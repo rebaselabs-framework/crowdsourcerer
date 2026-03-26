@@ -79,7 +79,9 @@ def compute_match_score(
     )
 
     # Apply per-skill match_weight modifier (clamped to 0–2)
-    weight = max(0.0, min(2.0, match_weight or 1.0))
+    # Use explicit None check — `match_weight or 1.0` would incorrectly
+    # replace 0.0 (falsy) with 1.0.
+    weight = max(0.0, min(2.0, match_weight if match_weight is not None else 1.0))
     return min(1.0, raw * weight)
 
 
