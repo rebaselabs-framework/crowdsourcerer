@@ -207,13 +207,24 @@ async def list_experiments(
     q = select(ABExperimentDB).where(ABExperimentDB.user_id == UUID(user_id))
     if status:
         q = q.where(ABExperimentDB.status == status)
-    q = q.order_by(ABExperimentDB.created_at.desc())
+    q = q.order_by(ABExperimentDB.created_at.desc()).limit(200)
     res = await db.execute(q)
     exps = list(res.scalars().all())
+    if not exps:
+        return []
+
+    # Bulk-load all variants for all experiments in a single query
+    exp_ids = [e.id for e in exps]
+    vres = await db.execute(
+        select(ABVariantDB).where(ABVariantDB.experiment_id.in_(exp_ids))
+    )
+    variants_by_exp: dict[str, list[ABVariantDB]] = {}
+    for v in vres.scalars():
+        variants_by_exp.setdefault(str(v.experiment_id), []).append(v)
+
     out = []
     for exp in exps:
-        vres = await db.execute(select(ABVariantDB).where(ABVariantDB.experiment_id == exp.id))
-        exp.variants = list(vres.scalars().all())
+        exp.variants = variants_by_exp.get(str(exp.id), [])
         out.append(_experiment_out(exp))
     return out
 
