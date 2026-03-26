@@ -197,7 +197,7 @@ async def get_my_skills(
     try:
         from routers.onboarding import mark_onboarding_step
         await mark_onboarding_step(uid, "skills", db)
-        await db.flush()
+        await db.commit()  # flush → commit so the step is actually persisted
     except Exception:
         logger.warning(
             "skills.onboarding_step_failed",

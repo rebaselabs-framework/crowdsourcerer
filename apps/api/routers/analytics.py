@@ -220,11 +220,12 @@ async def org_analytics(
         )
     )).scalar() or 0
 
-    # Member activity
+    # Member activity — cap at 500 to guard against orgs with thousands of members.
     members_result = await db.execute(
         select(OrgMemberDB, UserDB)
         .join(UserDB, OrgMemberDB.user_id == UserDB.id)
         .where(OrgMemberDB.org_id == org_id)
+        .limit(500)
     )
     members = members_result.all()
 
