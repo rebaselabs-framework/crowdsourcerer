@@ -4,7 +4,7 @@ from datetime import datetime, date
 from typing import Any, Literal, Optional, Union
 from uuid import UUID
 
-from pydantic import AliasChoices, AnyHttpUrl, BaseModel, ConfigDict, EmailStr, Field, model_validator
+from pydantic import AliasChoices, AnyHttpUrl, BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 
 # ─── Auth ─────────────────────────────────────────────────────────────────
@@ -54,14 +54,46 @@ class WorkerProfileOut(BaseModel):
     worker_reliability: Optional[float]
     worker_tasks_completed: int
     worker_streak_days: int
+    worker_skill_interests: list[str] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
+
+    @classmethod
+    def model_validate(cls, obj, **kwargs):  # type: ignore[override]
+        # worker_skill_interests may be None in DB (pre-migration rows)
+        if hasattr(obj, "worker_skill_interests") and obj.worker_skill_interests is None:
+            obj.worker_skill_interests = []
+        return super().model_validate(obj, **kwargs)
+
+
+# Valid human task types for interest declarations
+HUMAN_TASK_TYPES_SET = {
+    "label_image", "label_text", "rate_quality", "verify_fact",
+    "moderate_content", "compare_rank", "answer_question", "transcription_review",
+}
 
 
 class BecomeWorkerRequest(BaseModel):
     """Enable worker mode for the current user."""
     skills: list[str] = Field(default_factory=list)
     languages: list[str] = Field(default_factory=list)
+
+
+class WorkerSkillInterestsUpdate(BaseModel):
+    """Update the worker's declared skill interests (task types they want to work on)."""
+    interests: list[str] = Field(
+        ...,
+        description="Task type identifiers the worker is interested in",
+    )
+
+    @field_validator("interests")
+    @classmethod
+    def validate_interests(cls, v: list[str]) -> list[str]:
+        valid = HUMAN_TASK_TYPES_SET
+        invalid = [x for x in v if x not in valid]
+        if invalid:
+            raise ValueError(f"Unknown task types: {invalid}. Valid: {sorted(valid)}")
+        return list(dict.fromkeys(v))  # deduplicate preserving order
 
 
 # ─── Tasks ────────────────────────────────────────────────────────────────

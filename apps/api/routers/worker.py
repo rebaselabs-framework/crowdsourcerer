@@ -23,6 +23,7 @@ from models.db import (
 from models.schemas import (
     BecomeWorkerRequest,
     WorkerProfileOut,
+    WorkerSkillInterestsUpdate,
     WorkerStatsOut,
     MarketplaceTaskOut,
     PaginatedMarketplaceTasks,
@@ -153,7 +154,13 @@ async def enroll_as_worker(
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ):
-    """Enable worker mode for the current user account."""
+    """Enable worker mode for the current user account.
+
+    Optionally accepts ``skills`` (a list of task-type strings) which are stored
+    as the worker's initial skill interests to seed their personalised task feed.
+    """
+    from models.schemas import HUMAN_TASK_TYPES_SET
+
     result = await db.execute(select(UserDB).where(UserDB.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
@@ -162,6 +169,12 @@ async def enroll_as_worker(
     if user.role == "requester":
         user.role = "both"
     # If already 'worker' or 'both', no change needed
+
+    # Save declared skill interests (filter to valid human task types only)
+    if req.skills:
+        valid_interests = [s for s in req.skills if s in HUMAN_TASK_TYPES_SET]
+        if valid_interests:
+            user.worker_skill_interests = valid_interests
 
     await db.commit()
     await db.refresh(user)
@@ -182,6 +195,50 @@ async def get_worker_profile(
     if user.role not in ("worker", "both"):
         raise HTTPException(status_code=403, detail="Not enrolled as a worker. POST /v1/worker/enroll first.")
     return WorkerProfileOut.model_validate(user)
+
+
+# ─── Skill interests ──────────────────────────────────────────────────────
+
+@router.get("/interests", response_model=dict)
+async def get_skill_interests(
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Return the worker's declared skill interests."""
+    result = await db.execute(select(UserDB).where(UserDB.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user or user.role not in ("worker", "both"):
+        raise HTTPException(status_code=403, detail="Not enrolled as a worker.")
+    return {"interests": user.worker_skill_interests or []}
+
+
+@router.patch("/interests", response_model=dict)
+async def update_skill_interests(
+    req: WorkerSkillInterestsUpdate,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Set the worker's declared skill interests.
+
+    Replaces the full list. Send an empty list to clear all interests.
+    Valid values: label_image, label_text, rate_quality, verify_fact,
+    moderate_content, compare_rank, answer_question, transcription_review.
+    """
+    result = await db.execute(select(UserDB).where(UserDB.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user or user.role not in ("worker", "both"):
+        raise HTTPException(status_code=403, detail="Not enrolled as a worker.")
+
+    user.worker_skill_interests = req.interests
+    await db.commit()
+
+    logger.info(
+        "worker.interests_updated",
+        user_id=user_id,
+        count=len(req.interests),
+        interests=req.interests,
+    )
+    return {"interests": req.interests, "count": len(req.interests)}
 
 
 # ─── Availability ─────────────────────────────────────────────────────────

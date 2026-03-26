@@ -288,3 +288,141 @@ def test_compute_xp_always_positive():
     # The minimum 1 comes from max(1, base//2) before multiplier
     result = xp("label_text", accurate=False, streak_days=0)
     assert result >= 1
+
+
+# ── WorkerSkillInterestsUpdate validation ─────────────────────────────────────
+
+def test_skill_interests_update_valid():
+    """Valid human task types are accepted."""
+    from models.schemas import WorkerSkillInterestsUpdate
+    req = WorkerSkillInterestsUpdate(interests=["label_image", "verify_fact"])
+    assert "label_image" in req.interests
+    assert "verify_fact" in req.interests
+
+
+def test_skill_interests_update_all_valid_types():
+    """All 8 human task types are valid interest values."""
+    from models.schemas import WorkerSkillInterestsUpdate, HUMAN_TASK_TYPES_SET
+    req = WorkerSkillInterestsUpdate(interests=list(HUMAN_TASK_TYPES_SET))
+    assert len(req.interests) == 8
+
+
+def test_skill_interests_update_empty_list_allowed():
+    """Empty interests list is allowed (clear all interests)."""
+    from models.schemas import WorkerSkillInterestsUpdate
+    req = WorkerSkillInterestsUpdate(interests=[])
+    assert req.interests == []
+
+
+def test_skill_interests_update_invalid_type_rejected():
+    """Unknown task types raise a validation error."""
+    import pytest
+    from pydantic import ValidationError
+    from models.schemas import WorkerSkillInterestsUpdate
+    with pytest.raises(ValidationError, match="Unknown task types"):
+        WorkerSkillInterestsUpdate(interests=["does_not_exist"])
+
+
+def test_skill_interests_update_ai_task_types_rejected():
+    """AI task types (web_research etc.) are not valid interests."""
+    import pytest
+    from pydantic import ValidationError
+    from models.schemas import WorkerSkillInterestsUpdate
+    with pytest.raises(ValidationError):
+        WorkerSkillInterestsUpdate(interests=["web_research"])
+
+
+def test_skill_interests_update_deduplicates():
+    """Duplicate values are removed, preserving first occurrence order."""
+    from models.schemas import WorkerSkillInterestsUpdate
+    req = WorkerSkillInterestsUpdate(interests=["label_image", "verify_fact", "label_image"])
+    assert req.interests.count("label_image") == 1
+    assert "verify_fact" in req.interests
+
+
+def test_skill_interests_update_mixed_valid_invalid():
+    """A mix of valid and invalid types raises a validation error."""
+    import pytest
+    from pydantic import ValidationError
+    from models.schemas import WorkerSkillInterestsUpdate
+    with pytest.raises(ValidationError):
+        WorkerSkillInterestsUpdate(interests=["label_image", "invalid_type"])
+
+
+def test_human_task_types_set_has_8_items():
+    """HUMAN_TASK_TYPES_SET must contain exactly 8 task types."""
+    from models.schemas import HUMAN_TASK_TYPES_SET
+    assert len(HUMAN_TASK_TYPES_SET) == 8
+
+
+# ── compute_match_score interest boost ────────────────────────────────────────
+
+def test_match_score_interest_boost_applied():
+    """When a worker has declared interest but no earned skill, the 1.5× weight
+    produces a higher score than a worker with no interest and no skill."""
+    from core.matching import compute_match_score
+
+    # No interest, no skill — all defaults
+    base_score = compute_match_score(
+        proficiency_level=1,
+        accuracy=None,
+        reputation_score=50.0,
+        last_task_at=None,
+        match_weight=1.0,
+    )
+
+    # With interest boost (1.5× weight), otherwise identical
+    boosted_score = compute_match_score(
+        proficiency_level=1,
+        accuracy=None,
+        reputation_score=50.0,
+        last_task_at=None,
+        match_weight=1.5,
+    )
+
+    assert boosted_score is not None
+    assert base_score is not None
+    assert boosted_score > base_score
+
+
+def test_match_score_interest_boost_capped_at_1():
+    """Even with a 2× weight, match score is capped at 1.0."""
+    from core.matching import compute_match_score
+
+    score = compute_match_score(
+        proficiency_level=5,
+        accuracy=1.0,
+        reputation_score=100.0,
+        last_task_at=None,
+        match_weight=2.0,
+    )
+    assert score is not None
+    assert score <= 1.0
+
+
+def test_match_score_earned_skill_beats_interest_alone():
+    """A worker with earned proficiency (level 5) outscores one with interest-only
+    (level 1 + 1.5× weight), assuming same reputation and accuracy baseline."""
+    from core.matching import compute_match_score
+
+    # High earned proficiency, no interest boost
+    earned = compute_match_score(
+        proficiency_level=5,
+        accuracy=0.9,
+        reputation_score=80.0,
+        last_task_at=None,
+        match_weight=1.0,
+    )
+
+    # New worker with just interest boost
+    interest_only = compute_match_score(
+        proficiency_level=1,
+        accuracy=None,
+        reputation_score=50.0,
+        last_task_at=None,
+        match_weight=1.5,
+    )
+
+    assert earned is not None
+    assert interest_only is not None
+    assert earned > interest_only

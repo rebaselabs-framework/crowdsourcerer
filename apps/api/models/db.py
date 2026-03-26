@@ -100,6 +100,9 @@ class UserDB(Base):
     email_verified = Column(Boolean, default=False, nullable=False)
     email_verification_token_hash = Column(String(64), nullable=True, index=True)
 
+    # Worker skill interests — task types the worker wants to work on (declared, not earned)
+    worker_skill_interests = Column(JSON, nullable=True)  # e.g. ["label_image", "verify_fact"]
+
     # OAuth / social login
     google_id = Column(String(128), nullable=True, unique=True, index=True)  # Google sub claim
 

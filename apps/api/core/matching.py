@@ -126,6 +126,10 @@ async def rank_tasks_for_worker(
     """
     Score all given tasks for the worker and return them sorted by match score
     descending. Tasks where the worker is ineligible are excluded.
+
+    For workers who have declared skill interests but no earned proficiency in a
+    task type, the interest acts as a 1.5× match_weight boost — enough to surface
+    those tasks in the feed without over-riding earned-proficiency signals.
     """
     scored: list[tuple[TaskDB, float]] = []
 
@@ -141,19 +145,29 @@ async def rank_tasks_for_worker(
 
     rep_score = getattr(worker, "reputation_score", None)
 
+    # Build a set of declared interests for O(1) lookup
+    interests: set[str] = set(getattr(worker, "worker_skill_interests", None) or [])
+
     for task in tasks:
         skill = skill_map.get(task.type)
         proficiency = skill.proficiency_level if skill else 1
         accuracy = skill.accuracy if skill else None
         last_task_at = skill.last_task_at if skill else None
-        match_weight = (skill.match_weight if skill else 1.0) or 1.0
+
+        # Base match weight from earned proficiency record, or 1.0 if no record
+        base_weight = (skill.match_weight if skill else 1.0) or 1.0
+
+        # Interest boost: if the worker declared interest in this type and has no
+        # earned proficiency yet, apply a 1.5× boost to seed their feed.
+        if not skill and task.type in interests:
+            base_weight = 1.5
 
         score = compute_match_score(
             proficiency_level=proficiency,
             accuracy=accuracy,
             reputation_score=rep_score,
             last_task_at=last_task_at,
-            match_weight=match_weight,
+            match_weight=base_weight,
             min_skill_level=task.min_skill_level,
             min_reputation_score=task.min_reputation_score,
         )
