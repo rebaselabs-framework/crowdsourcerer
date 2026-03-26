@@ -46,17 +46,17 @@ try {
   error = "Failed to load disputed tasks";
 }
 
-// Fetch consensus + submissions for each task
-const tasksWithConsensus: Array<{ task: any; consensus: any; submissions: any[] }> = [];
-for (const task of disputedTasks.items) {
-  let consensus = null, submissions: any[] = [];
-  try { consensus = await apiFetch<any>(`/v1/disputes/tasks/${task.id}/consensus`, { token }); } catch (_) {}
-  try {
-    const subsData = await apiFetch<any>(`/v1/tasks/${task.id}/submissions`, { token });
-    submissions = subsData?.submissions ?? [];
-  } catch (_) {}
-  tasksWithConsensus.push({ task, consensus, submissions });
-}
+// Fetch consensus + submissions for all tasks in parallel (avoids N+1 serial requests)
+const tasksWithConsensus: Array<{ task: any; consensus: any; submissions: any[] }> =
+  await Promise.all(
+    disputedTasks.items.map(async (task: any) => {
+      const [consensus, subsData] = await Promise.all([
+        apiFetch<any>(`/v1/disputes/tasks/${task.id}/consensus`, { token }).catch(() => null),
+        apiFetch<any>(`/v1/tasks/${task.id}/submissions`, { token }).catch(() => null),
+      ]);
+      return { task, consensus, submissions: subsData?.submissions ?? [] };
+    })
+  );
 
 // If focus task selected, load evidence + timeline
 if (focusTaskId) {
@@ -138,10 +138,10 @@ const EVENT_ICONS: Record<string, string> = {
         <div class={`bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden ${isResolved?"opacity-80":""}`}>
 
           <!-- Task header bar -->
-          <div class="px-6 py-4 border-b border-gray-100 flex items-start justify-between gap-4">
+          <div class="px-6 py-4 border-b border-gray-800 flex items-start justify-between gap-4">
             <div>
               <div class="flex items-center gap-2 flex-wrap">
-                <span class="font-semibold text-gray-900">{TASK_TYPE_LABELS[task.type]??task.type.replace("_"," ")}</span>
+                <span class="font-semibold text-gray-100">{TASK_TYPE_LABELS[task.type]??task.type.replace("_"," ")}</span>
                 <span class={`px-2 py-0.5 rounded-full text-xs font-medium ${badge.cls}`}>{badge.label}</span>
                 {isResolved
                   ? <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">✅ Resolved</span>
@@ -166,7 +166,7 @@ const EVENT_ICONS: Record<string, string> = {
 
           <div class="px-6 py-4">
             <!-- Task input -->
-            <div class="bg-gray-50 rounded-xl p-3 mb-4 text-xs font-mono text-gray-300 max-h-28 overflow-auto">
+            <div class="bg-gray-800 rounded-xl p-3 mb-4 text-xs font-mono text-gray-300 max-h-28 overflow-auto border border-gray-700">
               {JSON.stringify(task.input, null, 2)}
             </div>
 
@@ -178,15 +178,15 @@ const EVENT_ICONS: Record<string, string> = {
                 </h3>
                 <div class="space-y-2">
                   {consensus.votes.map((vote: any, i: number) => (
-                    <div class={`flex items-center gap-3 p-2 rounded-lg ${i===0?"bg-indigo-50 border border-indigo-200":"bg-gray-50"}`}>
+                    <div class={`flex items-center gap-3 p-2 rounded-lg ${i===0?"bg-indigo-900/30 border border-indigo-700/50":"bg-gray-800 border border-gray-700"}`}>
                       <div class="flex-1 min-w-0">
                         <div class="text-xs font-mono text-gray-400 truncate">
                           {vote.response_key.length>120?vote.response_key.slice(0,120)+"…":vote.response_key}
                         </div>
                       </div>
                       <div class="text-xs font-medium text-gray-300 shrink-0">{vote.count} vote{vote.count!==1?"s":""} ({vote.percentage}%)</div>
-                      <div class="w-20 h-2 bg-gray-200 rounded-full overflow-hidden shrink-0">
-                        <div class={`h-full rounded-full ${i===0?"bg-indigo-500":"bg-gray-400"}`} style={`width:${vote.percentage}%`}/>
+                      <div class="w-20 h-2 bg-gray-700 rounded-full overflow-hidden shrink-0">
+                        <div class={`h-full rounded-full ${i===0?"bg-indigo-500":"bg-gray-500"}`} style={`width:${vote.percentage}%`}/>
                       </div>
                     </div>
                   ))}
@@ -200,7 +200,7 @@ const EVENT_ICONS: Record<string, string> = {
                 <h3 class="text-sm font-semibold text-gray-300 mb-2">Pick the Best Answer</h3>
                 <div class="space-y-3">
                   {submissions.map((sub: any) => (
-                    <div class={`border rounded-xl p-4 ${task.winning_assignment_id===sub.id?"border-green-400 bg-green-50":"border-gray-200"}`}>
+                    <div class={`border rounded-xl p-4 ${task.winning_assignment_id===sub.id?"border-green-500 bg-green-900/20":"border-gray-700 bg-gray-800"}`}>
                       <div class="flex items-start justify-between gap-4">
                         <div class="flex-1 min-w-0">
                           <div class="text-xs text-gray-500 mb-1">
@@ -228,15 +228,15 @@ const EVENT_ICONS: Record<string, string> = {
 
             <!-- Resolved answer -->
             {isResolved && task.output && (
-              <div class="mb-4 bg-green-50 border border-green-200 rounded-xl p-3">
-                <h3 class="text-sm font-semibold text-green-800 mb-1">✅ Resolved Answer</h3>
-                <div class="text-xs font-mono text-green-700 max-h-24 overflow-auto">{JSON.stringify(task.output, null, 2)}</div>
+              <div class="mb-4 bg-green-900/20 border border-green-700/50 rounded-xl p-3">
+                <h3 class="text-sm font-semibold text-green-400 mb-1">✅ Resolved Answer</h3>
+                <div class="text-xs font-mono text-green-300 max-h-24 overflow-auto">{JSON.stringify(task.output, null, 2)}</div>
               </div>
             )}
 
             <!-- ── Detail panel: Evidence + Timeline + Admin actions ── -->
             {isFocused && (
-              <div class="border-t border-gray-100 pt-4 mt-4 space-y-6">
+              <div class="border-t border-gray-800 pt-4 mt-4 space-y-6">
 
                 <!-- Admin: Assign mediator -->
                 {isAdmin && !isResolved && (
@@ -256,8 +256,8 @@ const EVENT_ICONS: Record<string, string> = {
 
                 <!-- Submit Evidence -->
                 <div>
-                  <h3 class="text-sm font-semibold text-gray-800 mb-3">📎 Submit Evidence</h3>
-                  <div class="bg-gray-50 border border-gray-200 rounded-xl p-4">
+                  <h3 class="text-sm font-semibold text-gray-300 mb-3">📎 Submit Evidence</h3>
+                  <div class="bg-gray-800/50 border border-gray-700 rounded-xl p-4">
                     <div class="grid sm:grid-cols-2 gap-3 mb-3">
                       <div>
                         <label class="block text-xs text-gray-500 mb-1">Evidence type</label>
@@ -294,7 +294,7 @@ const EVENT_ICONS: Record<string, string> = {
                 <!-- Existing Evidence -->
                 {focusEvidence.length > 0 && (
                   <div>
-                    <h3 class="text-sm font-semibold text-gray-800 mb-3">Evidence on File ({focusEvidence.length})</h3>
+                    <h3 class="text-sm font-semibold text-gray-300 mb-3">Evidence on File ({focusEvidence.length})</h3>
                     <div class="space-y-2">
                       {focusEvidence.map((ev: any) => (
                         <div class="bg-gray-800 border border-gray-700 rounded-xl p-3">
@@ -324,10 +324,10 @@ const EVENT_ICONS: Record<string, string> = {
 
                 <!-- Resolution Timeline -->
                 <div>
-                  <h3 class="text-sm font-semibold text-gray-800 mb-3">📅 Resolution Timeline</h3>
+                  <h3 class="text-sm font-semibold text-gray-300 mb-3">📅 Resolution Timeline</h3>
                   {focusTimeline.length > 0 ? (
                     <div class="relative">
-                      <div class="absolute left-4 top-0 bottom-0 w-0.5 bg-gray-200"></div>
+                      <div class="absolute left-4 top-0 bottom-0 w-0.5 bg-gray-700"></div>
                       <div class="space-y-3 pl-10">
                         {focusTimeline.map((ev: any) => (
                           <div class="relative">
@@ -346,7 +346,7 @@ const EVENT_ICONS: Record<string, string> = {
                       </div>
                     </div>
                   ) : (
-                    <div class="text-center py-6 text-gray-400 text-sm bg-gray-50 rounded-xl border border-gray-200">
+                    <div class="text-center py-6 text-gray-500 text-sm bg-gray-800/50 rounded-xl border border-gray-700">
                       No timeline events yet. Events are logged when dispute milestones occur.
                     </div>
                   )}

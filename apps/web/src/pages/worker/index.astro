@@ -109,6 +109,9 @@ const PRIORITY_COLORS: Record<string, string> = {
 };
 
 const feedTasks: any[] = feedPreview?.items ?? [];
+// Detect workers with no skills — personalised feed will be empty for them
+const noSkills = Array.isArray(profileStatus?.missing) &&
+  (profileStatus.missing as string[]).includes("skills");
 ---
 
 <Layout title="Earn — CrowdSorcerer">
@@ -535,16 +538,44 @@ const feedTasks: any[] = feedPreview?.items ?? [];
           </div>
         )}
         {assignments.length === 0 && feedTasks.length === 0 && (
-          <!-- No active assignments, no feed tasks -->
           <div class="bg-gray-900/40 border border-dashed border-gray-700 rounded-2xl p-10 text-center mb-8">
-            <div class="text-3xl mb-3">🎯</div>
-            <p class="text-gray-400 mb-4">No tasks available right now. Check back soon!</p>
-            <a
-              href="/worker/marketplace"
-              class="inline-block px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium rounded-lg transition-colors"
-            >
-              Browse marketplace
-            </a>
+            {noSkills ? (
+              <!-- No skills → personalised feed will always be empty -->
+              <>
+                <div class="text-4xl mb-3">🎓</div>
+                <p class="text-gray-200 font-semibold mb-2">Add skills to get matched with tasks</p>
+                <p class="text-gray-400 text-sm mb-6 max-w-sm mx-auto">
+                  Your personalised feed is empty because you haven't added any skills yet.
+                  Skills help us match you with tasks that suit your abilities.
+                </p>
+                <div class="flex flex-wrap justify-center gap-3">
+                  <a
+                    href="/worker/skills"
+                    class="inline-block px-6 py-2.5 bg-violet-600 hover:bg-violet-500 text-white text-sm font-semibold rounded-lg transition-colors"
+                  >
+                    Add skills →
+                  </a>
+                  <a
+                    href="/worker/marketplace?mode=browse"
+                    class="inline-block px-6 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-200 text-sm font-medium rounded-lg border border-gray-700 transition-colors"
+                  >
+                    Browse all tasks
+                  </a>
+                </div>
+              </>
+            ) : (
+              <!-- Skills exist but no open tasks right now -->
+              <>
+                <div class="text-3xl mb-3">🎯</div>
+                <p class="text-gray-400 mb-4">No tasks available right now. Check back soon!</p>
+                <a
+                  href="/worker/marketplace"
+                  class="inline-block px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium rounded-lg transition-colors"
+                >
+                  Browse marketplace
+                </a>
+              </>
+            )}
           </div>
         )}
 
