@@ -175,6 +175,27 @@ Fixed this round:
 - Dashboard task detail: prominent ⚠️ dispute banner (explains cause, links to /dashboard/disputes), ✅ resolved banner; consensus strategy badges (Majority vote / Unanimous / Manual review) + dispute pill in submissions panel header; "Resolve dispute →" replaces "Review queue →" when disputed
 - Worker task detail: detects already-submitted / approved / rejected assignments (4-way parallel fetch, non-fatal); shows outcome panel (⏳ / ✅ / ❌) instead of confusing "Claim & Start"
 
+## Session 2026-03-26 (continued) — Credit race conditions + N+1 sweep (commits 54ef350, 430f944)
+
+**Race conditions fixed (comprehensive credit mutation audit via `grep "\.credits\s*[+-]="`  — 25 sites):**
+
+All remaining unprotected credit mutation sites received `SELECT … FOR UPDATE`:
+- `routers/payouts.py` — user fetch in `create_payout_request` (balance check before deduct)
+- `routers/tasks.py` — assignment fetch in `reject_submission` (prevent duplicate refund)
+- `routers/orgs.py` — user fetch in `transfer_credits` (payer balance check)
+- `routers/worker.py` — worker (UserDB) fetch in `submit_task` (credits/XP/streak update; task row was already locked but worker wasn't)
+- `routers/marketplace.py` — user fetch in `clone_task` (balance check before deduct)
+- `routers/challenges.py` — user fetch in `claim_daily_bonus` (double-click double-award prevention)
+- `routers/skill_quiz.py` — user fetch in first-pass bonus code path (quiz race on `prev_count == 0`)
+
+**Previously locked (for reference):** `claim_task` (task row), `create_task` / `create_tasks_batch` / `rerun_task` (user row).
+
+**N+1 queries eliminated:**
+- `api_key_usage.py get_usage_overview`: 2N per-key queries (2 × N keys in loop) → single GROUP BY with `case()` for error count
+- `quality.py evaluate_submissions`: N per-worker `_update_accuracy()` calls → single batch GROUP BY across all affected worker IDs; `_update_accuracy()` helper preserved for single-worker use elsewhere
+
+All 299 tests pass.
+
 ## Priorities for Next Session 🔜
 
 PHASE: Pre-alpha development. Focus on quality/depth. NOT in scope: launch tasks, marketing, directory listings.
