@@ -331,12 +331,13 @@ async def create_tasks_batch(
             },
         )
 
-    # Deduct all credits upfront
+    # Deduct all credits upfront (may be partially refunded below if any tasks fail)
     user.credits -= total_credits
 
     created = []
     failed = []
     ai_task_ids: list[str] = []
+    actual_credits_charged = 0
 
     for i, task_req in enumerate(req.tasks):
         try:
@@ -385,9 +386,21 @@ async def create_tasks_batch(
                 description=f"Batch task: {task_req.type}",
             )
             db.add(txn)
+            actual_credits_charged += est
             created.append((task, est, is_human))
         except Exception as e:
             failed.append({"index": i, "type": task_req.type, "error": str(e)})
+
+    # Refund credits for any tasks that failed to create
+    overcharged = total_credits - actual_credits_charged
+    if overcharged > 0:
+        user.credits += overcharged
+        logger.warning(
+            "batch_tasks.partial_credit_refund",
+            user_id=user_id,
+            overcharged=overcharged,
+            failed_count=len(failed),
+        )
 
     await db.commit()
 

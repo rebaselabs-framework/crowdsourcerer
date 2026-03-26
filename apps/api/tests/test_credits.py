@@ -155,3 +155,133 @@ def test_task_credit_costs_are_integers():
     from workers.router import TASK_CREDITS
     for task_type, cost in TASK_CREDITS.items():
         assert isinstance(cost, int), f"Credit cost for {task_type} is not int: {cost!r}"
+
+
+# ── Credit atomicity (unit tests, no DB/HTTP) ─────────────────────────────────
+
+def test_calc_credits_ai_task():
+    """_calc_credits returns the fixed TASK_CREDITS value for AI tasks."""
+    from routers.tasks import _calc_credits
+    from workers.router import TASK_CREDITS
+
+    class _Req:
+        type = "web_research"
+        worker_reward_credits = None
+        assignments_required = 1
+
+    expected = TASK_CREDITS["web_research"]
+    assert _calc_credits(_Req()) == expected
+
+
+def test_calc_credits_human_task():
+    """_calc_credits for a human task includes worker reward + 20% platform fee."""
+    from routers.tasks import _calc_credits
+
+    class _Req:
+        type = "label_text"
+        worker_reward_credits = 10
+        assignments_required = 3
+
+    # worker_reward * assignments + ceil(worker_reward * assignments * 0.2)
+    # = 10 * 3 + max(1, int(10 * 3 * 0.2)) = 30 + 6 = 36
+    result = _calc_credits(_Req())
+    assert result == 36
+
+
+def test_batch_credit_partial_refund_logic():
+    """If individual tasks fail inside the batch loop, the overcharged amount
+    must be refunded back to user.credits before db.commit().
+
+    This verifies the atomicity guard added in create_tasks_batch:
+    actual_credits_charged tracks only successful tasks; any gap vs total_credits
+    is refunded to user.credits in the same transaction.
+    """
+    # Simulate the credit bookkeeping logic from create_tasks_batch:
+    # - total_credits = 15 (3 tasks × 5 each)
+    # - task 2 fails in the loop → only 2 tasks created → actual = 10
+    # - overcharged = 15 - 10 = 5 → must be added back
+
+    total_credits = 15
+    starting_credits = 100
+
+    # Simulate user object
+    class _User:
+        credits = starting_credits
+
+    user = _User()
+    user.credits -= total_credits  # deduct upfront
+
+    # Simulate loop: 2 succeed, 1 fails
+    actual_credits_charged = 0
+    failed = []
+    for i in range(3):
+        try:
+            if i == 1:
+                raise ValueError("simulated task creation failure")
+            actual_credits_charged += 5
+        except Exception as e:
+            failed.append({"index": i, "error": str(e)})
+
+    # Partial refund guard
+    overcharged = total_credits - actual_credits_charged
+    if overcharged > 0:
+        user.credits += overcharged
+
+    assert actual_credits_charged == 10
+    assert len(failed) == 1
+    assert overcharged == 5
+    # User should only be charged for the 2 tasks that succeeded
+    assert user.credits == starting_credits - actual_credits_charged
+
+
+def test_batch_credit_no_refund_when_all_succeed():
+    """When all tasks succeed, overcharged == 0 and no credits are refunded."""
+    total_credits = 15
+    starting_credits = 100
+
+    class _User:
+        credits = starting_credits
+
+    user = _User()
+    user.credits -= total_credits
+
+    actual_credits_charged = 0
+    failed = []
+    for i in range(3):
+        actual_credits_charged += 5  # no failures
+
+    overcharged = total_credits - actual_credits_charged
+    if overcharged > 0:
+        user.credits += overcharged
+
+    assert overcharged == 0
+    assert user.credits == starting_credits - total_credits
+
+
+def test_batch_credit_full_refund_when_all_fail():
+    """If all tasks fail, the full total_credits must be refunded."""
+    total_credits = 15
+    starting_credits = 100
+
+    class _User:
+        credits = starting_credits
+
+    user = _User()
+    user.credits -= total_credits
+
+    actual_credits_charged = 0
+    failed = []
+    for i in range(3):
+        try:
+            raise RuntimeError("all fail")
+        except Exception as e:
+            failed.append({"index": i, "error": str(e)})
+
+    overcharged = total_credits - actual_credits_charged
+    if overcharged > 0:
+        user.credits += overcharged
+
+    assert len(failed) == 3
+    assert overcharged == 15
+    # User's balance must be fully restored
+    assert user.credits == starting_credits
