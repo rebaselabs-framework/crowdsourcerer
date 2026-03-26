@@ -18,7 +18,7 @@ export const POST: APIRoute = async ({ cookies, params, request }) => {
   const body = await request.text();
   try {
     const res = await fetch(
-      `${API_URL}/v1/admin/payouts/${params.payoutId}/review`,
+      `${API_URL}/v1/payouts/${params.payoutId}/review`,
       {
         method: "POST",
         headers: {
