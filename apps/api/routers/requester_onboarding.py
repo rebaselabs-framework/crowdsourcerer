@@ -181,8 +181,10 @@ async def _set_step(
 
     if all_done and not rec.bonus_claimed:
         rec.bonus_claimed = True
-        # Award bonus credits
-        user_result = await db.execute(select(UserDB).where(UserDB.id == user_id))
+        # Lock user row so concurrent final-step completions can't both award.
+        user_result = await db.execute(
+            select(UserDB).where(UserDB.id == user_id).with_for_update()
+        )
         user = user_result.scalar_one_or_none()
         if user:
             user.credits += ONBOARDING_BONUS

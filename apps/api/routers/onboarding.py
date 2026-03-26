@@ -91,20 +91,25 @@ async def complete_step(
 
     await db.commit()
 
-    # Award bonus credits if just completed all steps (and not claimed yet)
+    # Award bonus credits if just completed all steps (and not claimed yet).
+    # Lock the user row so two concurrent final-step requests don't both pass
+    # the bonus_claimed guard before either commits.
     if all_done and not progress.bonus_claimed:
         uid = UUID(user_id)
-        user_res = await db.execute(select(UserDB).where(UserDB.id == uid))
+        user_res = await db.execute(
+            select(UserDB).where(UserDB.id == uid).with_for_update()
+        )
         user = user_res.scalar_one_or_none()
         if user:
             user.credits += COMPLETION_BONUS_CREDITS
+            # NOTE: `type` is a NOT-NULL enum column ("charge"|"credit"|"refund"|"earning").
+            # `balance_after` and `tx_type` are not valid columns — they were previously
+            # set as phantom Python attributes, causing a silent NULL type on commit.
             tx = CreditTransactionDB(
-                id=_uuid.uuid4(),
                 user_id=uid,
                 amount=COMPLETION_BONUS_CREDITS,
-                balance_after=user.credits,
-                description="Onboarding completion bonus",
-                tx_type="onboarding_bonus",
+                type="credit",
+                description=f"Worker onboarding completion bonus (+{COMPLETION_BONUS_CREDITS} credits)",
             )
             db.add(tx)
             progress.bonus_claimed = True
