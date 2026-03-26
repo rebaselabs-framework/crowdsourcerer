@@ -13,6 +13,7 @@ from sqlalchemy import select, func, and_, or_
 
 import asyncio as _asyncio_wh
 from core.auth import get_current_user_id
+from core.background import safe_create_task
 from core.database import get_db
 from core.reputation import refresh_worker_reputation
 from core.webhooks import fire_webhook_for_task, fire_persistent_endpoints
@@ -719,12 +720,12 @@ async def claim_task(
     _wh_assign_extra = {"type": task.type, "worker_id": str(user_id),
                         "assignment_id": str(assignment.id)}
     if task.webhook_url:
-        _asyncio_wh.create_task(fire_webhook_for_task(
+        safe_create_task(fire_webhook_for_task(
             task=task,
             event_type="task.assigned",
             extra=_wh_assign_extra,
         ))
-    _asyncio_wh.create_task(fire_persistent_endpoints(
+    safe_create_task(fire_persistent_endpoints(
         user_id=str(task.user_id),
         task_id=str(task.id),
         event_type="task.assigned",
@@ -987,7 +988,7 @@ async def submit_task(
             if requester and requester.email and str(requester.id) != user_id:
                 from core.email import notify_submission_received
                 import asyncio as _asyncio
-                _asyncio.create_task(notify_submission_received(
+                safe_create_task(notify_submission_received(
                     requester.email,
                     str(task_id),
                     task.type,
@@ -998,12 +999,12 @@ async def submit_task(
             _wh_sub_extra = {"type": task.type, "worker_id": str(user_id),
                              "assignment_id": str(assignment.id)}
             if task.webhook_url:
-                _asyncio_wh.create_task(fire_webhook_for_task(
+                safe_create_task(fire_webhook_for_task(
                     task=task,
                     event_type="task.submission_received",
                     extra=_wh_sub_extra,
                 ))
-            _asyncio_wh.create_task(fire_persistent_endpoints(
+            safe_create_task(fire_persistent_endpoints(
                 user_id=str(task.user_id),
                 task_id=str(task.id),
                 event_type="task.submission_received",

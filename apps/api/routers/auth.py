@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from core.auth import create_access_token, get_current_user_id
+from core.background import safe_create_task
 from core.config import get_settings
 from core.database import get_db
 from models.db import UserDB, PasswordResetTokenDB
@@ -90,10 +91,12 @@ async def register(
     await db.refresh(user)
 
     # Send verification email (fire-and-forget — don't block signup on email failure)
-    import asyncio
     from core.email import send_email_verification
     verify_url = f"{_BASE_URL}/verify-email?token={raw_verify_token}"
-    asyncio.ensure_future(send_email_verification(user.email, verify_url, user.name))
+    safe_create_task(
+        send_email_verification(user.email, verify_url, user.name),
+        name="email.verification",
+    )
 
     token = create_access_token(str(user.id))
     return TokenResponse(
@@ -189,9 +192,11 @@ async def forgot_password(
 
         reset_url = f"{_BASE_URL}/reset-password?token={raw_token}"
         # Send email fire-and-forget — don't block on email failures
-        import asyncio
         from core.email import send_password_reset
-        asyncio.ensure_future(send_password_reset(user.email, reset_url, user.name))
+        safe_create_task(
+            send_password_reset(user.email, reset_url, user.name),
+            name="email.password_reset",
+        )
 
     # Always return success to prevent email enumeration
     return {"message": "If an account exists for that email, a reset link has been sent."}
@@ -331,9 +336,11 @@ async def resend_verification(
     user.email_verification_token_hash = token_hash
     await db.commit()
 
-    import asyncio
     from core.email import send_email_verification
     verify_url = f"{_BASE_URL}/verify-email?token={raw_token}"
-    asyncio.ensure_future(send_email_verification(user.email, verify_url, user.name))
+    safe_create_task(
+        send_email_verification(user.email, verify_url, user.name),
+        name="email.verification",
+    )
 
     return {"message": "Verification email sent. Please check your inbox."}

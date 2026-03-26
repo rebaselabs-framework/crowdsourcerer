@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
 from core.auth import get_current_user_id
+from core.background import safe_create_task
 from core.scopes import require_scope, SCOPE_TASKS_READ, SCOPE_TASKS_WRITE
 from core.database import get_db
 from core.webhooks import fire_webhook_for_task, fire_persistent_endpoints, ALL_EVENTS, DEFAULT_EVENTS
@@ -197,7 +198,7 @@ async def create_task(
     await record_task_burst(db, user_id)
 
     # Hook requester onboarding: create_task step
-    asyncio.create_task(_mark_requester_onboarding(user_id, "create_task"))
+    safe_create_task(_mark_requester_onboarding(user_id, "create_task"))
 
     if not is_human and not is_scheduled:
         # Run AI task in background (scheduled tasks wait for the sweeper)
@@ -206,12 +207,12 @@ async def create_task(
     # Fire task.created webhook (per-task + persistent endpoints)
     _wh_extra = {"type": task.type, "status": task.status, "priority": task.priority}
     if task.webhook_url:
-        asyncio.create_task(fire_webhook_for_task(
+        safe_create_task(fire_webhook_for_task(
             task=task,
             event_type="task.created",
             extra=_wh_extra,
         ))
-    asyncio.create_task(fire_persistent_endpoints(
+    safe_create_task(fire_persistent_endpoints(
         user_id=str(task.user_id),
         task_id=str(task.id),
         event_type="task.created",
@@ -220,7 +221,7 @@ async def create_task(
 
     # Notify workers whose saved-search alerts match this new task
     if is_human:
-        asyncio.create_task(_trigger_saved_search_alerts(
+        safe_create_task(_trigger_saved_search_alerts(
             task_type=task.type,
             priority=task.priority,
             reward_credits=task.worker_reward_credits,
@@ -1252,7 +1253,7 @@ async def approve_submission(
         worker_result = await db.execute(select(UserDB).where(UserDB.id == assignment.worker_id))
         worker_user = worker_result.scalar_one_or_none()
         if worker_user and worker_user.email:
-            asyncio.create_task(notify_worker_approved(
+            safe_create_task(notify_worker_approved(
                 worker_user.email,
                 task_type=task.type,
                 earnings=assignment.earnings_credits,
@@ -1282,12 +1283,12 @@ async def approve_submission(
     _wh_approved_extra = {"type": task.type, "assignment_id": str(assignment_id),
                           "worker_id": str(assignment.worker_id)}
     if task.webhook_url:
-        asyncio.create_task(fire_webhook_for_task(
+        safe_create_task(fire_webhook_for_task(
             task=task,
             event_type="task.approved",
             extra=_wh_approved_extra,
         ))
-    asyncio.create_task(fire_persistent_endpoints(
+    safe_create_task(fire_persistent_endpoints(
         user_id=str(task.user_id),
         task_id=str(task.id),
         event_type="task.approved",
@@ -1296,12 +1297,12 @@ async def approve_submission(
     if task.status == "completed":
         _wh_complete_extra = {"type": task.type, "execution_mode": "human"}
         if task.webhook_url:
-            asyncio.create_task(fire_webhook_for_task(
+            safe_create_task(fire_webhook_for_task(
                 task=task,
                 event_type="task.completed",
                 extra=_wh_complete_extra,
             ))
-        asyncio.create_task(fire_persistent_endpoints(
+        safe_create_task(fire_persistent_endpoints(
             user_id=str(task.user_id),
             task_id=str(task.id),
             event_type="task.completed",
@@ -1428,12 +1429,12 @@ async def reject_submission(
     _wh_rejected_extra = {"type": task.type, "assignment_id": str(assignment_id),
                           "worker_id": str(assignment.worker_id), "refund_credits": refund_amount}
     if task.webhook_url:
-        asyncio.create_task(fire_webhook_for_task(
+        safe_create_task(fire_webhook_for_task(
             task=task,
             event_type="task.rejected",
             extra=_wh_rejected_extra,
         ))
-    asyncio.create_task(fire_persistent_endpoints(
+    safe_create_task(fire_persistent_endpoints(
         user_id=str(task.user_id),
         task_id=str(task.id),
         event_type="task.rejected",
@@ -1931,7 +1932,7 @@ async def _run_task(task_id: str, user_id: str):
                 credits_used = full_cost
 
                 # Store result for future cache hits (fire-and-forget, own DB session)
-                asyncio.create_task(
+                safe_create_task(
                     _store_cache_entry(task.type, task.input, output, full_cost, duration_ms)
                 )
 
@@ -1987,12 +1988,12 @@ async def _run_task(task_id: str, user_id: str):
                 **({"result_preview": preview} if preview else {}),
             }
             if task.webhook_url:
-                asyncio.create_task(fire_webhook_for_task(
+                safe_create_task(fire_webhook_for_task(
                     task=task,
                     event_type="task.completed",
                     extra=_wh_done_extra,
                 ))
-            asyncio.create_task(fire_persistent_endpoints(
+            safe_create_task(fire_persistent_endpoints(
                 user_id=str(task.user_id),
                 task_id=str(task_id),
                 event_type="task.completed",
@@ -2001,7 +2002,7 @@ async def _run_task(task_id: str, user_id: str):
 
             # Email notification
             if owner and owner.email:
-                asyncio.create_task(notify_task_completed(
+                safe_create_task(notify_task_completed(
                     owner.email, task_id, task.type
                 ))
 
@@ -2029,17 +2030,17 @@ async def _run_task(task_id: str, user_id: str):
                     user_result = await db.execute(select(UserDB).where(UserDB.id == user_id))
                     owner = user_result.scalar_one_or_none()
                     if owner and owner.email:
-                        asyncio.create_task(notify_task_failed(
+                        safe_create_task(notify_task_failed(
                             owner.email, task_id, task.type, str(e)
                         ))
                     _wh_fail_extra = {"type": task.type, "error": str(e)}
                     if task.webhook_url:
-                        asyncio.create_task(fire_webhook_for_task(
+                        safe_create_task(fire_webhook_for_task(
                             task=task,
                             event_type="task.failed",
                             extra=_wh_fail_extra,
                         ))
-                    asyncio.create_task(fire_persistent_endpoints(
+                    safe_create_task(fire_persistent_endpoints(
                         user_id=str(user_id),
                         task_id=str(task_id),
                         event_type="task.failed",
@@ -2076,17 +2077,17 @@ async def _run_task(task_id: str, user_id: str):
                     user_result = await db.execute(select(UserDB).where(UserDB.id == user_id))
                     owner = user_result.scalar_one_or_none()
                     if owner and owner.email:
-                        asyncio.create_task(notify_task_failed(
+                        safe_create_task(notify_task_failed(
                             owner.email, task_id, task.type, f"Unexpected error: {type(e).__name__}"
                         ))
                     _wh_unexp_extra = {"type": task.type, "error": f"Unexpected error: {type(e).__name__}"}
                     if task.webhook_url:
-                        asyncio.create_task(fire_webhook_for_task(
+                        safe_create_task(fire_webhook_for_task(
                             task=task,
                             event_type="task.failed",
                             extra=_wh_unexp_extra,
                         ))
-                    asyncio.create_task(fire_persistent_endpoints(
+                    safe_create_task(fire_persistent_endpoints(
                         user_id=str(user_id),
                         task_id=str(task_id),
                         event_type="task.failed",

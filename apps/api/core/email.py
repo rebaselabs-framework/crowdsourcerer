@@ -394,14 +394,18 @@ async def send_email(to_email: str, subject: str, html_body: str) -> bool:
     """Async wrapper around SMTP send. Non-blocking."""
     settings = get_settings()
     if not settings.email_enabled:
-        logger.debug("email.disabled", to=to_email, subject=subject)
+        # Log at INFO so operators see it — email silently disabled is easy to miss
+        logger.info("email.disabled_skipped", to=to_email, subject=subject)
         return False
     if not settings.smtp_host:
         logger.warning("email.no_smtp_host", to=to_email, subject=subject)
         return False
 
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, _send_email_sync, to_email, subject, html_body)
+    loop = asyncio.get_running_loop()
+    ok = await loop.run_in_executor(None, _send_email_sync, to_email, subject, html_body)
+    if ok:
+        logger.info("email.sent", to=to_email, subject=subject)
+    return ok
 
 
 # ─── Typed send helpers ────────────────────────────────────────────────────
