@@ -199,7 +199,12 @@ async def get_my_skills(
         await mark_onboarding_step(uid, "skills", db)
         await db.flush()
     except Exception:
-        pass
+        logger.warning(
+            "skills.onboarding_step_failed",
+            user_id=str(uid),
+            step="skills",
+            exc_info=True,
+        )
 
     verified_count = sum(1 for s in skills if s.verified)
 

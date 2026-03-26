@@ -162,7 +162,11 @@ async def _fire_trigger(trigger: PipelineTriggerDB, db: AsyncSession,
     try:
         await record_pipeline_run(db, str(trigger.user_id))
     except Exception:
-        pass  # quota recording failure shouldn't block trigger
+        logger.warning(
+            "triggers.quota_record_failed",
+            user_id=str(trigger.user_id),
+            exc_info=True,
+        )  # quota recording failure shouldn't block trigger
 
     # Fire pipeline execution as asyncio task (non-blocking)
     asyncio.create_task(_execute_pipeline_run(run.id, str(pipeline.id), str(trigger.user_id)))

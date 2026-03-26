@@ -235,7 +235,12 @@ async def pay_referral_bonus_on_first_task(
                 link="/dashboard/referrals",
             )
         except Exception:
-            pass
+            logger.warning(
+                "referrals.bonus_notification_failed",
+                referral_id=str(referral.id),
+                referrer_id=str(referral.referrer_id),
+                exc_info=True,
+            )
 
     logger.info("referral_bonus_paid", referral_id=str(referral.id),
                 referrer_id=str(referral.referrer_id))

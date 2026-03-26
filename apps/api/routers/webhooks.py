@@ -153,7 +153,12 @@ async def create_endpoint(
             try:
                 await complete_step_internal(str(user_id), "set_webhook", _db)
             except Exception:
-                pass
+                logger.warning(
+                    "webhooks.onboarding_step_failed",
+                    user_id=str(user_id),
+                    step="set_webhook",
+                    exc_info=True,
+                )
     _asyncio.create_task(_adv_onboarding())
 
     data = {

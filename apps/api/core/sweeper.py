@@ -691,7 +691,11 @@ async def _notify_scheduled_human_task(task_type: str, priority: str, reward_cre
         try:
             await notify_matching_saved_searches(task_type, priority, reward_credits, db)
         except Exception:
-            pass
+            logger.warning(
+                "sweeper.saved_search_notification_failed",
+                task_type=task_type,
+                exc_info=True,
+            )
 
 
 async def _sweep_task_dependencies(session_factory: async_sessionmaker) -> int:

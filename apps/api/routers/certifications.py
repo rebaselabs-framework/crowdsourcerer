@@ -453,7 +453,12 @@ async def attempt_certification(
                 link=f"/worker/certifications",
             )
         except Exception:
-            pass
+            logger.warning(
+                "certifications.pass_notification_failed",
+                user_id=str(uid),
+                task_type=task_type,
+                exc_info=True,
+            )
 
     # ── Onboarding: mark cert step on any attempt ─────────────────────────
     try:
@@ -461,7 +466,12 @@ async def attempt_certification(
         await mark_onboarding_step(uid, "cert", db)
         await db.flush()
     except Exception:
-        pass
+        logger.warning(
+            "certifications.onboarding_step_failed",
+            user_id=str(uid),
+            step="cert",
+            exc_info=True,
+        )
 
     return CertAttemptResult(
         score=score_pct,

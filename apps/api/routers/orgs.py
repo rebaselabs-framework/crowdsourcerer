@@ -378,7 +378,12 @@ async def invite_member(
             try:
                 await complete_step_internal(str(user_id), "invite_team", _db)
             except Exception:
-                pass
+                logger.warning(
+                    "orgs.onboarding_step_failed",
+                    user_id=str(user_id),
+                    step="invite_team",
+                    exc_info=True,
+                )
     _asyncio.create_task(_adv_onboarding())
 
     return OrgInviteOut(

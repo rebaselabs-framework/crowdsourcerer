@@ -889,7 +889,11 @@ async def _execute_pipeline_run(
                     run.completed_at = utcnow()
                     await db.commit()
             except Exception:
-                pass
+                logger.error(
+                    "pipeline_run.error_recovery_failed",
+                    run_id=str(run_id),
+                    exc_info=True,
+                )
 
 
 async def resume_pipeline_after_human_step(

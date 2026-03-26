@@ -188,7 +188,12 @@ async def _is_event_globally_enabled(user_id: str, event_type: str) -> bool:
             if row and row.webhook_event_prefs:
                 return bool(row.webhook_event_prefs.get(event_type, True))
     except Exception:
-        pass
+        logger.warning(
+            "webhooks.event_pref_check_failed",
+            user_id=user_id,
+            event_type=event_type,
+            exc_info=True,
+        )
     return True
 
 
