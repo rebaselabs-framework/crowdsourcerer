@@ -49,7 +49,6 @@ const priorityColors: Record<string, string> = {
 ---
 
 <Layout title="SLA Dashboard — CrowdSorcerer">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
   <div class="max-w-6xl mx-auto px-6 py-10">
     <div class="mb-8">
       <h1 class="text-2xl font-bold mb-1">⏱ SLA Dashboard</h1>
@@ -245,7 +244,14 @@ const priorityColors: Record<string, string> = {
 
   <script is:inline>
     // Completion time chart (Chart.js)
-    (function() {
+    function _loadChartJs(cb) {
+      if (window.Chart) { cb(); return; }
+      const s = document.createElement("script");
+      s.src = "https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js";
+      s.onload = cb;
+      document.head.appendChild(s);
+    }
+    _loadChartJs(function() {
       const canvas = document.getElementById("completionChart");
       if (!canvas) return;
 
@@ -309,6 +315,6 @@ const priorityColors: Record<string, string> = {
           },
         },
       });
-    })();
+    });
   </script>
 </Layout>

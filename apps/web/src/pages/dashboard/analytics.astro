@@ -242,121 +242,128 @@ function pct(a: number, total: number) {
     )}
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
   <script is:inline define:vars={{
     dailyData: overview?.tasks_last_30_days ?? [],
     statusData: overview?.tasks_by_status ?? {},
     monthlyData: costs?.by_month ?? [],
   }}>
-    Chart.defaults.font.family = "'Inter', sans-serif";
-    const palette = {
-      violet: "#7c3aed",
-      green: "#16a34a",
-      blue: "#2563eb",
-      red: "#dc2626",
-      orange: "#ea580c",
-      gray: "#6b7280",
-    };
-
-    // Daily tasks chart
-    if (document.getElementById("dailyChart") && dailyData.length > 0) {
-      new Chart(document.getElementById("dailyChart"), {
-        type: "bar",
-        data: {
-          labels: dailyData.map(d => d.date?.slice(5) ?? ""), // MM-DD
-          datasets: [{
-            label: "Tasks",
-            data: dailyData.map(d => d.count),
-            backgroundColor: palette.violet + "40",
-            borderColor: palette.violet,
-            borderWidth: 1,
-            borderRadius: 4,
-          }],
-        },
-        options: {
-          responsive: true,
-          plugins: { legend: { display: false } },
-          scales: {
-            y: {
-              beginAtZero: true,
-              ticks: { stepSize: 1, color: '#9ca3af' },
-              grid: { color: '#374151' },
-            },
-            x: {
-              ticks: { maxTicksLimit: 10, color: '#9ca3af' },
-              grid: { color: '#374151' },
-            },
-          },
-        },
-      });
+    function _loadChartJs(cb) {
+      if (window.Chart) { cb(); return; }
+      const s = document.createElement("script");
+      s.src = "https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js";
+      s.onload = cb;
+      document.head.appendChild(s);
     }
-
-    // Status doughnut
-    if (document.getElementById("statusChart") && Object.keys(statusData).length > 0) {
-      const statusColors = {
-        completed: palette.green,
-        failed: palette.red,
-        pending: palette.gray,
-        running: palette.blue,
-        queued: palette.blue,
-        open: palette.orange,
-        assigned: palette.orange,
-        cancelled: "#9ca3af",
+    _loadChartJs(function() {
+      Chart.defaults.font.family = "'Inter', sans-serif";
+      const palette = {
+        violet: "#7c3aed",
+        green: "#16a34a",
+        blue: "#2563eb",
+        red: "#dc2626",
+        orange: "#ea580c",
+        gray: "#6b7280",
       };
-      const labels = Object.keys(statusData);
-      new Chart(document.getElementById("statusChart"), {
-        type: "doughnut",
-        data: {
-          labels,
-          datasets: [{
-            data: Object.values(statusData),
-            backgroundColor: labels.map(l => statusColors[l] ?? palette.gray),
-          }],
-        },
-        options: {
-          responsive: true,
-          plugins: {
-            legend: { position: "right", labels: { boxWidth: 12, font: { size: 11 }, color: '#e5e7eb' } },
-          },
-          cutout: "65%",
-        },
-      });
-    }
 
-    // Monthly cost line chart
-    if (document.getElementById("monthlyChart") && monthlyData.length > 0) {
-      new Chart(document.getElementById("monthlyChart"), {
-        type: "line",
-        data: {
-          labels: monthlyData.map(d => d.month),
-          datasets: [{
-            label: "Credits",
-            data: monthlyData.map(d => d.credits),
-            borderColor: palette.violet,
-            backgroundColor: palette.violet + "20",
-            fill: true,
-            tension: 0.4,
-            pointRadius: 3,
-          }],
-        },
-        options: {
-          responsive: true,
-          plugins: { legend: { display: false } },
-          scales: {
-            y: {
-              beginAtZero: true,
-              ticks: { color: '#9ca3af' },
-              grid: { color: '#374151' },
-            },
-            x: {
-              ticks: { color: '#9ca3af' },
-              grid: { color: '#374151' },
+      // Daily tasks chart
+      if (document.getElementById("dailyChart") && dailyData.length > 0) {
+        new Chart(document.getElementById("dailyChart"), {
+          type: "bar",
+          data: {
+            labels: dailyData.map(d => d.date?.slice(5) ?? ""), // MM-DD
+            datasets: [{
+              label: "Tasks",
+              data: dailyData.map(d => d.count),
+              backgroundColor: palette.violet + "40",
+              borderColor: palette.violet,
+              borderWidth: 1,
+              borderRadius: 4,
+            }],
+          },
+          options: {
+            responsive: true,
+            plugins: { legend: { display: false } },
+            scales: {
+              y: {
+                beginAtZero: true,
+                ticks: { stepSize: 1, color: '#9ca3af' },
+                grid: { color: '#374151' },
+              },
+              x: {
+                ticks: { maxTicksLimit: 10, color: '#9ca3af' },
+                grid: { color: '#374151' },
+              },
             },
           },
-        },
-      });
-    }
+        });
+      }
 
+      // Status doughnut
+      if (document.getElementById("statusChart") && Object.keys(statusData).length > 0) {
+        const statusColors = {
+          completed: palette.green,
+          failed: palette.red,
+          pending: palette.gray,
+          running: palette.blue,
+          queued: palette.blue,
+          open: palette.orange,
+          assigned: palette.orange,
+          cancelled: "#9ca3af",
+        };
+        const labels = Object.keys(statusData);
+        new Chart(document.getElementById("statusChart"), {
+          type: "doughnut",
+          data: {
+            labels,
+            datasets: [{
+              data: Object.values(statusData),
+              backgroundColor: labels.map(l => statusColors[l] ?? palette.gray),
+            }],
+          },
+          options: {
+            responsive: true,
+            plugins: {
+              legend: { position: "right", labels: { boxWidth: 12, font: { size: 11 }, color: '#e5e7eb' } },
+            },
+            cutout: "65%",
+          },
+        });
+      }
+
+      // Monthly cost line chart
+      if (document.getElementById("monthlyChart") && monthlyData.length > 0) {
+        new Chart(document.getElementById("monthlyChart"), {
+          type: "line",
+          data: {
+            labels: monthlyData.map(d => d.month),
+            datasets: [{
+              label: "Credits",
+              data: monthlyData.map(d => d.credits),
+              borderColor: palette.violet,
+              backgroundColor: palette.violet + "20",
+              fill: true,
+              tension: 0.4,
+              pointRadius: 3,
+            }],
+          },
+          options: {
+            responsive: true,
+            plugins: { legend: { display: false } },
+            scales: {
+              y: {
+                beginAtZero: true,
+                ticks: { color: '#9ca3af' },
+                grid: { color: '#374151' },
+              },
+              x: {
+                ticks: { color: '#9ca3af' },
+                grid: { color: '#374151' },
+              },
+            },
+          },
+        });
+      }
+    });
   </script>
   <script is:inline>
     function applyFilter(key, value) {
