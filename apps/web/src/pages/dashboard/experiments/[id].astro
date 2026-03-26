@@ -185,10 +185,9 @@ const metricLabels: Record<string, string> = {
       const resultEl = document.getElementById("enroll-result");
       resultEl.className = "mt-3 text-sm";
       try {
-        const token = document.cookie.match(/token=([^;]+)/)?.[1] ?? "";
         const res = await fetch(`/api/experiments/${expId}/enroll`, {
           method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ task_id: taskId, experiment_id: expId }),
         });
         const data = await res.json();

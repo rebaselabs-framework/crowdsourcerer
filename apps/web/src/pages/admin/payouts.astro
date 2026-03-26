@@ -221,7 +221,7 @@ function formatDetails(method: string, details: Record<string, string>): string 
 </Layout>
 
 <script>
-  const cookieToken = document.cookie.split(";").find(c => c.trim().startsWith("token="))?.split("=")[1];
+  // Proxy route handles auth via httpOnly cookie — no client-side token needed
 
   let pendingPayoutId: string | null = null;
   let pendingAction: string | null = null;
@@ -263,12 +263,9 @@ function formatDetails(method: string, details: Record<string, string>): string 
     (modalConfirm as HTMLButtonElement).disabled = true;
 
     try {
-      const res = await fetch(`/api/v1/payouts/${pendingPayoutId}/review`, {
+      const res = await fetch(`/api/admin/payouts/${pendingPayoutId}/review`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${cookieToken}`,
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           status: pendingAction,
           admin_note: modalNote.value.trim() || null,

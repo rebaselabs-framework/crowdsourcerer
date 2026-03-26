@@ -121,8 +121,7 @@ const { token: _token, user } = await requireAuth(Astro);
 </style>
 
 <script>
-  const token = document.cookie.match(/token=([^;]+)/)?.[1] || '';
-  const authHeader = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
+  // /api/template-marketplace proxy handles auth via httpOnly cookie — no token needed client-side
 
   document.getElementById('templateForm')?.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -167,9 +166,9 @@ const { token: _token, user } = await requireAuth(Astro);
       is_public: (document.getElementById('isPublic') as HTMLInputElement).checked,
     };
 
-    const res = await fetch('/api/v1/marketplace/templates', {
+    const res = await fetch('/api/template-marketplace', {
       method: 'POST',
-      headers: authHeader,
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
 

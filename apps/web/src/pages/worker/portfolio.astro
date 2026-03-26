@@ -18,7 +18,6 @@ try {
   completedTasks = (data.tasks ?? data).slice(0, 50);
 } catch {}
 
-const clientApiUrl = import.meta.env.PUBLIC_API_URL ?? 'http://localhost:8100';
 ---
 <Layout title="My Portfolio Showcase">
   <div class="max-w-4xl mx-auto px-4 py-8">
@@ -171,8 +170,8 @@ const clientApiUrl = import.meta.env.PUBLIC_API_URL ?? 'http://localhost:8100';
   </div>
 </Layout>
 
-<script is:inline define:vars={{ clientApiUrl }}>
-const token = document.cookie.split('; ').find(r => r.startsWith('token='))?.split('=')[1];
+<script is:inline>
+// API calls use Astro proxy routes — no client-side token needed (httpOnly cookie)
 
 function toast(msg, ok = true) {
   const t = document.createElement('div');
@@ -190,9 +189,9 @@ document.getElementById('pin-form').addEventListener('submit', async e => {
   const order = parseInt(document.getElementById('pin-order').value) || 0;
   const errEl = document.getElementById('pin-error');
 
-  const res = await fetch(`${clientApiUrl}/v1/worker/portfolio`, {
+  const res = await fetch('/api/worker/portfolio', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ task_id: taskId, caption: caption || null, display_order: order }),
   });
   if (res.ok) {
@@ -223,9 +222,9 @@ document.getElementById('edit-form').addEventListener('submit', async e => {
   const caption = document.getElementById('edit-caption').value.trim();
   const order = parseInt(document.getElementById('edit-order').value) || 0;
 
-  const res = await fetch(`${clientApiUrl}/v1/worker/portfolio/${pinId}`, {
+  const res = await fetch(`/api/worker/portfolio/${pinId}`, {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ caption: caption || null, display_order: order }),
   });
   if (res.ok) {
@@ -241,9 +240,8 @@ document.getElementById('edit-form').addEventListener('submit', async e => {
 document.querySelectorAll('.delete-pin-btn').forEach(btn => {
   btn.addEventListener('click', async () => {
     if (!confirm('Remove this task from your portfolio?')) return;
-    const res = await fetch(`${clientApiUrl}/v1/worker/portfolio/${btn.dataset.id}`, {
+    const res = await fetch(`/api/worker/portfolio/${btn.dataset.id}`, {
       method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}` },
     });
     if (res.ok || res.status === 204) {
       toast('Removed from portfolio');

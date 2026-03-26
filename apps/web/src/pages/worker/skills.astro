@@ -398,9 +398,7 @@ const TASK_ICONS: Record<string, string> = {
 
 // ── Interest picker ──────────────────────────────────────────────────────────
   (function() {
-    var TOKEN = document.cookie.split(";").map(function(c) { return c.trim(); })
-      .find(function(c) { return c.startsWith("cs_token="); });
-    TOKEN = TOKEN ? TOKEN.split("=")[1] : null;
+    // /api/worker/interests proxy handles auth via httpOnly cookie — no token needed client-side
 
     // selected starts from SSR-rendered state
     var selected = new Set(currentInterests || []);

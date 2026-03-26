@@ -281,7 +281,7 @@ function tierColor(score: number) {
 </Layout>
 
 <script>
-const token = document.cookie.split(";").map(c => c.trim()).find(c => c.startsWith("token="))?.split("=")[1] ?? "";
+// Proxy routes handle auth via httpOnly cookie — no client-side token needed
 
 // Strike modal
 const strikeModal = document.getElementById("strikeModal")!;
@@ -306,7 +306,7 @@ strikeForm.addEventListener("submit", async (e) => {
   try {
     const res = await fetch(`/api/admin/reputation/workers/${workerId}/strikes`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ severity, reason }),
     });
     const data = await res.json();
@@ -345,7 +345,7 @@ banForm.addEventListener("submit", async (e) => {
   try {
     const res = await fetch(`/api/admin/reputation/workers/${workerId}/ban`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ reason }),
     });
     const data = await res.json();
@@ -369,7 +369,6 @@ document.querySelectorAll(".unban-btn").forEach(btn => {
     const workerId = btn.getAttribute("data-worker-id")!;
     await fetch(`/api/admin/reputation/workers/${workerId}/unban`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
     });
     location.reload();
   });
@@ -380,7 +379,6 @@ document.getElementById("recalcBtn")!.addEventListener("click", async () => {
   if (!confirm("Recalculate ALL worker reputation scores? This may take a moment.")) return;
   const res = await fetch("/api/admin/reputation/recalculate", {
     method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
   });
   const data = await res.json();
   alert(data.message || "Done");
