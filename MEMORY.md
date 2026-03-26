@@ -89,13 +89,32 @@ Auto-updated by autonomous sessions. Tracks what was done and what's next.
 - worker.py marketplace feed: no N+1s
 - Double-charging in _run_task: credits charged once at task creation, refunds on cache hit are correct
 
+## Session 2026-03-26 (continued) — N+1 sweep across all routers (commits 460a9ce–40e232f)
+
+**All N+1 and unbounded fetch issues now resolved across the entire API codebase.**
+
+Fixed this round:
+- **sla.py list_sla_breaches**: Per-breach task title lookups → bulk IN load
+- **quality.py** (4 fixes): `_update_accuracy` loaded all rows to count, now uses COUNT/SUM aggregate; `evaluate_submissions` per-worker load → bulk IN; `get_quality_report` broken `func.cast()` aggregate + per-worker follow-up queries → single correct GROUP BY + bulk worker IN; unbounded gold tasks query → `.limit(500)`
+- **analytics.py org_analytics**: 2N per-member queries → 2 bulk GROUP BY queries
+- **analytics.py completion_times**: Unbounded task fetch → `.limit(10_000)` safety cap
+- **reputation.py recalculate_all**: 2N cert+strike queries → 2 bulk GROUP BY pre-loads; `compute_reputation()` now accepts optional pre-loaded data via `_cert_count`/`_strike_severities` kwargs
+- **experiments.py list_experiments**: Per-experiment variant load → single bulk IN + dict; added `.limit(200)`
+- **certifications.py list_certifications**: Per-cert question count → single GROUP BY
+- **orgs.py list_my_orgs**: Per-org member count via `_org_to_out()` → bulk GROUP BY pre-load; `_org_to_out` accepts optional `member_count` kwarg
+- **webhooks.py list_endpoints**: Added `.limit(100)`
+- **admin.py update_user**: `body: dict` → typed `AdminUpdateUserRequest` with Pydantic bounds on credits
+- **DB indexes migration 0046**: 8 new indexes on task_assignments (status, timeout_at, submitted_at, composite), tasks (execution_mode, type, pending+scheduled composite), credit_transactions (created_at)
+
+**Zero remaining `except Exception: pass` silent swallows in codebase.**
+
 ## Priorities for Next Session 🔜
 
 PHASE: Pre-alpha development. Focus on quality/depth. NOT in scope: launch tasks, marketing, directory listings.
 
-1. **Quality audit of admin.py continued**: `update_user` endpoint accepts raw dict with no schema validation — admin can set credits to arbitrary values. Add a proper Pydantic model with bounds.
-2. **Look for more unbounded fetches**: Check analytics endpoints, reports, exports for missing LIMIT clauses or other N+1 patterns.
-3. **Database index audit**: Review which columns are being filtered/sorted on frequently (user_id, status, created_at, scheduled_at) and confirm they have indexes in migrations. Missing indexes = slow queries at scale.
+1. **Feature work**: Core quality/depth pass is now comprehensive. Consider: task retry/requeue UX, worker earnings history pagination, requester task export improvements, or webhook delivery retry logic.
+2. **Test coverage gap**: quality.py, analytics.py, reputation.py have no dedicated tests. The bulk-load optimizations above have no test coverage — add tests for the most critical paths.
+3. **Remaining index gap**: `sla_breaches.task_id` is queried with `.where(task_id == ...)` but may lack an index. Check migration history.
 
 ## Known Warnings (non-blocking)
 
