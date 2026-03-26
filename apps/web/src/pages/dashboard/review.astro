@@ -43,16 +43,17 @@ try {
   error = "Failed to load review queue";
 }
 
-// Fetch submissions for each task
-const tasksWithSubs: Array<{ task: any; submissions: any[] }> = [];
-for (const task of tasksData.items) {
-  try {
-    const subs = await apiFetch<any[]>(`/v1/tasks/${task.id}/submissions`, { token });
-    tasksWithSubs.push({ task, submissions: subs });
-  } catch (_) {
-    tasksWithSubs.push({ task, submissions: [] });
-  }
-}
+// Fetch submissions for all tasks concurrently (avoids sequential N+1 latency)
+const tasksWithSubs: Array<{ task: any; submissions: any[] }> = await Promise.all(
+  tasksData.items.map(async (task: any) => {
+    try {
+      const subs = await apiFetch<any[]>(`/v1/tasks/${task.id}/submissions`, { token });
+      return { task, submissions: subs ?? [] };
+    } catch (_) {
+      return { task, submissions: [] };
+    }
+  })
+);
 
 // Summary counts
 const totalPending = tasksWithSubs.reduce(

@@ -1,0 +1,234 @@
+---
+/**
+ * Worker activity heatmap — GitHub-style contribution calendar.
+ *
+ * Shows a day-by-day grid coloured by whether the worker completed tasks
+ * that day.  Supports 14 / 30 / 60 day views and shows streak stats.
+ */
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Astro.cookies);
+if (!token) return Astro.redirect("/login?next=/worker/activity");
+
+const url = new URL(Astro.request.url);
+const rawDays = parseInt(url.searchParams.get("days") ?? "30");
+const days = [14, 30, 60].includes(rawDays) ? rawDays : 30;
+
+let activeDates: string[] = [];
+let error: string | null = null;
+
+try {
+  const data = await apiFetch<{ active_dates: string[] }>(
+    `/v1/worker/activity/calendar?days=${days}`,
+    { token }
+  );
+  activeDates = data?.active_dates ?? [];
+} catch (e: any) {
+  error = e.message ?? "Failed to load activity data";
+}
+
+// ── Build calendar grid ────────────────────────────────────────────────────
+const activeSet = new Set(activeDates);
+const today = new Date();
+today.setHours(0, 0, 0, 0);
+
+// Generate all dates in the range (oldest → newest)
+type DayCell = { iso: string; active: boolean; dayOfWeek: number; isToday: boolean };
+const allDays: DayCell[] = [];
+for (let i = days - 1; i >= 0; i--) {
+  const d = new Date(today);
+  d.setDate(today.getDate() - i);
+  const iso = d.toISOString().split("T")[0];
+  allDays.push({
+    iso,
+    active: activeSet.has(iso),
+    dayOfWeek: d.getDay(), // 0=Sun … 6=Sat
+    isToday: i === 0,
+  });
+}
+
+// Pad the beginning so the first column aligns to Sunday
+const padBefore = allDays[0]?.dayOfWeek ?? 0;
+const paddedCells: Array<DayCell | null> = [
+  ...Array.from({ length: padBefore }, () => null),
+  ...allDays,
+];
+// Pad the end to complete the last week row
+const padAfter = (7 - (paddedCells.length % 7)) % 7;
+const cells: Array<DayCell | null> = [
+  ...paddedCells,
+  ...Array.from({ length: padAfter }, () => null),
+];
+
+// ── Stats ──────────────────────────────────────────────────────────────────
+const totalActive = activeDates.length;
+
+// Compute current streak (counting backwards from today)
+let currentStreak = 0;
+{
+  let d = new Date(today);
+  while (true) {
+    const iso = d.toISOString().split("T")[0];
+    if (!activeSet.has(iso)) break;
+    currentStreak++;
+    d.setDate(d.getDate() - 1);
+  }
+}
+
+// Compute longest streak in the range
+let longestStreak = 0;
+{
+  let run = 0;
+  for (const cell of allDays) {
+    if (cell.active) {
+      run++;
+      longestStreak = Math.max(longestStreak, run);
+    } else {
+      run = 0;
+    }
+  }
+}
+
+// ── Week labels (every 7 cells = 1 column) ────────────────────────────────
+// Collect the Monday of each week-column for labels
+const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+---
+
+<Layout title="Activity — CrowdSorcerer">
+  <div class="max-w-3xl mx-auto px-6 py-10">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-8">
+      <div>
+        <h1 class="text-2xl font-bold">📅 Activity Calendar</h1>
+        <p class="text-gray-400 text-sm mt-0.5">Days you completed tasks in the last {days} days</p>
+      </div>
+      <a href="/worker" class="text-sm text-gray-400 hover:text-white transition-colors">
+        ← Dashboard
+      </a>
+    </div>
+
+    {error ? (
+      <div class="bg-red-900/20 border border-red-800/40 rounded-xl p-5 text-red-400 mb-8">
+        {error === "Not enrolled as a worker." ? (
+          <span>
+            You need to <a href="/worker" class="text-emerald-400 hover:text-emerald-300">enroll as a worker</a> to view activity.
+          </span>
+        ) : error}
+      </div>
+    ) : (
+      <>
+        <!-- Stats row -->
+        <div class="grid grid-cols-3 gap-4 mb-8">
+          <div class="bg-gray-900 border border-gray-800 rounded-2xl p-5 text-center">
+            <div class="text-3xl font-bold text-white">{totalActive}</div>
+            <div class="text-xs text-gray-400 mt-1">Active days</div>
+          </div>
+          <div class="bg-gray-900 border border-gray-800 rounded-2xl p-5 text-center">
+            <div class="text-3xl font-bold text-emerald-400">{currentStreak}</div>
+            <div class="text-xs text-gray-400 mt-1">Current streak 🔥</div>
+          </div>
+          <div class="bg-gray-900 border border-gray-800 rounded-2xl p-5 text-center">
+            <div class="text-3xl font-bold text-violet-400">{longestStreak}</div>
+            <div class="text-xs text-gray-400 mt-1">Longest streak</div>
+          </div>
+        </div>
+
+        <!-- Range picker -->
+        <div class="flex gap-2 mb-5">
+          {[14, 30, 60].map((n) => (
+            <a
+              href={`?days=${n}`}
+              class={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                n === days
+                  ? "bg-violet-700 text-white"
+                  : "bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-white"
+              }`}
+            >
+              {n} days
+            </a>
+          ))}
+        </div>
+
+        <!-- Calendar grid -->
+        <div class="bg-gray-900 border border-gray-800 rounded-2xl p-6 mb-6">
+          <!-- Day-of-week headers -->
+          <div class="grid grid-cols-7 gap-1 mb-1">
+            {DAY_NAMES.map((d) => (
+              <div class="text-center text-xs text-gray-600 pb-1">{d}</div>
+            ))}
+          </div>
+
+          <!-- Cells: 7 columns, N/7 rows -->
+          <div class="grid grid-cols-7 gap-1">
+            {cells.map((cell) =>
+              cell === null ? (
+                <div class="aspect-square rounded-sm bg-transparent" />
+              ) : cell.isToday ? (
+                <div
+                  class={`aspect-square rounded-sm ring-1 ring-violet-400 ${
+                    cell.active ? "bg-emerald-600" : "bg-gray-800"
+                  }`}
+                  title={`${cell.iso} (today)`}
+                />
+              ) : cell.active ? (
+                <div
+                  class="aspect-square rounded-sm bg-emerald-700 hover:bg-emerald-500 transition-colors cursor-default"
+                  title={cell.iso}
+                />
+              ) : (
+                <div
+                  class="aspect-square rounded-sm bg-gray-800 hover:bg-gray-700 transition-colors cursor-default"
+                  title={cell.iso}
+                />
+              )
+            )}
+          </div>
+
+          <!-- Legend -->
+          <div class="flex items-center justify-end gap-2 mt-4 text-xs text-gray-500">
+            <span>Less</span>
+            <div class="w-3.5 h-3.5 rounded-sm bg-gray-800"></div>
+            <div class="w-3.5 h-3.5 rounded-sm bg-emerald-900/60"></div>
+            <div class="w-3.5 h-3.5 rounded-sm bg-emerald-700"></div>
+            <div class="w-3.5 h-3.5 rounded-sm bg-emerald-500"></div>
+            <span>More</span>
+          </div>
+        </div>
+
+        <!-- Empty state hint -->
+        {totalActive === 0 && (
+          <div class="text-center py-4 text-gray-500 text-sm">
+            No tasks completed in this period.{" "}
+            <a href="/worker/marketplace" class="text-violet-400 hover:text-violet-300 transition-colors">
+              Browse available tasks →
+            </a>
+          </div>
+        )}
+
+        <!-- Streak encouragement -->
+        {currentStreak >= 3 && (
+          <div class="bg-emerald-900/20 border border-emerald-800/40 rounded-xl p-4 text-sm text-emerald-300">
+            🔥 <strong>{currentStreak}-day streak!</strong>{" "}
+            {currentStreak >= 7
+              ? "Incredible consistency — keep it up for the 2× XP multiplier!"
+              : currentStreak >= 3
+              ? "You're on a roll. Maintain it to earn the 1.25× XP streak bonus!"
+              : ""}
+          </div>
+        )}
+
+        <!-- Link to challenges -->
+        <div class="mt-6 text-center">
+          <a
+            href="/worker/challenges"
+            class="text-sm text-gray-400 hover:text-white transition-colors"
+          >
+            🎯 View daily challenges to keep your streak going →
+          </a>
+        </div>
+      </>
+    )}
+  </div>
+</Layout>
