@@ -852,11 +852,17 @@ async def bulk_task_action(
     succeeded: list[str] = []
     failed: list[dict] = []
 
-    for task_id in req.task_ids:
-        result = await db.execute(
-            select(TaskDB).where(TaskDB.id == task_id, TaskDB.user_id == user_id)
+    # Bulk-load all requested tasks in one query
+    tasks_result = await db.execute(
+        select(TaskDB).where(
+            TaskDB.id.in_(req.task_ids),
+            TaskDB.user_id == user_id,
         )
-        task = result.scalar_one_or_none()
+    )
+    tasks_by_id: dict = {str(t.id): t for t in tasks_result.scalars()}
+
+    for task_id in req.task_ids:
+        task = tasks_by_id.get(str(task_id))
         if not task:
             failed.append({"task_id": str(task_id), "reason": "not found or not owned"})
             continue
@@ -910,11 +916,17 @@ async def bulk_cancel_tasks(
     cancelled_ids: list[str] = []
     skipped = 0
 
-    for task_id in req.task_ids:
-        result = await db.execute(
-            select(TaskDB).where(TaskDB.id == task_id, TaskDB.user_id == user_id)
+    # Bulk-load all requested tasks in one query
+    tasks_result = await db.execute(
+        select(TaskDB).where(
+            TaskDB.id.in_(req.task_ids),
+            TaskDB.user_id == user_id,
         )
-        task = result.scalar_one_or_none()
+    )
+    tasks_by_id: dict = {str(t.id): t for t in tasks_result.scalars()}
+
+    for task_id in req.task_ids:
+        task = tasks_by_id.get(str(task_id))
         if not task or task.status not in CANCELLABLE:
             skipped += 1
             continue
@@ -950,11 +962,17 @@ async def bulk_archive_tasks(
     archived_ids: list[str] = []
     skipped = 0
 
-    for task_id in req.task_ids:
-        result = await db.execute(
-            select(TaskDB).where(TaskDB.id == task_id, TaskDB.user_id == user_id)
+    # Bulk-load all requested tasks in one query
+    tasks_result = await db.execute(
+        select(TaskDB).where(
+            TaskDB.id.in_(req.task_ids),
+            TaskDB.user_id == user_id,
         )
-        task = result.scalar_one_or_none()
+    )
+    tasks_by_id: dict = {str(t.id): t for t in tasks_result.scalars()}
+
+    for task_id in req.task_ids:
+        task = tasks_by_id.get(str(task_id))
         if not task or task.status not in ARCHIVABLE:
             skipped += 1
             continue
@@ -1102,10 +1120,16 @@ async def list_submissions(
     )
     assignments = result.scalars().all()
 
+    # Bulk-load all workers in a single query instead of N per-assignment queries
+    worker_ids = [a.worker_id for a in assignments]
+    workers_by_id: dict = {}
+    if worker_ids:
+        w_result = await db.execute(select(UserDB).where(UserDB.id.in_(worker_ids)))
+        workers_by_id = {str(w.id): w for w in w_result.scalars()}
+
     out: list[SubmissionOut] = []
     for a in assignments:
-        worker_result = await db.execute(select(UserDB).where(UserDB.id == a.worker_id))
-        worker = worker_result.scalar_one_or_none()
+        worker = workers_by_id.get(str(a.worker_id))
         if not worker:
             continue
         out.append(SubmissionOut(
