@@ -1,7 +1,8 @@
 ---
 // Full-page API reference using Scalar — no Layout wrapper needed (scalar handles its own UI)
-const apiUrl = import.meta.env.PUBLIC_API_URL || "https://crowdsourcerer.rebaselabs.online";
-const specUrl = `${apiUrl}/openapi.json`;
+// Always use the public-facing URL so Scalar can fetch the spec from the browser.
+// /v1/openapi.json is handled by the Astro middleware which proxies to http://api:8100/openapi.json.
+const specUrl = "/v1/openapi.json";
 ---
 <!DOCTYPE html>
 <html lang="en">
