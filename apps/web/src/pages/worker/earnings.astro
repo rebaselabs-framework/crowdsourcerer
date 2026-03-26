@@ -63,7 +63,6 @@ const fmt = (d:string) => new Date(d).toLocaleDateString("en-US",{month:"short",
 const totalCredits = user?.credits ?? 0;
 const canPayout = totalCredits >= MIN_PAYOUT;
 const analyticsJson = JSON.stringify(analytics);
-const clientApiUrl = import.meta.env.PUBLIC_API_URL ?? "";
 ---
 <Layout title="Earnings & Payouts — CrowdSorcerer">
 <div class="max-w-5xl mx-auto px-6 py-10">
@@ -569,9 +568,7 @@ const clientApiUrl = import.meta.env.PUBLIC_API_URL ?? "";
 </div>
 </Layout>
 
-<script is:inline define:vars={{ analyticsJson, clientApiUrl }}>
-const TOKEN = document.cookie.split(";").find(c=>c.trim().startsWith("cs_token="))?.split("=")[1];
-const API = clientApiUrl;
+<script is:inline define:vars={{ analyticsJson }}>
 const analytics = JSON.parse(analyticsJson);
 
 // Charts
