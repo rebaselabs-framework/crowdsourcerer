@@ -242,7 +242,7 @@ async def fire_persistent_endpoints(
             select(WebhookEndpointDB).where(
                 WebhookEndpointDB.user_id == user_id,
                 WebhookEndpointDB.is_active.is_(True),
-            )
+            ).limit(100)
         )
         endpoints: list[WebhookEndpointDB] = result.scalars().all()
 
@@ -641,12 +641,12 @@ async def replay_webhook_log(*, log_id: str, user_id: str) -> dict:
         if original is None:
             raise ValueError("Webhook log not found or access denied")
 
-        # Fetch all active endpoints for this user
+        # Fetch all active endpoints for this user (cap at 100)
         ep_result = await db.execute(
             sa_select(WebhookEndpointDB).where(
                 WebhookEndpointDB.user_id == user_id,
                 WebhookEndpointDB.is_active.is_(True),
-            )
+            ).limit(100)
         )
         endpoints: list[WebhookEndpointDB] = ep_result.scalars().all()
 

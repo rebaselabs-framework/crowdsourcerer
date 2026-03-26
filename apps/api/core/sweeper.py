@@ -348,9 +348,9 @@ async def send_weekly_digests(session_factory) -> int:
                 for r in top_workers_res
             ]
 
-            # Get all active users
+            # Get all active users (safety cap — batching for very large deployments is future work)
             users_res = await db.execute(
-                select(UserDB).where(UserDB.is_active == True, UserDB.is_banned == False)
+                select(UserDB).where(UserDB.is_active == True, UserDB.is_banned == False).limit(10_000)
             )
             users = users_res.scalars().all()
 
@@ -474,11 +474,11 @@ async def send_daily_digests(session_factory) -> int:
         try:
             from sqlalchemy import func as sqlfunc
 
-            # Get users with digest_frequency='daily' who have unread notifs
+            # Get users with digest_frequency='daily' who have unread notifs (safety cap)
             prefs_res = await db.execute(
                 select(NotificationPreferencesDB).where(
                     NotificationPreferencesDB.digest_frequency == "daily"
-                )
+                ).limit(10_000)
             )
             all_daily_prefs = prefs_res.scalars().all()
 
@@ -811,7 +811,7 @@ async def _sweep_priority_escalation(session_factory: async_sessionmaker) -> int
                 select(TaskDB).where(
                     TaskDB.status.in_(["open", "pending"]),
                     TaskDB.priority_escalated_at.is_(None),  # only escalate once
-                )
+                ).limit(1_000)
             )
             tasks = result.scalars().all()
 

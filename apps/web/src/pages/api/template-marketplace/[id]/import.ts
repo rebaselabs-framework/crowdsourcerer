@@ -1,6 +1,7 @@
 /**
  * POST /api/template-marketplace/[id]/import
- * Imports a public marketplace template into the current user's personal library.
+ * Marks a public marketplace template as used and returns its config for pre-filling.
+ * Proxies to POST /v1/marketplace/templates/{id}/use (increments use_count).
  */
 import type { APIRoute } from "astro";
 
@@ -18,7 +19,7 @@ export const POST: APIRoute = async ({ cookies, params }) => {
   const { id } = params;
 
   try {
-    const res = await fetch(`${API_URL}/v1/template-marketplace/${id}/import`, {
+    const res = await fetch(`${API_URL}/v1/marketplace/templates/${id}/use`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
