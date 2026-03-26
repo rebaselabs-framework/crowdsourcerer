@@ -625,7 +625,7 @@ async def get_task_queue(
     q = q.order_by(
         TaskDB.priority.desc(),   # urgent first (relies on enum sort or we sort in Python)
         TaskDB.created_at.asc(),  # FIFO within same priority
-    )
+    ).limit(500)  # Safety cap — admin queue view shows at most 500 tasks
 
     tasks_result = await db.execute(q)
     tasks = tasks_result.scalars().all()
@@ -764,44 +764,71 @@ async def trigger_weekly_digest(
     )
     users = users_res.scalars().all()
 
+    # ── Bulk stats: 5 aggregate queries instead of N*5 per-user queries ──────
+    # tasks created this week, grouped by requester
+    tc_res = await db.execute(
+        select(TaskDB.user_id, sqlfunc.count(TaskDB.id).label("cnt"))
+        .where(TaskDB.created_at >= week_start)
+        .group_by(TaskDB.user_id)
+    )
+    tasks_created_by_user = {str(r.user_id): r.cnt for r in tc_res}
+
+    # tasks completed this week, grouped by requester
+    tcomp_res = await db.execute(
+        select(TaskDB.user_id, sqlfunc.count(TaskDB.id).label("cnt"))
+        .where(TaskDB.status == "completed", TaskDB.updated_at >= week_start)
+        .group_by(TaskDB.user_id)
+    )
+    tasks_completed_by_user = {str(r.user_id): r.cnt for r in tcomp_res}
+
+    # credits spent this week, grouped by user
+    cspent_res = await db.execute(
+        select(
+            CreditTransactionDB.user_id,
+            sqlfunc.abs(sqlfunc.sum(CreditTransactionDB.amount)).label("total"),
+        )
+        .where(
+            CreditTransactionDB.amount < 0,
+            CreditTransactionDB.created_at >= week_start,
+        )
+        .group_by(CreditTransactionDB.user_id)
+    )
+    credits_spent_by_user = {str(r.user_id): int(r.total or 0) for r in cspent_res}
+
+    # worker tasks approved this week, grouped by worker
+    wt_res = await db.execute(
+        select(TaskAssignmentDB.worker_id, sqlfunc.count(TaskAssignmentDB.id).label("cnt"))
+        .where(
+            TaskAssignmentDB.status == "approved",
+            TaskAssignmentDB.submitted_at >= week_start,
+        )
+        .group_by(TaskAssignmentDB.worker_id)
+    )
+    worker_tasks_by_user = {str(r.worker_id): r.cnt for r in wt_res}
+
+    # worker earnings this week, grouped by worker
+    we_res = await db.execute(
+        select(
+            TaskAssignmentDB.worker_id,
+            sqlfunc.sum(TaskAssignmentDB.earnings_credits).label("total"),
+        )
+        .where(
+            TaskAssignmentDB.status == "approved",
+            TaskAssignmentDB.submitted_at >= week_start,
+        )
+        .group_by(TaskAssignmentDB.worker_id)
+    )
+    worker_earnings_by_user = {str(r.worker_id): int(r.total or 0) for r in we_res}
+
     for user in users:
-        tasks_created = await db.scalar(
-            select(sqlfunc.count(TaskDB.id)).where(
-                TaskDB.user_id == user.id, TaskDB.created_at >= week_start
-            )
-        ) or 0
-        tasks_completed = await db.scalar(
-            select(sqlfunc.count(TaskDB.id)).where(
-                TaskDB.user_id == user.id, TaskDB.status == "completed",
-                TaskDB.updated_at >= week_start
-            )
-        ) or 0
-        credits_spent = await db.scalar(
-            select(sqlfunc.abs(sqlfunc.sum(CreditTransactionDB.amount))).where(
-                CreditTransactionDB.user_id == user.id,
-                CreditTransactionDB.amount < 0,
-                CreditTransactionDB.created_at >= week_start,
-            )
-        ) or 0
+        uid = str(user.id)
+        tasks_created = tasks_created_by_user.get(uid, 0)
+        tasks_completed = tasks_completed_by_user.get(uid, 0)
+        credits_spent = credits_spent_by_user.get(uid, 0)
         is_worker = user.role in ("worker", "both")
-        worker_tasks = worker_earnings_val = worker_xp = 0
-        if is_worker:
-            worker_tasks = await db.scalar(
-                select(sqlfunc.count(TaskAssignmentDB.id)).where(
-                    TaskAssignmentDB.worker_id == user.id,
-                    TaskAssignmentDB.status == "approved",
-                    TaskAssignmentDB.submitted_at >= week_start,
-                )
-            ) or 0
-            we = await db.scalar(
-                select(sqlfunc.sum(TaskAssignmentDB.earnings_credits)).where(
-                    TaskAssignmentDB.worker_id == user.id,
-                    TaskAssignmentDB.status == "approved",
-                    TaskAssignmentDB.submitted_at >= week_start,
-                )
-            )
-            worker_earnings_val = int(we or 0)
-            worker_xp = worker_tasks * 10
+        worker_tasks = worker_tasks_by_user.get(uid, 0) if is_worker else 0
+        worker_earnings_val = worker_earnings_by_user.get(uid, 0) if is_worker else 0
+        worker_xp = worker_tasks * 10
 
         user_name = user.name or user.email.split("@")[0]
         await send_weekly_digest(
@@ -810,7 +837,7 @@ async def trigger_weekly_digest(
             week_label=week_label,
             tasks_created=tasks_created,
             tasks_completed=tasks_completed,
-            credits_spent=int(credits_spent),
+            credits_spent=credits_spent,
             credits_balance=user.credits,
             top_workers=top_workers,
             worker_tasks_done=worker_tasks,
