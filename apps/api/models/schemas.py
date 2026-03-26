@@ -1142,6 +1142,7 @@ class PublicProfileBadge(BaseModel):
     badge_slug: str
     badge_name: str
     badge_description: Optional[str]
+    badge_icon: Optional[str] = None  # emoji icon for the badge
     earned_at: datetime
 
     model_config = {"from_attributes": True}

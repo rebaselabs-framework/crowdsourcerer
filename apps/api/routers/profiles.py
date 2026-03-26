@@ -16,6 +16,7 @@ from models.schemas import (
     PublicWorkerProfileOut, PublicProfileSkill, PublicProfileBadge,
     ProfileUpdateRequest, UserOut,
 )
+from routers.badges import _BADGE_MAP  # badge metadata (name, description, icon) keyed by badge_id
 
 logger = structlog.get_logger()
 router = APIRouter(prefix="/v1", tags=["profiles"])
@@ -79,15 +80,16 @@ async def get_public_profile(
     )
     badge_rows = badges_result.scalars().all()
 
-    badges = [
-        PublicProfileBadge(
-            badge_slug=b.badge_slug,
-            badge_name=b.badge_name,
-            badge_description=b.badge_description,
+    badges = []
+    for b in badge_rows:
+        defn = _BADGE_MAP.get(b.badge_id)
+        badges.append(PublicProfileBadge(
+            badge_slug=b.badge_id,
+            badge_name=defn.name if defn else b.badge_id.replace("_", " ").title(),
+            badge_description=defn.description if defn else None,
+            badge_icon=defn.icon if defn else "🏆",
             earned_at=b.earned_at,
-        )
-        for b in badge_rows
-    ]
+        ))
 
     return PublicWorkerProfileOut(
         id=user.id,

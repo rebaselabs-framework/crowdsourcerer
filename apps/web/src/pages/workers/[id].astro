@@ -396,7 +396,7 @@ const title = profile ? `${profile.name ?? "Worker"} — CrowdSorcerer` : "Worke
                   class="group relative bg-gray-700/50 border border-gray-600 rounded-lg px-3 py-2 flex items-center gap-2 cursor-default"
                   title={badge.badge_description ?? badge.badge_name}
                 >
-                  <span class="text-lg">🏆</span>
+                  <span class="text-lg">{badge.badge_icon ?? "🏆"}</span>
                   <span class="text-sm font-medium text-gray-200">{badge.badge_name}</span>
                 </div>
               ))}
