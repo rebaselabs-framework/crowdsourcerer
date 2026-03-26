@@ -73,15 +73,29 @@ Auto-updated by autonomous sessions. Tracks what was done and what's next.
 - **Credit tests added** (5 new): `_calc_credits` unit tests, batch partial-refund logic, all-succeed, all-fail.
 - **Test count**: 124 → 129 passing.
 
+## Session 2026-03-26 (continued) — Deep quality audit round 2 (commits cfa57bd–0ad6370)
+
+**Bugs fixed this round:**
+- **_run_task double-invocation guard**: No status check before executing — if called twice, task ran twice. Added `if task.status != "queued": return` guard (cfa57bd).
+- **4 more N+1 queries in tasks.py**: list_submissions (N worker lookups), bulk_task_action, bulk_cancel_tasks, bulk_archive_tasks all had per-ID queries in loops. All replaced with `.in_()` bulk loads (c9cb063).
+- **Pipeline double-execution**: `_execute_pipeline_run` only checked for `cancelled`, not `completed`/`failed`. Re-runs after restart could double-execute completed pipelines (4c5d7a2).
+- **Sweeper scheduled tasks race**: `_sweep_scheduled_tasks` had no row locking — two concurrent sweeper processes could both activate the same scheduled task. Added `.with_for_update(skip_locked=True)` (4c5d7a2).
+- **Sweeper timeout race**: `sweep_once` had same issue with expired assignments. Added `.with_for_update(skip_locked=True)` (4c5d7a2).
+- **Weekly digest N+1 bomb**: 5 per-user DB queries × N users. Replaced with 5 bulk GROUP BY queries. Would have caused OOM/timeout at scale (0ad6370).
+- **Admin task queue unbounded**: No LIMIT on queue fetch. Added `.limit(500)` (0ad6370).
+
+**Confirmed clean (no issues):**
+- GET /v1/tasks list endpoint: clean, 2 queries total
+- worker.py marketplace feed: no N+1s
+- Double-charging in _run_task: credits charged once at task creation, refunds on cache hit are correct
+
 ## Priorities for Next Session 🔜
 
 PHASE: Pre-alpha development. Focus on quality/depth. NOT in scope: launch tasks, marketing, directory listings.
 
-1. **Deeper quality audit of tasks.py**: The `_run_task()` function (2000+ lines) runs AI tasks. Investigate error paths:
-   - Does it properly release credits if the AI call errors mid-execution vs at start?
-   - Are there any double-charge scenarios if `_run_task` is invoked twice for the same task?
-2. **Check for N+1 queries in other hot paths**: `routers/tasks.py` GET list endpoint, `routers/worker.py` feed endpoint.
-3. **Review `asyncio.create_task()` usage**: These fire-and-forget tasks have no error handling at the call site. If the event loop closes before they complete (e.g., during shutdown), they vanish silently. Low priority but worth noting.
+1. **Quality audit of admin.py continued**: `update_user` endpoint accepts raw dict with no schema validation — admin can set credits to arbitrary values. Add a proper Pydantic model with bounds.
+2. **Look for more unbounded fetches**: Check analytics endpoints, reports, exports for missing LIMIT clauses or other N+1 patterns.
+3. **Database index audit**: Review which columns are being filtered/sorted on frequently (user_id, status, created_at, scheduled_at) and confirm they have indexes in migrations. Missing indexes = slow queries at scale.
 
 ## Known Warnings (non-blocking)
 
