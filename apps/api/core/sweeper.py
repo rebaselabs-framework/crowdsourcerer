@@ -52,6 +52,9 @@ async def sweep_once(session_factory: async_sessionmaker) -> dict:
     async with session_factory() as db:
         try:
             # ── Find expired active assignments ──────────────────────────
+            # skip_locked=True prevents two concurrent sweeper instances from
+            # both picking up the same expired assignment and firing duplicate
+            # timeout notifications / double-reopening tasks.
             result = await db.execute(
                 select(TaskAssignmentDB).where(
                     and_(
@@ -59,7 +62,7 @@ async def sweep_once(session_factory: async_sessionmaker) -> dict:
                         TaskAssignmentDB.timeout_at != None,  # noqa: E711
                         TaskAssignmentDB.timeout_at <= now,
                     )
-                )
+                ).with_for_update(skip_locked=True)
             )
             expired = list(result.scalars().all())
             if not expired:
@@ -567,12 +570,15 @@ async def _sweep_scheduled_tasks(session_factory: async_sessionmaker) -> int:
 
     async with session_factory() as db:
         try:
+            # skip_locked=True: if two sweeper processes run concurrently, each
+            # will only process rows the other hasn't locked yet, preventing
+            # double-activation of the same scheduled task.
             result = await db.execute(
                 select(TaskDB).where(
                     TaskDB.status == "pending",
                     TaskDB.scheduled_at.isnot(None),
                     TaskDB.scheduled_at <= now,
-                )
+                ).with_for_update(skip_locked=True)
             )
             tasks = result.scalars().all()
 

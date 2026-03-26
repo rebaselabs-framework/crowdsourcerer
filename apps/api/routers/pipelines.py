@@ -658,7 +658,10 @@ async def _execute_pipeline_run(
         try:
             run_result = await db.execute(select(TaskPipelineRunDB).where(TaskPipelineRunDB.id == run_id))
             run = run_result.scalar_one_or_none()
-            if not run or run.status == "cancelled":
+            # Guard: skip if run doesn't exist, was cancelled, or already reached a
+            # terminal state (prevents double-execution on concurrent invocations or
+            # after a restart picks up a run that already completed).
+            if not run or run.status in ("cancelled", "completed", "failed"):
                 return
 
             # Load steps ordered
