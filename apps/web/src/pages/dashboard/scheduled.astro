@@ -148,7 +148,7 @@ const sortedDates = Object.keys(groups).sort((a, b) =>
   </div>
 </Layout>
 
-<script is:inline define:vars={{ apiBase: import.meta.env.PUBLIC_API_URL ?? "" }}>
+<script is:inline>
   // Cancel button handler
   document.querySelectorAll(".cancel-btn").forEach(btn => {
     btn.addEventListener("click", async () => {
