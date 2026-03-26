@@ -122,13 +122,24 @@ Fixed this round:
 
 **Test count**: 129 → 178 (49 new tests this session).
 
+## Session 2026-03-26 (continued) — Tests, UX improvements, marketplace sort (commits 34e9b8f–e631720)
+
+**Tests added (60 new, 178 → 238 total):**
+- **test_analytics.py** (33 tests): `_percentile()` edge cases/interpolation, completion bucketing, `_fmt_dt`, all 5 analytics endpoint auth guards, export format structure
+- **test_workers.py** (12 new tests): `compute_level()` thresholds (L1–L20), max level cap, xp_to_next never negative, LEVEL_NAMES table coverage, TASK_XP_BASE coverage
+- **test_disputes.py** (15 tests): `_response_key()` canonical JSON, `check_and_apply_consensus()` for all 4 strategies — any_first no-op, requester_review flags, majority_vote 2/3 win + tie + exact-half, unanimous all-agree + dissenter
+
+**UX improvements:**
+- **Worker assignment countdown**: Replaced static "Expires at HH:MM" with live `MM:SS remaining` countdown. Turns red < 5 min. On expiry: disables submit button + shows prominent red banner with re-claim link. Prevents confusing 410 errors.
+- **Marketplace sort/filter**: Added `sort_by` API param (reward_desc, newest, default=priority+age). Exposed min_reward filter + sort dropdown in browse UI. Fixed pagination bug — "Next/Prev" was losing `mode=browse` param so clicking Next in browse mode silently switched to feed mode.
+
 ## Priorities for Next Session 🔜
 
 PHASE: Pre-alpha development. Focus on quality/depth. NOT in scope: launch tasks, marketing, directory listings.
 
-1. **Feature depth**: The quality/correctness audit is now comprehensive across the entire API codebase. Look for UX gaps: task retry/requeue for failed AI tasks, better error messages when worker submits to expired assignment, worker earnings breakdown by task type.
-2. **Analytics tests**: analytics.py has no tests. The completion_times percentile logic and org_analytics endpoints have no coverage.
-3. **Worker search/filter improvements**: The marketplace currently has basic filters. Workers matching multiple skill types can't easily see their best-fit tasks ranked by reward or SLA urgency.
+1. **Deeper E2E coverage**: The core happy paths are tested but dispute resolution (requester picks winner), rerun task flow, and bulk operations (cancel/archive multiple tasks) lack integration tests.
+2. **Worker profile completeness**: Workers with incomplete profiles (no skills, no availability) still get shown in the marketplace but won't get matched tasks. Consider a "complete your profile" prompt on the task completion page or dashboard.
+3. **Streak bonus implementation**: The submitted page says "complete a task every day for bonus multipliers" but `compute_xp_for_task` doesn't apply streak multipliers. The streak data exists (worker_streak_days) but isn't used in XP calculation.
 
 ## Known Warnings (non-blocking)
 
