@@ -373,7 +373,11 @@ async def recalculate_all_reputations(
     workers = result.scalars().all()
     updated = 0
     for w in workers:
-        await refresh_worker_reputation(w.id, db)
+        # Call compute_reputation directly on the already-fetched object rather
+        # than refresh_worker_reputation(w.id, db) which re-fetches the user row
+        # (a redundant N queries when we already have the full object).
+        score = await compute_reputation(w, db)
+        w.reputation_score = score
         updated += 1
     await db.commit()
     return {"message": f"Recalculated {updated} worker reputations"}
