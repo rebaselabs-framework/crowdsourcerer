@@ -108,13 +108,27 @@ Fixed this round:
 
 **Zero remaining `except Exception: pass` silent swallows in codebase.**
 
+## Session 2026-03-26 (continued) — Credits hardening, webhook fixes, more N+1 (commits 40e232f–faffd4d)
+
+Fixed this round:
+- **certifications/orgs/webhooks N+1**: certifications question count loop → GROUP BY; orgs member count loop → GROUP BY via optional kwarg on `_org_to_out`; webhook list endpoint got `.limit(100)`
+- **experiments N+1**: list_experiments variant loop → bulk IN load; added `.limit(200)`
+- **reputation recalculate 2N queries → 3 queries**: `compute_reputation()` gets optional `_cert_count`/`_strike_severities` kwargs; `recalculate_all_reputations` pre-loads with GROUP BY
+- **sla_breaches indexes** (migration 0047): breach_at, resolved_at, plan, priority — all unindexed columns used in admin queries
+- **missing FK indexes** (migration 0048): credit_transactions.user_id, worker_strikes.is_active, worker_certifications.passed
+- **49 new unit tests**: test_reputation.py (17 tests — tier thresholds, strike penalties, compute_reputation formula via pre-loaded kwargs) + test_quality.py (32 tests — all 7 _compare_answers task-type branches)
+- **Webhook template fix**: `{{nested.key}}` dot-notation now works via key.split('.') traversal; bad JSON after template rendering now logs warning; added `webhook_id` UUID to all payloads for idempotency/tracing
+- **Credits.py hardening**: Added structlog logging throughout (was completely unlogged); safe `int()` parsing of Stripe metadata credits (was a crash-on-bad-input); `AnyHttpUrl` validation on checkout success_url/cancel_url; logs for signature failures, duplicate events, missing users
+
+**Test count**: 129 → 178 (49 new tests this session).
+
 ## Priorities for Next Session 🔜
 
 PHASE: Pre-alpha development. Focus on quality/depth. NOT in scope: launch tasks, marketing, directory listings.
 
-1. **Feature work**: Core quality/depth pass is now comprehensive. Consider: task retry/requeue UX, worker earnings history pagination, requester task export improvements, or webhook delivery retry logic.
-2. **Test coverage gap**: quality.py, analytics.py, reputation.py have no dedicated tests. The bulk-load optimizations above have no test coverage — add tests for the most critical paths.
-3. **Remaining index gap**: `sla_breaches.task_id` is queried with `.where(task_id == ...)` but may lack an index. Check migration history.
+1. **Feature depth**: The quality/correctness audit is now comprehensive across the entire API codebase. Look for UX gaps: task retry/requeue for failed AI tasks, better error messages when worker submits to expired assignment, worker earnings breakdown by task type.
+2. **Analytics tests**: analytics.py has no tests. The completion_times percentile logic and org_analytics endpoints have no coverage.
+3. **Worker search/filter improvements**: The marketplace currently has basic filters. Workers matching multiple skill types can't easily see their best-fit tasks ranked by reward or SLA urgency.
 
 ## Known Warnings (non-blocking)
 
