@@ -214,11 +214,16 @@ async def list_sla_breaches(
     res = await db.execute(q)
     breaches = list(res.scalars().all())
 
-    # Enrich with task title
+    # Bulk-load all referenced tasks in one query to avoid N+1
+    task_ids = [b.task_id for b in breaches]
+    tasks_by_id: dict = {}
+    if task_ids:
+        t_res = await db.execute(select(TaskDB).where(TaskDB.id.in_(task_ids)))
+        tasks_by_id = {str(t.id): t for t in t_res.scalars()}
+
     out = []
     for b in breaches:
-        task_res = await db.execute(select(TaskDB).where(TaskDB.id == b.task_id))
-        task = task_res.scalar_one_or_none()
+        task = tasks_by_id.get(str(b.task_id))
         title = task.input.get("title") if task and isinstance(task.input, dict) else None
         out.append(SLABreachOut(
             id=b.id,

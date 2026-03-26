@@ -6,7 +6,7 @@ from uuid import UUID
 import structlog
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, case
 
 from core.auth import get_current_user_id
 from core.database import get_db
@@ -81,24 +81,25 @@ def _compare_answers(task_type: str, worker_response: Any, gold_answer: Any) -> 
 
 async def _update_accuracy(worker: UserDB, db: AsyncSession) -> None:
     """Recompute worker accuracy from all evaluated gold standard assignments."""
-    # Count approved/rejected assignments on gold standard tasks
+    # Use SQL aggregates instead of loading all rows into Python
     result = await db.execute(
-        select(TaskAssignmentDB, TaskDB)
+        select(
+            func.count().label("total"),
+            func.sum(case((TaskAssignmentDB.status == "approved", 1), else_=0)).label("approved"),
+        )
+        .select_from(TaskAssignmentDB)
         .join(TaskDB, TaskAssignmentDB.task_id == TaskDB.id)
         .where(
             TaskAssignmentDB.worker_id == worker.id,
             TaskAssignmentDB.status.in_(["approved", "rejected"]),
-            TaskDB.is_gold_standard == True,
+            TaskDB.is_gold_standard == True,  # noqa: E712
         )
     )
-    rows = result.all()
-
-    if not rows:
+    row = result.one()
+    total = row.total or 0
+    if total == 0:
         return
-
-    approved_count = sum(1 for a, _ in rows if a.status == "approved")
-    total_count = len(rows)
-    worker.worker_accuracy = approved_count / total_count
+    worker.worker_accuracy = (row.approved or 0) / total
 
 
 # ─── Routes ───────────────────────────────────────────────────────────────
@@ -178,13 +179,11 @@ async def evaluate_submissions(
         else:
             rejected_workers.append(str(assignment.worker_id))
 
-    # Update accuracy for all workers who were evaluated
-    all_worker_ids = {a.worker_id for a in assignments}
-    for wid in all_worker_ids:
-        w_result = await db.execute(select(UserDB).where(UserDB.id == wid))
-        worker = w_result.scalar_one_or_none()
-        if worker:
-            await _update_accuracy(worker, db)
+    # Bulk-load all affected workers in one query, then update accuracy
+    all_worker_ids = list({a.worker_id for a in assignments})
+    workers_result = await db.execute(select(UserDB).where(UserDB.id.in_(all_worker_ids)))
+    for worker in workers_result.scalars():
+        await _update_accuracy(worker, db)
 
     await db.commit()
 
@@ -210,28 +209,23 @@ async def get_quality_report(
     user_id: str = Depends(get_current_user_id),
 ):
     """Get quality report for all workers who completed your gold standard tasks."""
-    # Find all gold standard tasks owned by this requester
+    # Find gold standard tasks owned by this requester (cap at 500)
     result = await db.execute(
-        select(TaskDB).where(
+        select(TaskDB.id).where(
             TaskDB.user_id == user_id,
-            TaskDB.is_gold_standard == True,
-        )
+            TaskDB.is_gold_standard == True,  # noqa: E712
+        ).limit(500)
     )
-    gold_tasks = result.scalars().all()
-    if not gold_tasks:
+    gold_task_ids = list(result.scalars().all())
+    if not gold_task_ids:
         return []
 
-    gold_task_ids = [t.id for t in gold_tasks]
-
-    # Find all workers who completed these tasks
-    result = await db.execute(
+    # Single aggregate query: total and correct counts per worker
+    agg_result = await db.execute(
         select(
             TaskAssignmentDB.worker_id,
-            func.count().label("total"),
-            func.sum(
-                func.cast(TaskAssignmentDB.status == "approved", func.Integer())
-                if hasattr(func, "Integer") else 1
-            ).label("approved_count"),
+            func.count().label("total_count"),
+            func.sum(case((TaskAssignmentDB.status == "approved", 1), else_=0)).label("correct_count"),
         )
         .where(
             TaskAssignmentDB.task_id.in_(gold_task_ids),
@@ -239,39 +233,25 @@ async def get_quality_report(
         )
         .group_by(TaskAssignmentDB.worker_id)
     )
-    rows = result.all()
+    rows = agg_result.all()
+    if not rows:
+        return []
 
+    # Bulk-load all workers in one query
+    worker_ids = [row.worker_id for row in rows]
+    workers_result = await db.execute(select(UserDB).where(UserDB.id.in_(worker_ids)))
+    workers_by_id = {w.id: w for w in workers_result.scalars()}
+
+    from routers.worker import compute_level
     report: list[QualityReportOut] = []
     for row in rows:
-        w_result = await db.execute(select(UserDB).where(UserDB.id == row.worker_id))
-        worker = w_result.scalar_one_or_none()
+        worker = workers_by_id.get(row.worker_id)
         if not worker:
             continue
-
-        # Count correct (approved) assignments for this worker on these tasks
-        correct_result = await db.execute(
-            select(func.count()).where(
-                TaskAssignmentDB.worker_id == row.worker_id,
-                TaskAssignmentDB.task_id.in_(gold_task_ids),
-                TaskAssignmentDB.status == "approved",
-            )
-        )
-        correct_count = correct_result.scalar() or 0
-
-        total_result = await db.execute(
-            select(func.count()).where(
-                TaskAssignmentDB.worker_id == row.worker_id,
-                TaskAssignmentDB.task_id.in_(gold_task_ids),
-                TaskAssignmentDB.status.in_(["approved", "rejected"]),
-            )
-        )
-        total_count = total_result.scalar() or 0
-
+        total_count = row.total_count or 0
+        correct_count = row.correct_count or 0
         accuracy = correct_count / total_count if total_count > 0 else 0.0
-
-        from routers.worker import compute_level
         level, _ = compute_level(worker.worker_xp)
-
         report.append(QualityReportOut(
             worker_id=worker.id,
             name=worker.name,

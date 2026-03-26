@@ -228,29 +228,42 @@ async def org_analytics(
     )
     members = members_result.all()
 
-    member_activity = []
-    for mem, user in members:
-        member_tasks = (await db.execute(
-            select(func.count()).select_from(TaskDB)
-            .where(TaskDB.user_id == user.id, TaskDB.org_id == org_id)
-        )).scalar() or 0
+    # Bulk-aggregate task counts and credit spend per member — avoids 2N queries
+    member_user_ids = [user.id for _, user in members]
+    tasks_by_user: dict = {}
+    credits_by_user: dict = {}
+    if member_user_ids:
+        tc_res = await db.execute(
+            select(TaskDB.user_id, func.count().label("cnt"))
+            .where(TaskDB.user_id.in_(member_user_ids), TaskDB.org_id == org_id)
+            .group_by(TaskDB.user_id)
+        )
+        tasks_by_user = {str(r.user_id): r.cnt for r in tc_res}
 
-        member_credits = (await db.execute(
-            select(func.coalesce(func.sum(func.abs(CreditTransactionDB.amount)), 0))
+        cr_res = await db.execute(
+            select(
+                CreditTransactionDB.user_id,
+                func.coalesce(func.sum(func.abs(CreditTransactionDB.amount)), 0).label("total"),
+            )
             .where(
-                CreditTransactionDB.user_id == user.id,
+                CreditTransactionDB.user_id.in_(member_user_ids),
                 CreditTransactionDB.amount < 0,
                 CreditTransactionDB.type == "charge",
             )
-        )).scalar() or 0
+            .group_by(CreditTransactionDB.user_id)
+        )
+        credits_by_user = {str(r.user_id): r.total for r in cr_res}
 
+    member_activity = []
+    for mem, user in members:
+        uid = str(user.id)
         member_activity.append({
-            "user_id": str(user.id),
+            "user_id": uid,
             "name": user.name or user.email.split("@")[0],
             "email": user.email,
             "role": mem.role,
-            "tasks_created": member_tasks,
-            "credits_used": member_credits,
+            "tasks_created": tasks_by_user.get(uid, 0),
+            "credits_used": credits_by_user.get(uid, 0),
         })
 
     # Tasks by type
@@ -534,6 +547,7 @@ async def completion_times(
         select(TaskDB.type, TaskDB.created_at, TaskDB.completed_at)
         .where(*filters)
         .order_by(TaskDB.type)
+        .limit(10_000)  # percentile accuracy acceptable; protects memory at scale
     )
     rows = result.fetchall()
 
