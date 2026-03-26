@@ -1874,6 +1874,17 @@ async def _run_task(task_id: str, user_id: str):
             task = result.scalar_one_or_none()
             if not task:
                 return
+            # Guard against double-invocation: only execute if still queued.
+            # If the task was already picked up by another invocation (or is in
+            # any other state), silently skip — this prevents duplicate execution
+            # and double-processing of webhooks/notifications.
+            if task.status != "queued":
+                logger.warning(
+                    "task_run.skipped_non_queued",
+                    task_id=task_id,
+                    status=task.status,
+                )
+                return
 
             task.status = "running"
             task.started_at = datetime.now(timezone.utc)
