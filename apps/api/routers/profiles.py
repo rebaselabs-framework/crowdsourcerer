@@ -222,23 +222,38 @@ async def update_my_profile(
     await db.commit()
     await db.refresh(user)
 
-    # Auto-advance the requester onboarding "welcome" step.  The step's CTA
-    # directs users to this page — any saved profile update counts as done.
-    # Fires in the background so it never adds latency to the profile save.
-    safe_create_task(_advance_onboarding(user_id, "welcome"), name="onboarding.welcome")
+    # Auto-advance onboarding steps for both flows — any profile save counts.
+    # Both fire in the background so they add zero latency to the profile save.
+    #   • Requester onboarding: "welcome" step (CTA = /dashboard/profile)
+    #   • Worker   onboarding: "profile" step (CTA = /dashboard/profile)
+    safe_create_task(_advance_requester_onboarding(user_id), name="onboarding.welcome")
+    safe_create_task(_advance_worker_onboarding_profile(user_id), name="onboarding.profile")
 
     return user
 
 
-async def _advance_onboarding(user_id: str, step: str) -> None:
-    """Background helper: advance a requester onboarding step without blocking."""
+async def _advance_requester_onboarding(user_id: str) -> None:
+    """Background helper: advance requester onboarding 'welcome' step."""
     from core.database import AsyncSessionLocal
     from routers.requester_onboarding import complete_step_internal
     async with AsyncSessionLocal() as _db:
         try:
-            await complete_step_internal(user_id, step, _db)
+            await complete_step_internal(user_id, "welcome", _db)
         except Exception:
-            pass  # non-critical — onboarding step completion is best-effort
+            pass  # non-critical
+
+
+async def _advance_worker_onboarding_profile(user_id: str) -> None:
+    """Background helper: advance worker onboarding 'profile' step."""
+    import uuid as _uuid
+    from core.database import AsyncSessionLocal
+    from routers.onboarding import mark_onboarding_step
+    async with AsyncSessionLocal() as _db:
+        try:
+            await mark_onboarding_step(_uuid.UUID(user_id), "profile", _db)
+            await _db.commit()
+        except Exception:
+            pass  # non-critical
 
 
 @router.get("/users/me/profile-status", response_model=dict)
