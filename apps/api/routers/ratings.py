@@ -152,7 +152,7 @@ async def rate_task(
         await create_notification(
             db=db,
             user_id=worker_id,
-            notif_type=NotifType.SYSTEM,
+            type=NotifType.SYSTEM,
             title="New feedback rating",
             body=msg,
             link="/worker/ratings",

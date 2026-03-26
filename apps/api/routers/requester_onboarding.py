@@ -200,7 +200,7 @@ async def _set_step(
             await create_notification(
                 db=db,
                 user_id=user_id,
-                notif_type=NotifType.SYSTEM,
+                type=NotifType.SYSTEM,
                 title="Onboarding complete! 🎉",
                 body=(
                     f"You've completed all requester onboarding steps and earned "

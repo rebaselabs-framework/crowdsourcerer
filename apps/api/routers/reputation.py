@@ -248,7 +248,7 @@ async def issue_strike(
     await create_notification(
         db=db,
         user_id=worker_id,
-        notif_type=NotifType.TASK_FAILED,  # Closest available type
+        type=NotifType.TASK_FAILED,  # Closest available type
         title="⚠️ Moderation Strike Issued",
         body=f"You received a {body.severity} strike: {body.reason}",
         link="/worker/reputation",
@@ -313,7 +313,7 @@ async def ban_worker(
     await create_notification(
         db=db,
         user_id=worker_id,
-        notif_type=NotifType.TASK_FAILED,
+        type=NotifType.TASK_FAILED,
         title="🚫 Account Suspended",
         body=f"Your worker account has been suspended: {body.reason}",
     )
@@ -348,7 +348,7 @@ async def unban_worker(
     await create_notification(
         db=db,
         user_id=worker_id,
-        notif_type=NotifType.TASK_COMPLETED,
+        type=NotifType.TASK_COMPLETED,
         title="✅ Account Reinstated",
         body="Your worker account suspension has been lifted.",
         link="/worker/marketplace",

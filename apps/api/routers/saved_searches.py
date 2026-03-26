@@ -201,7 +201,7 @@ async def notify_matching_saved_searches(
         await create_notification(
             db=db,
             user_id=uid,
-            notif_type=NotifType.SYSTEM,
+            type=NotifType.SYSTEM,
             title="New task matches your alert",
             body=f'A new "{task_type}" task is available that matches your saved search "{search.name}".',
             link="/dashboard/marketplace",

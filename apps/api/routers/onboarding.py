@@ -117,7 +117,7 @@ async def complete_step(
             await create_notification(
                 db=db,
                 user_id=uid,
-                notif_type=NotifType.BADGE_EARNED,
+                type=NotifType.BADGE_EARNED,
                 title="🎉 Onboarding Complete!",
                 body=f"You earned +{COMPLETION_BONUS_CREDITS} bonus credits for finishing onboarding.",
                 link="/worker/onboarding",
