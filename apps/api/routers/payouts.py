@@ -253,8 +253,10 @@ async def admin_review_payout(
     if body.status not in allowed_transitions:
         raise HTTPException(400, f"status must be one of: {', '.join(allowed_transitions)}")
 
+    # Row-level lock — prevents two concurrent admin approvals from both processing
+    # the same payout (double-notification, double-refund on rejection)
     result = await db.execute(
-        select(PayoutRequestDB).where(PayoutRequestDB.id == payout_id)
+        select(PayoutRequestDB).where(PayoutRequestDB.id == payout_id).with_for_update()
     )
     payout = result.scalar_one_or_none()
     if not payout:
@@ -263,9 +265,11 @@ async def admin_review_payout(
     if payout.status == "paid":
         raise HTTPException(409, "Payout already marked as paid")
 
-    # If rejecting — refund the credits
+    # If rejecting — refund the credits (lock user row to prevent double-refund race)
     if body.status == "rejected" and payout.status in ("pending", "processing"):
-        user_res = await db.execute(select(UserDB).where(UserDB.id == payout.worker_id))
+        user_res = await db.execute(
+            select(UserDB).where(UserDB.id == payout.worker_id).with_for_update()
+        )
         user = user_res.scalar_one()
         user.credits += payout.credits_requested
         txn = CreditTransactionDB(

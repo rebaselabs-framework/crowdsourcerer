@@ -207,7 +207,13 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
             )
             return {"status": "ok"}
 
-        result = await db.execute(select(UserDB).where(UserDB.id == user_id))
+        # Lock the user row so two Stripe webhook deliveries for the same user
+        # cannot race on the credits balance (unique constraint on stripe_event_id
+        # will roll back the second transaction, but we want the credit update
+        # and the log INSERT to be properly serialised)
+        result = await db.execute(
+            select(UserDB).where(UserDB.id == user_id).with_for_update()
+        )
         user = result.scalar_one_or_none()
         if not user:
             logger.error("stripe_webhook.user_not_found", event_id=event_id, user_id=user_id)

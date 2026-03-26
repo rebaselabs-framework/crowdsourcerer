@@ -1193,12 +1193,13 @@ async def approve_submission(
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    # Load assignment
+    # Load assignment with row-level lock so concurrent approvals serialise here
+    # (second caller will re-read status="approved" after first commits and return early)
     a_result = await db.execute(
         select(TaskAssignmentDB).where(
             TaskAssignmentDB.id == assignment_id,
             TaskAssignmentDB.task_id == task_id,
-        )
+        ).with_for_update()
     )
     assignment = a_result.scalar_one_or_none()
     if not assignment:
