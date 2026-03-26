@@ -377,6 +377,12 @@ async def list_marketplace_tasks(
     type: Optional[str] = Query(None, description="Filter by task type"),
     priority: Optional[str] = Query(None),
     min_reward: Optional[int] = Query(None, ge=1),
+    sort_by: Optional[str] = Query(
+        None,
+        description="Sort order: 'reward_desc' (highest reward first), "
+                    "'newest' (recently posted first), "
+                    "or omit for default priority+age ordering",
+    ),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
@@ -421,7 +427,14 @@ async def list_marketplace_tasks(
 
     total = await db.scalar(select(func.count()).select_from(q.subquery())) or 0
 
-    q = q.order_by(TaskDB.priority.desc(), TaskDB.created_at.asc())
+    if sort_by == "reward_desc":
+        q = q.order_by(TaskDB.worker_reward_credits.desc().nullslast(), TaskDB.priority.desc(), TaskDB.created_at.asc())
+    elif sort_by == "newest":
+        q = q.order_by(TaskDB.created_at.desc())
+    else:
+        # Default: urgency (priority desc) then age (oldest open tasks first)
+        q = q.order_by(TaskDB.priority.desc(), TaskDB.created_at.asc())
+
     q = q.offset((page - 1) * page_size).limit(page_size)
     result = await db.execute(q)
     tasks = result.scalars().all()

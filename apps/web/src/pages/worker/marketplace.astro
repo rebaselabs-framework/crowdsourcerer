@@ -15,7 +15,9 @@ const url = new URL(Astro.request.url);
 const page = parseInt(url.searchParams.get("page") ?? "1");
 const filterType = url.searchParams.get("type") ?? "";
 const filterPriority = url.searchParams.get("priority") ?? "";
-// "feed" mode = skill-ranked; "browse" mode = chronological with filters
+const filterMinReward = url.searchParams.get("min_reward") ?? "";
+const filterSortBy = url.searchParams.get("sort_by") ?? "";
+// "feed" mode = skill-ranked; "browse" mode = filtered/sortable list
 const mode = url.searchParams.get("mode") ?? "feed";
 
 let user: any = null;
@@ -39,6 +41,8 @@ try {
       page_size: "20",
       ...(filterType ? { type: filterType } : {}),
       ...(filterPriority ? { priority: filterPriority } : {}),
+      ...(filterMinReward ? { min_reward: filterMinReward } : {}),
+      ...(filterSortBy ? { sort_by: filterSortBy } : {}),
     });
     tasks = await apiFetch(`/v1/worker/tasks?${params}`, { token });
   }
@@ -136,15 +140,34 @@ const HUMAN_TASK_TYPES = Object.keys(TASK_TYPE_META);
         <option value="low" selected={filterPriority === "low"}>⚪ Low</option>
       </select>
 
+      <input
+        type="number"
+        name="min_reward"
+        placeholder="Min credits"
+        min="1"
+        max="9999"
+        value={filterMinReward || undefined}
+        class="w-28 bg-gray-900 border border-gray-700 text-sm rounded-lg px-3 py-2 text-gray-200 placeholder-gray-600 focus:outline-none focus:border-violet-500"
+      />
+
+      <select
+        name="sort_by"
+        class="bg-gray-900 border border-gray-700 text-sm rounded-lg px-3 py-2 text-gray-200 focus:outline-none focus:border-violet-500"
+      >
+        <option value="" selected={!filterSortBy}>Sort: Priority</option>
+        <option value="reward_desc" selected={filterSortBy === "reward_desc"}>Sort: Highest reward</option>
+        <option value="newest" selected={filterSortBy === "newest"}>Sort: Newest first</option>
+      </select>
+
       <button
         type="submit"
         class="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-sm rounded-lg transition-colors"
       >
-        Filter
+        Apply
       </button>
-      {(filterType || filterPriority) && (
+      {(filterType || filterPriority || filterMinReward || filterSortBy) && (
         <a
-          href="/worker/marketplace"
+          href="/worker/marketplace?mode=browse"
           class="px-4 py-2 text-sm text-gray-400 hover:text-gray-200 transition-colors"
         >
           Clear
@@ -165,7 +188,7 @@ const HUMAN_TASK_TYPES = Object.keys(TASK_TYPE_META);
         <div class="text-center mb-10">
           <div class="text-5xl mb-4">🔮</div>
           <h3 class="text-xl font-semibold mb-2">No tasks right now</h3>
-          {(filterType || filterPriority) ? (
+          {(filterType || filterPriority || filterMinReward || filterSortBy) ? (
             <p class="text-gray-400 text-sm mb-4">No tasks match your current filters. Try clearing them or check back soon.</p>
           ) : mode === "feed" ? (
             <p class="text-gray-400 text-sm mb-4">Your personalised feed is empty. Add skills to your profile to get matched with tasks — or browse all tasks.</p>
@@ -290,29 +313,38 @@ const HUMAN_TASK_TYPES = Object.keys(TASK_TYPE_META);
     )}
 
     <!-- Pagination -->
-    {tasks && tasks.total > 20 && (
-      <div class="flex justify-center gap-3 mt-10">
-        {page > 1 && (
-          <a
-            href={`?page=${page - 1}${filterType ? `&type=${filterType}` : ""}${filterPriority ? `&priority=${filterPriority}` : ""}`}
-            class="px-4 py-2 bg-gray-900 border border-gray-700 hover:border-gray-500 rounded-lg text-sm transition-colors"
-          >
-            ← Prev
-          </a>
-        )}
-        <span class="px-4 py-2 text-sm text-gray-400">
-          Page {page} of {Math.ceil(tasks.total / 20)}
-        </span>
-        {tasks.has_next && (
-          <a
-            href={`?page=${page + 1}${filterType ? `&type=${filterType}` : ""}${filterPriority ? `&priority=${filterPriority}` : ""}`}
-            class="px-4 py-2 bg-gray-900 border border-gray-700 hover:border-gray-500 rounded-lg text-sm transition-colors"
-          >
-            Next →
-          </a>
-        )}
-      </div>
-    )}
+    {tasks && tasks.total > 20 && (() => {
+      const qFilters = [
+        `mode=${mode}`,
+        filterType       ? `type=${filterType}` : "",
+        filterPriority   ? `priority=${filterPriority}` : "",
+        filterMinReward  ? `min_reward=${filterMinReward}` : "",
+        filterSortBy     ? `sort_by=${filterSortBy}` : "",
+      ].filter(Boolean).join("&");
+      return (
+        <div class="flex justify-center gap-3 mt-10">
+          {page > 1 && (
+            <a
+              href={`?${qFilters}&page=${page - 1}`}
+              class="px-4 py-2 bg-gray-900 border border-gray-700 hover:border-gray-500 rounded-lg text-sm transition-colors"
+            >
+              ← Prev
+            </a>
+          )}
+          <span class="px-4 py-2 text-sm text-gray-400">
+            Page {page} of {Math.ceil(tasks.total / 20)}
+          </span>
+          {tasks.has_next && (
+            <a
+              href={`?${qFilters}&page=${page + 1}`}
+              class="px-4 py-2 bg-gray-900 border border-gray-700 hover:border-gray-500 rounded-lg text-sm transition-colors"
+            >
+              Next →
+            </a>
+          )}
+        </div>
+      );
+    })()}
   </div>
 
   <script>

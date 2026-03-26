@@ -59,9 +59,7 @@ const compareItems: string[] = task?.type === "compare_rank"
       : [inp.option_a ?? "Option A", inp.option_b ?? "Option B"])
   : [];
 
-const timeoutStr = activeAssignment?.timeout_at
-  ? new Date(activeAssignment.timeout_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-  : null;
+const timeoutIso = activeAssignment?.timeout_at ?? null;
 ---
 
 <Layout title={`${meta?.label ?? "Task"} — CrowdSorcerer`}>
@@ -70,12 +68,21 @@ const timeoutStr = activeAssignment?.timeout_at
       <a href="/worker/marketplace" class="text-sm text-gray-400 hover:text-gray-200 transition-colors">
         ← Marketplace
       </a>
-      {timeoutStr && (
-        <div class="text-sm text-amber-400 flex items-center gap-2">
+      {timeoutIso && (
+        <div id="timeout-badge" class="text-sm text-amber-400 flex items-center gap-2">
           <span>⏱</span>
-          <span>Expires at {timeoutStr}</span>
+          <span id="timeout-label">Loading…</span>
         </div>
       )}
+    </div>
+    {/* Expired banner — hidden by default, shown by JS when time runs out */}
+    <div id="expired-banner" class="hidden mb-6 p-4 bg-red-900/30 border border-red-700 rounded-xl text-red-300 text-sm flex items-start gap-3">
+      <span class="text-lg">⏰</span>
+      <div>
+        <p class="font-semibold text-red-200 mb-1">Assignment expired</p>
+        <p>Your time to complete this task has run out. Return to the marketplace to claim it again if slots are still available.</p>
+        <a href="/worker/marketplace" class="inline-block mt-2 text-red-300 hover:text-red-100 underline">← Back to marketplace</a>
+      </div>
     </div>
 
     {error && (
@@ -443,6 +450,7 @@ const timeoutStr = activeAssignment?.timeout_at
 
 <input type="hidden" id="task-type" value={task?.type ?? ""} />
 <input type="hidden" id="task-id" value={task?.id ?? ""} />
+<input type="hidden" id="timeout-at" value={timeoutIso ?? ""} />
 
 <script>
 // ─── Response builder ─────────────────────────────────────────────────────
@@ -659,4 +667,59 @@ document.getElementById("release-btn")?.addEventListener("click", async (e) => {
     alert("Failed to release. Try again.");
   }
 });
+
+// ─── Assignment timeout countdown ─────────────────────────────────────────
+(function () {
+  const isoEl = document.getElementById("timeout-at") as HTMLInputElement | null;
+  if (!isoEl?.value) return;
+
+  const expiresAt = new Date(isoEl.value).getTime();
+  const labelEl = document.getElementById("timeout-label");
+  const badgeEl = document.getElementById("timeout-badge");
+  const bannerEl = document.getElementById("expired-banner");
+  const submitBtn = document.getElementById("submit-btn") as HTMLButtonElement | null;
+
+  function pad(n: number): string {
+    return String(n).padStart(2, "0");
+  }
+
+  function tick() {
+    const remaining = expiresAt - Date.now();
+
+    if (remaining <= 0) {
+      // Assignment has expired
+      if (labelEl) labelEl.textContent = "Expired";
+      if (badgeEl) {
+        badgeEl.classList.remove("text-amber-400");
+        badgeEl.classList.add("text-red-400");
+      }
+      if (bannerEl) bannerEl.classList.remove("hidden");
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Assignment expired";
+        submitBtn.classList.remove("bg-emerald-600", "hover:bg-emerald-500");
+        submitBtn.classList.add("bg-gray-700", "cursor-not-allowed", "opacity-60");
+      }
+      clearInterval(timer);
+      return;
+    }
+
+    const totalSecs = Math.ceil(remaining / 1000);
+    const mins = Math.floor(totalSecs / 60);
+    const secs = totalSecs % 60;
+
+    if (labelEl) labelEl.textContent = `${pad(mins)}:${pad(secs)} remaining`;
+
+    // Turn red when under 5 minutes
+    if (remaining < 5 * 60 * 1000) {
+      if (badgeEl) {
+        badgeEl.classList.remove("text-amber-400");
+        badgeEl.classList.add("text-red-400");
+      }
+    }
+  }
+
+  tick(); // run immediately so there's no blank flash
+  const timer = setInterval(tick, 1000);
+})();
 </script>
