@@ -224,13 +224,31 @@ All 299 tests pass.
 
 **SSE live updates audit**: Task detail already uses adaptive polling on `/api/tasks/[id]/status` — assignments_completed and status updates covered. No gap found.
 
+## Session 2026-03-26 (continued) — Fix all remaining onboarding db.flush() → db.commit() (commit c3019d8)
+
+**Systematically audited all 5 worker onboarding step triggers:**
+- `profile`: profiles.py update → bg task → `mark_onboarding_step` + `db.commit()` ✓
+- `explore`: claim_task → `mark_onboarding_step` + was `db.flush()` → **fixed to `db.commit()`** (worker.py)
+- `first_task`: submit_task → `mark_onboarding_step` + `db.flush()`, but `db.commit()` on reputation refresh follows → effectively persisted ✓
+- `skills`: get_my_skills GET → `mark_onboarding_step` + was `db.flush()` → **already fixed in dc7ca8b** ✓
+- `cert`: cert attempt → `mark_onboarding_step` + was `db.flush()` → **fixed to `db.commit()`** (certifications.py)
+
+**Verified requester onboarding auto-triggers all wired:**
+- `welcome`: profiles.py update → bg task → `complete_step_internal` ✓
+- `create_task`: tasks.py create_task → bg task ✓
+- `view_results`: tasks.py get_task (status==completed) → bg task ✓
+- `set_webhook`: webhooks.py create endpoint → `safe_create_task` → `complete_step_internal` ✓
+- `invite_team`: orgs.py create invite → `safe_create_task` → `complete_step_internal` ✓
+
+**All 10 onboarding step triggers across both flows are now correctly wired and guaranteed to persist.**
+
 ## Priorities for Next Session 🔜
 
 PHASE: Pre-alpha development. Focus on quality/depth. NOT in scope: launch tasks, marketing, directory listings.
 
-1. **Worker onboarding missing auto-triggers**: Check `explore` (visit marketplace), `first_task` (complete a task), and `cert` (attempt certification) steps — do they have auto-triggers? The `explore` step should fire when a worker hits the marketplace endpoint; `first_task` should fire when `submit_task` completes successfully; `cert` should fire from the certifications attempt endpoint. Wire up any that are missing.
-2. **Requester onboarding `set_webhook` + `invite_team` auto-triggers**: Verify these hooks are actually wired in `webhooks.py` (endpoint creation) and `orgs.py` (invite creation). If not, add `complete_step_internal("set_webhook")` / `complete_step_internal("invite_team")` calls.
-3. **Worker certification badges on profile**: The `/dashboard/profile` page likely has no display of earned certification badges. Add a "Certifications" section showing earned certs with their badges — pulls from `GET /v1/certifications/mine` and renders cert name + pass date.
+1. **Worker certification badges on profile**: The `/dashboard/profile` page likely has no display of earned certification badges. Add a "Certifications" section showing earned certs with their badges — pulls from `GET /v1/certifications/me/earned` and renders cert name + pass date + badge icon.
+2. **Onboarding tests for the flush→commit fix**: The newly fixed `explore` and `cert` steps have no unit tests. Add tests that verify `mark_onboarding_step` is called AND committed — mock `db.commit()` to verify it was awaited after the step mark.
+3. **Worker profile completeness score**: The worker profile page at `/worker/profile` (or `/dashboard/profile`) may not show how "complete" the profile is. Add a profile completeness indicator (% based on name/bio/skills/certs filled in) to motivate users to fill gaps.
 
 ## Known Warnings (non-blocking)
 
