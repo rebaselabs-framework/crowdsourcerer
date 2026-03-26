@@ -63,13 +63,25 @@ Auto-updated by autonomous sessions. Tracks what was done and what's next.
 - **Silent exceptions replaced with logging**: All `except Exception: pass` in worker.py now use `logger.warning()`.
 - **Wrong test assertions fixed**: test_openapi_schema had `/v1/auth/token` (wrong) and `/openapi.json` (include_in_schema=False).
 
+## Session 2026-03-26 (continued) — Silent failures + credit atomicity (commits 258edfe, a823bd6, 67b2f3b)
+
+- **All `except Exception: pass` eliminated** from entire API codebase (was 22+ across tasks.py + 9 other files).
+  Every silent swallow replaced with `logger.warning()` or `logger.error()` with `exc_info=True`.
+  Critical stuck-run paths (tasks.py _run_task error recovery, pipelines.py run recovery) now log at ERROR.
+- **Batch credit atomicity fixed**: `create_tasks_batch` deducted `total_credits` upfront but never refunded
+  credits for tasks that failed in the loop. Added `actual_credits_charged` tracking + partial refund before commit.
+- **Credit tests added** (5 new): `_calc_credits` unit tests, batch partial-refund logic, all-succeed, all-fail.
+- **Test count**: 124 → 129 passing.
+
 ## Priorities for Next Session 🔜
 
 PHASE: Pre-alpha development. Focus on quality/depth. NOT in scope: launch tasks, marketing, directory listings.
 
-1. **Continue quality audit**: Look for more runtime bugs in tasks.py (credit atomicity, background task crash handling). The audit found several more medium-severity issues.
-2. **Add credit atomicity tests**: Test that task creation failure doesn't leave orphaned credit deductions.
-3. **Investigate `except Exception: pass` in tasks.py**: routers/tasks.py has similar silent failures in background task execution.
+1. **Deeper quality audit of tasks.py**: The `_run_task()` function (2000+ lines) runs AI tasks. Investigate error paths:
+   - Does it properly release credits if the AI call errors mid-execution vs at start?
+   - Are there any double-charge scenarios if `_run_task` is invoked twice for the same task?
+2. **Check for N+1 queries in other hot paths**: `routers/tasks.py` GET list endpoint, `routers/worker.py` feed endpoint.
+3. **Review `asyncio.create_task()` usage**: These fire-and-forget tasks have no error handling at the call site. If the event loop closes before they complete (e.g., during shutdown), they vanish silently. Low priority but worth noting.
 
 ## Known Warnings (non-blocking)
 
