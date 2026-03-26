@@ -53,9 +53,8 @@ class ApplicationOut(BaseModel):
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-async def _fmt_application(app: TaskApplicationDB, db: AsyncSession) -> ApplicationOut:
-    worker_result = await db.execute(select(UserDB).where(UserDB.id == app.worker_id))
-    worker = worker_result.scalar_one_or_none()
+def _build_application_out(app: TaskApplicationDB, worker: "UserDB | None") -> ApplicationOut:
+    """Sync helper — construct ApplicationOut from already-loaded objects."""
     return ApplicationOut(
         id=str(app.id),
         task_id=str(app.task_id),
@@ -68,6 +67,13 @@ async def _fmt_application(app: TaskApplicationDB, db: AsyncSession) -> Applicat
         created_at=app.created_at.isoformat(),
         updated_at=app.updated_at.isoformat(),
     )
+
+
+async def _fmt_application(app: TaskApplicationDB, db: AsyncSession) -> ApplicationOut:
+    """Async helper for single-application paths (accept/reject/submit)."""
+    worker_result = await db.execute(select(UserDB).where(UserDB.id == app.worker_id))
+    worker = worker_result.scalar_one_or_none()
+    return _build_application_out(app, worker)
 
 
 async def _get_task_or_404(task_id: UUID, db: AsyncSession) -> TaskDB:
@@ -163,9 +169,18 @@ async def list_applications(
         select(TaskApplicationDB)
         .where(TaskApplicationDB.task_id == task_id)
         .order_by(TaskApplicationDB.created_at.asc())
+        .limit(500)  # safety cap
     )
     apps = result.scalars().all()
-    return [await _fmt_application(a, db) for a in apps]
+
+    # Bulk-load all workers in one query (avoids N+1)
+    worker_ids = list({a.worker_id for a in apps})
+    workers_by_id: dict = {}
+    if worker_ids:
+        w_res = await db.execute(select(UserDB).where(UserDB.id.in_(worker_ids)))
+        workers_by_id = {u.id: u for u in w_res.scalars()}
+
+    return [_build_application_out(a, workers_by_id.get(a.worker_id)) for a in apps]
 
 
 @router.post("/v1/tasks/{task_id}/applications/{app_id}/accept", response_model=ApplicationOut)
@@ -346,4 +361,14 @@ async def list_my_applications(
 
     result = await db.execute(q)
     apps = result.scalars().all()
-    return [await _fmt_application(a, db) for a in apps]
+
+    # Bulk-load all worker records in one query (avoids N+1 per-application)
+    # This endpoint returns the worker's own applications, so worker_id is always user_id,
+    # but we use the same pattern for consistency and forward-compatibility.
+    worker_ids = list({a.worker_id for a in apps})
+    workers_by_id: dict = {}
+    if worker_ids:
+        w_res = await db.execute(select(UserDB).where(UserDB.id.in_(worker_ids)))
+        workers_by_id = {u.id: u for u in w_res.scalars()}
+
+    return [_build_application_out(a, workers_by_id.get(a.worker_id)) for a in apps]

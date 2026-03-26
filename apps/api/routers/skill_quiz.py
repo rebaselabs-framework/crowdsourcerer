@@ -284,11 +284,11 @@ async def submit_quiz(
 
     await _ensure_questions_seeded(skill_category, db)
 
-    # Load ALL questions to grade against (we need correct indices)
+    # Load questions to grade against — cap at a generous limit (safety bound)
     res = await db.execute(
         select(SkillQuizQuestionDB).where(
             SkillQuizQuestionDB.skill_category == skill_category
-        )
+        ).limit(1_000)
     )
     all_qs = {str(q.id): q for q in res.scalars().all()}
 
