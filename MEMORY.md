@@ -643,6 +643,25 @@ All Astro SSR POST handlers that were silently swallowing API errors now redirec
 
 **Test count: 1084 (unchanged)**
 
+## Session 2026-03-27 (continued) — Schema hardening, bug fixes, regression tests (commits ca8b7fb, a07cf5d)
+
+**Schema hardening (ca8b7fb):**
+- `PayoutRequestCreate`: `credits_requested: int` → `Field(ge=1, le=10_000_000)` (prevents absurd values); `payout_method: str` → `Literal["paypal", "bank_transfer", "crypto"]` — invalid methods now return 422 at Pydantic validation rather than 400 in the handler
+- Updated test `test_payout_create_invalid_method_is_400` → `test_payout_create_invalid_method_is_422`
+
+**admin/reputation.astro safe JSON parsing (ca8b7fb):**
+- Added `.catch(() => ({}))` to `.json()` calls in the strike-form-submit and ban-form-submit handlers; prevents non-JSON error pages from throwing before the `res.ok` check
+
+**Latent crash fixed in ratings.py (a07cf5d):**
+- `rate_task` was ordering by `TaskAssignmentDB.completed_at` which doesn't exist (the column is `submitted_at`) — would have crashed with `AttributeError` on every rating attempt
+- Also removed `"completed"` from the assignment status filter (not a valid `assignment_status_enum` value)
+
+**Regression tests (a07cf5d) — `test_race_conditions.py`:**
+- `TestPortfolioPinCapEnforcement` (2 tests): cap at 10 → 400, below cap → commit called
+- `TestRatingIntegrityErrorHandling` (1 test): flush() IntegrityError → rollback + 409
+
+**Test count: 1084 → 1087**
+
 ## Priorities for Next Session 🔜
 
 PHASE: Pre-alpha development. Focus on quality/depth. NOT in scope: launch tasks, marketing, directory listings.
