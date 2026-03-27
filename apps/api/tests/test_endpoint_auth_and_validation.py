@@ -42,6 +42,7 @@ def _make_empty_db() -> MagicMock:
     db.close = AsyncMock()
     db.delete = AsyncMock()
     db.get = AsyncMock(return_value=None)  # db.get() is awaitable
+    db.refresh = AsyncMock()  # db.refresh() is awaitable
     empty_result = MagicMock()
     empty_result.scalar_one_or_none = MagicMock(return_value=None)
     empty_result.scalars = MagicMock(return_value=MagicMock(all=MagicMock(return_value=[])))
