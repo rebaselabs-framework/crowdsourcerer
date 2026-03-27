@@ -109,11 +109,14 @@ async def _fmt_invite(invite: WorkerTeamInviteDB, db: AsyncSession) -> WorkerTea
     team = team_result.scalar_one_or_none()
     inviter_result = await db.execute(select(UserDB).where(UserDB.id == invite.invited_by))
     inviter = inviter_result.scalar_one_or_none()
+    invitee_result = await db.execute(select(UserDB).where(UserDB.id == invite.invitee_id))
+    invitee = invitee_result.scalar_one_or_none()
     return WorkerTeamInviteOut(
         id=str(invite.id),
         team_id=str(invite.team_id),
         team_name=team.name if team else "Unknown",
         invitee_id=str(invite.invitee_id),
+        invitee_name=invitee.name or invitee.email.split("@")[0] if invitee else None,
         invited_by=str(invite.invited_by),
         inviter_name=inviter.name or inviter.email.split("@")[0] if inviter else "Unknown",
         status=invite.status,

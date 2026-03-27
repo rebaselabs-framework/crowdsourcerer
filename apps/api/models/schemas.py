@@ -1587,6 +1587,7 @@ class WorkerTeamInviteOut(BaseModel):
     team_id: str
     team_name: str
     invitee_id: str
+    invitee_name: Optional[str] = None
     invited_by: str
     inviter_name: str
     status: str

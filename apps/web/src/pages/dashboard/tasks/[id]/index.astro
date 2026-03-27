@@ -1932,18 +1932,21 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
           <div class="border-t border-gray-800 px-5 py-4">
             <div id="msg-recipient-wrap" class="mb-3">
               <label class="text-xs text-gray-500 block mb-1">Send to</label>
-              <select
-                id="msg-recipient"
-                class="w-full sm:w-auto bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-violet-500"
-              >
-                {isRequester && task.assigned_worker_id && (
-                  <option value={task.assigned_worker_id}>Assigned worker</option>
-                )}
-                {!isRequester && task.user_id && (
-                  <option value={task.user_id}>Task requester</option>
-                )}
-                <option value="">— Broadcast (all parties) —</option>
-              </select>
+              {(isRequester && task.assigned_worker_id) || (!isRequester && task.user_id) ? (
+                <select
+                  id="msg-recipient"
+                  class="w-full sm:w-auto bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-violet-500"
+                >
+                  {isRequester && task.assigned_worker_id && (
+                    <option value={task.assigned_worker_id}>Assigned worker</option>
+                  )}
+                  {!isRequester && task.user_id && (
+                    <option value={task.user_id}>Task requester</option>
+                  )}
+                </select>
+              ) : (
+                <p id="msg-no-recipient" class="text-sm text-gray-500 italic">No assigned worker to message yet.</p>
+              )}
             </div>
             <div class="flex gap-2">
               <textarea
@@ -2614,8 +2617,13 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
           sendBtn.textContent = "Sending…";
 
           var recipient = recipientEl ? recipientEl.value : "";
-          var payload = { body: body };
-          if (recipient) payload.recipient_id = recipient;
+          if (!recipient) {
+            if (msgError) { msgError.textContent = "No recipient selected."; msgError.classList.remove("hidden"); }
+            sendBtn.disabled = false;
+            sendBtn.textContent = "Send";
+            return;
+          }
+          var payload = { body: body, recipient_id: recipient };
 
           try {
             var res = await fetch("/api/tasks/" + taskId + "/messages", {

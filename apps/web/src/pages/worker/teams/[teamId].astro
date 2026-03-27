@@ -192,7 +192,7 @@ const pendingInvites: any[] = team?.pending_invites ?? [];
                       {t.worker_reward_credits && (
                         <span class="text-violet-400">{t.worker_reward_credits} cr</span>
                       )}
-                      <a href={`/worker/marketplace`}
+                      <a href={"/worker/tasks/" + t.id}
                         class="text-violet-400 hover:text-violet-300 transition-colors">
                         View →
                       </a>
@@ -250,7 +250,7 @@ const pendingInvites: any[] = team?.pending_invites ?? [];
               {pendingInvites.map((invite: any) => (
                 <div class="px-5 py-3 flex items-center justify-between">
                   <div>
-                    <span class="text-sm text-white">{invite.invitee_id}</span>
+                    <span class="text-sm text-white">{invite.invitee_name || invite.invitee_id}</span>
                     {invite.message && (
                       <p class="text-xs text-gray-500 mt-0.5">"{invite.message}"</p>
                     )}
