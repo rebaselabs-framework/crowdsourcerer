@@ -157,10 +157,11 @@ try {
           <input type="number" id="edit-order" value="0" min="0" max="9"
             class="w-24 bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-violet-500" />
         </div>
+        <div id="edit-error" class="hidden text-sm text-red-400 bg-red-950/20 border border-red-800 rounded-lg px-3 py-2"></div>
         <div class="flex gap-3 justify-end pt-2">
-          <button type="button" onclick="document.getElementById('edit-modal').classList.add('hidden')"
+          <button type="button" onclick={"document.getElementById('edit-modal').classList.add('hidden')"}
             class="px-4 py-2 text-sm text-gray-300 border border-gray-700 rounded-lg hover:bg-gray-800">Cancel</button>
-          <button type="submit"
+          <button type="submit" id="edit-submit-btn"
             class="px-4 py-2 text-sm bg-violet-600 text-white rounded-lg hover:bg-violet-500 font-medium">
             Save Changes
           </button>
@@ -221,18 +222,29 @@ document.getElementById('edit-form').addEventListener('submit', async e => {
   const pinId = document.getElementById('edit-pin-id').value;
   const caption = document.getElementById('edit-caption').value.trim();
   const order = parseInt(document.getElementById('edit-order').value) || 0;
+  const errEl = document.getElementById('edit-error');
+  const submitBtn = document.getElementById('edit-submit-btn');
+  if (errEl) errEl.classList.add('hidden');
+  if (submitBtn) { submitBtn.textContent = 'Saving…'; submitBtn.disabled = true; }
 
-  const res = await fetch(`/api/worker/portfolio/${pinId}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ caption: caption || null, display_order: order }),
-  });
-  if (res.ok) {
-    toast('Updated!');
-    document.getElementById('edit-modal').classList.add('hidden');
-    setTimeout(() => location.reload(), 500);
-  } else {
-    toast('Update failed', false);
+  try {
+    const res = await fetch(`/api/worker/portfolio/${pinId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ caption: caption || null, display_order: order }),
+    });
+    if (res.ok) {
+      toast('Updated!');
+      document.getElementById('edit-modal').classList.add('hidden');
+      setTimeout(() => location.reload(), 500);
+    } else {
+      const err = await res.json().catch(() => ({}));
+      if (errEl) { errEl.textContent = err.detail || 'Failed to update. Please try again.'; errEl.classList.remove('hidden'); }
+    }
+  } catch (_) {
+    if (errEl) { errEl.textContent = 'Network error — please try again.'; errEl.classList.remove('hidden'); }
+  } finally {
+    if (submitBtn) { submitBtn.textContent = 'Save Changes'; submitBtn.disabled = false; }
   }
 });
 

@@ -98,8 +98,8 @@ const activeTab = Astro.url.searchParams.get("tab") ?? "email";
       <div class="rounded-xl bg-red-900/30 border border-red-700 p-4 text-red-300 text-sm mb-6">{error}</div>
     )}
 
-    <!-- Saved toast -->
-    <div id="saved-toast" class="hidden fixed bottom-6 right-6 z-50 rounded-xl bg-emerald-900/90 border border-emerald-700 text-emerald-300 text-sm px-5 py-3 shadow-xl">
+    <!-- Saved / error toast -->
+    <div id="saved-toast" class="hidden fixed bottom-6 right-6 z-50 rounded-xl text-sm px-5 py-3 shadow-xl">
       ✓ Preferences saved
     </div>
 
@@ -367,11 +367,18 @@ const activeTab = Astro.url.searchParams.get("tab") ?? "email";
   <script>
     const toast = document.getElementById("saved-toast") as HTMLElement;
     let toastTimer: number | null = null;
-    function showToast(msg?: string) {
+    function showToast(msg?: string, isError?: boolean) {
       toast.textContent = msg ?? "✓ Preferences saved";
+      // Apply colour scheme based on success / error
+      toast.className = toast.className.replace(/bg-\S+|border-\S+|text-\S+/g, "").trim();
+      if (isError) {
+        toast.classList.add("bg-red-900/90", "border", "border-red-700", "text-red-300");
+      } else {
+        toast.classList.add("bg-emerald-900/90", "border", "border-emerald-700", "text-emerald-300");
+      }
       toast.classList.remove("hidden");
       if (toastTimer) clearTimeout(toastTimer);
-      toastTimer = setTimeout(() => toast.classList.add("hidden"), 3000) as unknown as number;
+      toastTimer = setTimeout(() => toast.classList.add("hidden"), 4000) as unknown as number;
     }
 
     // ── Tab switching ──────────────────────────────────────────────────────
@@ -419,9 +426,9 @@ const activeTab = Astro.url.searchParams.get("tab") ?? "email";
             body: JSON.stringify(updates),
           });
           if (res.ok) showToast();
-          else alert("Failed to save preferences.");
+          else { const d = await res.json().catch(() => ({})); showToast("✗ " + (d.detail || "Failed to save preferences"), true); }
         } catch {
-          alert("Network error.");
+          showToast("✗ Network error — please try again", true);
         } finally {
           saveBtn.disabled = false;
           saveBtn.textContent = formId === "email-form" ? "Save email preferences" : "Save in-app preferences";
@@ -463,9 +470,9 @@ const activeTab = Astro.url.searchParams.get("tab") ?? "email";
             body: JSON.stringify(body),
           });
           if (res.ok) showToast("✓ Digest preferences saved");
-          else alert("Failed to save digest preferences.");
+          else { const d = await res.json().catch(() => ({})); showToast("✗ " + (d.detail || "Failed to save digest preferences"), true); }
         } catch {
-          alert("Network error.");
+          showToast("✗ Network error — please try again", true);
         } finally {
           digestSaveBtn.disabled = false;
           digestSaveBtn.textContent = "Save digest preferences";
