@@ -12,6 +12,7 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import select, func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth import get_current_user_id
@@ -121,8 +122,16 @@ async def create_endorsement(
         note=req.note,
     )
     db.add(endorsement)
-    await db.commit()
-    await db.refresh(endorsement)
+    try:
+        await db.commit()
+        await db.refresh(endorsement)
+    except IntegrityError:
+        # Two concurrent requests passed the count check — DB unique constraint caught it
+        await db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="You have already endorsed this worker for this task",
+        )
 
     logger.info(
         "endorsement.created",

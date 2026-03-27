@@ -444,7 +444,8 @@ const TASK_ICONS: Record<string, string> = {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ interests: Array.from(selected) }),
         });
-        var d = await r.json();
+        // Check res.ok before parsing JSON — error responses may not be JSON
+        var d = r.ok ? await r.json() : await r.json().catch(function() { return {}; });
         var result = { ok: r.ok, data: d };
         if (result.ok) {
           btn.textContent = "Saved!";

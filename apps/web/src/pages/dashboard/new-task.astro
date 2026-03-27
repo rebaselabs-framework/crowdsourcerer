@@ -41,8 +41,9 @@ if (duplicateTaskId) {
       ? `${duplicateParams.type} (${duplicateTaskId.slice(0, 8)}…)`
       : duplicateTaskId.slice(0, 8) + "…";
   } catch {
-    // non-fatal — duplicate params load failed, just proceed as normal new task
+    // non-fatal — duplicate params load failed, show notice but let user proceed
     duplicateParams = null;
+    error = "Could not load task to duplicate — form is blank. You can fill it in manually.";
   }
 }
 
@@ -53,6 +54,7 @@ if (savedTplId) {
     apiFetch(`/v1/task-templates/${savedTplId}/use`, { token, method: "POST" }).catch(() => {});
   } catch {
     savedTplParams = null;
+    error = "Could not load saved template — form is blank. You can fill it in manually.";
   }
 }
 

@@ -794,13 +794,18 @@ document.getElementById("payout-form")?.addEventListener("submit", async e => {
     if(!address){if(err){err.textContent="Please enter your wallet address";err.classList.remove("hidden");}return;}
     details={network,address};
   }
+  const submitBtn = e.currentTarget.querySelector("button[type='submit']");
+  if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = "Submitting…"; }
   try {
     const res = await fetch(`/api/payouts`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({credits_requested:credits,payout_method:method,payout_details:details})});
-    const data = await res.json();
+    const data = await res.json().catch(function(){return {};});
     if(!res.ok) throw new Error(data.detail??"Request failed");
     if(ok){ok.textContent=`✅ Withdrawal request submitted! $${data.usd_amount.toFixed(2)} is being processed.`;ok.classList.remove("hidden");}
-    setTimeout(()=>{window.location.href="?tab=payouts";},1500);
-  } catch(e){if(err){err.textContent=e.message;err.classList.remove("hidden");}}
+    setTimeout(function(){window.location.href="?tab=payouts";},1500);
+  } catch(e){
+    if(err){err.textContent=e.message;err.classList.remove("hidden");}
+    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = "Submit withdrawal request"; }
+  }
 });
 
 // Cancel payout — confirmation modal

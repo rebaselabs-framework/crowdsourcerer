@@ -214,14 +214,32 @@ async def list_teams(
     )
     teams = teams_result.scalars().all()
 
-    items = []
-    for team in teams:
-        mc = (await db.execute(
-            select(func.count()).where(WorkerTeamMemberDB.team_id == team.id)
-        )).scalar() or 0
-        membership = await _get_membership(team.id, uid, db)
-        items.append(_fmt_team(team, mc, membership.role if membership else None))
+    if not teams:
+        return PaginatedWorkerTeams(items=[], total=total, page=page, page_size=page_size)
 
+    page_team_ids = [t.id for t in teams]
+
+    # Bulk member counts — single GROUP BY instead of N individual COUNTs
+    mc_result = await db.execute(
+        select(WorkerTeamMemberDB.team_id, func.count().label("cnt"))
+        .where(WorkerTeamMemberDB.team_id.in_(page_team_ids))
+        .group_by(WorkerTeamMemberDB.team_id)
+    )
+    member_counts: dict = {r.team_id: r.cnt for r in mc_result.all()}
+
+    # Bulk membership roles for current user — single IN query instead of N individual lookups
+    my_memberships_result = await db.execute(
+        select(WorkerTeamMemberDB).where(
+            WorkerTeamMemberDB.team_id.in_(page_team_ids),
+            WorkerTeamMemberDB.user_id == uid,
+        )
+    )
+    my_roles: dict = {m.team_id: m.role for m in my_memberships_result.scalars().all()}
+
+    items = [
+        _fmt_team(team, member_counts.get(team.id, 0), my_roles.get(team.id))
+        for team in teams
+    ]
     return PaginatedWorkerTeams(items=items, total=total, page=page, page_size=page_size)
 
 
@@ -242,7 +260,42 @@ async def list_pending_invites(
     )
     invites = invites_result.scalars().all()
 
-    return [await _fmt_invite(inv, db) for inv in invites]
+    if not invites:
+        return []
+
+    # Bulk load teams and users — avoid 3 queries per invite
+    inv_team_ids = {inv.team_id for inv in invites}
+    inv_user_ids = {inv.invited_by for inv in invites} | {inv.invitee_id for inv in invites}
+
+    teams_result = await db.execute(
+        select(WorkerTeamDB).where(WorkerTeamDB.id.in_(inv_team_ids))
+    )
+    teams_by_id: dict = {t.id: t for t in teams_result.scalars().all()}
+
+    users_result = await db.execute(
+        select(UserDB).where(UserDB.id.in_(inv_user_ids))
+    )
+    users_by_id: dict = {u.id: u for u in users_result.scalars().all()}
+
+    out = []
+    for inv in invites:
+        t = teams_by_id.get(inv.team_id)
+        inviter = users_by_id.get(inv.invited_by)
+        invitee = users_by_id.get(inv.invitee_id)
+        out.append(WorkerTeamInviteOut(
+            id=str(inv.id),
+            team_id=str(inv.team_id),
+            team_name=t.name if t else "Unknown",
+            invitee_id=str(inv.invitee_id),
+            invitee_name=invitee.name or invitee.email.split("@")[0] if invitee else None,
+            invited_by=str(inv.invited_by),
+            inviter_name=inviter.name or inviter.email.split("@")[0] if inviter else "Unknown",
+            status=inv.status,
+            message=inv.message,
+            created_at=inv.created_at.isoformat(),
+            expires_at=inv.expires_at.isoformat() if inv.expires_at else None,
+        ))
+    return out
 
 
 @router.get("/{team_id}", response_model=WorkerTeamDetailOut)
@@ -267,6 +320,29 @@ async def get_team(
     )
     members = members_result.scalars().all()
 
+    # Bulk load user records for all members — single IN query instead of N individual queries
+    member_user_ids = [m.user_id for m in members]
+    if member_user_ids:
+        users_result = await db.execute(select(UserDB).where(UserDB.id.in_(member_user_ids)))
+        users_by_id: dict = {u.id: u for u in users_result.scalars().all()}
+    else:
+        users_by_id = {}
+
+    def _make_member_out(m: WorkerTeamMemberDB) -> WorkerTeamMemberOut:
+        u = users_by_id.get(m.user_id)
+        return WorkerTeamMemberOut(
+            user_id=str(m.user_id),
+            name=u.name or u.email.split("@")[0] if u else "Unknown",
+            role=m.role,
+            joined_at=m.joined_at.isoformat(),
+            tasks_completed=u.worker_tasks_completed if u else 0,
+            xp=u.worker_xp if u else 0,
+            level=u.worker_level if u else 1,
+        )
+
+    member_outs = [_make_member_out(m) for m in members]
+    mc = len(members)
+
     # Load pending invites (owners see them)
     pending_invites = []
     if membership.role == "owner":
@@ -276,10 +352,28 @@ async def get_team(
                 WorkerTeamInviteDB.status == "pending",
             ).order_by(WorkerTeamInviteDB.created_at.desc())
         )
-        pending_invites = [await _fmt_invite(inv, db) for inv in inv_result.scalars().all()]
-
-    member_outs = [await _fmt_member(m, db) for m in members]
-    mc = len(members)
+        raw_invites = inv_result.scalars().all()
+        if raw_invites:
+            # Bulk load inviters/invitees — avoid 2 queries per invite
+            inv_user_ids = {inv.invited_by for inv in raw_invites} | {inv.invitee_id for inv in raw_invites}
+            inv_users_res = await db.execute(select(UserDB).where(UserDB.id.in_(inv_user_ids)))
+            inv_users_by_id: dict = {u.id: u for u in inv_users_res.scalars().all()}
+            for inv in raw_invites:
+                inviter = inv_users_by_id.get(inv.invited_by)
+                invitee = inv_users_by_id.get(inv.invitee_id)
+                pending_invites.append(WorkerTeamInviteOut(
+                    id=str(inv.id),
+                    team_id=str(inv.team_id),
+                    team_name=team.name,  # already loaded
+                    invitee_id=str(inv.invitee_id),
+                    invitee_name=invitee.name or invitee.email.split("@")[0] if invitee else None,
+                    invited_by=str(inv.invited_by),
+                    inviter_name=inviter.name or inviter.email.split("@")[0] if inviter else "Unknown",
+                    status=inv.status,
+                    message=inv.message,
+                    created_at=inv.created_at.isoformat(),
+                    expires_at=inv.expires_at.isoformat() if inv.expires_at else None,
+                ))
 
     return WorkerTeamDetailOut(
         id=str(team.id),
@@ -398,11 +492,13 @@ async def accept_invite(
     """Accept a team invitation."""
     await _require_worker(user_id, db)
 
+    # Lock the invite row immediately — prevents two concurrent accept requests
+    # from both passing the status/size checks and creating duplicate memberships.
     invite_result = await db.execute(
         select(WorkerTeamInviteDB).where(
             WorkerTeamInviteDB.id == invite_id,
             WorkerTeamInviteDB.invitee_id == UUID(user_id),
-        )
+        ).with_for_update()
     )
     invite = invite_result.scalar_one_or_none()
     if not invite:
@@ -413,6 +509,14 @@ async def accept_invite(
         invite.status = "declined"
         await db.commit()
         raise HTTPException(status_code=400, detail="This invite has expired")
+
+    # Check membership size limit under the lock — prevents two concurrent accepts
+    # from racing past 20 members
+    current_count = (await db.scalar(
+        select(func.count()).where(WorkerTeamMemberDB.team_id == invite.team_id)
+    )) or 0
+    if current_count >= 20:
+        raise HTTPException(status_code=400, detail="This team has reached its 20-member limit")
 
     # Create membership
     membership = WorkerTeamMemberDB(

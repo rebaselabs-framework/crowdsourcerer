@@ -374,9 +374,11 @@ const HUMAN_TASK_TYPES = Object.keys(TASK_TYPE_META);
           btn.style.color = isBookmarked ? "" : "#f59e0b"; // amber when bookmarked
           const msg = isBookmarked ? "Removed from watchlist" : "Added to watchlist ✅";
           showToast(msg);
+        } else {
+          showToast(isBookmarked ? "⚠ Failed to remove bookmark" : "⚠ Failed to bookmark task");
         }
       } catch {
-        // silent fail
+        showToast("⚠ Network error — please try again");
       }
     }
 
