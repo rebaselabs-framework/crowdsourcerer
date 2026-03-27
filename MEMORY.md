@@ -355,13 +355,48 @@ Also: template-marketplace index.ts had wrong backend URL (`/v1/template-marketp
 
 **Test count: 343 → 356**
 
+## Session 2026-03-27 — Race conditions, DB indexes, 3 new features (commits b5f5546–2ba55e8)
+
+**Race condition fixes (4 sites, commit b5f5546):**
+- `payouts.py cancel_payout_request`: `with_for_update()` on payout + user rows; fix `user_id: UUID → str`
+- `tasks.py cancel_task`: `with_for_update()` on task row (double-cancel race)
+- `tasks.py reject_submission`: `with_for_update()` on requester user row (lost-update under concurrent rejections)
+- `worker.py submit_task`: `with_for_update()` on assignment row (double-submit race)
+
+**Migration 0052 — 7 composite DB indexes (commit b5f5546):**
+- notifications (user_id, is_read) and (user_id, is_read, created_at)
+- task_messages (task_id, sender_id, recipient_id)
+- worker_team_invites (invitee_id, status) and (team_id, status)
+- worker_endorsements (requester_id) and (worker_id, created_at)
+
+**Requester feedback on submission reviews (commit a22fd7b):**
+- Migration 0053: `requester_note` (Text) + `reviewed_at` (timestamptz) on task_assignments
+- `approve_submission` + `reject_submission` persist note; notification body includes note
+- Dashboard review UI: combined approve/reject form with shared optional note input
+- Worker task detail: shows "Requester note" card in outcome panel
+- 13 new tests in `test_submission_feedback.py`; test count 1009 → 1022
+
+**Platform announcements system + admin/workers N+1 fix (commit 2ba55e8):**
+- Migration 0054: `platform_announcements` table (type/target_role/starts_at/expires_at/is_active)
+- `announcements.py` router: public GET + admin CRUD (POST/PATCH/DELETE)
+- `Layout.astro`: SSR-fetches active announcements; shows colour-coded dismissible banners
+- `/admin/announcements.astro`: management CRUD page
+- `admin.py list_workers` N+1 fixed: per-worker strike COUNT → single GROUP BY
+- 17 new tests in `test_announcements.py`; test count 1022 → 1039
+
+**DB index coverage verified (all accounted for):**
+- `TaskPipelineStepDB.pipeline_id`: `index=True` on column ✓
+- `TaskPipelineStepRunDB.run_id`: `index=True` on column ✓
+- `TaskApplicationDB.(worker_id, status)`: migration 0051 ✓
+- `TaskMessageDB.(task_id, sender_id, recipient_id)`: migration 0052 ✓
+
 ## Priorities for Next Session 🔜
 
 PHASE: Pre-alpha development. Focus on quality/depth. NOT in scope: launch tasks, marketing, directory listings.
 
-1. **Feature additions**: The core quality/correctness audit is now thorough. Consider new user-facing features — e.g., task scheduling improvements, better admin analytics, or worker dashboard enhancements.
-2. **DB indexes for new query patterns**: The bulk IN queries and GROUP BY queries added this session could benefit from composite indexes. Check if `TaskPipelineStepDB.pipeline_id`, `TaskPipelineStepRunDB.run_id`, `TaskApplicationDB.worker_id + task_id`, `TaskMessageDB.task_id + sender_id` have indexes.
-3. **Proxy route test coverage**: 13+ Astro proxy routes still lack tests. Would need Vitest setup in the web package first.
+1. **Feature additions**: Consider task scheduling improvements (scheduled task UI at /dashboard/scheduled), better worker performance comparison (anonymous benchmarking), or admin quality monitoring (low-accuracy worker reports).
+2. **Proxy route test coverage**: 13+ Astro proxy routes still lack tests. Would need Vitest setup in the web package first.
+3. **Notification preferences**: The `/dashboard/notification-preferences.astro` page exists — check if the API backend for it is complete.
 
 ## Known Warnings (non-blocking)
 
