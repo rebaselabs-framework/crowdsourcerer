@@ -684,13 +684,33 @@ Security/IDOR audit and wrong-column-reference audit found two confirmed bugs:
 - Fix: added `.join(CertificationDB, CertificationDB.id == WorkerCertificationDB.cert_id)` and changed the filter to `CertificationDB.task_type == cert`.
 - Also imported `CertificationDB` into worker_marketplace.py (was missing).
 
+## Session 2026-03-27 (continued) — Worker UX dead-ends + 4 bug fixes + CI green (commits b7e6d60–b421cb3)
+
+**Worker task UX dead-ends fixed (b7e6d60):**
+- `worker/tasks/[id].astro`: SSR now detects `timed_out` assignment → shows dedicated "Assignment expired" panel with "Claim it again" CTA (if task still open) and marketplace link; client-side countdown tick() disables Release button when remaining <= 0; submit handler handles HTTP 410 with inline message + auto-redirect to marketplace after 4s
+- `dashboard/tasks/index.astro`: filter/sort dropdowns now auto-submit on change + show spinner overlay (filter-loading div + task-list opacity 0.4) during page reload; resolves silent "nothing happened" UX after selecting a filter
+
+**4 real bug fixes (129487f):**
+- `dashboard/batch-upload.astro`: missing `res.ok` check — on API error, was calling `showResults()` on error JSON → showed fake success; now surfaces error inline
+- `dashboard/credits.astro`: catch block was unconditionally redirecting to `/login` on any error (network timeout, 500, etc.) — now only redirects on 401/403; non-auth errors show error banner
+- `dashboard/analytics.astro`: `costs` and `orgAnalytics` fetches were outside try-catch — any error (timeout, 403) crashed the page; wrapped in individual try-catch blocks; both non-fatal
+- `worker/submitted.astro`: direct navigation (bookmarked URL) showed confusing "0 credits, 0 XP"; added guard: `if (!url.searchParams.has("credits")) redirect to /worker/marketplace`
+
+**CI fixes (c57c467, b421cb3):**
+- Migration 0048 had duplicate `ix_credit_transactions_user_id` — already created in migration 0001; removed from 0048 up/down
+- CI web-build astro check: `set -e` + `OUTPUT=$(pnpm exec astro check 2>&1)` silently swallowed failures; simplified to bare `run: pnpm exec astro check`
+- CI web-build: `@crowdsourcerer/types` not found — workspace packages not built before astro check; added `pnpm -r --filter=!@crowdsourcerer/web build` step
+- Python SDK CI: old hatchling missing `prepare_metadata_for_build_editable`; fixed with `pip install --upgrade pip hatchling`
+- Python SDK pyproject.toml: hatchling couldn't find package dir (`crowdsourcerer/` vs project name `crowdsourcerer-sdk`); added `[tool.hatch.build.targets.wheel] packages = ["crowdsourcerer"]`
+- **All 4 CI jobs now passing** (run 23653017325 — success)
+
 ## Priorities for Next Session 🔜
 
 PHASE: Pre-alpha development. Focus on quality/depth. NOT in scope: launch tasks, marketing, directory listings.
 
 1. **Regression tests for current fixes**: `test_get_related_tasks_idor` (probing foreign task_id returns empty), `test_marketplace_cert_filter` (cert filter returns correct workers via JOIN).
-2. **More wrong-column-reference scan**: Previous session found 3 latent AttributeError crashes; full systematic audit of all `ModelDB.col` usages vs. actual column definitions may reveal more.
-3. **Proxy route test coverage**: 13+ Astro proxy routes still lack tests. Would need Vitest setup in the web package first.
+2. **More wrong-column-reference scan**: Previous sessions found 3 latent AttributeError crashes; full systematic audit of all `ModelDB.col` usages vs. actual column definitions may reveal more.
+3. **Playwright smoke audit**: Run a quick Playwright audit against the live app to catch any remaining UX dead-ends or runtime errors in real browser flow.
 4. **Race condition audit**: Look for more race conditions in worker pay/approval flows.
 
 ## Known Warnings (non-blocking)
