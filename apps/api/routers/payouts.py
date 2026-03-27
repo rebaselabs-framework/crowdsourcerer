@@ -130,6 +130,9 @@ async def list_my_payouts(
     db: AsyncSession = Depends(get_db),
 ) -> PayoutListOut:
     """List the current worker's payout requests."""
+    _VALID_STATUSES = {"pending", "processing", "paid", "rejected"}
+    if status and status not in _VALID_STATUSES:
+        raise HTTPException(status_code=422, detail=f"Invalid status '{status}'. Must be one of: {', '.join(sorted(_VALID_STATUSES))}")
     offset = (page - 1) * page_size
     q = select(PayoutRequestDB).where(PayoutRequestDB.worker_id == user_id)
     if status:
@@ -211,9 +214,17 @@ async def cancel_payout_request(
         user_id=user_id,
         amount=payout.credits_requested,
         type="refund",
-        description=f"Payout cancellation refund",
+        description="Payout cancellation refund",
     )
     db.add(txn)
+    await create_notification(
+        db=db,
+        user_id=user_id,
+        type=NotifType.PAYOUT_REJECTED,
+        title="Payout request cancelled",
+        body=f"{payout.credits_requested:,} credits refunded to your account",
+        link="/worker/earnings",
+    )
     await db.commit()
 
 

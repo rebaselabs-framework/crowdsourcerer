@@ -117,7 +117,7 @@ const EVENT_ICONS: Record<string, string> = {
     </div>
   </div>
 
-  {error && <div class="bg-red-50 border border-red-200 text-red-700 rounded-xl p-4 mb-6">{error}</div>}
+  {error && <div class="bg-red-950/30 border border-red-800 text-red-400 rounded-xl p-4 mb-6">{error}</div>}
 
   {tasksWithConsensus.length === 0 && !error && (
     <div class="text-center py-20 text-gray-400">
@@ -238,8 +238,8 @@ const EVENT_ICONS: Record<string, string> = {
 
                 <!-- Admin: Assign mediator -->
                 {isAdmin && !isResolved && (
-                  <div class="bg-violet-50 border border-violet-200 rounded-xl p-4">
-                    <h3 class="text-sm font-semibold text-violet-900 mb-2">⚖️ Assign Mediator (Admin)</h3>
+                  <div class="bg-violet-950/20 border border-violet-800 rounded-xl p-4">
+                    <h3 class="text-sm font-semibold text-violet-300 mb-2">⚖️ Assign Mediator (Admin)</h3>
                     <div class="flex gap-3">
                       <input id={`mediator-input-${task.id}`} type="text" placeholder="Mediator user ID (UUID)"
                         class="flex-1 bg-gray-800 border border-violet-700/50 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-violet-500"/>

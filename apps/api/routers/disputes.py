@@ -265,7 +265,7 @@ async def resolve_dispute(
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    if task.dispute_status not in ("disputed",) and task.execution_mode != "human":
+    if task.dispute_status not in ("disputed",) or task.execution_mode != "human":
         raise HTTPException(
             status_code=400,
             detail="Task is not in a disputed state or is not a human task",
