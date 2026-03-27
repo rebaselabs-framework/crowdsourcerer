@@ -368,7 +368,15 @@ const selectedCategory = categories.find((c: any) => c.category === categoryPara
     } catch (err) {
       if (btn) btn.textContent = "Submit Quiz";
       if (btn) btn.disabled = false;
-      alert("Failed to submit quiz. Please try again.");
+      // Show inline error near the submit button
+      var errEl = document.getElementById("quiz-submit-err");
+      if (!errEl) {
+        errEl = document.createElement("p");
+        errEl.id = "quiz-submit-err";
+        errEl.className = "mt-3 text-sm text-red-400 text-center";
+        btn?.parentNode?.insertBefore(errEl, btn?.nextSibling);
+      }
+      errEl.textContent = "Failed to submit quiz — please try again.";
     }
   });
 </script>

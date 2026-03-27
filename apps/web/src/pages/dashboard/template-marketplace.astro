@@ -316,10 +316,20 @@ const myPublishedIds = new Set<string>(
     });
   });
 
-  // Unpublish buttons
+  // Unpublish buttons — two-step confirm
   document.querySelectorAll<HTMLButtonElement>(".unpublish-btn").forEach(btn => {
     btn.addEventListener("click", async () => {
-      if (!confirm("Remove this template from the marketplace? (Your personal copy is kept.)")) return;
+      if (btn.dataset.pending !== "true") {
+        btn.dataset.pending = "true";
+        const orig = btn.textContent;
+        btn.textContent = "Remove?";
+        btn.classList.add("text-red-400");
+        setTimeout(() => {
+          if (btn.dataset.pending === "true") { btn.dataset.pending = ""; btn.textContent = orig; btn.classList.remove("text-red-400"); }
+        }, 3000);
+        return;
+      }
+      btn.dataset.pending = "";
       const id = btn.dataset.id!;
       btn.disabled = true;
       btn.textContent = "Removing…";

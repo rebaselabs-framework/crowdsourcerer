@@ -2205,6 +2205,14 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
 
   {/* Duplicate task button script */}
   <script is:inline define:vars={{ taskId: id }}>
+    function _toast(msg, ok) {
+      var t = document.createElement('div');
+      t.className = 'fixed bottom-4 right-4 px-4 py-2 rounded-lg text-white text-sm z-50 ' + (ok !== false ? 'bg-emerald-600' : 'bg-red-600');
+      t.textContent = msg;
+      document.body.appendChild(t);
+      setTimeout(function() { t.remove(); }, 3500);
+    }
+
     const dupBtn = document.getElementById("duplicate-task-btn");
     if (dupBtn) {
       dupBtn.addEventListener("click", async () => {
@@ -2214,7 +2222,7 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
           const res = await fetch(`/api/tasks/${taskId}/duplicate-params`);
           if (!res.ok) {
             const d = await res.json().catch(() => ({}));
-            alert(d.detail ?? "Failed to fetch task params");
+            _toast(d.detail ?? "Failed to fetch task params", false);
             dupBtn.disabled = false;
             dupBtn.textContent = "📋 Duplicate";
             return;
@@ -2233,7 +2241,7 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
           if (params.task_instructions) qs.set("task_instructions", params.task_instructions);
           window.location.href = `/dashboard/new-task?${qs.toString()}`;
         } catch {
-          alert("Network error — could not fetch task params");
+          _toast("Network error — could not fetch task params", false);
           dupBtn.disabled = false;
           dupBtn.textContent = "📋 Duplicate";
         }
@@ -2243,6 +2251,7 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
 
   {/* Task dependency management script */}
   <script is:inline define:vars={{ taskId: id }}>
+    // _toast defined in duplicate-task script above
     const addDepBtn = document.getElementById("add-dep-btn");
     const addDepForm = document.getElementById("add-dep-form");
     const depSaveBtn = document.getElementById("dep-save-btn");
@@ -2285,11 +2294,25 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
       }
     });
 
-    // Remove dependency buttons
+    // Remove dependency buttons — two-step confirmation
     document.querySelectorAll(".dep-remove-btn").forEach(btn => {
       btn.addEventListener("click", async () => {
         const depId = btn.dataset.depId;
-        if (!confirm("Remove this dependency?")) return;
+        if (btn.dataset.pending !== "true") {
+          btn.dataset.pending = "true";
+          const orig = btn.textContent;
+          btn.textContent = "Remove?";
+          btn.classList.add("text-red-400");
+          setTimeout(function() {
+            if (btn.dataset.pending === "true") {
+              btn.dataset.pending = "";
+              btn.textContent = orig;
+              btn.classList.remove("text-red-400");
+            }
+          }, 3000);
+          return;
+        }
+        btn.dataset.pending = "";
         btn.disabled = true;
         try {
           const res = await fetch(`/api/tasks/${taskId}/dependencies/${depId}`, {
@@ -2299,11 +2322,11 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
             location.reload();
           } else {
             const d = await res.json().catch(() => ({}));
-            alert(d.detail ?? "Failed to remove dependency");
+            _toast(d.detail ?? "Failed to remove dependency", false);
             btn.disabled = false;
           }
         } catch {
-          alert("Network error");
+          _toast("Network error — please try again", false);
           btn.disabled = false;
         }
       });

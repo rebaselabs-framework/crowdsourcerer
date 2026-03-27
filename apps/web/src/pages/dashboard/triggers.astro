@@ -365,11 +365,26 @@ document.getElementById("createTriggerForm")?.addEventListener("submit", async (
   }
 });
 
-// Delete triggers
+// Delete triggers — two-step confirm
 document.querySelectorAll(".delete-trigger-btn").forEach(btn => {
   btn.addEventListener("click", async () => {
-    if (!confirm("Delete this trigger?")) return;
+    if ((btn as HTMLElement).dataset.pending !== "true") {
+      (btn as HTMLElement).dataset.pending = "true";
+      const orig = btn.textContent;
+      btn.textContent = "Delete?";
+      (btn as HTMLElement).classList.add("text-red-400", "border-red-700");
+      setTimeout(() => {
+        if ((btn as HTMLElement).dataset.pending === "true") {
+          (btn as HTMLElement).dataset.pending = "";
+          btn.textContent = orig;
+          (btn as HTMLElement).classList.remove("text-red-400", "border-red-700");
+        }
+      }, 3000);
+      return;
+    }
+    (btn as HTMLElement).dataset.pending = "";
     const triggerId = btn.getAttribute("data-trigger-id")!;
+    (btn as HTMLButtonElement).disabled = true;
     await fetch(`/api/triggers/${triggerId}`, { method: "DELETE" });
     location.reload();
   });

@@ -893,7 +893,20 @@ if not verify(request.get_data(), YOUR_SECRET, sig):
     // ─── Rotate secret ────────────────────────────────────────────────────────
     document.querySelectorAll<HTMLButtonElement>(".rotate-secret-btn").forEach(btn => {
       btn.addEventListener("click", async () => {
-        if (!confirm("Rotate the signing secret? The old secret will stop working immediately.")) return;
+        if (btn.dataset.pending !== "true") {
+          btn.dataset.pending = "true";
+          const orig = btn.textContent;
+          btn.textContent = "Rotate?";
+          btn.classList.add("text-yellow-400", "border-yellow-700");
+          setTimeout(() => {
+            if (btn.dataset.pending === "true") {
+              btn.dataset.pending = ""; btn.textContent = orig;
+              btn.classList.remove("text-yellow-400", "border-yellow-700");
+            }
+          }, 3000);
+          return;
+        }
+        btn.dataset.pending = "";
         const epId = btn.dataset.epId;
         btn.disabled = true;
         try {
@@ -919,7 +932,20 @@ if not verify(request.get_data(), YOUR_SECRET, sig):
     // ─── Delete endpoint ──────────────────────────────────────────────────────
     document.querySelectorAll<HTMLButtonElement>(".delete-ep-btn").forEach(btn => {
       btn.addEventListener("click", async () => {
-        if (!confirm("Delete this webhook endpoint? All future events will stop being delivered.")) return;
+        if (btn.dataset.pending !== "true") {
+          btn.dataset.pending = "true";
+          const orig = btn.textContent;
+          btn.textContent = "Delete?";
+          btn.classList.add("text-red-400", "border-red-700");
+          setTimeout(() => {
+            if (btn.dataset.pending === "true") {
+              btn.dataset.pending = ""; btn.textContent = orig;
+              btn.classList.remove("text-red-400", "border-red-700");
+            }
+          }, 3000);
+          return;
+        }
+        btn.dataset.pending = "";
         const epId = btn.dataset.epId;
         btn.disabled = true;
         try {
@@ -994,7 +1020,17 @@ if not verify(request.get_data(), YOUR_SECRET, sig):
     document.querySelectorAll<HTMLButtonElement>(".delete-tpl-btn").forEach(btn => {
       btn.addEventListener("click", async () => {
         const eventType = btn.dataset.eventType;
-        if (!confirm(`Delete payload template for "${eventType}"?`)) return;
+        if (btn.dataset.pending !== "true") {
+          btn.dataset.pending = "true";
+          const orig = btn.textContent;
+          btn.textContent = "Delete?";
+          btn.classList.add("text-red-400");
+          setTimeout(() => {
+            if (btn.dataset.pending === "true") { btn.dataset.pending = ""; btn.textContent = orig; btn.classList.remove("text-red-400"); }
+          }, 3000);
+          return;
+        }
+        btn.dataset.pending = "";
         btn.disabled = true;
         try {
           const res = await fetch(`/api/webhooks/payload-templates/${eventType}`, { method: "DELETE" });
