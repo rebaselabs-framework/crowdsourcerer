@@ -93,12 +93,12 @@ async def _fmt_member(m: WorkerTeamMemberDB, db: AsyncSession) -> WorkerTeamMemb
     user = user_result.scalar_one_or_none()
     return WorkerTeamMemberOut(
         user_id=str(m.user_id),
-        name=user.full_name or user.username if user else "Unknown",
+        name=user.name or user.email.split("@")[0] if user else "Unknown",
         role=m.role,
         joined_at=m.joined_at.isoformat(),
-        tasks_completed=getattr(user, "tasks_completed", 0) if user else 0,
-        xp=getattr(user, "xp", 0) if user else 0,
-        level=getattr(user, "level", 1) if user else 1,
+        tasks_completed=user.worker_tasks_completed if user else 0,
+        xp=user.worker_xp if user else 0,
+        level=user.worker_level if user else 1,
     )
 
 
@@ -113,7 +113,7 @@ async def _fmt_invite(invite: WorkerTeamInviteDB, db: AsyncSession) -> WorkerTea
         team_name=team.name if team else "Unknown",
         invitee_id=str(invite.invitee_id),
         invited_by=str(invite.invited_by),
-        inviter_name=inviter.full_name or inviter.username if inviter else "Unknown",
+        inviter_name=inviter.name or inviter.email.split("@")[0] if inviter else "Unknown",
         status=invite.status,
         message=invite.message,
         created_at=invite.created_at.isoformat(),
@@ -330,7 +330,7 @@ async def invite_worker(
     invitee_result = await db.execute(
         select(UserDB).where(
             or_(
-                UserDB.username == req.username.strip(),
+                UserDB.name == req.username.strip(),
                 UserDB.email == req.username.strip().lower(),
             )
         )
