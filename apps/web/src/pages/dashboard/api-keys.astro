@@ -72,8 +72,12 @@ try {
     apiFetch<any>("/v1/api-keys/usage/overview?days=30", { token }).catch(() => null),
     apiFetch<any[]>("/v1/scopes", { token }).catch(() => []),
   ]);
-} catch (e) {
-  return Astro.redirect("/login");
+} catch (e: any) {
+  // Only redirect to login for actual authentication failures.
+  if (e.message?.includes("401") || e.message?.includes("403")) {
+    return Astro.redirect("/login");
+  }
+  apiKeys = [];
 }
 
 // If a specific key is selected, load its detail usage + rate status

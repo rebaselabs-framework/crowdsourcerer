@@ -33,8 +33,15 @@ try {
     withTimeout(apiFetch<any>("/v1/quota", { token }), 2000),
     withTimeout(apiFetch<any>("/v1/tasks/review-summary", { token }), 2000).catch(() => null),
   ]);
-} catch (e) {
-  return Astro.redirect("/login");
+} catch (e: any) {
+  // Only redirect to login for actual authentication failures (401/403).
+  // Network errors, 500s, etc. shouldn't kick users to the login page unexpectedly.
+  if (e.message?.includes("401") || e.message?.includes("403")) {
+    return Astro.redirect("/login");
+  }
+  // For other errors, continue rendering with empty data — the template uses
+  // null-safe access (?.) and fallbacks (?? 0) throughout so null user/credits
+  // will render an empty but non-crashing page.
 }
 
 // ── Derived stats ─────────────────────────────────────────────────────────────

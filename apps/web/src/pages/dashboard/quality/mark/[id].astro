@@ -17,7 +17,11 @@ try {
   if (e.message?.includes("404")) {
     return Astro.redirect("/dashboard/quality");
   }
-  return Astro.redirect("/login");
+  // Only redirect to login for actual authentication failures.
+  if (e.message?.includes("401") || e.message?.includes("403")) {
+    return Astro.redirect("/login");
+  }
+  return Astro.redirect("/dashboard/quality");
 }
 
 // Handle form submission
