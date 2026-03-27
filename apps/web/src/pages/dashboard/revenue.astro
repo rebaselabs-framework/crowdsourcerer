@@ -27,7 +27,7 @@ try {
   if (orgIdParam) p.set("org_id", orgIdParam);
   data = await apiFetch<any>(`/v1/analytics/revenue?${p}`, { token });
 } catch (e: any) {
-  if (e.message?.includes("401")) return Astro.redirect("/login");
+  if (e.message?.includes("401") || e.message?.includes("403")) return Astro.redirect("/login");
   error = "Failed to load revenue analytics";
 }
 
@@ -51,13 +51,13 @@ const TREND_ICON: {[k: string]: string} = {
   stable: "→",
 };
 const TREND_COLOR: {[k: string]: string} = {
-  increasing: "text-amber-600",
-  decreasing: "text-emerald-600",
-  stable: "text-blue-600",
+  increasing: "text-amber-400",
+  decreasing: "text-emerald-400",
+  stable: "text-blue-400",
 };
 const CONF_COLOR: {[k: string]: string} = {
-  high: "text-emerald-600",
-  medium: "text-amber-600",
+  high: "text-emerald-400",
+  medium: "text-amber-400",
   low: "text-gray-400",
 };
 
@@ -125,14 +125,14 @@ const modeBars = Object.entries(byMode).map(([mode, creds]: any) => ({
         <!-- KPI strip -->
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
           {[
-            { label: "Total Spent", val: `$${data.total_usd_spent.toFixed(2)}`, sub: `${data.total_credits_spent.toLocaleString()} credits`, color: "violet" },
-            { label: "Avg Daily", val: `${data.avg_daily_credits} cr`, sub: `$${(data.avg_daily_credits/100).toFixed(2)}/day`, color: "blue" },
-            { label: "Success Rate", val: `${data.success_rate_pct}%`, sub: `${data.completed_tasks} / ${data.total_tasks} tasks`, color: "emerald" },
-            { label: "Avg Cost/Task", val: `${data.avg_credits_per_task} cr`, sub: `${data.avg_credits_per_completion} cr/completion`, color: "amber" },
+            { label: "Total Spent", val: `$${data.total_usd_spent.toFixed(2)}`, sub: `${data.total_credits_spent.toLocaleString()} credits`, colorClass: "text-violet-400" },
+            { label: "Avg Daily", val: `${data.avg_daily_credits} cr`, sub: `$${(data.avg_daily_credits/100).toFixed(2)}/day`, colorClass: "text-blue-400" },
+            { label: "Success Rate", val: `${data.success_rate_pct}%`, sub: `${data.completed_tasks} / ${data.total_tasks} tasks`, colorClass: "text-emerald-400" },
+            { label: "Avg Cost/Task", val: `${data.avg_credits_per_task} cr`, sub: `${data.avg_credits_per_completion} cr/completion`, colorClass: "text-amber-400" },
           ].map(k => (
             <div class="bg-gray-800 rounded-xl border border-gray-700 p-5">
               <p class="text-xs text-gray-400 uppercase tracking-wide">{k.label}</p>
-              <p class={`text-2xl font-bold mt-1 text-${k.color}-600`}>{k.val}</p>
+              <p class={`text-2xl font-bold mt-1 ${k.colorClass}`}>{k.val}</p>
               <p class="text-xs text-gray-400 mt-0.5">{k.sub}</p>
             </div>
           ))}
@@ -253,7 +253,7 @@ const modeBars = Object.entries(byMode).map(([mode, creds]: any) => ({
                       <td class="px-4 py-3 text-gray-300">{row.task_count}</td>
                       <td class="px-4 py-3 text-gray-300">{row.completed_count}</td>
                       <td class="px-4 py-3">
-                        <span class={`px-2 py-0.5 rounded-full text-xs font-medium ${rate>=80?"bg-emerald-100 text-emerald-700":rate>=50?"bg-amber-100 text-amber-700":"bg-red-100 text-red-700"}`}>
+                        <span class={`px-2 py-0.5 rounded-full text-xs font-medium ${rate>=80?"bg-emerald-900/30 text-emerald-400":rate>=50?"bg-amber-900/30 text-amber-400":"bg-red-900/30 text-red-400"}`}>
                           {rate}%
                         </span>
                       </td>

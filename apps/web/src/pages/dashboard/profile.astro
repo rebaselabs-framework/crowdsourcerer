@@ -20,6 +20,9 @@ try {
     apiFetch<any>("/v1/users/me/profile-status", { token }),
   ]);
 } catch (e: any) {
+  if (e.message?.includes("401") || e.message?.includes("403")) {
+    return Astro.redirect("/login");
+  }
   error = e.message ?? "Failed to load profile";
 }
 
