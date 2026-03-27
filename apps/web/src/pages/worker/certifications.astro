@@ -14,20 +14,13 @@ if (Astro.request.method === "POST") {
   try {
     const answers = JSON.parse(answersJson || "[]");
     // POST → redirect → GET: avoids form resubmission on browser refresh
-    const result = await apiFetch<{score:number; passed:boolean; earned_points:number; total_points:number; correct_count:number; question_count:number}>(`/v1/certifications/${taskType}/attempt`, {
+    const r = await apiFetch<any>(`/v1/certifications/${taskType}/attempt`, {
       method: "POST",
       token,
       body: JSON.stringify({ answers }),
     });
-    return Astro.redirect("/worker/certifications?" + new URLSearchParams({
-      result_type: taskType,
-      score:   String(result.score),
-      passed:  String(result.passed),
-      earned:  String(result.earned_points),
-      total:   String(result.total_points),
-      correct: String(result.correct_count),
-      count:   String(result.question_count),
-    }).toString());
+    const url = `/worker/certifications?result_type=${encodeURIComponent(taskType)}&score=${r.score}&passed=${r.passed}&earned=${r.earned_points}&total=${r.total_points}&correct=${r.correct_count}&count=${r.question_count}`;
+    if (url) return Astro.redirect(url);
   } catch (e: any) {
     return Astro.redirect(`/worker/certifications?error=attempt_failed&type=${taskType}`);
   }

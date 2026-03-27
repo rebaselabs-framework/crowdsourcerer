@@ -89,7 +89,7 @@ function statusBadge(status: string) {
         <p class="text-gray-500 mt-1">Chain tasks together — AI validates, humans review, results flow forward</p>
       </div>
       <button
-        onclick="document.getElementById('create-modal').classList.remove('hidden')"
+        onclick={"document.getElementById('create-modal').classList.remove('hidden')"}
         class="bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg font-medium transition"
       >
         + New Pipeline
@@ -174,7 +174,7 @@ function statusBadge(status: string) {
                 <div class="flex gap-2">
                   <!-- Run Pipeline -->
                   <button
-                    onclick="document.getElementById('run-modal').classList.remove('hidden')"
+                    onclick={"document.getElementById('run-modal').classList.remove('hidden')"}
                     class="bg-violet-600 hover:bg-violet-700 text-white px-3 py-1.5 rounded-lg text-sm font-medium"
                   >
                     ▶ Run
@@ -185,7 +185,7 @@ function statusBadge(status: string) {
                     <input type="hidden" name="pipeline_id" value={pipelineDetail.id} />
                     <button
                       type="submit"
-                      onclick="return confirm('Delete this pipeline?')"
+                      onclick={"return confirm('Delete this pipeline?')"}
                       class="text-red-500 hover:text-red-700 px-3 py-1.5 rounded-lg text-sm border border-red-200 hover:bg-red-50"
                     >
                       🗑 Delete
@@ -424,7 +424,7 @@ function statusBadge(status: string) {
     <div class="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
       <div class="p-6 border-b border-gray-800 flex items-center justify-between">
         <h2 class="text-lg font-bold text-white">Create New Pipeline</h2>
-        <button onclick="document.getElementById('create-modal')?.classList.add('hidden')" class="text-gray-400 hover:text-gray-600 text-2xl">×</button>
+        <button onclick={"document.getElementById('create-modal').classList.add('hidden')"} class="text-gray-400 hover:text-gray-600 text-2xl">×</button>
       </div>
       <form method="POST" class="p-6 space-y-5">
         <input type="hidden" name="action" value="create" />
@@ -445,7 +445,7 @@ function statusBadge(status: string) {
         <div>
           <div class="flex items-center justify-between mb-2">
             <label class="block text-sm font-medium text-gray-300">Pipeline Steps *</label>
-            <button type="button" onclick="addStep()"
+            <button type="button" onclick={"addStep()"}
               class="text-sm text-violet-600 hover:text-violet-800 font-medium">
               + Add Step
             </button>
@@ -457,7 +457,7 @@ function statusBadge(status: string) {
         </div>
 
         <div class="flex gap-3 pt-2">
-          <button type="button" onclick="document.getElementById('create-modal').classList.add('hidden')"
+          <button type="button" onclick={"document.getElementById('create-modal').classList.add('hidden')"}
             class="flex-1 border border-gray-700 text-gray-300 px-4 py-2 rounded-lg text-sm">
             Cancel
           </button>
@@ -476,7 +476,7 @@ function statusBadge(status: string) {
       <div class="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-lg">
         <div class="p-6 border-b border-gray-800 flex items-center justify-between">
           <h2 class="text-lg font-bold text-white">Run Pipeline: {pipelineDetail.name}</h2>
-          <button onclick="document.getElementById('run-modal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600 text-2xl">×</button>
+          <button onclick={"document.getElementById('run-modal').classList.add('hidden')"} class="text-gray-400 hover:text-gray-600 text-2xl">×</button>
         </div>
         <form method="POST" class="p-6 space-y-4">
           <input type="hidden" name="action" value="run" />
@@ -488,7 +488,7 @@ function statusBadge(status: string) {
             <p class="text-xs text-gray-400 mt-1">This input will be passed to the first step and available to all subsequent steps.</p>
           </div>
           <div class="flex gap-3">
-            <button type="button" onclick="document.getElementById('run-modal').classList.add('hidden')"
+            <button type="button" onclick={"document.getElementById('run-modal').classList.add('hidden')"}
               class="flex-1 border border-gray-700 text-gray-300 px-4 py-2 rounded-lg text-sm">
               Cancel
             </button>

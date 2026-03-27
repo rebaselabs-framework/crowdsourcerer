@@ -114,7 +114,7 @@ const ROLE_COLORS: Record<string, string> = {
         <p class="text-gray-400 mt-1">Manage your organizations and shared credit pools.</p>
       </div>
       <button
-        onclick="document.getElementById('create-org-modal').classList.remove('hidden')"
+        onclick={"document.getElementById('create-org-modal').classList.remove('hidden')"}
         class="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white font-medium rounded-xl transition text-sm"
       >
         + New Team
@@ -148,7 +148,7 @@ const ROLE_COLORS: Record<string, string> = {
         <p class="text-lg font-medium">No teams yet</p>
         <p class="text-sm mt-1">Create a team to share credits and collaborate with others.</p>
         <button
-          onclick="document.getElementById('create-org-modal').classList.remove('hidden')"
+          onclick={"document.getElementById('create-org-modal').classList.remove('hidden')"}
           class="mt-4 px-4 py-2 bg-violet-600 text-white rounded-xl text-sm font-medium hover:bg-violet-500"
         >
           Create your first team
@@ -286,7 +286,7 @@ const ROLE_COLORS: Record<string, string> = {
                           <button
                             type="submit"
                             class="text-xs text-red-500 hover:text-red-700"
-                            onclick="return confirm('Remove this member?')"
+                            onclick={"return confirm('Remove this member?')"}
                           >
                             Remove
                           </button>
@@ -404,7 +404,7 @@ const ROLE_COLORS: Record<string, string> = {
           <div class="flex gap-3">
             <button
               type="button"
-              onclick="document.getElementById('create-org-modal')?.classList.add('hidden')"
+              onclick={"document.getElementById('create-org-modal').classList.add('hidden')"}
               class="flex-1 px-4 py-2 border border-gray-700 text-gray-300 rounded-xl text-sm font-medium hover:bg-gray-800"
             >
               Cancel

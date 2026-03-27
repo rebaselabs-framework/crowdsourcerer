@@ -346,11 +346,11 @@ const pendingInvites: any[] = team?.pending_invites ?? [];
       </div>
     )}
   </div>
-  <script is:inline>
+  <script>
     // Confirm-required forms use data-confirm instead of onsubmit="return confirm(...)"
     document.querySelectorAll("form[data-confirm]").forEach(function(form) {
       form.addEventListener("submit", function(e) {
-        if (!confirm(form.dataset.confirm)) e.preventDefault();
+        if (!confirm((form as HTMLFormElement).dataset.confirm)) e.preventDefault();
       });
     });
   </script>

@@ -431,20 +431,21 @@ const TASK_ICONS: Record<string, string> = {
     });
 
     // Save button handler (works for both empty-state picker and skills-page manager)
-    document.addEventListener("click", function(e) {
+    document.addEventListener("click", async function(e) {
       var btn = e.target.closest("#save-interests-btn");
       if (!btn) return;  // TOKEN check removed — /api/worker/interests proxy handles auth
 
       btn.disabled = true;
       btn.textContent = "Saving…";
 
-      fetch("/api/worker/interests", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ interests: Array.from(selected) }),
-      })
-      .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
-      .then(function(result) {
+      try {
+        var r = await fetch("/api/worker/interests", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ interests: Array.from(selected) }),
+        });
+        var d = await r.json();
+        var result = { ok: r.ok, data: d };
         if (result.ok) {
           btn.textContent = "Saved!";
           setTimeout(function() { btn.textContent = btn.closest("#interest-grid") ? "Save interests" : "Save"; btn.disabled = false; }, 1500);
@@ -470,11 +471,10 @@ const TASK_ICONS: Record<string, string> = {
           var msgEl = document.getElementById("interest-msg");
           if (msgEl) { msgEl.textContent = result.data.detail || "Failed to save."; msgEl.className = "mt-2 text-xs text-red-400"; msgEl.classList.remove("hidden"); }
         }
-      })
-      .catch(function() {
+      } catch(err) {
         btn.textContent = "Error — retry";
         btn.disabled = false;
-      });
+      }
     });
   })();
 </script>
