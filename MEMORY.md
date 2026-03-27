@@ -627,6 +627,22 @@ All Astro SSR POST handlers that were silently swallowing API errors now redirec
 
 **Test count: 1081 → 1084**
 
+## Session 2026-03-27 (continued) — Safe JSON parsing, race conditions, SSR error propagation (commit f54cf82)
+
+**Safe `.json().catch(() => ({}))` added to 9 client-side fetch calls:**
+- `webhooks.astro`: 6 calls missing `.catch()` — create endpoint, test-ping, rotate-secret, delete endpoint, retry-log, replay-event; non-JSON error pages (gateway HTML) would throw before `res.ok` check and show "Network error" instead of real error
+- `tasks/index.astro`: 3 bulk-action calls (retry, bulk-cancel, bulk-archive) — same pattern
+
+**SSR POST silent-catch fixed in 2 pages:**
+- `experiments.astro`: `catch (_) {}` → redirect with `?action_error=`; added `actionError` variable + banner in template; covers create/status-update/delete experiment actions
+- `admin/announcements.astro`: same fix for `catch (_) { // Fall through }` → redirect with `?action_error=`; covers create/toggle/delete announcement actions
+
+**Race conditions:**
+- `portfolio.py pin_task`: replaced separate duplicate-check SELECT + `func.count()` with a single `SELECT ... FOR UPDATE` covering all worker portfolio items — prevents two concurrent pin requests from both passing the 10-item cap and exceeding `_MAX_PORTFOLIO`
+- `ratings.py rate_task`: added `except IntegrityError` on `db.flush()` → `db.rollback()` + 409; prevents a concurrent duplicate rating (that slips past the pre-insert SELECT check) from surfacing as a 500
+
+**Test count: 1084 (unchanged)**
+
 ## Priorities for Next Session 🔜
 
 PHASE: Pre-alpha development. Focus on quality/depth. NOT in scope: launch tasks, marketing, directory listings.
