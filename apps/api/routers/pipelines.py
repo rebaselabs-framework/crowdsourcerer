@@ -809,7 +809,9 @@ async def _execute_pipeline_run(
                             await db.flush()
 
                             cost = TASK_CREDITS.get(step.task_type, 1)
-                            user_result = await db.execute(select(UserDB).where(UserDB.id == UUID(user_id)))
+                            user_result = await db.execute(
+                                select(UserDB).where(UserDB.id == UUID(user_id)).with_for_update()
+                            )
                             user = user_result.scalar_one()
                             if user.credits >= cost:
                                 user.credits -= cost

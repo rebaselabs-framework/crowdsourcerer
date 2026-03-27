@@ -546,10 +546,12 @@ async def decline_invite(
     await _require_worker(user_id, db)
 
     invite_result = await db.execute(
-        select(WorkerTeamInviteDB).where(
+        select(WorkerTeamInviteDB)
+        .where(
             WorkerTeamInviteDB.id == invite_id,
             WorkerTeamInviteDB.invitee_id == UUID(user_id),
         )
+        .with_for_update()
     )
     invite = invite_result.scalar_one_or_none()
     if not invite:

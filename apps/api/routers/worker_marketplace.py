@@ -575,10 +575,12 @@ async def respond_to_invite(
         raise HTTPException(status_code=400, detail="action must be 'accept' or 'decline'")
 
     invite_result = await db.execute(
-        select(WorkerInviteDB).where(
+        select(WorkerInviteDB)
+        .where(
             WorkerInviteDB.id == invite_id,
             WorkerInviteDB.worker_id == user_id,
         )
+        .with_for_update()
     )
     invite = invite_result.scalar_one_or_none()
     if not invite:
