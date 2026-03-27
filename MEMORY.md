@@ -662,13 +662,36 @@ All Astro SSR POST handlers that were silently swallowing API errors now redirec
 
 **Test count: 1084 → 1087**
 
+## Session 2026-03-27 (continued) — Two more latent AttributeError crashes (commit a181292)
+
+Systematic grep scan of all `order_by(ModelDB.col)` and `where(ModelDB.col)` usages found 2 more wrong column references:
+
+- `admin.py` line 811: `TaskDB.updated_at` → `TaskDB.completed_at` (counting tasks completed this week; `updated_at` doesn't exist on TaskDB)
+- `notification_digest.py` line 178: `TaskAssignmentDB.created_at` → `TaskAssignmentDB.claimed_at` (finding workers active in last 7 days; `created_at` doesn't exist on TaskAssignmentDB)
+
+Both would have thrown `AttributeError` at runtime on their first execution. No test count change (1087).
+
+## Session 2026-03-27 (continued) — Security IDOR fix + AttributeError crash fix (pending commit)
+
+Security/IDOR audit and wrong-column-reference audit found two confirmed bugs:
+
+**IDOR info-leak fixed (tasks.py `get_related_tasks`):**
+- The scalar subquery that finds the task's type did not filter by `user_id` — any authenticated user could probe an arbitrary `task_id` and the subquery would return that task's type regardless of ownership, leaking task metadata.
+- Fix: added `TaskDB.user_id == user_id` to the subquery's WHERE clause so probing a foreign task_id yields NULL → no type match → empty result set.
+
+**AttributeError crash fixed (worker_marketplace.py cert filter):**
+- `WorkerCertificationDB` has no `task_type` column (only `cert_id` FK → `CertificationDB.id`). The marketplace `?cert=` filter was referencing `WorkerCertificationDB.task_type` which would crash with `AttributeError` on every request with a cert filter.
+- Fix: added `.join(CertificationDB, CertificationDB.id == WorkerCertificationDB.cert_id)` and changed the filter to `CertificationDB.task_type == cert`.
+- Also imported `CertificationDB` into worker_marketplace.py (was missing).
+
 ## Priorities for Next Session 🔜
 
 PHASE: Pre-alpha development. Focus on quality/depth. NOT in scope: launch tasks, marketing, directory listings.
 
-1. **More UX depth audits**: Continue auditing existing pages for bugs and UX gaps — admin pages, task creation flow, marketplace.
-2. **Proxy route test coverage**: 13+ Astro proxy routes still lack tests. Would need Vitest setup in the web package first.
-3. **Race condition audit**: Look for more race conditions in worker pay/approval flows.
+1. **Regression tests for current fixes**: `test_get_related_tasks_idor` (probing foreign task_id returns empty), `test_marketplace_cert_filter` (cert filter returns correct workers via JOIN).
+2. **More wrong-column-reference scan**: Previous session found 3 latent AttributeError crashes; full systematic audit of all `ModelDB.col` usages vs. actual column definitions may reveal more.
+3. **Proxy route test coverage**: 13+ Astro proxy routes still lack tests. Would need Vitest setup in the web package first.
+4. **Race condition audit**: Look for more race conditions in worker pay/approval flows.
 
 ## Known Warnings (non-blocking)
 

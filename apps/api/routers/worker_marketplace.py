@@ -38,7 +38,7 @@ from core.scopes import require_scope, SCOPE_TASKS_READ, SCOPE_TASKS_WRITE
 from models.db import (
     UserDB, TaskDB, TaskAssignmentDB,
     WorkerSkillDB, WorkerCertificationDB, WorkerEndorsementDB,
-    WorkerInviteDB, TaskWatchlistDB,
+    WorkerInviteDB, TaskWatchlistDB, CertificationDB,
 )
 from models.schemas import BulkInviteRequest
 
@@ -183,8 +183,9 @@ async def browse_workers(
     if cert:
         cert_sub = (
             select(WorkerCertificationDB.worker_id)
+            .join(CertificationDB, CertificationDB.id == WorkerCertificationDB.cert_id)
             .where(
-                WorkerCertificationDB.task_type == cert,
+                CertificationDB.task_type == cert,
                 WorkerCertificationDB.passed == True,  # noqa: E712
             )
         )

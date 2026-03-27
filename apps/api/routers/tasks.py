@@ -2316,8 +2316,13 @@ async def get_related_tasks(
         .where(
             TaskDB.user_id == user_id,
             TaskDB.id != task_id,
-            # Join-less: filter by the same type as the target task via subquery
-            TaskDB.type == select(TaskDB.type).where(TaskDB.id == task_id).scalar_subquery(),
+            # Join-less: filter by the same type as the target task via subquery.
+            # SECURITY: subquery also checks user_id so probing a foreign task_id
+            # yields NULL (no type match) instead of leaking the task's type.
+            TaskDB.type == select(TaskDB.type).where(
+                TaskDB.id == task_id,
+                TaskDB.user_id == user_id,
+            ).scalar_subquery(),
         )
         .order_by(TaskDB.created_at.desc())
         .limit(limit)
