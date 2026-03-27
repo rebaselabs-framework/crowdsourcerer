@@ -679,3 +679,197 @@ class TestDeclineTeamInviteRaceGuard:
             db.commit.assert_not_awaited()
         finally:
             app.dependency_overrides.pop(get_db, None)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# portfolio.pin_task cap-enforcement tests — POST /v1/worker/portfolio
+# ═══════════════════════════════════════════════════════════════════════════════
+
+PORTFOLIO_TASK_ID = str(uuid.uuid4())
+
+
+class TestPortfolioPinCapEnforcement:
+    """pin_task: portfolio at max capacity → 400 even under concurrent requests."""
+
+    @pytest.fixture
+    def worker_headers(self):
+        return {"Authorization": f"Bearer {_real_token(WORKER_ID)}"}
+
+    def _db_for_pin(self, existing_count: int) -> MagicMock:
+        """
+        Build a mock DB for pin_task:
+          call 1 (db.execute) → assignment (None — using is_ai_task_owner path)
+          call 2 (db.execute) → locked portfolio rows (existing_count items)
+        db.get → task (completed, ai, user_id==WORKER_ID so is_ai_task_owner=True)
+        """
+        db = _make_mock_db()
+
+        task = MagicMock()
+        task.id              = uuid.UUID(PORTFOLIO_TASK_ID)
+        task.status          = "completed"
+        task.execution_mode  = "ai"
+        task.user_id         = uuid.UUID(WORKER_ID)
+
+        db.get = AsyncMock(return_value=task)
+
+        # Build existing portfolio items (each has a different task_id)
+        existing_items = []
+        for _ in range(existing_count):
+            item = MagicMock()
+            item.task_id = uuid.uuid4()  # different from PORTFOLIO_TASK_ID
+            existing_items.append(item)
+
+        call_count = 0
+
+        def _side_effect(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                # Assignment query — no assignment found (we use ai-owner path)
+                return _scalar_result(None)
+            if call_count == 2:
+                # Locked SELECT on worker's portfolio items
+                r = MagicMock()
+                r.scalars = MagicMock(
+                    return_value=MagicMock(all=MagicMock(return_value=existing_items))
+                )
+                return r
+            return _scalar_result(None)
+
+        db.execute.side_effect = _side_effect
+        return db
+
+    @pytest.mark.asyncio
+    async def test_pin_at_cap_returns_400(self, app, worker_headers):
+        """When the worker already has _MAX_PORTFOLIO pinned items, pin returns 400."""
+        db = self._db_for_pin(existing_count=10)
+
+        from core.database import get_db
+        app.dependency_overrides[get_db] = _db_override(db)
+        try:
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as c:
+                r = await c.post(
+                    "/v1/worker/portfolio",
+                    json={"task_id": PORTFOLIO_TASK_ID, "caption": "my best work"},
+                    headers=worker_headers,
+                )
+            assert r.status_code == 400, r.text
+            detail = r.json()["detail"]
+            assert "full" in detail.lower() or "max" in detail.lower()
+            db.commit.assert_not_awaited()
+        finally:
+            app.dependency_overrides.pop(get_db, None)
+
+    @pytest.mark.asyncio
+    async def test_pin_below_cap_does_not_return_400(self, app, worker_headers):
+        """9 existing items (one below cap) → cap check passes, commit is called."""
+        db = self._db_for_pin(existing_count=9)
+
+        from core.database import get_db
+        app.dependency_overrides[get_db] = _db_override(db)
+        try:
+            # Patch _build_item to return a valid PortfolioItemOut-compatible dict
+            from routers.portfolio import PortfolioItemOut
+            fake_item = MagicMock(spec=PortfolioItemOut)
+            fake_item.id = uuid.uuid4()
+            fake_item.task_id = uuid.UUID(PORTFOLIO_TASK_ID)
+            fake_item.task_type = "web_research"
+            fake_item.task_title = "Test Task"
+            fake_item.caption = "great work"
+            fake_item.pinned_at = "2024-01-01T00:00:00Z"
+            fake_item.result_snippet = None
+            with patch("routers.portfolio._build_item", AsyncMock(return_value=fake_item)):
+                async with AsyncClient(
+                    transport=ASGITransport(app=app), base_url="http://test"
+                ) as c:
+                    r = await c.post(
+                        "/v1/worker/portfolio",
+                        json={"task_id": PORTFOLIO_TASK_ID, "caption": "great work"},
+                        headers=worker_headers,
+                    )
+            # The cap check passed — commit should have been called
+            db.commit.assert_awaited_once()
+            # Should NOT be the cap-full error
+            assert r.status_code != 400 or "full" not in r.text.lower()
+        finally:
+            app.dependency_overrides.pop(get_db, None)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ratings.rate_task IntegrityError → 409 (duplicate rating race fix)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+RATING_TASK_ID = str(uuid.uuid4())
+
+
+class TestRatingIntegrityErrorHandling:
+    """rate_task: flush() raises IntegrityError → 409, rollback called."""
+
+    @pytest.fixture
+    def requester_hdrs(self):
+        return {"Authorization": f"Bearer {_real_token(REQUESTER_ID)}"}
+
+    def _db_for_rating(self) -> MagicMock:
+        """
+        Build a mock DB for rate_task:
+          call 1: select(TaskDB) → task (completed, owned by REQUESTER_ID)
+          call 2: select(TaskRatingDB) → None (no existing rating found yet)
+          call 3: select(TaskAssignmentDB) → assignment with worker_id
+        flush() → raises IntegrityError (duplicate key, race won)
+        rollback() → called
+        """
+        from sqlalchemy.exc import IntegrityError as SaIntegrityError
+
+        db = _make_mock_db()
+
+        task = MagicMock()
+        task.id       = uuid.UUID(RATING_TASK_ID)
+        task.user_id  = uuid.UUID(REQUESTER_ID)
+        task.status   = "completed"
+
+        assignment = MagicMock()
+        assignment.worker_id = uuid.UUID(WORKER_ID)
+        assignment.completed_at = None
+
+        call_count = 0
+
+        def _side_effect(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return _scalar_result(task)        # TaskDB
+            if call_count == 2:
+                return _scalar_result(None)        # No existing rating
+            if call_count == 3:
+                return _scalar_result(assignment)  # Assignment
+            return _scalar_result(None)
+
+        db.execute.side_effect = _side_effect
+        db.flush = AsyncMock(side_effect=SaIntegrityError("duplicate", None, None))
+        return db
+
+    @pytest.mark.asyncio
+    async def test_duplicate_rating_race_returns_409(self, app, requester_hdrs):
+        """When flush() raises IntegrityError (duplicate rating race), rate_task
+        returns 409 and calls rollback() instead of letting the 500 propagate."""
+        db = self._db_for_rating()
+
+        from core.database import get_db
+        app.dependency_overrides[get_db] = _db_override(db)
+        try:
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as c:
+                r = await c.post(
+                    f"/v1/tasks/{RATING_TASK_ID}/rate",
+                    json={"score": 5, "comment": "excellent"},
+                    headers=requester_hdrs,
+                )
+            assert r.status_code == 409, r.text
+            assert "already rated" in r.json()["detail"].lower()
+            db.rollback.assert_awaited_once()
+            db.commit.assert_not_awaited()
+        finally:
+            app.dependency_overrides.pop(get_db, None)

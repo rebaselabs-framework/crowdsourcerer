@@ -118,9 +118,9 @@ async def rate_task(
         select(TaskAssignmentDB)
         .where(
             TaskAssignmentDB.task_id == task_id,
-            TaskAssignmentDB.status.in_(["approved", "completed", "submitted"]),
+            TaskAssignmentDB.status.in_(["approved", "submitted"]),
         )
-        .order_by(TaskAssignmentDB.completed_at.desc().nullslast())
+        .order_by(TaskAssignmentDB.submitted_at.desc().nullslast())
         .limit(1)
     )
     assignment = assignment_res.scalar_one_or_none()
