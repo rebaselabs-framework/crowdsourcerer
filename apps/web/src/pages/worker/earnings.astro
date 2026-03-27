@@ -565,10 +565,30 @@ const analyticsJson = JSON.stringify(analytics);
       </div>
     </div>
   )}
+  <!-- Cancel payout confirmation modal -->
+  <div id="cancel-payout-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+    <div class="bg-gray-900 border border-gray-800 rounded-xl w-full max-w-sm p-6">
+      <h2 class="font-semibold text-gray-200 mb-2">Cancel payout request?</h2>
+      <p class="text-sm text-gray-400 mb-5">Your credits will be refunded to your account immediately.</p>
+      <div id="cancel-payout-error" class="text-sm text-red-400 bg-red-950/20 border border-red-800 rounded-lg px-3 py-2 hidden mb-3"></div>
+      <div class="flex gap-3 justify-end">
+        <button type="button" id="cancel-payout-no" class="px-4 py-2 text-sm text-gray-300 border border-gray-700 rounded-lg hover:bg-gray-800">Keep request</button>
+        <button type="button" id="cancel-payout-yes" class="px-4 py-2 text-sm bg-red-700 hover:bg-red-600 text-white rounded-lg font-medium">Yes, cancel it</button>
+      </div>
+    </div>
+  </div>
 </div>
 </Layout>
 
 <script is:inline define:vars={{ analyticsJson }}>
+function toast(msg, ok = true) {
+  const t = document.createElement('div');
+  t.className = `fixed bottom-4 right-4 px-4 py-2 rounded-lg text-white text-sm z-50 ${ok ? 'bg-emerald-600' : 'bg-red-600'}`;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3500);
+}
+
 const analytics = JSON.parse(analyticsJson);
 
 // Charts
@@ -783,15 +803,45 @@ document.getElementById("payout-form")?.addEventListener("submit", async e => {
   } catch(e){if(err){err.textContent=e.message;err.classList.remove("hidden");}}
 });
 
-// Cancel payout
-document.querySelectorAll(".cancel-payout").forEach(btn=>{
-  btn.addEventListener("click", async()=>{
-    const id=btn.dataset.id;
-    if(!confirm("Cancel this request? Credits will be refunded.")) return;
-    const res=await fetch(`/api/payouts/${id}`,{method:"DELETE"});
-    if(res.ok||res.status===204) window.location.reload();
-    else{const d=await res.json().catch(()=>({}));alert(d.detail??"Failed to cancel");}
+// Cancel payout — confirmation modal
+let _cancelPayoutId = null;
+const cancelModal = document.getElementById("cancel-payout-modal");
+const cancelErrEl = document.getElementById("cancel-payout-error");
+const cancelYesBtn = document.getElementById("cancel-payout-yes");
+const cancelNoBtn = document.getElementById("cancel-payout-no");
+
+document.querySelectorAll(".cancel-payout").forEach(btn => {
+  btn.addEventListener("click", () => {
+    _cancelPayoutId = btn.dataset.id;
+    if (cancelErrEl) cancelErrEl.classList.add("hidden");
+    cancelModal?.classList.remove("hidden");
   });
+});
+cancelNoBtn?.addEventListener("click", () => {
+  cancelModal?.classList.add("hidden");
+  _cancelPayoutId = null;
+});
+cancelYesBtn?.addEventListener("click", async () => {
+  if (!_cancelPayoutId) return;
+  const orig = cancelYesBtn.textContent;
+  cancelYesBtn.textContent = "Cancelling…";
+  cancelYesBtn.disabled = true;
+  try {
+    const res = await fetch(`/api/payouts/${_cancelPayoutId}`, { method: "DELETE" });
+    if (res.ok || res.status === 204) {
+      cancelModal?.classList.add("hidden");
+      toast("Payout request cancelled — credits refunded");
+      setTimeout(() => window.location.reload(), 800);
+    } else {
+      const d = await res.json().catch(() => ({}));
+      if (cancelErrEl) { cancelErrEl.textContent = d.detail ?? "Failed to cancel"; cancelErrEl.classList.remove("hidden"); }
+    }
+  } catch {
+    if (cancelErrEl) { cancelErrEl.textContent = "Network error — please try again"; cancelErrEl.classList.remove("hidden"); }
+  } finally {
+    cancelYesBtn.textContent = orig;
+    cancelYesBtn.disabled = false;
+  }
 });
 
 // CSV export — fetch all payouts (up to 500) and download as CSV
@@ -805,6 +855,7 @@ document.getElementById("export-csv-btn")?.addEventListener("click", async () =>
   try {
     // Fetch up to 500 payouts for export
     const res = await fetch(`/api/payouts?page=1&page_size=500`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     const items = data?.items ?? [];
 
@@ -831,7 +882,7 @@ document.getElementById("export-csv-btn")?.addEventListener("click", async () =>
     a.click();
     URL.revokeObjectURL(url);
   } catch {
-    alert("Failed to export");
+    toast("Failed to export payouts — please try again", false);
   } finally {
     btn.textContent = orig;
     btn.removeAttribute("disabled");

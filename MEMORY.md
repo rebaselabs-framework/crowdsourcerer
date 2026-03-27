@@ -432,6 +432,11 @@ Also: template-marketplace index.ts had wrong backend URL (`/v1/template-marketp
 - Fix: added `question_ids: list[str]` to `SkillQuizSubmitRequest`; frontend now sends the IDs in display order; backend looks up questions by ID instead of relying on array position after shuffle.
 - Legacy fallback: if no `question_ids` provided, sort by ID (deterministic) instead of random.shuffle.
 
+## Session 2026-03-27 (continued) — UX polish: error toasts + portfolio edit UX (commit ac43332)
+
+- **notification-preferences.astro**: replaced two blocking `alert()` calls with `showToast(msg, true)` error toasts; `showToast()` now accepts `isError` param and dynamically applies red/emerald colour classes so one toast element covers both success and error states.
+- **worker/portfolio.astro**: rewrote edit-form submit handler with proper error display, loading state, and try/catch/finally — API errors now surface inline instead of failing silently.
+
 ## Priorities for Next Session 🔜
 
 PHASE: Pre-alpha development. Focus on quality/depth. NOT in scope: launch tasks, marketing, directory listings.

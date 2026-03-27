@@ -279,6 +279,14 @@ const CRON_EXAMPLES = [
 </Layout>
 
 <script>
+function toast(msg: string, ok = true) {
+  const t = document.createElement("div");
+  t.className = `fixed bottom-4 right-4 px-4 py-2 rounded-lg text-white text-sm z-50 ${ok ? "bg-emerald-600" : "bg-red-600"}`;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 4000);
+}
+
 // Proxy routes handle auth via httpOnly cookie — no client-side token needed
 const pipelineId = new URLSearchParams(location.search).get("pipeline_id") ?? "";
 
@@ -377,14 +385,18 @@ document.querySelectorAll(".fire-btn").forEach(btn => {
       const res = await fetch(`/api/triggers/${triggerId}/fire`, { method: "POST" });
       const data = await res.json();
       if (res.ok) {
-        alert(`✅ Pipeline run started! Run ID: ${data.run_id}`);
+        toast(`✅ Pipeline run started — ID: ${String(data.run_id ?? "").slice(0, 8)}…`);
+        setTimeout(() => location.reload(), 1000);
       } else {
-        alert(data.detail || "Failed to fire trigger");
+        toast(data.detail || "Failed to fire trigger", false);
+        (btn as HTMLButtonElement).disabled = false;
+        btn.textContent = "▶ Fire now";
       }
     } catch {
-      alert("Network error");
+      toast("Network error — please try again", false);
+      (btn as HTMLButtonElement).disabled = false;
+      btn.textContent = "▶ Fire now";
     }
-    location.reload();
   });
 });
 

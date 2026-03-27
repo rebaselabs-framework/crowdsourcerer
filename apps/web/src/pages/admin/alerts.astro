@@ -245,6 +245,14 @@ function relTime(iso: string): string {
   </div>
 
   <script>
+    function toast(msg: string, ok = true) {
+      const t = document.createElement("div");
+      t.className = `fixed bottom-4 right-4 px-4 py-2 rounded-lg text-white text-sm z-50 ${ok ? "bg-emerald-600" : "bg-red-600"}`;
+      t.textContent = msg;
+      document.body.appendChild(t);
+      setTimeout(() => t.remove(), 4000);
+    }
+
     document.querySelectorAll<HTMLButtonElement>(".resolve-btn").forEach(btn => {
       btn.addEventListener("click", async () => {
         const id = btn.dataset.id;
@@ -271,7 +279,7 @@ function relTime(iso: string): string {
         } catch {
           btn.disabled = false;
           btn.textContent = "✓ Resolve";
-          alert("Failed to resolve alert. Please try again.");
+          toast("Failed to resolve alert — please try again", false);
         }
       });
     });

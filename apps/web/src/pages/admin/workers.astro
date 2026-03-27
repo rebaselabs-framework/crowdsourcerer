@@ -296,6 +296,14 @@ const totalPages = Math.ceil(workers.total / workers.per_page);
   </div>
 
   <script>
+    function toast(msg: string, ok = true) {
+      const t = document.createElement("div");
+      t.className = `fixed bottom-4 right-4 px-4 py-2 rounded-lg text-white text-sm z-50 ${ok ? "bg-emerald-600" : "bg-red-600"}`;
+      t.textContent = msg;
+      document.body.appendChild(t);
+      setTimeout(() => t.remove(), 4000);
+    }
+
     let currentWorkerId: string | null = null;
 
     // Ban modal
@@ -383,12 +391,17 @@ const totalPages = Math.ceil(workers.total / workers.per_page);
         const workerId = (btn as HTMLElement).dataset.workerId;
         const name = (btn as HTMLElement).dataset.workerName ?? "this worker";
         if (!confirm(`Unban ${name}?`)) return;
+        (btn as HTMLButtonElement).disabled = true;
+        (btn as HTMLButtonElement).textContent = "Unbanning…";
         try {
           const res = await fetch(`/api/admin/workers/${workerId}/ban`, { method: "DELETE" });
           if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? "Failed");
-          location.reload();
+          toast(`${name} has been unbanned`);
+          setTimeout(() => location.reload(), 800);
         } catch (e: any) {
-          alert(e.message ?? "Failed to unban worker");
+          toast(e.message ?? "Failed to unban worker", false);
+          (btn as HTMLButtonElement).disabled = false;
+          (btn as HTMLButtonElement).textContent = "Unban";
         }
       });
     });

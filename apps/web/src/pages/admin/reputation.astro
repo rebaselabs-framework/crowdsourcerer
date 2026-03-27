@@ -281,6 +281,14 @@ function tierColor(score: number) {
 </Layout>
 
 <script>
+function toast(msg: string, ok = true) {
+  const t = document.createElement("div");
+  t.className = `fixed bottom-4 right-4 px-4 py-2 rounded-lg text-white text-sm z-50 ${ok ? "bg-emerald-600" : "bg-red-600"}`;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 4000);
+}
+
 // Proxy routes handle auth via httpOnly cookie — no client-side token needed
 
 // Strike modal
@@ -377,11 +385,19 @@ document.querySelectorAll(".unban-btn").forEach(btn => {
 // Recalculate
 document.getElementById("recalcBtn")!.addEventListener("click", async () => {
   if (!confirm("Recalculate ALL worker reputation scores? This may take a moment.")) return;
-  const res = await fetch("/api/admin/reputation/recalculate", {
-    method: "POST",
-  });
-  const data = await res.json();
-  alert(data.message || "Done");
-  location.reload();
+  const btn = document.getElementById("recalcBtn") as HTMLButtonElement;
+  const orig = btn.textContent;
+  btn.textContent = "Recalculating…";
+  btn.disabled = true;
+  try {
+    const res = await fetch("/api/admin/reputation/recalculate", { method: "POST" });
+    const data = await res.json();
+    toast(data.message || "Reputation scores recalculated");
+    setTimeout(() => location.reload(), 1200);
+  } catch {
+    toast("Failed to recalculate — please try again", false);
+    btn.textContent = orig;
+    btn.disabled = false;
+  }
 });
 </script>

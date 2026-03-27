@@ -57,6 +57,7 @@ const PACKS = [
 
     <!-- Buy credits -->
     <h2 class="text-xl font-bold mb-4">Buy credits</h2>
+    <div id="checkout-error" class="hidden text-sm text-red-400 bg-red-950/20 border border-red-800 rounded-lg px-4 py-3 mb-4"></div>
     <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-10" id="packs">
       {PACKS.map(({ credits: cr, price, label, note }) => (
         <button
@@ -157,6 +158,14 @@ const PACKS = [
 </Layout>
 
 <script>
+  function showCheckoutError(msg: string) {
+    const el = document.getElementById("checkout-error");
+    if (!el) return;
+    el.textContent = msg;
+    el.classList.remove("hidden");
+    el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
   // ── Buy credits ────────────────────────────────────────────────────────────
   // Use /api/credits/checkout proxy — cs_token is httpOnly so client JS
   // cannot read it directly from document.cookie.
@@ -165,6 +174,9 @@ const PACKS = [
     button.addEventListener("click", async () => {
       const credits = Number(button.dataset.credits);
       const origLabel = button.querySelector(".buy-pack-label")?.textContent ?? "Buy";
+      // Clear any previous checkout error
+      const errEl = document.getElementById("checkout-error");
+      if (errEl) errEl.classList.add("hidden");
       button.textContent = "Redirecting…";
       button.disabled = true;
 
@@ -185,7 +197,7 @@ const PACKS = [
         }
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));
-          alert(err.detail ?? "Checkout failed. Please try again.");
+          showCheckoutError(err.detail ?? "Checkout failed. Please try again.");
           button.textContent = origLabel;
           button.disabled = false;
           return;
@@ -194,7 +206,7 @@ const PACKS = [
         const { checkout_url } = await res.json();
         window.location.href = checkout_url;
       } catch {
-        alert("Failed to create checkout session.");
+        showCheckoutError("Failed to create checkout session. Please try again.");
         button.textContent = origLabel;
         button.disabled = false;
       }

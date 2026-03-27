@@ -1004,6 +1004,13 @@ document.querySelector("form")?.addEventListener("submit", (e: Event) => {
     // Scroll to the first visible error
     const firstErr = document.querySelector<HTMLElement>(".gf-error:not(.hidden), #json-input-error:not(.hidden), #webhook-url-error:not(.hidden)");
     firstErr?.scrollIntoView({ behavior: "smooth", block: "center" });
+  } else {
+    // Show loading state to prevent double-submit
+    const submitBtn = document.querySelector<HTMLButtonElement>('button[type="submit"]');
+    if (submitBtn) {
+      submitBtn.textContent = "Submitting…";
+      submitBtn.disabled = true;
+    }
   }
 });
 
