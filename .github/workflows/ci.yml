@@ -12,25 +12,8 @@ jobs:
     name: API Tests (Python)
     runs-on: ubuntu-latest
 
-    services:
-      postgres:
-        # NOTE: Docker Hub rate limits anonymous pulls on shared GitHub Actions runners.
-        # To fix: add DOCKERHUB_USERNAME + DOCKERHUB_TOKEN to repo/org secrets so
-        # authenticated pulls are used (much higher rate limit).
-        image: postgres:16
-        credentials:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-        env:
-          POSTGRES_DB: crowdsourcerer_test
-          POSTGRES_USER: cs
-          POSTGRES_PASSWORD: cs_test_pass
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
+    # No Docker service container — uses the PostgreSQL pre-installed on the runner
+    # image to avoid Docker Hub rate limiting on shared GitHub Actions IPs.
 
     env:
       DATABASE_URL: postgresql+asyncpg://cs:cs_test_pass@localhost:5432/crowdsourcerer_test
@@ -41,6 +24,28 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Start PostgreSQL and create test database
+        run: |
+          # Ubuntu runners ship with PostgreSQL pre-installed; just start it.
+          sudo systemctl start postgresql
+
+          # Create the test role + database using the postgres superuser (peer auth via sudo).
+          sudo -u postgres psql -v ON_ERROR_STOP=1 <<-EOSQL
+            CREATE USER cs WITH PASSWORD 'cs_test_pass';
+            CREATE DATABASE crowdsourcerer_test OWNER cs;
+            GRANT ALL PRIVILEGES ON DATABASE crowdsourcerer_test TO cs;
+          EOSQL
+
+          # Add a permissive pg_hba rule so asyncpg (TCP) can auth with password.
+          # Prepend to ensure it takes priority over any existing host rules.
+          PG_HBA=$(sudo -u postgres psql -tAc "SHOW hba_file")
+          echo "host crowdsourcerer_test cs 127.0.0.1/32 md5" | sudo tee -a "$PG_HBA"
+          echo "host crowdsourcerer_test cs ::1/128 md5" | sudo tee -a "$PG_HBA"
+          sudo systemctl reload postgresql
+
+          # Verify TCP connectivity before the tests run.
+          pg_isready -h 127.0.0.1 -p 5432 -U cs -d crowdsourcerer_test
 
       - name: Set up Python
         uses: actions/setup-python@v5
