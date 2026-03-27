@@ -363,12 +363,17 @@ async def attempt_certification(
     cert = await _get_cert_by_type(task_type, db)
     uid = UUID(user_id)
 
-    # Check cooldown
+    # Lock the worker cert row (or confirm absence) before scoring.
+    # with_for_update() serialises concurrent quiz submissions for the same
+    # (worker, cert) pair — prevents lost-update on attempt_count and stale
+    # cooldown checks, and prevents IntegrityError from duplicate-insert races
+    # when existing is None (the lock turns the second submitter into an updater
+    # rather than an inserter once the first commit is visible).
     existing_result = await db.execute(
         select(WorkerCertificationDB).where(
             WorkerCertificationDB.worker_id == uid,
             WorkerCertificationDB.cert_id == cert.id,
-        )
+        ).with_for_update()
     )
     existing = existing_result.scalar_one_or_none()
 

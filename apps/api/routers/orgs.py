@@ -563,9 +563,17 @@ async def transfer_credits(
     - to_org: personal → org pool
     - from_org: org pool → personal
     """
-    org, member = await _get_org_and_require_role(org_id, user_id, db, min_role="admin")
+    _, member = await _get_org_and_require_role(org_id, user_id, db, min_role="admin")
 
-    # Lock user row so concurrent transfers don't race on the balance check.
+    # Lock both rows in a consistent order (org first, then user) to prevent
+    # deadlocks and serialise concurrent transfers that touch the same org pool.
+    org_result = await db.execute(
+        select(OrganizationDB).where(OrganizationDB.id == org_id).with_for_update()
+    )
+    org = org_result.scalar_one_or_none()
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+
     user_result = await db.execute(
         select(UserDB).where(UserDB.id == user_id).with_for_update()
     )
