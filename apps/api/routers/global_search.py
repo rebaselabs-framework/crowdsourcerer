@@ -21,6 +21,13 @@ from models.db import TaskDB, UserDB, OrganizationDB, OrgMemberDB, WorkerSkillDB
 logger = structlog.get_logger()
 router = APIRouter(prefix="/v1/search", tags=["search"])
 
+_LIKE_ESC = "\\"
+
+
+def _esc_like(s: str) -> str:
+    """Escape ILIKE/LIKE special characters so user input is treated literally."""
+    return s.replace(_LIKE_ESC, _LIKE_ESC * 2).replace("%", f"{_LIKE_ESC}%").replace("_", f"{_LIKE_ESC}_")
+
 
 @router.get("/global")
 async def global_search(
@@ -35,16 +42,16 @@ async def global_search(
     Workers: match on name, email (display), and skill types.
     Orgs: match on name — only orgs the user is a member of.
     """
-    search_term = f"%{q}%"
+    search_term = f"%{_esc_like(q)}%"
 
     # ── Tasks ─────────────────────────────────────────────────────────────────
     task_res = await db.execute(
         select(TaskDB).where(
             TaskDB.user_id == user_id,
             or_(
-                TaskDB.type.ilike(search_term),
-                TaskDB.task_instructions.ilike(search_term),
-                cast(TaskDB.input, String).ilike(search_term),
+                TaskDB.type.ilike(search_term, escape=_LIKE_ESC),
+                TaskDB.task_instructions.ilike(search_term, escape=_LIKE_ESC),
+                cast(TaskDB.input, String).ilike(search_term, escape=_LIKE_ESC),
             ),
         ).order_by(TaskDB.created_at.desc()).limit(limit)
     )
@@ -68,7 +75,7 @@ async def global_search(
     # Search on name and email; also match workers who have a skill matching query
     worker_ids_by_skill_res = await db.execute(
         select(WorkerSkillDB.worker_id).where(
-            WorkerSkillDB.task_type.ilike(search_term)
+            WorkerSkillDB.task_type.ilike(search_term, escape=_LIKE_ESC)
         ).distinct().limit(limit)
     )
     skill_worker_ids = [r for r, in worker_ids_by_skill_res.fetchall()]
@@ -78,8 +85,8 @@ async def global_search(
             UserDB.role.in_(["worker", "both"]),
             UserDB.is_active == True,  # noqa: E712
             or_(
-                UserDB.name.ilike(search_term),
-                UserDB.email.ilike(search_term),
+                UserDB.name.ilike(search_term, escape=_LIKE_ESC),
+                UserDB.email.ilike(search_term, escape=_LIKE_ESC),
                 UserDB.id.in_(skill_worker_ids),
             ),
         ).limit(limit)
@@ -107,7 +114,7 @@ async def global_search(
         org_res = await db.execute(
             select(OrganizationDB).where(
                 OrganizationDB.id.in_(member_org_ids),
-                OrganizationDB.name.ilike(search_term),
+                OrganizationDB.name.ilike(search_term, escape=_LIKE_ESC),
             ).limit(limit)
         )
         orgs = org_res.scalars().all()

@@ -24,6 +24,13 @@ from models.db import TaskDB, TaskPipelineDB, TaskTemplateDB
 logger = structlog.get_logger()
 router = APIRouter(prefix="/v1/search", tags=["search"])
 
+_LIKE_ESC = "\\"
+
+
+def _esc_like(s: str) -> str:
+    """Escape ILIKE/LIKE special characters so user input is treated literally."""
+    return s.replace(_LIKE_ESC, _LIKE_ESC * 2).replace("%", f"{_LIKE_ESC}%").replace("_", f"{_LIKE_ESC}_")
+
 
 # ─── Schemas ──────────────────────────────────────────────────────────────────
 
@@ -64,7 +71,7 @@ async def unified_search(
     Results are scoped to the authenticated user's owned resources plus public templates.
     Searches task type, instructions, and full input/output JSON content.
     """
-    search_term = f"%{q}%"
+    search_term = f"%{_esc_like(q)}%"
     types_filter = set(entity_types.split(",")) if entity_types else {"task", "pipeline", "template"}
 
     task_results: list[SearchResultItem] = []
@@ -76,10 +83,10 @@ async def unified_search(
         task_q = select(TaskDB).where(
             TaskDB.user_id == user_id,
             or_(
-                TaskDB.type.ilike(search_term),
-                TaskDB.task_instructions.ilike(search_term),
-                cast(TaskDB.input, String).ilike(search_term),
-                cast(TaskDB.output, String).ilike(search_term),
+                TaskDB.type.ilike(search_term, escape=_LIKE_ESC),
+                TaskDB.task_instructions.ilike(search_term, escape=_LIKE_ESC),
+                cast(TaskDB.input, String).ilike(search_term, escape=_LIKE_ESC),
+                cast(TaskDB.output, String).ilike(search_term, escape=_LIKE_ESC),
             ),
         ).order_by(TaskDB.created_at.desc()).limit(limit)
 
@@ -105,8 +112,8 @@ async def unified_search(
         pipeline_q = select(TaskPipelineDB).where(
             TaskPipelineDB.user_id == user_id,
             or_(
-                TaskPipelineDB.name.ilike(search_term),
-                TaskPipelineDB.description.ilike(search_term),
+                TaskPipelineDB.name.ilike(search_term, escape=_LIKE_ESC),
+                TaskPipelineDB.description.ilike(search_term, escape=_LIKE_ESC),
             ),
         ).order_by(TaskPipelineDB.created_at.desc()).limit(limit)
 
@@ -133,10 +140,10 @@ async def unified_search(
                 TaskTemplateDB.is_public == True,  # noqa: E712
             ),
             or_(
-                TaskTemplateDB.name.ilike(search_term),
-                TaskTemplateDB.description.ilike(search_term),
-                TaskTemplateDB.category.ilike(search_term),
-                TaskTemplateDB.task_type.ilike(search_term),
+                TaskTemplateDB.name.ilike(search_term, escape=_LIKE_ESC),
+                TaskTemplateDB.description.ilike(search_term, escape=_LIKE_ESC),
+                TaskTemplateDB.category.ilike(search_term, escape=_LIKE_ESC),
+                TaskTemplateDB.task_type.ilike(search_term, escape=_LIKE_ESC),
             ),
         ).order_by(TaskTemplateDB.use_count.desc(), TaskTemplateDB.created_at.desc()).limit(limit)
 
@@ -190,10 +197,10 @@ async def search_tasks(
         search_term = f"%{q}%"
         query = query.where(
             or_(
-                TaskDB.type.ilike(search_term),
-                TaskDB.task_instructions.ilike(search_term),
-                cast(TaskDB.input, String).ilike(search_term),
-                cast(TaskDB.output, String).ilike(search_term),
+                TaskDB.type.ilike(search_term, escape=_LIKE_ESC),
+                TaskDB.task_instructions.ilike(search_term, escape=_LIKE_ESC),
+                cast(TaskDB.input, String).ilike(search_term, escape=_LIKE_ESC),
+                cast(TaskDB.output, String).ilike(search_term, escape=_LIKE_ESC),
             )
         )
     if status:
@@ -211,7 +218,7 @@ async def search_tasks(
         for tag in tag_list:
             # PostgreSQL: JSON array contains this string value
             query = query.where(
-                cast(TaskDB.tags, String).ilike(f'%"{tag}"%')
+                cast(TaskDB.tags, String).ilike(f'%"{_esc_like(tag)}"%', escape=_LIKE_ESC)
             )
 
     total = await db.scalar(select(func.count()).select_from(query.subquery())) or 0
