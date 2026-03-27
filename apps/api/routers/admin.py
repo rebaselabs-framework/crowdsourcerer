@@ -1856,7 +1856,7 @@ async def onboarding_funnel(
     Returns counts at each stage of the 5-step requester onboarding flow,
     from initial registration through full completion.
     """
-    # Total registered requesters (role includes 'requester' or 'both')
+    # Total registered requesters — single query on UserDB
     total_requesters_res = await db.execute(
         select(func.count()).where(
             UserDB.role.in_(["requester", "both"])
@@ -1864,13 +1864,29 @@ async def onboarding_funnel(
     )
     total_requesters = total_requesters_res.scalar_one() or 0
 
-    # Count onboarding rows (users who have at least *started* onboarding)
-    started_res = await db.execute(
-        select(func.count()).select_from(RequesterOnboardingDB)
+    # Single query: all onboarding stats via conditional aggregates
+    stats_res = await db.execute(
+        select(
+            func.count().label("started"),
+            func.sum(case((RequesterOnboardingDB.step_welcome == True, 1), else_=0)).label("step_welcome"),  # noqa: E712
+            func.sum(case((RequesterOnboardingDB.step_create_task == True, 1), else_=0)).label("step_create_task"),  # noqa: E712
+            func.sum(case((RequesterOnboardingDB.step_view_results == True, 1), else_=0)).label("step_view_results"),  # noqa: E712
+            func.sum(case((RequesterOnboardingDB.step_set_webhook == True, 1), else_=0)).label("step_set_webhook"),  # noqa: E712
+            func.sum(case((RequesterOnboardingDB.step_invite_team == True, 1), else_=0)).label("step_invite_team"),  # noqa: E712
+            func.sum(case((RequesterOnboardingDB.completed_at != None, 1), else_=0)).label("completed"),  # noqa: E711
+        ).select_from(RequesterOnboardingDB)
     )
-    started = started_res.scalar_one() or 0
+    stats = stats_res.one()
+    started = stats.started or 0
+    step_counts = {
+        "step_welcome": stats.step_welcome or 0,
+        "step_create_task": stats.step_create_task or 0,
+        "step_view_results": stats.step_view_results or 0,
+        "step_set_webhook": stats.step_set_webhook or 0,
+        "step_invite_team": stats.step_invite_team or 0,
+    }
+    completed = stats.completed or 0
 
-    # Count per-step completions
     steps: list[tuple[str, str]] = [
         ("step_welcome", "Step 1: Welcome"),
         ("step_create_task", "Step 2: Create task"),
@@ -1878,19 +1894,6 @@ async def onboarding_funnel(
         ("step_set_webhook", "Step 4: Set webhook"),
         ("step_invite_team", "Step 5: Invite team"),
     ]
-    step_counts: dict[str, int] = {}
-    for col_name, _ in steps:
-        col = getattr(RequesterOnboardingDB, col_name)
-        res = await db.execute(
-            select(func.count()).where(col == True)  # noqa: E712
-        )
-        step_counts[col_name] = res.scalar_one() or 0
-
-    # Completed (all steps done, completed_at is set)
-    completed_res = await db.execute(
-        select(func.count()).where(RequesterOnboardingDB.completed_at != None)  # noqa: E711
-    )
-    completed = completed_res.scalar_one() or 0
 
     completion_rate = round(completed / total_requesters, 4) if total_requesters > 0 else 0.0
 
@@ -1937,7 +1940,7 @@ async def worker_onboarding_funnel(
     Returns counts at each stage of the 5-step worker onboarding flow,
     from initial registration through full completion.
     """
-    # Total registered workers (role includes 'worker' or 'both')
+    # Total registered workers — single query on UserDB
     total_workers_res = await db.execute(
         select(func.count()).where(
             UserDB.role.in_(["worker", "both"])
@@ -1945,13 +1948,33 @@ async def worker_onboarding_funnel(
     )
     total_workers = total_workers_res.scalar_one() or 0
 
-    # Count onboarding rows (workers who have at least *started* onboarding)
-    started_res = await db.execute(
-        select(func.count()).select_from(OnboardingProgressDB)
+    # Single query: all onboarding stats via conditional aggregates
+    stats_res = await db.execute(
+        select(
+            func.count().label("started"),
+            func.sum(case((OnboardingProgressDB.step_profile == True, 1), else_=0)).label("step_profile"),  # noqa: E712
+            func.sum(case((OnboardingProgressDB.step_explore == True, 1), else_=0)).label("step_explore"),  # noqa: E712
+            func.sum(case((OnboardingProgressDB.step_first_task == True, 1), else_=0)).label("step_first_task"),  # noqa: E712
+            func.sum(case((OnboardingProgressDB.step_skills == True, 1), else_=0)).label("step_skills"),  # noqa: E712
+            func.sum(case((OnboardingProgressDB.step_cert == True, 1), else_=0)).label("step_cert"),  # noqa: E712
+            func.sum(case((OnboardingProgressDB.completed_at != None, 1), else_=0)).label("completed"),  # noqa: E711
+            func.sum(case((OnboardingProgressDB.skipped_at != None, 1), else_=0)).label("skipped"),  # noqa: E711
+            func.sum(case((OnboardingProgressDB.bonus_claimed == True, 1), else_=0)).label("bonus_claimed"),  # noqa: E712
+        ).select_from(OnboardingProgressDB)
     )
-    started = started_res.scalar_one() or 0
+    stats = stats_res.one()
+    started = stats.started or 0
+    step_counts = {
+        "step_profile": stats.step_profile or 0,
+        "step_explore": stats.step_explore or 0,
+        "step_first_task": stats.step_first_task or 0,
+        "step_skills": stats.step_skills or 0,
+        "step_cert": stats.step_cert or 0,
+    }
+    completed = stats.completed or 0
+    skipped = stats.skipped or 0
+    bonus_claimed = stats.bonus_claimed or 0
 
-    # Count per-step completions
     steps: list[tuple[str, str]] = [
         ("step_profile", "Step 1: Set display name"),
         ("step_explore", "Step 2: Browse marketplace"),
@@ -1959,31 +1982,6 @@ async def worker_onboarding_funnel(
         ("step_skills", "Step 4: View skills"),
         ("step_cert", "Step 5: Attempt certification"),
     ]
-    step_counts: dict[str, int] = {}
-    for col_name, _ in steps:
-        col = getattr(OnboardingProgressDB, col_name)
-        res = await db.execute(
-            select(func.count()).where(col == True)  # noqa: E712
-        )
-        step_counts[col_name] = res.scalar_one() or 0
-
-    # Completed (all steps done, completed_at is set)
-    completed_res = await db.execute(
-        select(func.count()).where(OnboardingProgressDB.completed_at != None)  # noqa: E711
-    )
-    completed = completed_res.scalar_one() or 0
-
-    # Skipped
-    skipped_res = await db.execute(
-        select(func.count()).where(OnboardingProgressDB.skipped_at != None)  # noqa: E711
-    )
-    skipped = skipped_res.scalar_one() or 0
-
-    # Bonus claimed
-    bonus_claimed_res = await db.execute(
-        select(func.count()).where(OnboardingProgressDB.bonus_claimed == True)  # noqa: E712
-    )
-    bonus_claimed = bonus_claimed_res.scalar_one() or 0
 
     completion_rate = round(completed / total_workers, 4) if total_workers > 0 else 0.0
 
