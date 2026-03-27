@@ -38,15 +38,23 @@ try {
   error = "Failed to load analytics";
 }
 
-[costs] = await Promise.all([
-  withTimeout(apiFetch<any>(`/v1/analytics/costs?${costsParams}`, { token }), 3000),
-]);
+try {
+  [costs] = await Promise.all([
+    withTimeout(apiFetch<any>(`/v1/analytics/costs?${costsParams}`, { token }), 3000),
+  ]);
+} catch (_) {
+  // Non-fatal: costs chart will be empty; overview data still shown
+}
 
 if (orgIdParam && view === "org") {
-  orgAnalytics = await withTimeout(
-    apiFetch<any>(`/v1/analytics/org/${orgIdParam}?days=${days}`, { token }),
-    3000
-  );
+  try {
+    orgAnalytics = await withTimeout(
+      apiFetch<any>(`/v1/analytics/org/${orgIdParam}?days=${days}`, { token }),
+      3000
+    );
+  } catch (_) {
+    // Non-fatal: org analytics section will be hidden
+  }
 }
 
 function pct(a: number, total: number) {

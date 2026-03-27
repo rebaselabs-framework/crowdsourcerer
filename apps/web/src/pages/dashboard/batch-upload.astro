@@ -345,7 +345,15 @@ const TASK_CREDITS: Record<string, number> = {
         body: JSON.stringify({ tasks }),
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        // API returned an error — show it clearly rather than treating it as success
+        submitBtn.disabled = false;
+        submitBtn.textContent = `🚀 Create ${validRows.length} Task${validRows.length !== 1 ? "s" : ""}`;
+        const msg = data.detail ?? `Batch creation failed (${res.status}). Please check your tasks and try again.`;
+        validationSummary.innerHTML = `<span class="text-red-400">Error: ${msg}</span>`;
+        return;
+      }
       showResults(data, tasks.length);
     } catch (e) {
       submitBtn.disabled = false;

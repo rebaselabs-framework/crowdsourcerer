@@ -10,14 +10,21 @@ if (!token) {
 
 let credits: any = null;
 let transactions: any = null;
+let creditsError: string | null = null;
 
 try {
   [credits, transactions] = await Promise.all([
     apiFetch("/v1/credits", { token }),
     apiFetch("/v1/credits/transactions?page_size=50", { token }),
   ]);
-} catch (e) {
-  return Astro.redirect("/login");
+} catch (e: any) {
+  // Only redirect to login for actual authentication failures.
+  // Network errors, 500s, etc. show an in-page error so users aren't
+  // unexpectedly kicked to login when the API is temporarily unavailable.
+  if (e.message?.includes("401") || e.message?.includes("403")) {
+    return Astro.redirect("/login");
+  }
+  creditsError = "Failed to load credit balance. Please refresh to try again.";
 }
 
 const PACKS = [
@@ -37,6 +44,13 @@ const PACKS = [
       </div>
       <a href="/dashboard" class="text-sm text-gray-400 hover:text-gray-200">← Back to dashboard</a>
     </div>
+
+    {creditsError && (
+      <div class="mb-6 p-4 bg-red-950/40 border border-red-700 rounded-xl flex items-center gap-3 text-sm text-red-300">
+        <span>⚠️</span>
+        <span>{creditsError}</span>
+      </div>
+    )}
 
     <!-- Balance -->
     <div class="grid grid-cols-3 gap-4 mb-10">

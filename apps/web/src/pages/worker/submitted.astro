@@ -11,6 +11,14 @@ const token = getToken(Astro.cookies);
 if (!token) return Astro.redirect("/login");
 
 const url = new URL(Astro.request.url);
+
+// Guard: if the page is accessed directly without URL params (e.g. someone
+// bookmarks /worker/submitted), redirect to marketplace rather than showing
+// a confusing "0 credits, 0 XP" success screen.
+if (!url.searchParams.has("credits")) {
+  return Astro.redirect("/worker/marketplace");
+}
+
 const credits = parseInt(url.searchParams.get("credits") ?? "0");
 const xp = parseInt(url.searchParams.get("xp") ?? "0");
 // streak_multiplier and streak_days are passed from the submit handler
