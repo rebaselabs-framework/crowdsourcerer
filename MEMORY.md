@@ -403,13 +403,31 @@ Also: template-marketplace index.ts had wrong backend URL (`/v1/template-marketp
 - `/dashboard/scheduled.astro`: rewrote from basic page — task type icons/labels map (18 types), execution mode + priority colour badges, 3-stat summary cards (total/AI/human), next-task countdown banner, live 1s countdown timers per row, confirm-modal cancel replacing browser `confirm()`. Fixed wrong new-task link: `/dashboard/tasks/new` → `/dashboard/new-task`.
 - `test_scheduled_tasks.py`: 11 tests — 401 auth guard, 200 with valid token, empty list, required fields, total==len(items), tags None→[], tags preserved, scheduled_at ISO, limit >200 → 422, limit=0 → 422, multi-type items. Test count: 1058 → 1069.
 
+## Session 2026-03-27 (continued) — UX depth + 4 bug fixes (commits c20881e, 347fe7f)
+
+**UX/feature depth pass (c20881e):**
+- **Certifications: Session-based answer review** — After completing a quiz, per-question results (correct/incorrect, explanation for wrong answers) stored in Astro session during POST, displayed in "Answer Review" card on the GET result page. Workers now see exactly what they got wrong and why.
+- **Certifications: Quiz progress bar** — Live "X of N answered" counter + violet progress bar inside quiz form, updated by `updateAnswers()` on every option change.
+- **Task messaging: Fixed broken "Broadcast" option** — Removed the `<option value="">— Broadcast (all parties) —</option>` that caused silent 422 errors (API requires UUID recipient). Shows "No assigned worker to message yet" fallback when no valid recipient exists. Added early-return guard in JS send handler.
+- **Worker teams: Pending invite shows UUID → name** — Added `invitee_name: Optional[str]` to `WorkerTeamInviteOut` schema; `_fmt_invite()` now fetches and includes invitee's display name.
+- **Worker teams: Task link fixed** — "View →" in the Tasks tab now links to `/worker/tasks/{id}` instead of `/worker/marketplace`.
+
+**Bug fixes (347fe7f):**
+- **Dispute resolution logic**: `and` → `or` in `disputes.py:268` guard — previous `and` allowed resolving non-disputed human tasks or disputed AI tasks; `or` correctly rejects either bad condition.
+- **Dark-theme CSS**: Fixed `bg-red-50/bg-violet-50` (light) → dark equivalents in `certifications.astro` error banner and `disputes.astro` error + admin mediator panel.
+- **Payouts status filter validation**: `list_my_payouts` now rejects invalid `?status=` values with 422 instead of silently filtering to 0 results.
+- **Payout cancel notification**: `cancel_payout_request` now sends `PAYOUT_REJECTED` notification so workers know their credits were refunded (commit-order corrected: notification added to session before `db.commit()`).
+
+**Test count**: 1069 (unchanged — no new tests needed for these targeted fixes).
+
 ## Priorities for Next Session 🔜
 
 PHASE: Pre-alpha development. Focus on quality/depth. NOT in scope: launch tasks, marketing, directory listings.
 
-1. **Proxy route test coverage**: 13+ Astro proxy routes still lack tests. Would need Vitest setup in the web package first.
-2. **Feature depth**: Look for UX gaps in existing pages — especially worker certifications, task messaging UI, worker teams pages.
-3. **Pre-existing Astro hints (6)**: `worker/certifications.astro:17` (`result` unused — actually a false positive), `worker/skills.astro:446` (async fn hint), `experiments.astro:237` / `pipelines.astro:427` / `team/index.astro:407` / `worker/teams/[teamId].astro:351` (unreachable onclick code hints).
+1. **More UX depth audits**: Continue auditing existing pages for bugs and UX gaps — worker earnings, admin pages, task creation flow, marketplace.
+2. **Proxy route test coverage**: 13+ Astro proxy routes still lack tests. Would need Vitest setup in the web package first.
+3. **Race condition audit**: Look for more race conditions in worker pay/approval flows (payout_requests, submission approval).
+4. **Stripe webhook idempotency**: Currently uses `processed=True` check but no unique DB constraint on `stripe_event_id` — rare race window if Stripe delivers same event twice rapidly before first commits.
 
 ## Known Warnings (non-blocking)
 
