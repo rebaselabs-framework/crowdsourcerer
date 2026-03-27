@@ -137,6 +137,14 @@ const statusColor: Record<string, string> = {
   </div>
 
   <script>
+    function toast(msg: string, ok = true) {
+      const t = document.createElement("div");
+      t.className = `fixed bottom-4 right-4 px-4 py-2 rounded-lg text-white text-sm z-50 ${ok ? "bg-emerald-600" : "bg-red-600"}`;
+      t.textContent = msg;
+      document.body.appendChild(t);
+      setTimeout(() => t.remove(), 3500);
+    }
+
     async function removeFromWatchlist(taskId: string) {
       const card = document.getElementById(`watch-${taskId}`)!;
       try {
@@ -147,10 +155,10 @@ const statusColor: Record<string, string> = {
           setTimeout(() => card.remove(), 300);
         } else {
           const d = await res.json().catch(() => ({}));
-          alert(d.detail ?? "Failed to remove");
+          toast(d.detail ?? "Failed to remove from watchlist", false);
         }
       } catch {
-        alert("Network error. Please try again.");
+        toast("Network error — please try again", false);
       }
     }
     (window as any).removeFromWatchlist = removeFromWatchlist;

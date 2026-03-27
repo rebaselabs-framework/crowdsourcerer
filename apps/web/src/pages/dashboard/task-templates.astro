@@ -281,9 +281,33 @@ const HUMAN_TYPES = new Set([
       </div>
     </div>
   </div>
+
+  <!-- Publish to marketplace modal -->
+  <div id="publish-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+    <div class="bg-gray-900 border border-gray-800 rounded-xl w-full max-w-md p-6">
+      <h2 class="font-semibold text-gray-200 mb-1">Publish to marketplace</h2>
+      <p class="text-sm text-gray-400 mb-4">Optionally customise the listing title before publishing.</p>
+      <input type="text" id="publish-title-input"
+        class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm mb-1 focus:ring-2 focus:ring-violet-500"
+        placeholder="Marketplace title" />
+      <div id="publish-modal-error" class="text-xs text-red-400 hidden mt-1 mb-3"></div>
+      <div class="flex gap-3 justify-end mt-4">
+        <button type="button" id="publish-modal-cancel" class="px-4 py-2 text-sm text-gray-300 border border-gray-700 rounded-lg hover:bg-gray-800">Cancel</button>
+        <button type="button" id="publish-modal-confirm" class="px-4 py-2 text-sm bg-violet-600 hover:bg-violet-500 text-white rounded-lg font-medium">Publish</button>
+      </div>
+    </div>
+  </div>
 </Layout>
 
 <script>
+function toast(msg: string, ok = true) {
+  const t = document.createElement("div");
+  t.className = `fixed bottom-4 right-4 px-4 py-2 rounded-lg text-white text-sm z-50 ${ok ? "bg-emerald-600" : "bg-red-600"}`;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3500);
+}
+
 const modal = document.getElementById("tpl-modal")!;
 const delModal = document.getElementById("del-modal")!;
 const form = document.getElementById("tpl-form") as HTMLFormElement;
@@ -404,56 +428,81 @@ function showError(msg: string) {
 }
 
 // ── Publish / Unpublish ────────────────────────────────────────────────────
+// Publish / Unpublish with modal
+let _publishBtn: HTMLButtonElement | null = null;
+let _publishId = "";
+let _publishName = "";
+let _publishIsPublic = false;
+
+const publishModal = document.getElementById("publish-modal")!;
+const publishTitleInput = document.getElementById("publish-title-input") as HTMLInputElement;
+const publishModalErr = document.getElementById("publish-modal-error")!;
+
 document.querySelectorAll<HTMLButtonElement>(".publish-btn").forEach(btn => {
-  btn.addEventListener("click", async (e) => {
+  btn.addEventListener("click", (e) => {
     e.stopPropagation();
-    const id = btn.dataset.id!;
-    const name = btn.dataset.name!;
-    const isPublic = btn.dataset.isPublic === "true";
+    _publishBtn = btn;
+    _publishId = btn.dataset.id!;
+    _publishName = btn.dataset.name!;
+    _publishIsPublic = btn.dataset.isPublic === "true";
 
-    if (isPublic) {
-      // Unpublish
-      if (!confirm(`Remove "${name}" from the public marketplace? (Your copy is kept.)`)) return;
-      btn.disabled = true;
-      btn.textContent = "…";
-      const res = await fetch(`/api/task-templates/${id}/publish`, { method: "DELETE" });
-      if (res.ok || res.status === 204) {
-        location.reload();
-      } else {
-        btn.disabled = false;
-        btn.textContent = "🌐";
-        alert("Failed to unpublish.");
+    if (_publishIsPublic) {
+      // Unpublish — two-step button confirm
+      if (btn.dataset.pending !== "true") {
+        btn.dataset.pending = "true";
+        btn.textContent = "Remove?";
+        setTimeout(() => {
+          if (btn.dataset.pending === "true") { btn.dataset.pending = ""; btn.textContent = "🌐"; }
+        }, 3000);
+        return;
       }
+      btn.dataset.pending = "";
+      btn.disabled = true; btn.textContent = "…";
+      fetch(`/api/task-templates/${_publishId}/publish`, { method: "DELETE" }).then(res => {
+        if (res.ok || res.status === 204) location.reload();
+        else { btn.disabled = false; btn.textContent = "🌐"; toast("Failed to remove from marketplace", false); }
+      }).catch(() => { btn.disabled = false; btn.textContent = "🌐"; toast("Network error", false); });
     } else {
-      // Publish — show a quick inline form in a confirm prompt
-      const title = prompt(
-        `Publish "${name}" to the marketplace?\n\nOptional: Enter a marketplace title (or leave blank to use template name):`,
-        name
-      );
-      if (title === null) return; // cancelled
-
-      btn.disabled = true;
-      btn.textContent = "…";
-
-      const res = await fetch(`/api/task-templates/${id}/publish`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          marketplace_title: title.trim() || name,
-          marketplace_description: null,
-          marketplace_tags: [],
-        }),
-      });
-
-      if (res.ok) {
-        location.reload();
-      } else {
-        btn.disabled = false;
-        btn.textContent = "📤";
-        const err = await res.json().catch(() => ({}));
-        alert(err.detail ?? "Failed to publish.");
-      }
+      // Publish — show modal
+      publishTitleInput.value = _publishName;
+      publishModalErr.classList.add("hidden");
+      publishModal.classList.remove("hidden");
+      publishTitleInput.focus();
     }
   });
+});
+
+document.getElementById("publish-modal-cancel")?.addEventListener("click", () => {
+  publishModal.classList.add("hidden");
+});
+
+document.getElementById("publish-modal-confirm")?.addEventListener("click", async () => {
+  const title = publishTitleInput.value.trim() || _publishName;
+  const confirmBtn = document.getElementById("publish-modal-confirm") as HTMLButtonElement;
+  const origText = confirmBtn.textContent;
+  confirmBtn.textContent = "Publishing…"; confirmBtn.disabled = true;
+  publishModalErr.classList.add("hidden");
+  if (_publishBtn) { _publishBtn.disabled = true; _publishBtn.textContent = "…"; }
+  try {
+    const res = await fetch(`/api/task-templates/${_publishId}/publish`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ marketplace_title: title, marketplace_description: null, marketplace_tags: [] }),
+    });
+    if (res.ok) {
+      publishModal.classList.add("hidden");
+      location.reload();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      publishModalErr.textContent = err.detail ?? "Failed to publish";
+      publishModalErr.classList.remove("hidden");
+      if (_publishBtn) { _publishBtn.disabled = false; _publishBtn.textContent = "📤"; }
+    }
+  } catch {
+    publishModalErr.textContent = "Network error — please try again";
+    publishModalErr.classList.remove("hidden");
+    if (_publishBtn) { _publishBtn.disabled = false; _publishBtn.textContent = "📤"; }
+  }
+  confirmBtn.textContent = origText; confirmBtn.disabled = false;
 });
 </script>

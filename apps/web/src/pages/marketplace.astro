@@ -535,6 +535,14 @@ const saveSearchLoginUrl = `/register?role=worker${savedSearchQs ? "&next=/worke
 
   <!-- Save-search handler (logged-in users) -->
   <script is:inline>
+    function _mktToast(msg, ok) {
+      var t = document.createElement('div');
+      t.className = 'fixed bottom-4 right-4 px-4 py-2 rounded-lg text-white text-sm z-50 ' + (ok !== false ? 'bg-emerald-600' : 'bg-red-600');
+      t.textContent = msg;
+      document.body.appendChild(t);
+      setTimeout(function() { t.remove(); }, 3500);
+    }
+
     window.__saveMarketplaceSearch = async function(qs) {
       try {
         var params = new URLSearchParams(qs);
@@ -559,10 +567,10 @@ const saveSearchLoginUrl = `/register?role=worker${savedSearchQs ? "&next=/worke
           }
         } else {
           var err = await res.json().catch(function() { return {}; });
-          alert((err && err.detail) || "Could not save search. Please try again.");
+          _mktToast((err && err.detail) || "Could not save search. Please try again.", false);
         }
       } catch(e) {
-        alert("Could not save search. Please try again.");
+        _mktToast("Could not save search. Please try again.", false);
       }
     };
   </script>

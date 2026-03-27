@@ -248,10 +248,24 @@ document.getElementById('edit-form').addEventListener('submit', async e => {
   }
 });
 
-// Delete buttons
+// Delete buttons — two-step confirmation
 document.querySelectorAll('.delete-pin-btn').forEach(btn => {
   btn.addEventListener('click', async () => {
-    if (!confirm('Remove this task from your portfolio?')) return;
+    if (btn.dataset.pending !== 'true') {
+      btn.dataset.pending = 'true';
+      const orig = btn.textContent;
+      btn.textContent = 'Remove?';
+      btn.classList.add('text-red-400');
+      setTimeout(() => {
+        if (btn.dataset.pending === 'true') {
+          btn.dataset.pending = '';
+          btn.textContent = orig;
+          btn.classList.remove('text-red-400');
+        }
+      }, 3000);
+      return;
+    }
+    btn.dataset.pending = '';
     const res = await fetch(`/api/worker/portfolio/${btn.dataset.id}`, {
       method: 'DELETE',
     });

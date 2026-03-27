@@ -586,6 +586,19 @@ const timeoutIso = activeAssignment?.timeout_at ?? null;
       </div>
     )}
   </div>
+
+  <!-- Release task confirmation modal -->
+  <div id="release-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+    <div class="bg-gray-900 border border-gray-800 rounded-xl w-full max-w-sm p-6">
+      <h2 class="font-semibold text-gray-200 mb-2">Release this task?</h2>
+      <p class="text-sm text-gray-400 mb-5">It will return to the marketplace and you'll lose your progress. Your assignment will be cancelled.</p>
+      <div id="release-error" class="text-sm text-red-400 bg-red-950/20 border border-red-800 rounded-lg px-3 py-2 hidden mb-3"></div>
+      <div class="flex gap-3 justify-end">
+        <button type="button" id="release-cancel" class="px-4 py-2 text-sm text-gray-300 border border-gray-700 rounded-lg hover:bg-gray-800">Keep working</button>
+        <button type="button" id="release-confirm" class="px-4 py-2 text-sm bg-red-700 hover:bg-red-600 text-white rounded-lg font-medium">Release task</button>
+      </div>
+    </div>
+  </div>
 </Layout>
 
 <input type="hidden" id="task-type" value={task?.type ?? ""} />
@@ -796,17 +809,26 @@ document.getElementById("submit-btn")?.addEventListener("click", async (e) => {
   }
 });
 
-// ─── Release ──────────────────────────────────────────────────────────────
-document.getElementById("release-btn")?.addEventListener("click", async (e) => {
-  if (!confirm("Release this task? It returns to the marketplace.")) return;
-  const btn = e.currentTarget as HTMLButtonElement;
-  const taskId = btn.dataset.taskId;
-
+// ─── Release — confirmation modal ─────────────────────────────────────────
+const releaseModal = document.getElementById("release-modal");
+const releaseErrEl = document.getElementById("release-error");
+document.getElementById("release-btn")?.addEventListener("click", () => {
+  if (releaseErrEl) releaseErrEl.classList.add("hidden");
+  releaseModal?.classList.remove("hidden");
+});
+document.getElementById("release-cancel")?.addEventListener("click", () => {
+  releaseModal?.classList.add("hidden");
+});
+document.getElementById("release-confirm")?.addEventListener("click", async () => {
+  const taskId = document.getElementById("release-btn")?.dataset.taskId;
+  const confirmBtn = document.getElementById("release-confirm") as HTMLButtonElement | null;
+  if (confirmBtn) { confirmBtn.textContent = "Releasing…"; confirmBtn.disabled = true; }
   try {
     await fetch(`/api/worker/tasks/${taskId}/release`, { method: "DELETE" });
     window.location.href = "/worker/marketplace";
   } catch {
-    alert("Failed to release. Try again.");
+    if (releaseErrEl) { releaseErrEl.textContent = "Failed to release. Please try again."; releaseErrEl.classList.remove("hidden"); }
+    if (confirmBtn) { confirmBtn.textContent = "Release task"; confirmBtn.disabled = false; }
   }
 });
 

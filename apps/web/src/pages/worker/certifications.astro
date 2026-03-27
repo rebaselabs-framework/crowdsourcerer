@@ -208,7 +208,8 @@ for (const c of myCerts) {
             ))}
           </div>
 
-          <div class="mt-8 flex gap-4">
+          <div id="quiz-submit-error" class="hidden text-sm text-red-400 bg-red-950/20 border border-red-800 rounded-lg px-3 py-2 mt-2"></div>
+          <div class="mt-4 flex gap-4">
             <a href="/worker/certifications"
               class="flex-1 text-center border border-gray-700 text-gray-300 px-4 py-3 rounded-xl text-sm font-medium hover:bg-gray-800">
               Cancel
@@ -370,9 +371,16 @@ for (const c of myCerts) {
       }
 
       if (missing.length > 0) {
-        alert(`Please answer all ${questions.length} questions before submitting.`);
+        const errEl = document.getElementById("quiz-submit-error");
+        if (errEl) {
+          errEl.textContent = `Please answer all ${questions.length} questions before submitting.`;
+          errEl.classList.remove("hidden");
+          errEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        }
         return false;
       }
+      // Clear error on valid submission
+      document.getElementById("quiz-submit-error")?.classList.add("hidden");
 
       return true;
     }
