@@ -638,14 +638,22 @@ console.log(result.output);`;
     runBtn.addEventListener("click", async () => {
       const key = apiKeyInput.value.trim();
       if (!key) {
-        alert("Please enter your API key first.");
         apiKeyInput.focus();
+        apiKeyInput.classList.add("!border-red-500");
+        const origText = runBtn.textContent;
+        runBtn.textContent = "⚠ Enter API key first";
+        setTimeout(() => {
+          apiKeyInput.classList.remove("!border-red-500");
+          runBtn.textContent = origText;
+        }, 2500);
         return;
       }
 
       const payload = getPayload();
       if (!payload) {
-        alert("Invalid JSON in raw editor.");
+        const origText = runBtn.textContent;
+        runBtn.textContent = "⚠ Invalid JSON in editor";
+        setTimeout(() => { runBtn.textContent = origText; }, 2500);
         return;
       }
 

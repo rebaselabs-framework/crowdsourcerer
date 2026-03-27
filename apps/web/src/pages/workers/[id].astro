@@ -535,7 +535,19 @@ const title = profile ? `${profile.name ?? "Worker"} — CrowdSorcerer` : "Worke
           shareBtn.textContent = "✓ Link copied!";
           setTimeout(() => { (shareBtn as HTMLButtonElement).textContent = "🔗 Share profile"; }, 2000);
         } catch (_) {
-          window.prompt("Copy this link:", url);
+          // Clipboard API unavailable — show selectable input for manual copy
+          const fallback = document.createElement("input");
+          fallback.type = "text";
+          fallback.value = url;
+          fallback.readOnly = true;
+          fallback.className = "mt-2 text-xs px-2 py-1.5 bg-gray-800 border border-gray-600 rounded text-gray-300 w-full focus:outline-none";
+          const parent = (shareBtn as HTMLElement).parentElement;
+          if (parent) {
+            parent.appendChild(fallback);
+            fallback.focus();
+            fallback.select();
+            setTimeout(() => fallback.remove(), 8000);
+          }
         }
       }
     });

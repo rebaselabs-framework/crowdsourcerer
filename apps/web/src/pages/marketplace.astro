@@ -543,35 +543,77 @@ const saveSearchLoginUrl = `/register?role=worker${savedSearchQs ? "&next=/worke
       setTimeout(function() { t.remove(); }, 3500);
     }
 
-    window.__saveMarketplaceSearch = async function(qs) {
-      try {
-        var params = new URLSearchParams(qs);
-        var defaultName = params.get("q") || params.get("type") || "My saved search";
-        var name = prompt("Name this saved search:", defaultName);
-        if (!name) return;
+    window.__saveMarketplaceSearch = function(qs) {
+      var params = new URLSearchParams(qs);
+      var defaultName = params.get("q") || params.get("type") || "My saved search";
+      var btn = document.querySelector("[data-save-search-btn]");
+      if (!btn) return;
+
+      // Inline name input — replaces prompt()
+      var input = document.createElement("input");
+      input.type = "text";
+      input.value = defaultName;
+      input.maxLength = 50;
+      input.placeholder = "Search name…";
+      input.className = "text-xs px-2 py-1 bg-gray-900 border border-emerald-700 rounded text-white focus:outline-none focus:border-emerald-500 w-28";
+
+      var saveConfirm = document.createElement("button");
+      saveConfirm.type = "button";
+      saveConfirm.textContent = "Save";
+      saveConfirm.className = "text-xs px-2 py-1 bg-emerald-700 hover:bg-emerald-600 text-white rounded transition-colors ml-1";
+
+      var saveCancel = document.createElement("button");
+      saveCancel.type = "button";
+      saveCancel.textContent = "\u2715";
+      saveCancel.className = "text-xs px-1.5 py-1 text-gray-500 hover:text-gray-300 ml-1";
+
+      var wrapper = document.createElement("span");
+      wrapper.className = "inline-flex items-center";
+      wrapper.appendChild(input);
+      wrapper.appendChild(saveConfirm);
+      wrapper.appendChild(saveCancel);
+      btn.replaceWith(wrapper);
+      input.focus();
+      input.select();
+
+      var restore = function() { wrapper.replaceWith(btn); };
+
+      var doSave = async function() {
+        var name = input.value.trim();
+        if (!name) { input.focus(); return; }
+        saveConfirm.disabled = true;
         var filters = {};
         if (params.get("q"))          filters.q = params.get("q");
         if (params.get("type"))       filters.task_type = params.get("type");
         if (params.get("min_reward")) filters.min_reward = parseInt(params.get("min_reward"), 10);
         if (params.get("max_reward")) filters.max_reward = parseInt(params.get("max_reward"), 10);
-        var res = await fetch("/api/worker/saved-searches", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: name, filters: filters, alert_enabled: true, alert_frequency: "instant" }),
-        });
-        if (res.ok) {
-          var btn = document.querySelector("[data-save-search-btn]");
-          if (btn) {
+        try {
+          var res = await fetch("/api/worker/saved-searches", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: name, filters: filters, alert_enabled: true, alert_frequency: "instant" }),
+          });
+          if (res.ok) {
             btn.textContent = "\u2713 Saved!";
             btn.setAttribute("disabled", "true");
+            wrapper.replaceWith(btn);
+          } else {
+            var err = await res.json().catch(function() { return {}; });
+            _mktToast((err && err.detail) || "Could not save search. Please try again.", false);
+            saveConfirm.disabled = false;
           }
-        } else {
-          var err = await res.json().catch(function() { return {}; });
-          _mktToast((err && err.detail) || "Could not save search. Please try again.", false);
+        } catch(e) {
+          _mktToast("Could not save search. Please try again.", false);
+          saveConfirm.disabled = false;
         }
-      } catch(e) {
-        _mktToast("Could not save search. Please try again.", false);
-      }
+      };
+
+      saveConfirm.addEventListener("click", doSave);
+      saveCancel.addEventListener("click", restore);
+      input.addEventListener("keydown", function(e) {
+        if (e.key === "Enter") doSave();
+        if (e.key === "Escape") restore();
+      });
     };
   </script>
 
