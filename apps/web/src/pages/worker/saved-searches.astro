@@ -172,7 +172,7 @@ function filtersToLabel(filters: Record<string, any>): string {
               <!-- Delete button -->
               <button
                 class="shrink-0 text-gray-600 hover:text-red-400 transition-colors p-1"
-                onclick={`window.__deleteSearch('${s.id}')`}
+                onclick={`window.__deleteSearch(this, '${s.id}')`}
                 title="Delete saved search"
               >
                 🗑️
@@ -193,25 +193,77 @@ function filtersToLabel(filters: Record<string, any>): string {
 </Layout>
 
 <script is:inline>
-  // ── Rename ─────────────────────────────────────────────────────────────────
-  window.__startRenameSearch = async function(btn) {
+  // ── Rename (inline edit — replaces prompt()) ──────────────────────────────
+  window.__startRenameSearch = function(btn) {
     var id = btn.dataset.id;
     var current = btn.dataset.name;
-    var newName = prompt("Rename saved search:", current);
-    if (!newName || newName === current) return;
-    var res = await fetch("/api/worker/saved-searches/" + id, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: newName }),
-    });
-    if (res.ok) {
-      var card = document.querySelector("[data-search-id=\"" + id + "\"]");
-      var display = card && card.querySelector("[data-name-display]");
-      if (display) display.textContent = newName;
-      btn.dataset.name = newName;
-    } else {
-      alert("Could not rename. Please try again.");
+    var card = document.querySelector("[data-search-id=\"" + id + "\"]");
+    var nameDisplay = card && card.querySelector("[data-name-display]");
+    if (!nameDisplay) return;
+
+    // Build inline editor
+    var input = document.createElement("input");
+    input.type = "text";
+    input.value = current;
+    input.className = "bg-gray-800 border border-violet-600 rounded px-2 py-0.5 text-sm text-gray-100 w-48 focus:outline-none";
+
+    var saveBtn = document.createElement("button");
+    saveBtn.textContent = "Save";
+    saveBtn.className = "text-xs px-2 py-1 bg-violet-700 hover:bg-violet-600 text-white rounded";
+
+    var cancelBtn = document.createElement("button");
+    cancelBtn.textContent = "Cancel";
+    cancelBtn.className = "text-xs px-2 py-1 bg-gray-800 hover:bg-gray-700 text-gray-400 rounded";
+
+    var container = document.createElement("div");
+    container.className = "flex items-center gap-2 flex-wrap";
+    container.appendChild(input);
+    container.appendChild(saveBtn);
+    container.appendChild(cancelBtn);
+
+    var parent = nameDisplay.parentNode;
+    nameDisplay.classList.add("hidden");
+    btn.classList.add("hidden");
+    parent.insertBefore(container, nameDisplay);
+    input.focus();
+    input.select();
+
+    function restore() {
+      container.remove();
+      nameDisplay.classList.remove("hidden");
+      btn.classList.remove("hidden");
     }
+
+    cancelBtn.addEventListener("click", restore);
+    input.addEventListener("keydown", function(e) {
+      if (e.key === "Escape") restore();
+      if (e.key === "Enter") saveBtn.click();
+    });
+
+    saveBtn.addEventListener("click", async function() {
+      var newName = input.value.trim();
+      if (!newName || newName === current) { restore(); return; }
+      saveBtn.disabled = true;
+      saveBtn.textContent = "Saving…";
+      var res = await fetch("/api/worker/saved-searches/" + id, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newName }),
+      });
+      if (res.ok) {
+        nameDisplay.textContent = newName;
+        btn.dataset.name = newName;
+        restore();
+      } else {
+        saveBtn.disabled = false;
+        saveBtn.textContent = "Save";
+        var errEl = document.createElement("span");
+        errEl.className = "text-xs text-red-400";
+        errEl.textContent = "Failed to save";
+        container.appendChild(errEl);
+        setTimeout(function() { errEl.remove(); }, 3000);
+      }
+    });
   };
 
   // ── Toggle alert ───────────────────────────────────────────────────────────
@@ -232,9 +284,24 @@ function filtersToLabel(filters: Record<string, any>): string {
     });
   };
 
-  // ── Delete ─────────────────────────────────────────────────────────────────
-  window.__deleteSearch = async function(id) {
-    if (!confirm("Delete this saved search?")) return;
+  // ── Delete (two-step confirm — replaces confirm()) ─────────────────────────
+  window.__deleteSearch = async function(btn, id) {
+    if (btn.dataset.pending !== "true") {
+      btn.dataset.pending = "true";
+      var origText = btn.textContent;
+      btn.textContent = "Sure?";
+      btn.classList.add("text-red-400");
+      setTimeout(function() {
+        if (btn.dataset.pending === "true") {
+          btn.dataset.pending = "";
+          btn.textContent = origText;
+          btn.classList.remove("text-red-400");
+        }
+      }, 3000);
+      return;
+    }
+    btn.disabled = true;
+    btn.dataset.pending = "";
     var res = await fetch("/api/worker/saved-searches/" + id, { method: "DELETE" });
     if (res.ok || res.status === 204) {
       var card = document.querySelector("[data-search-id=\"" + id + "\"]");
@@ -242,7 +309,15 @@ function filtersToLabel(filters: Record<string, any>): string {
       var list = document.getElementById("searches-list");
       if (list && list.children.length === 0) window.location.reload();
     } else {
-      alert("Could not delete. Please try again.");
+      btn.disabled = false;
+      btn.textContent = "🗑️";
+      btn.classList.remove("text-red-400");
+      var errSpan = document.createElement("span");
+      errSpan.className = "text-xs text-red-400 absolute -bottom-5 right-0 whitespace-nowrap";
+      errSpan.textContent = "Failed";
+      btn.style.position = "relative";
+      btn.appendChild(errSpan);
+      setTimeout(function() { errSpan.remove(); btn.style.position = ""; }, 3000);
     }
   };
 </script>

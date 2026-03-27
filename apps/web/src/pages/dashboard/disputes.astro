@@ -76,12 +76,12 @@ const TASK_TYPE_LABELS: Record<string, string> = {
 
 function strategyBadge(strategy: string) {
   const map: Record<string, { label: string; cls: string }> = {
-    majority_vote: { label:"Majority Vote", cls:"bg-blue-100 text-blue-800" },
-    unanimous:     { label:"Unanimous",     cls:"bg-purple-100 text-purple-800" },
-    requester_review: { label:"Your Review", cls:"bg-amber-100 text-amber-800" },
-    any_first:     { label:"First Wins",    cls:"bg-gray-100 text-gray-700" },
+    majority_vote: { label:"Majority Vote", cls:"bg-blue-900/40 text-blue-300" },
+    unanimous:     { label:"Unanimous",     cls:"bg-purple-900/40 text-purple-300" },
+    requester_review: { label:"Your Review", cls:"bg-amber-900/40 text-amber-300" },
+    any_first:     { label:"First Wins",    cls:"bg-gray-800 text-gray-400" },
   };
-  return map[strategy] ?? { label: strategy, cls: "bg-gray-100 text-gray-700" };
+  return map[strategy] ?? { label: strategy, cls: "bg-gray-800 text-gray-400" };
 }
 
 function fmtDate(d: string) {
@@ -104,8 +104,8 @@ const EVENT_ICONS: Record<string, string> = {
   <!-- Header -->
   <div class="flex items-center justify-between mb-6">
     <div>
-      <h1 class="text-2xl font-bold text-gray-900">⚖️ Dispute Resolution</h1>
-      <p class="text-gray-500 mt-1">Review conflicting submissions, submit evidence, and resolve disputes.</p>
+      <h1 class="text-2xl font-bold text-white">⚖️ Dispute Resolution</h1>
+      <p class="text-gray-400 mt-1">Review conflicting submissions, submit evidence, and resolve disputes.</p>
     </div>
     <div class="flex gap-2">
       {["disputed","resolved","all"].map(s => (
@@ -142,11 +142,11 @@ const EVENT_ICONS: Record<string, string> = {
                 <span class="font-semibold text-gray-100">{TASK_TYPE_LABELS[task.type]??task.type.replace("_"," ")}</span>
                 <span class={`px-2 py-0.5 rounded-full text-xs font-medium ${badge.cls}`}>{badge.label}</span>
                 {isResolved
-                  ? <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">✅ Resolved</span>
-                  : <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">⚠️ Disputed</span>
+                  ? <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-green-900/40 text-green-300">✅ Resolved</span>
+                  : <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-red-900/40 text-red-300">⚠️ Disputed</span>
                 }
                 {task.mediator_id && (
-                  <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-violet-100 text-violet-800">⚖️ Mediator assigned</span>
+                  <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-violet-900/40 text-violet-300">⚖️ Mediator assigned</span>
                 )}
               </div>
               <p class="text-xs text-gray-400 mt-0.5 font-mono">{task.id}</p>
@@ -243,7 +243,7 @@ const EVENT_ICONS: Record<string, string> = {
                     <div class="flex gap-3">
                       <input id={`mediator-input-${task.id}`} type="text" placeholder="Mediator user ID (UUID)"
                         class="flex-1 bg-gray-800 border border-violet-700/50 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-violet-500"/>
-                      <button onclick={`assignMediator('${task.id}')`}
+                      <button onclick={`assignMediator('${task.id}', this)`}
                         class="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg transition">
                         Assign
                       </button>
@@ -281,7 +281,7 @@ const EVENT_ICONS: Record<string, string> = {
                       class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-violet-500 resize-none mb-3"></textarea>
                     <div class="flex justify-between items-center">
                       <div id={`ev-msg-${task.id}`} class="text-xs hidden"></div>
-                      <button onclick={`submitEvidence('${task.id}')`}
+                      <button onclick={`submitEvidence('${task.id}', this)`}
                         class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition ml-auto">
                         Submit Evidence
                       </button>
@@ -297,12 +297,12 @@ const EVENT_ICONS: Record<string, string> = {
                       {focusEvidence.map((ev: any) => (
                         <div class="bg-gray-800 border border-gray-700 rounded-xl p-3">
                           <div class="flex items-center gap-2 mb-1">
-                            <span class={`text-xs px-2 py-0.5 rounded-full font-medium ${ev.submitter_role==="mediator"?"bg-violet-100 text-violet-800":ev.submitter_role==="requester"?"bg-amber-100 text-amber-800":"bg-blue-100 text-blue-800"}`}>
+                            <span class={`text-xs px-2 py-0.5 rounded-full font-medium ${ev.submitter_role==="mediator"?"bg-violet-900/40 text-violet-300":ev.submitter_role==="requester"?"bg-amber-900/40 text-amber-300":"bg-blue-900/40 text-blue-300"}`}>
                               {ev.submitter_role}
                             </span>
                             <span class="text-xs text-gray-400">{fmtDate(ev.created_at)}</span>
                             {ev.evidence_type!=="text" && (
-                              <span class="text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">{ev.evidence_type}</span>
+                              <span class="text-xs text-gray-500 bg-gray-800 px-1.5 py-0.5 rounded">{ev.evidence_type}</span>
                             )}
                           </div>
                           <p class="text-sm text-gray-300 break-words">
@@ -385,7 +385,7 @@ const EVENT_ICONS: Record<string, string> = {
 <script is:inline>
 // API calls use Astro proxy routes — no client-side token needed (httpOnly cookie)
 
-async function submitEvidence(taskId) {
+async function submitEvidence(taskId, btn) {
   const typeEl = document.getElementById(`ev-type-${taskId}`);
   const contentEl = document.getElementById(`ev-content-${taskId}`);
   const asgnEl = document.getElementById(`ev-asgn-${taskId}`);
@@ -400,6 +400,7 @@ async function submitEvidence(taskId) {
     assignment_id: asgnEl?.value || null,
   };
 
+  if (btn) { btn.disabled = true; btn.textContent = "Submitting…"; }
   try {
     const res = await fetch(`/api/disputes/${taskId}/evidence`, {
       method: "POST",
@@ -413,15 +414,17 @@ async function submitEvidence(taskId) {
     setTimeout(()=>window.location.reload(), 800);
   } catch(e) {
     showMsg(msgEl, `❌ ${e.message}`, "red");
+    if (btn) { btn.disabled = false; btn.textContent = "Submit Evidence"; }
   }
 }
 
-async function assignMediator(taskId) {
+async function assignMediator(taskId, btn) {
   const input = document.getElementById(`mediator-input-${taskId}`);
   const msgEl = document.getElementById(`mediator-msg-${taskId}`);
   const mediatorId = input?.value?.trim();
   if (!mediatorId) { showMsg(msgEl,"Enter mediator user ID.","red"); return; }
 
+  if (btn) { btn.disabled = true; btn.textContent = "Assigning…"; }
   try {
     const res = await fetch(`/api/disputes/${taskId}/assign-mediator`, {
       method: "POST",
@@ -434,13 +437,14 @@ async function assignMediator(taskId) {
     setTimeout(()=>window.location.reload(), 800);
   } catch(e) {
     showMsg(msgEl, `❌ ${e.message}`, "red");
+    if (btn) { btn.disabled = false; btn.textContent = "Assign"; }
   }
 }
 
 function showMsg(el, text, color) {
   if (!el) return;
   el.textContent = text;
-  el.className = `text-xs mt-1 ${color==="green"?"text-green-600":"text-red-600"}`;
+  el.className = `text-xs mt-1 ${color==="green"?"text-green-400":"text-red-400"}`;
   el.classList.remove("hidden");
 }
 

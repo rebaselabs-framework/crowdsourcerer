@@ -324,7 +324,7 @@ const totalPages = Math.ceil(workers.total / workers.per_page);
       document.getElementById("ban-modal")?.classList.add("hidden");
     });
 
-    document.getElementById("ban-confirm")?.addEventListener("click", async () => {
+    document.getElementById("ban-confirm")?.addEventListener("click", async (e) => {
       const reason = (document.getElementById("ban-reason") as HTMLTextAreaElement)?.value?.trim();
       const expiresRaw = (document.getElementById("ban-expires") as HTMLInputElement)?.value;
       const errEl = document.getElementById("ban-error");
@@ -332,6 +332,9 @@ const totalPages = Math.ceil(workers.total / workers.per_page);
         if (errEl) { errEl.textContent = "Reason is required."; errEl.classList.remove("hidden"); }
         return;
       }
+      const confirmBtn = e.currentTarget as HTMLButtonElement;
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = "Banning…";
       const body: any = { reason };
       if (expiresRaw) body.expires_at = new Date(expiresRaw).toISOString();
       try {
@@ -344,6 +347,8 @@ const totalPages = Math.ceil(workers.total / workers.per_page);
         location.reload();
       } catch (e: any) {
         if (errEl) { errEl.textContent = e.message; errEl.classList.remove("hidden"); }
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = "Ban Worker";
       }
     });
 
@@ -364,7 +369,7 @@ const totalPages = Math.ceil(workers.total / workers.per_page);
       document.getElementById("strike-modal")?.classList.add("hidden");
     });
 
-    document.getElementById("strike-confirm")?.addEventListener("click", async () => {
+    document.getElementById("strike-confirm")?.addEventListener("click", async (e) => {
       const reason = (document.getElementById("strike-reason") as HTMLTextAreaElement)?.value?.trim();
       const severity = (document.getElementById("strike-severity") as HTMLSelectElement)?.value;
       const errEl = document.getElementById("strike-error");
@@ -372,6 +377,9 @@ const totalPages = Math.ceil(workers.total / workers.per_page);
         if (errEl) { errEl.textContent = "Reason is required."; errEl.classList.remove("hidden"); }
         return;
       }
+      const confirmBtn = e.currentTarget as HTMLButtonElement;
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = "Adding…";
       try {
         const res = await fetch(`/api/admin/workers/${currentWorkerId}/strikes`, {
           method: "POST",
@@ -382,6 +390,8 @@ const totalPages = Math.ceil(workers.total / workers.per_page);
         location.reload();
       } catch (e: any) {
         if (errEl) { errEl.textContent = e.message; errEl.classList.remove("hidden"); }
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = "Add Strike";
       }
     });
 
