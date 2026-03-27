@@ -209,62 +209,83 @@ async def browse_workers(
     workers = result.scalars().all()
 
     items: list[WorkerCardOut] = []
-    for w in workers:
-        # Skills
+    if workers:
+        worker_ids = [w.id for w in workers]
+
+        # Bulk-load skills for all workers in one query (ordered so per-worker slice is stable)
         sk_result = await db.execute(
             select(WorkerSkillDB)
-            .where(WorkerSkillDB.worker_id == w.id)
-            .order_by(WorkerSkillDB.tasks_completed.desc())
-            .limit(6)
+            .where(WorkerSkillDB.worker_id.in_(worker_ids))
+            .order_by(WorkerSkillDB.worker_id, WorkerSkillDB.tasks_completed.desc())
         )
-        sk_rows = sk_result.scalars().all()
-        skills = [
-            WorkerSkillSummary(
-                task_type=s.task_type,
-                proficiency_level=s.proficiency_level,
-                proficiency_label=PROFICIENCY_LABELS.get(s.proficiency_level, "Unknown"),
-                tasks_completed=s.tasks_completed,
-                accuracy=round(s.accuracy, 3) if s.accuracy else None,
-                verified=s.verified,
-            )
-            for s in sk_rows
-        ]
+        skills_by_worker: dict[str, list[WorkerSkillDB]] = {}
+        for s in sk_result.scalars():
+            wid = str(s.worker_id)
+            bucket = skills_by_worker.setdefault(wid, [])
+            if len(bucket) < 6:  # keep at most 6 per worker (already sorted desc)
+                bucket.append(s)
 
-        # Counts
-        verified_count = sum(1 for s in sk_rows if s.verified)
-
-        cert_count = await db.scalar(
-            select(func.count()).where(
-                WorkerCertificationDB.worker_id == w.id,
+        # Bulk-load cert counts (passed=True) per worker via GROUP BY
+        cert_row_result = await db.execute(
+            select(WorkerCertificationDB.worker_id, func.count().label("cnt"))
+            .where(
+                WorkerCertificationDB.worker_id.in_(worker_ids),
                 WorkerCertificationDB.passed == True,  # noqa: E712
             )
-        ) or 0
-
-        endorsement_count = await db.scalar(
-            select(func.count()).where(WorkerEndorsementDB.worker_id == w.id)
-        ) or 0
-
-        items.append(
-            WorkerCardOut(
-                id=w.id,
-                name=w.name,
-                avatar_url=w.avatar_url,
-                bio=w.bio,
-                reputation_score=round(w.reputation_score, 1),
-                worker_level=w.worker_level,
-                worker_tasks_completed=w.worker_tasks_completed,
-                worker_accuracy=(
-                    round(w.worker_accuracy * 100, 1)
-                    if w.worker_accuracy else None
-                ),
-                skills=skills,
-                verified_skill_count=verified_count,
-                cert_count=cert_count,
-                endorsement_count=endorsement_count,
-                profile_url=f"/workers/{w.id}",
-                availability_status=getattr(w, "availability_status", "available"),
-            )
+            .group_by(WorkerCertificationDB.worker_id)
         )
+        cert_counts: dict[str, int] = {
+            str(row.worker_id): row.cnt for row in cert_row_result
+        }
+
+        # Bulk-load endorsement counts per worker via GROUP BY
+        endorse_row_result = await db.execute(
+            select(WorkerEndorsementDB.worker_id, func.count().label("cnt"))
+            .where(WorkerEndorsementDB.worker_id.in_(worker_ids))
+            .group_by(WorkerEndorsementDB.worker_id)
+        )
+        endorse_counts: dict[str, int] = {
+            str(row.worker_id): row.cnt for row in endorse_row_result
+        }
+
+        for w in workers:
+            wid = str(w.id)
+            sk_rows = skills_by_worker.get(wid, [])
+            skills = [
+                WorkerSkillSummary(
+                    task_type=s.task_type,
+                    proficiency_level=s.proficiency_level,
+                    proficiency_label=PROFICIENCY_LABELS.get(s.proficiency_level, "Unknown"),
+                    tasks_completed=s.tasks_completed,
+                    accuracy=round(s.accuracy, 3) if s.accuracy else None,
+                    verified=s.verified,
+                )
+                for s in sk_rows
+            ]
+
+            verified_count = sum(1 for s in sk_rows if s.verified)
+
+            items.append(
+                WorkerCardOut(
+                    id=w.id,
+                    name=w.name,
+                    avatar_url=w.avatar_url,
+                    bio=w.bio,
+                    reputation_score=round(w.reputation_score, 1),
+                    worker_level=w.worker_level,
+                    worker_tasks_completed=w.worker_tasks_completed,
+                    worker_accuracy=(
+                        round(w.worker_accuracy * 100, 1)
+                        if w.worker_accuracy else None
+                    ),
+                    skills=skills,
+                    verified_skill_count=verified_count,
+                    cert_count=cert_counts.get(wid, 0),
+                    endorsement_count=endorse_counts.get(wid, 0),
+                    profile_url=f"/workers/{w.id}",
+                    availability_status=getattr(w, "availability_status", "available"),
+                )
+            )
 
     pages = max(1, (total + limit - 1) // limit)
     return WorkerBrowseOut(items=items, total=total, page=page, pages=pages)
@@ -394,31 +415,37 @@ async def bulk_invite_workers(
     requester = requester_result.scalar_one_or_none()
     requester_name = requester.name if requester else "Someone"
 
-    invited: list[str] = []
-    skipped: int = 0
-
-    for worker_id in req.worker_ids:
-        # Check worker exists
-        worker_result = await db.execute(
+    # Bulk-load all valid workers and existing invites in two queries instead of N×2
+    valid_workers: dict[str, UserDB] = {}
+    if req.worker_ids:
+        vw_result = await db.execute(
             select(UserDB).where(
-                UserDB.id == worker_id,
+                UserDB.id.in_(req.worker_ids),
                 UserDB.role.in_(["worker", "both"]),
                 UserDB.is_active == True,  # noqa: E712
             )
         )
-        worker = worker_result.scalar_one_or_none()
-        if not worker:
-            skipped += 1
-            continue
+        valid_workers = {str(u.id): u for u in vw_result.scalars()}
 
-        # Skip duplicates
-        existing = await db.scalar(
-            select(func.count()).where(
+    existing_invite_worker_ids: set[str] = set()
+    if req.worker_ids:
+        ei_result = await db.execute(
+            select(WorkerInviteDB.worker_id).where(
                 WorkerInviteDB.task_id == task_id,
-                WorkerInviteDB.worker_id == worker_id,
+                WorkerInviteDB.worker_id.in_(req.worker_ids),
             )
         )
-        if existing:
+        existing_invite_worker_ids = {str(row[0]) for row in ei_result}
+
+    invited: list[str] = []
+    skipped: int = 0
+
+    for worker_id in req.worker_ids:
+        wid = str(worker_id)
+        if wid not in valid_workers:
+            skipped += 1
+            continue
+        if wid in existing_invite_worker_ids:
             skipped += 1
             continue
 
@@ -465,7 +492,8 @@ async def list_task_invites(
     task_result = await db.execute(
         select(TaskDB).where(TaskDB.id == task_id, TaskDB.user_id == user_id)
     )
-    if not task_result.scalar_one_or_none():
+    task = task_result.scalar_one_or_none()
+    if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
     result = await db.execute(
@@ -475,16 +503,20 @@ async def list_task_invites(
     )
     invites = result.scalars().all()
 
+    # Bulk-load workers for all invites (task is already known from the URL param)
+    workers_map: dict[str, UserDB] = {}
+    if invites:
+        worker_ids = list({inv.worker_id for inv in invites})
+        w_result = await db.execute(select(UserDB).where(UserDB.id.in_(worker_ids)))
+        workers_map = {str(u.id): u for u in w_result.scalars()}
+
     out: list[InviteOut] = []
     for inv in invites:
-        task_r = await db.execute(select(TaskDB).where(TaskDB.id == inv.task_id))
-        t = task_r.scalar_one_or_none()
-        worker_r = await db.execute(select(UserDB).where(UserDB.id == inv.worker_id))
-        w = worker_r.scalar_one_or_none()
+        w = workers_map.get(str(inv.worker_id))
         out.append(InviteOut(
             id=inv.id,
             task_id=inv.task_id,
-            task_title=_task_label(t) if t else None,
+            task_title=_task_label(task),  # same task for all invites in this endpoint
             worker_id=inv.worker_id,
             worker_name=w.name if w else None,
             requester_id=inv.requester_id,
@@ -514,6 +546,18 @@ async def list_my_invites(
     result = await db.execute(q)
     invites = result.scalars().all()
 
+    # Bulk-load tasks and requesters for all invites up front
+    tasks_map: dict[str, TaskDB] = {}
+    requesters_map: dict[str, UserDB] = {}
+    if invites:
+        task_ids = list({inv.task_id for inv in invites})
+        t_result = await db.execute(select(TaskDB).where(TaskDB.id.in_(task_ids)))
+        tasks_map = {str(t.id): t for t in t_result.scalars()}
+
+        requester_ids = list({inv.requester_id for inv in invites})
+        r_result = await db.execute(select(UserDB).where(UserDB.id.in_(requester_ids)))
+        requesters_map = {str(u.id): u for u in r_result.scalars()}
+
     # Auto-expire old pending invites
     now = datetime.now(timezone.utc)
     expired_ids: list[UUID] = []
@@ -527,12 +571,7 @@ async def list_my_invites(
             effective_status = "expired"
             expired_ids.append(inv.id)
 
-        task_r = await db.execute(select(TaskDB).where(TaskDB.id == inv.task_id))
-        t = task_r.scalar_one_or_none()
-        requester_r = await db.execute(
-            select(UserDB).where(UserDB.id == inv.requester_id)
-        )
-        req = requester_r.scalar_one_or_none()
+        t = tasks_map.get(str(inv.task_id))
         out.append(InviteOut(
             id=inv.id,
             task_id=inv.task_id,
@@ -756,10 +795,17 @@ async def get_watchlist(
     items_db = result.scalars().all()
 
     total = len(items_db)
+
+    # Bulk-load all tasks at once instead of one query per watchlist item
+    tasks_map: dict[str, TaskDB] = {}
+    if items_db:
+        task_ids = [w.task_id for w in items_db]
+        t_result = await db.execute(select(TaskDB).where(TaskDB.id.in_(task_ids)))
+        tasks_map = {str(t.id): t for t in t_result.scalars()}
+
     out: list[WatchlistItemOut] = []
     for w in items_db:
-        task_r = await db.execute(select(TaskDB).where(TaskDB.id == w.task_id))
-        task = task_r.scalar_one_or_none()
+        task = tasks_map.get(str(w.task_id))
         if not task:
             continue
         if not include_all and task.status not in ("open", "pending"):

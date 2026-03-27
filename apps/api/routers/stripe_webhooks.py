@@ -19,6 +19,7 @@ from typing import Optional
 import structlog
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import get_settings
@@ -140,7 +141,10 @@ async def stripe_webhook(
         logger.info("stripe.webhook.duplicate_ignored", event_id=event_id)
         return {"status": "already_processed"}
 
-    # Log the event (mark unprocessed until we finish)
+    # Log the event (mark unprocessed until we finish).
+    # Guard against the rare race where two concurrent deliveries of the same
+    # event_id both pass the check above before either commits — the DB unique
+    # constraint will reject the second INSERT with IntegrityError.
     log_entry = StripeEventLogDB(
         stripe_event_id=event_id,
         event_type=event_type,
@@ -148,7 +152,14 @@ async def stripe_webhook(
         processed=False,
     )
     db.add(log_entry)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError:
+        # Another concurrent handler is (or already was) processing this event.
+        # Roll back and return 200 so Stripe does not retry unnecessarily.
+        await db.rollback()
+        logger.info("stripe.webhook.concurrent_duplicate_skipped", event_id=event_id)
+        return {"status": "already_processed"}
 
     error_msg: Optional[str] = None
 
