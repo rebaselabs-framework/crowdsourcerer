@@ -20,7 +20,7 @@ if (q.length >= 2) {
     if (entityTypes) qs.set("entity_types", entityTypes);
     results = await apiFetch<any>(`/v1/search?${qs}`, { token });
   } catch (e: any) {
-    if (e.message?.includes("401")) return Astro.redirect("/login");
+    if (e.message?.includes("401") || e.message?.includes("403")) return Astro.redirect("/login");
     error = e.message ?? "Search failed.";
   }
 }

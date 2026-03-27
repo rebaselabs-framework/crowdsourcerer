@@ -21,7 +21,7 @@ try {
     apiFetch<any[]>("/v1/worker/skill-quiz/attempts?limit=30", { token }),
   ]);
 } catch (e: any) {
-  if ((e as Error).message?.includes("401")) return Astro.redirect("/login");
+  if ((e as Error).message?.includes("401") || (e as Error).message?.includes("403")) return Astro.redirect("/login");
   error = (e as Error).message ?? "Failed to load quiz data";
 }
 

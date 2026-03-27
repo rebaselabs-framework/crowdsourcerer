@@ -16,7 +16,7 @@ try {
   const res = await apiFetch<any>("/v1/pipelines?page_size=50", { token });
   pipelines = res?.items ?? [];
 } catch (e: any) {
-  if (e.message?.includes("401")) return Astro.redirect("/login");
+  if (e.message?.includes("401") || e.message?.includes("403")) return Astro.redirect("/login");
   error = "Failed to load pipelines.";
 }
 

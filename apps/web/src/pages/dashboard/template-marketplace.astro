@@ -33,7 +33,7 @@ try {
       .catch(() => []),
   ]);
 } catch (e: any) {
-  if (e.message?.includes("401")) return Astro.redirect("/login");
+  if (e.message?.includes("401") || e.message?.includes("403")) return Astro.redirect("/login");
   error = "Failed to load marketplace";
 }
 
