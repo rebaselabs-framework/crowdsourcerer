@@ -303,36 +303,61 @@ function relativeTime(ts: string | null): string {
   });
 
   // ── Toggle & Delete ─────────────────────────────────────────────────────────
-  document.querySelectorAll(".btn-toggle").forEach(btn => {
-    btn.addEventListener("click", async (e) => {
-      const el = e.currentTarget as HTMLElement;
-      const id = el.dataset.id!;
-      const current = el.dataset.current === "true";
+  document.querySelectorAll<HTMLButtonElement>(".btn-toggle").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const id = btn.dataset.id!;
+      const current = btn.dataset.current === "true";
+      const origText = btn.textContent!;
+      btn.disabled = true;
       try {
         const res = await fetch(`/api/worker/saved-searches/${id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ alert_enabled: !current }),
         });
-        if (!res.ok) throw new Error("Failed");
+        if (!res.ok) throw new Error("Failed to update alert");
         window.location.reload();
-      } catch {
-        alert("Failed to update alert");
+      } catch (e: any) {
+        btn.disabled = false;
+        btn.textContent = "⚠ Error";
+        btn.classList.add("!text-red-400");
+        setTimeout(() => {
+          btn.textContent = origText;
+          btn.classList.remove("!text-red-400");
+        }, 2500);
       }
     });
   });
 
-  document.querySelectorAll(".btn-delete").forEach(btn => {
-    btn.addEventListener("click", async (e) => {
-      const el = e.currentTarget as HTMLElement;
-      const id = el.dataset.id!;
-      if (!confirm("Delete this saved search?")) return;
+  document.querySelectorAll<HTMLButtonElement>(".btn-delete").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const id = btn.dataset.id!;
+      // Two-step confirm
+      if (btn.dataset.pending !== "true") {
+        const orig = btn.textContent!;
+        btn.dataset.pending = "true";
+        btn.textContent = "Sure?";
+        btn.classList.add("!bg-red-900/60", "!text-red-300");
+        setTimeout(() => {
+          btn.dataset.pending = "";
+          btn.textContent = orig;
+          btn.classList.remove("!bg-red-900/60", "!text-red-300");
+        }, 3000);
+        return;
+      }
+      btn.dataset.pending = "";
+      const orig = btn.textContent!;
+      btn.disabled = true;
+      btn.textContent = "Deleting…";
       try {
         const res = await fetch(`/api/worker/saved-searches/${id}`, { method: "DELETE" });
-        if (!res.ok && res.status !== 204) throw new Error("Failed");
+        if (!res.ok && res.status !== 204) throw new Error("Failed to delete");
         window.location.reload();
       } catch {
-        alert("Failed to delete");
+        btn.disabled = false;
+        btn.textContent = orig;
+        btn.classList.add("!text-red-300");
+        setTimeout(() => btn.classList.remove("!text-red-300"), 2500);
       }
     });
   });

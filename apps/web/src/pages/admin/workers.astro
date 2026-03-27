@@ -395,14 +395,27 @@ const totalPages = Math.ceil(workers.total / workers.per_page);
       }
     });
 
-    // Unban handlers
-    document.querySelectorAll(".unban-btn").forEach(btn => {
+    // Unban handlers — two-step confirm
+    document.querySelectorAll<HTMLButtonElement>(".unban-btn").forEach(btn => {
       btn.addEventListener("click", async () => {
-        const workerId = (btn as HTMLElement).dataset.workerId;
-        const name = (btn as HTMLElement).dataset.workerName ?? "this worker";
-        if (!confirm(`Unban ${name}?`)) return;
-        (btn as HTMLButtonElement).disabled = true;
-        (btn as HTMLButtonElement).textContent = "Unbanning…";
+        const workerId = btn.dataset.workerId;
+        const name = btn.dataset.workerName ?? "this worker";
+        if (btn.dataset.pending !== "true") {
+          const orig = btn.textContent!;
+          btn.dataset.pending = "true";
+          btn.textContent = `Unban ${name}?`;
+          btn.classList.add("!text-orange-400");
+          setTimeout(() => {
+            btn.dataset.pending = "";
+            btn.textContent = orig;
+            btn.classList.remove("!text-orange-400");
+          }, 3000);
+          return;
+        }
+        btn.dataset.pending = "";
+        btn.disabled = true;
+        btn.textContent = "Unbanning…";
+        btn.classList.remove("!text-orange-400");
         try {
           const res = await fetch(`/api/admin/workers/${workerId}/ban`, { method: "DELETE" });
           if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? "Failed");
@@ -410,8 +423,8 @@ const totalPages = Math.ceil(workers.total / workers.per_page);
           setTimeout(() => location.reload(), 800);
         } catch (e: any) {
           toast(e.message ?? "Failed to unban worker", false);
-          (btn as HTMLButtonElement).disabled = false;
-          (btn as HTMLButtonElement).textContent = "Unban";
+          btn.disabled = false;
+          btn.textContent = "Unban";
         }
       });
     });

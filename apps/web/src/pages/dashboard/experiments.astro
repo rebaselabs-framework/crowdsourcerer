@@ -182,10 +182,10 @@ const taskTypes = [
                   </form>
                 )}
                 {exp.status === "draft" && (
-                  <form method="POST" onsubmit="return confirm('Delete this experiment?')">
+                  <form method="POST" data-confirm="Delete this experiment?">
                     <input type="hidden" name="action" value="delete" />
                     <input type="hidden" name="experiment_id" value={exp.id} />
-                    <button class="px-3 py-1.5 bg-red-900/50 hover:bg-red-900 text-red-400 rounded-lg text-xs transition-colors">
+                    <button type="submit" class="px-3 py-1.5 bg-red-900/50 hover:bg-red-900 text-red-400 rounded-lg text-xs transition-colors">
                       🗑
                     </button>
                   </form>
@@ -384,5 +384,25 @@ const taskTypes = [
       }
     });
     (window as any).addVariant = addVariant;
+
+    // Two-step confirm for delete-experiment forms
+    document.querySelectorAll<HTMLFormElement>("form[data-confirm]").forEach(form => {
+      const btn = form.querySelector<HTMLButtonElement>("button[type='submit']");
+      if (!btn) return;
+      form.addEventListener("submit", e => {
+        if (btn.dataset.pending !== "true") {
+          e.preventDefault();
+          const orig = btn.textContent!;
+          btn.dataset.pending = "true";
+          btn.textContent = "Sure?";
+          btn.classList.add("text-red-400");
+          setTimeout(() => {
+            btn.dataset.pending = "";
+            btn.textContent = orig;
+            btn.classList.remove("text-red-400");
+          }, 3000);
+        }
+      });
+    });
   </script>
 </Layout>

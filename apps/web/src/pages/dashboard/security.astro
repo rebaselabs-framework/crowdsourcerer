@@ -316,8 +316,26 @@ try {
   btnDisable?.addEventListener("click", async () => {
     const code = disableInput?.value.trim();
     if (!code) return;
-    if (!confirm("Are you sure you want to disable 2FA? Your account will be less secure.")) return;
+    // Two-step confirm: first click warns, second click executes
+    if (btnDisable.dataset.pending !== "true") {
+      const orig = btnDisable.textContent!;
+      btnDisable.dataset.pending = "true";
+      btnDisable.dataset.orig = orig;
+      btnDisable.textContent = "⚠️ Confirm disable";
+      btnDisable.classList.add("!bg-red-700");
+      setTimeout(() => {
+        btnDisable.dataset.pending = "";
+        btnDisable.textContent = btnDisable.dataset.orig ?? orig;
+        btnDisable.classList.remove("!bg-red-700");
+      }, 3000);
+      return;
+    }
+    // Second click — execute disable
+    btnDisable.dataset.pending = "";
+    const origText = btnDisable.dataset.orig ?? "";
     btnDisable.setAttribute("disabled", "true");
+    btnDisable.textContent = "Disabling…";
+    btnDisable.classList.remove("!bg-red-700");
     disableErr?.classList.add("hidden");
 
     try {
@@ -338,6 +356,7 @@ try {
         disableErr.classList.remove("hidden");
       }
       btnDisable.removeAttribute("disabled");
+      btnDisable.textContent = origText;
     }
   });
 

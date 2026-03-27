@@ -215,13 +215,12 @@ const TYPE_COLORS: Record<string, string> = {
                   </button>
                 </form>
                 <!-- Delete -->
-                <form method="POST">
+                <form method="POST" data-confirm="Delete this announcement?">
                   <input type="hidden" name="action" value="delete" />
                   <input type="hidden" name="id" value={ann.id} />
                   <button
                     type="submit"
                     class="px-2.5 py-1 text-xs font-medium border border-red-800/60 text-red-400 hover:border-red-600 hover:text-red-300 rounded-lg transition-colors"
-                    onclick="return confirm('Delete this announcement?')"
                   >
                     Delete
                   </button>
@@ -233,4 +232,26 @@ const TYPE_COLORS: Record<string, string> = {
       })}
     </div>
   </div>
+
+  <script is:inline>
+    // Two-step confirm for data-confirm forms (replaces browser confirm())
+    document.querySelectorAll("form[data-confirm]").forEach(function(form) {
+      var btn = form.querySelector("button[type='submit']");
+      if (!btn) return;
+      form.addEventListener("submit", function(e) {
+        if (btn.dataset.pending !== "true") {
+          e.preventDefault();
+          var orig = btn.textContent;
+          btn.dataset.pending = "true";
+          btn.textContent = "Sure?";
+          btn.classList.add("text-red-400");
+          setTimeout(function() {
+            btn.dataset.pending = "";
+            btn.textContent = orig;
+            btn.classList.remove("text-red-400");
+          }, 3000);
+        }
+      });
+    });
+  </script>
 </Layout>
