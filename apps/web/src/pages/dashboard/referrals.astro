@@ -194,12 +194,17 @@ function formatDate(d: string) {
   const refUrl = urlInput?.value ?? "";
   const shareText = "Join CrowdSorcerer — earn credits by completing AI tasks! Sign up with my link:";
 
-  // Copy button
+  // Copy button — fall back to selecting text if clipboard API unavailable
   copyBtn?.addEventListener("click", async () => {
-    await navigator.clipboard.writeText(refUrl).catch(() => {});
-    if (copyBtn) {
+    if (!copyBtn) return;
+    try {
+      await navigator.clipboard.writeText(refUrl);
       copyBtn.textContent = "Copied!";
       setTimeout(() => { copyBtn.textContent = "Copy"; }, 2000);
+    } catch {
+      urlInput?.select();
+      copyBtn.textContent = "Select all ↑";
+      setTimeout(() => { copyBtn.textContent = "Copy"; }, 2500);
     }
   });
 
