@@ -14,7 +14,13 @@ jobs:
 
     services:
       postgres:
+        # NOTE: Docker Hub rate limits anonymous pulls on shared GitHub Actions runners.
+        # To fix: add DOCKERHUB_USERNAME + DOCKERHUB_TOKEN to repo/org secrets so
+        # authenticated pulls are used (much higher rate limit).
         image: postgres:16
+        credentials:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
         env:
           POSTGRES_DB: crowdsourcerer_test
           POSTGRES_USER: cs
