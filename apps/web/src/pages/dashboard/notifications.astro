@@ -407,14 +407,7 @@ const totalNotifications = grouped.reduce((s, g) => s + g.items.length, 0);
       } catch { /* ignore */ }
     });
 
-    // ── Clear all ───────────────────────────────────────────────────────────
-    document.getElementById("clear-all-btn")?.addEventListener("click", async () => {
-      if (!confirm("Delete all notifications? This cannot be undone.")) return;
-      try {
-        await fetch("/api/notifications/delete-all", { method: "DELETE" });
-        window.location.reload();
-      } catch { /* ignore */ }
-    });
+    // ── Clear all — handled below (clear-all-modal) ──────────────────────────
 
     // ── Badge helper ────────────────────────────────────────────────────────
     function updateBadge(delta: number) {
@@ -457,5 +450,33 @@ const totalNotifications = grouped.reduce((s, g) => s + g.items.length, 0);
       } catch { /* ignore */ }
     }
     setInterval(pollUnreadCount, 30_000);
+
+    // ── Clear-all confirmation modal ─────────────────────────────────────────
+    const clearModal = document.getElementById("clear-all-modal");
+    document.getElementById("clear-all-btn")?.addEventListener("click", () => {
+      clearModal?.classList.remove("hidden");
+    });
+    document.getElementById("clear-all-cancel")?.addEventListener("click", () => {
+      clearModal?.classList.add("hidden");
+    });
+    document.getElementById("clear-all-confirm")?.addEventListener("click", async () => {
+      clearModal?.classList.add("hidden");
+      try {
+        await fetch("/api/notifications/delete-all", { method: "DELETE" });
+        window.location.reload();
+      } catch { /* ignore — page will stay and user can retry */ }
+    });
   </script>
+
+  <!-- Clear all confirmation modal -->
+  <div id="clear-all-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+    <div class="bg-gray-900 border border-gray-800 rounded-xl w-full max-w-sm p-6">
+      <h2 class="font-semibold text-gray-200 mb-2">Clear all notifications?</h2>
+      <p class="text-sm text-gray-400 mb-5">This will permanently delete all {totalNotifications} notification{totalNotifications !== 1 ? "s" : ""}. This cannot be undone.</p>
+      <div class="flex gap-3 justify-end">
+        <button type="button" id="clear-all-cancel" class="px-4 py-2 text-sm text-gray-300 border border-gray-700 rounded-lg hover:bg-gray-800">Cancel</button>
+        <button type="button" id="clear-all-confirm" class="px-4 py-2 text-sm bg-red-700 hover:bg-red-600 text-white rounded-lg font-medium">Clear all</button>
+      </div>
+    </div>
+  </div>
 </Layout>

@@ -187,6 +187,7 @@ const ALL_EVENTS = (eventTypes?.events ?? []).map((e: any) => e.type);
               Cancel
             </button>
           </div>
+          <div id="create-ep-error" class="hidden text-sm text-red-400 bg-red-950/20 border border-red-800 rounded-lg px-3 py-2 mt-3"></div>
           <!-- Secret reveal box (shown after creation) -->
           <div id="secret-box" class="hidden mt-5 bg-amber-950/30 border border-amber-700 rounded-xl p-4">
             <div class="flex items-center gap-2 mb-2">
@@ -644,6 +645,7 @@ if not verify(request.get_data(), YOUR_SECRET, sig):
               Cancel
             </button>
           </div>
+          <div id="tpl-error" class="hidden text-sm text-red-400 bg-red-950/20 border border-red-800 rounded-lg px-3 py-2 mt-3"></div>
         </div>
 
         <!-- Templates list -->
@@ -765,6 +767,23 @@ if not verify(request.get_data(), YOUR_SECRET, sig):
     )}
 
   <script>
+    function toast(msg: string, ok = true) {
+      const t = document.createElement("div");
+      t.className = `fixed bottom-4 right-4 px-4 py-3 rounded-lg text-white text-sm z-50 shadow-lg ${ok ? "bg-emerald-700" : "bg-red-700"}`;
+      t.textContent = msg;
+      document.body.appendChild(t);
+      setTimeout(() => t.remove(), 4000);
+    }
+    function showFormErr(id: string, msg: string) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.textContent = msg;
+      el.classList.remove("hidden");
+    }
+    function hideFormErr(id: string) {
+      document.getElementById(id)?.classList.add("hidden");
+    }
+
     // ─── Create endpoint form toggle ──────────────────────────────────────────
     const showBtn = document.getElementById("show-create-btn");
     const showEmptyBtn = document.getElementById("show-create-empty-btn");
@@ -785,7 +804,8 @@ if not verify(request.get_data(), YOUR_SECRET, sig):
       const checked = Array.from(document.querySelectorAll<HTMLInputElement>(".event-cb:checked")).map(c => c.value);
       const events = checked.length > 0 ? checked : null;
 
-      if (!url) { alert("URL is required"); return; }
+      hideFormErr("create-ep-error");
+      if (!url) { showFormErr("create-ep-error", "URL is required"); return; }
 
       const btn = document.getElementById("create-ep-btn") as HTMLButtonElement;
       btn.disabled = true; btn.textContent = "Creating…";
@@ -797,7 +817,11 @@ if not verify(request.get_data(), YOUR_SECRET, sig):
           body: JSON.stringify({ url, description, events }),
         });
         const data = await res.json();
-        if (!res.ok) { alert(data.detail ?? "Failed to create endpoint"); return; }
+        if (!res.ok) {
+          showFormErr("create-ep-error", data.detail ?? "Failed to create endpoint");
+          btn.disabled = false; btn.textContent = "Register endpoint";
+          return;
+        }
 
         // Show secret
         const secretBox = document.getElementById("secret-box");
@@ -805,12 +829,13 @@ if not verify(request.get_data(), YOUR_SECRET, sig):
         if (secretBox && secretVal && data.secret) {
           secretVal.textContent = data.secret;
           secretBox.classList.remove("hidden");
+          secretBox.scrollIntoView({ behavior: "smooth", block: "nearest" });
         }
 
         btn.textContent = "✓ Created! Refresh to see it";
         btn.disabled = false;
       } catch {
-        alert("Network error");
+        showFormErr("create-ep-error", "Network error — please try again");
         btn.disabled = false; btn.textContent = "Register endpoint";
       }
     });
@@ -860,9 +885,8 @@ if not verify(request.get_data(), YOUR_SECRET, sig):
             body: JSON.stringify({ is_active: !isActive }),
           });
           if (res.ok) window.location.reload();
-          else { const d = await res.json(); alert(d.detail ?? "Failed"); }
-        } catch { alert("Network error"); }
-        btn.disabled = false;
+          else { const d = await res.json(); toast(d.detail ?? "Failed to toggle endpoint", false); btn.disabled = false; }
+        } catch { toast("Network error — please try again", false); btn.disabled = false; }
       });
     });
 
@@ -876,11 +900,18 @@ if not verify(request.get_data(), YOUR_SECRET, sig):
           const res = await fetch(`/api/webhooks/endpoints/${epId}/rotate-secret`, { method: "POST" });
           const data = await res.json();
           if (res.ok) {
-            prompt("New signing secret:", data.secret);
+            // Reveal new secret in the secret-box (same as creation flow)
+            const secretBox = document.getElementById("secret-box");
+            const secretVal = document.getElementById("secret-value");
+            if (secretBox && secretVal) {
+              secretVal.textContent = data.secret ?? "";
+              secretBox.classList.remove("hidden");
+              secretBox.scrollIntoView({ behavior: "smooth", block: "center" });
+            }
           } else {
-            alert(data.detail ?? "Failed to rotate");
+            toast(data.detail ?? "Failed to rotate signing secret", false);
           }
-        } catch { alert("Network error"); }
+        } catch { toast("Network error — please try again", false); }
         btn.disabled = false;
       });
     });
@@ -897,10 +928,10 @@ if not verify(request.get_data(), YOUR_SECRET, sig):
             btn.closest("[data-ep-id]")?.remove();
           } else {
             const d = await res.json();
-            alert(d.detail ?? "Failed to delete");
+            toast(d.detail ?? "Failed to delete endpoint", false);
             btn.disabled = false;
           }
-        } catch { alert("Network error"); btn.disabled = false; }
+        } catch { toast("Network error — please try again", false); btn.disabled = false; }
       });
     });
 
@@ -935,7 +966,8 @@ if not verify(request.get_data(), YOUR_SECRET, sig):
       const description = (document.getElementById("tpl-description") as HTMLInputElement)?.value?.trim() || null;
       const template = (document.getElementById("tpl-template") as HTMLTextAreaElement)?.value?.trim();
 
-      if (!eventType || !template) { alert("Event type and template are required"); return; }
+      hideFormErr("tpl-error");
+      if (!eventType || !template) { showFormErr("tpl-error", "Event type and template body are required"); return; }
 
       const saveBtn = document.getElementById("save-template-btn") as HTMLButtonElement;
       saveBtn.disabled = true; saveBtn.textContent = "Saving…";
@@ -950,10 +982,10 @@ if not verify(request.get_data(), YOUR_SECRET, sig):
           window.location.reload();
         } else {
           const data = await res.json().catch(() => ({}));
-          alert(data.detail ?? "Failed to save template");
+          showFormErr("tpl-error", data.detail ?? "Failed to save template");
         }
       } catch {
-        alert("Network error");
+        showFormErr("tpl-error", "Network error — please try again");
       }
       saveBtn.disabled = false; saveBtn.textContent = "Save template";
     });
@@ -970,10 +1002,10 @@ if not verify(request.get_data(), YOUR_SECRET, sig):
             btn.closest("[data-tpl-event]")?.remove();
           } else {
             const data = await res.json().catch(() => ({}));
-            alert(data.detail ?? "Failed to delete template");
+            toast(data.detail ?? "Failed to delete template", false);
+            btn.disabled = false;
           }
-        } catch { alert("Network error"); }
-        btn.disabled = false;
+        } catch { toast("Network error — please try again", false); btn.disabled = false; }
       });
     });
 
@@ -999,11 +1031,13 @@ if not verify(request.get_data(), YOUR_SECRET, sig):
             }
           } else {
             btn.textContent = originalText ?? "↻ Retry";
-            alert(data.detail ?? "Retry failed");
+            btn.disabled = false;
+            toast(data.detail ?? "Retry failed", false);
           }
         } catch {
           btn.disabled = false;
           btn.textContent = originalText ?? "↻ Retry";
+          toast("Network error — please try again", false);
         }
       });
     });
@@ -1036,12 +1070,13 @@ if not verify(request.get_data(), YOUR_SECRET, sig):
             }
           } else {
             btn.textContent = originalText ?? "▶ Replay";
-            alert(data.detail ?? "Replay failed");
             btn.disabled = false;
+            toast(data.detail ?? "Replay failed", false);
           }
         } catch {
           btn.disabled = false;
           btn.textContent = originalText ?? "▶ Replay";
+          toast("Network error — please try again", false);
         }
       });
     });
