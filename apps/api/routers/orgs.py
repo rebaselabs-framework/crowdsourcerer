@@ -381,7 +381,7 @@ async def invite_member(
     if invited_user:
         await create_notification(
             db=db,
-            user_id=str(invited_user),
+            user_id=invited_user,
             type=NotifType.ORG_INVITE,
             title=f"You've been invited to join {org.name}",
             body=f"Accept the invitation to join the '{org.name}' team.",
@@ -534,7 +534,7 @@ async def accept_invite(
     if org:
         await create_notification(
             db=db,
-            user_id=str(org.owner_id),
+            user_id=org.owner_id,
             type=NotifType.ORG_MEMBER_JOINED,
             title=f"{user.name or user.email} joined {org.name}",
             body=f"A new member has joined your organization.",

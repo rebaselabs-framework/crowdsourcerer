@@ -314,7 +314,7 @@ async def admin_review_payout(
         )
 
     await log_admin_action(db, admin_id, f"payout_{body.status}", "payout", str(payout_id),
-                           {"status": body.status, "note": body.note})
+                           {"status": body.status, "note": body.admin_note})
     await db.commit()
     await db.refresh(payout)
 
