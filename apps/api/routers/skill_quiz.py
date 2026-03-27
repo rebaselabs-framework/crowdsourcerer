@@ -298,6 +298,8 @@ async def submit_quiz(
     qs_list = list(all_qs.values())
     # Use a deterministic sample based on submission
     n = min(total, len(qs_list))
+    if n == 0:
+        raise HTTPException(400, "No questions available for this skill category. Please try again later.")
     # Seed-based: re-sample deterministically (use random with no seed = server picks)
     # For grading, we need to know WHICH questions were asked.
     # Better: client sends (question_id, answer) pairs.

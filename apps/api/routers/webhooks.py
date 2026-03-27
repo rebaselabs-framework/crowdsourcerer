@@ -433,7 +433,7 @@ async def webhook_stats(
         .where(WebhookLogDB.user_id == user_id)
         .group_by(WebhookLogDB.event_type)
     )).all()
-    by_event = {r.event_type or "task.completed": r.cnt for r in event_rows}
+    by_event = {(r.event_type if r.event_type is not None else "(none)"): r.cnt for r in event_rows}
 
     return {
         "total_deliveries": total,
