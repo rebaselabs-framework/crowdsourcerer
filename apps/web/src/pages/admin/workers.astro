@@ -95,7 +95,10 @@ const totalPages = Math.ceil(workers.total / workers.per_page);
                   <td colspan="8" class="px-4 py-10 text-center text-gray-500">No workers found</td>
                 </tr>
               ) : workers.items.map((w: any) => (
-                <tr class:list={["hover:bg-gray-800/30 transition-colors", w.is_banned ? "bg-red-950/10" : ""]}>
+                <tr
+                  data-worker-id={w.id}
+                  class:list={["hover:bg-gray-800/30 transition-colors", w.is_banned ? "bg-red-950/10" : ""]}
+                >
                   <td class="px-4 py-3">
                     <div class="font-medium text-gray-200">{w.name ?? "—"}</div>
                     <div class="text-xs text-gray-500">{w.email}</div>
@@ -304,26 +307,101 @@ const totalPages = Math.ceil(workers.total / workers.per_page);
       setTimeout(() => t.remove(), 4000);
     }
 
-    let currentWorkerId: string | null = null;
+    // Column indices in each <tr>
+    const COL_STRIKES = 4;
+    const COL_STATUS  = 5;
+    const COL_ACTIONS = 7;
 
-    // Ban modal
-    document.querySelectorAll(".ban-btn").forEach(btn => {
-      btn.addEventListener("click", () => {
-        currentWorkerId = (btn as HTMLElement).dataset.workerId ?? null;
-        const name = (btn as HTMLElement).dataset.workerName ?? "";
-        const nameEl = document.getElementById("ban-modal-name");
-        if (nameEl) nameEl.textContent = name;
-        (document.getElementById("ban-reason") as HTMLTextAreaElement).value = "";
-        (document.getElementById("ban-expires") as HTMLInputElement).value = "";
-        document.getElementById("ban-error")?.classList.add("hidden");
-        document.getElementById("ban-modal")?.classList.remove("hidden");
-      });
+    let currentWorkerId: string | null = null;
+    let currentWorkerName: string = "";
+
+    function openBanModal(workerId: string, workerName: string) {
+      currentWorkerId = workerId;
+      currentWorkerName = workerName;
+      const nameEl = document.getElementById("ban-modal-name");
+      if (nameEl) nameEl.textContent = workerName;
+      (document.getElementById("ban-reason") as HTMLTextAreaElement).value = "";
+      (document.getElementById("ban-expires") as HTMLInputElement).value = "";
+      document.getElementById("ban-error")?.classList.add("hidden");
+      document.getElementById("ban-modal")?.classList.remove("hidden");
+    }
+
+    function openStrikeModal(workerId: string, workerName: string) {
+      currentWorkerId = workerId;
+      currentWorkerName = workerName;
+      const nameEl = document.getElementById("strike-modal-name");
+      if (nameEl) nameEl.textContent = workerName;
+      (document.getElementById("strike-reason") as HTMLTextAreaElement).value = "";
+      document.getElementById("strike-error")?.classList.add("hidden");
+      document.getElementById("strike-modal")?.classList.remove("hidden");
+    }
+
+    // Single delegated listener on tbody handles ban-btn, strike-btn, and unban-btn
+    // (including dynamically-replaced buttons after ban/unban)
+    document.querySelector("tbody")?.addEventListener("click", async (e) => {
+      const btn = (e.target as HTMLElement).closest<HTMLButtonElement>("button");
+      if (!btn) return;
+      const workerId   = btn.dataset.workerId   ?? "";
+      const workerName = btn.dataset.workerName ?? "this worker";
+      if (!workerId) return;
+
+      if (btn.classList.contains("ban-btn")) {
+        openBanModal(workerId, workerName);
+      } else if (btn.classList.contains("strike-btn")) {
+        openStrikeModal(workerId, workerName);
+      } else if (btn.classList.contains("unban-btn")) {
+        // Two-step confirm
+        if (btn.dataset.pending !== "true") {
+          const orig = btn.textContent!;
+          btn.dataset.pending = "true";
+          btn.textContent = `Unban ${workerName}?`;
+          btn.classList.add("!text-orange-400");
+          setTimeout(() => {
+            if (btn.dataset.pending === "true") {
+              btn.dataset.pending = "";
+              btn.textContent = orig;
+              btn.classList.remove("!text-orange-400");
+            }
+          }, 3000);
+          return;
+        }
+        btn.dataset.pending = "";
+        btn.disabled = true;
+        btn.textContent = "Unbanning…";
+        btn.classList.remove("!text-orange-400");
+        try {
+          const res = await fetch(`/api/admin/workers/${workerId}/ban`, { method: "DELETE" });
+          if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? "Failed");
+          toast(`${workerName} has been unbanned`);
+          // Targeted DOM update — no reload needed
+          const row = document.querySelector<HTMLTableRowElement>(`tr[data-worker-id="${workerId}"]`);
+          if (row) {
+            row.classList.remove("bg-red-950/10");
+            const cells = row.querySelectorAll("td");
+            if (cells[COL_STATUS]) {
+              cells[COL_STATUS].innerHTML = '<span class="text-xs bg-green-950/50 text-green-400 border border-green-800 px-2 py-0.5 rounded-full">Active</span>';
+            }
+            const newBanBtn = document.createElement("button");
+            newBanBtn.className = "ban-btn text-xs bg-red-950/40 hover:bg-red-900/40 text-red-400 border border-red-800 px-2.5 py-1 rounded-lg transition-colors";
+            newBanBtn.dataset.workerId = workerId;
+            newBanBtn.dataset.workerName = workerName;
+            newBanBtn.textContent = "Ban";
+            btn.replaceWith(newBanBtn);
+          }
+        } catch (err: any) {
+          toast(err.message ?? "Failed to unban worker", false);
+          btn.disabled = false;
+          btn.textContent = "Unban";
+        }
+      }
     });
 
+    // Ban modal cancel
     document.getElementById("ban-cancel")?.addEventListener("click", () => {
       document.getElementById("ban-modal")?.classList.add("hidden");
     });
 
+    // Ban confirm
     document.getElementById("ban-confirm")?.addEventListener("click", async (e) => {
       const reason = (document.getElementById("ban-reason") as HTMLTextAreaElement)?.value?.trim();
       const expiresRaw = (document.getElementById("ban-expires") as HTMLInputElement)?.value;
@@ -344,31 +422,39 @@ const totalPages = Math.ceil(workers.total / workers.per_page);
           body: JSON.stringify(body),
         });
         if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? "Failed");
-        location.reload();
-      } catch (e: any) {
-        if (errEl) { errEl.textContent = e.message; errEl.classList.remove("hidden"); }
+        // Targeted DOM update — no reload needed
+        const row = document.querySelector<HTMLTableRowElement>(`tr[data-worker-id="${currentWorkerId}"]`);
+        if (row) {
+          row.classList.add("bg-red-950/10");
+          const cells = row.querySelectorAll("td");
+          if (cells[COL_STATUS]) {
+            cells[COL_STATUS].innerHTML = '<span class="text-xs bg-red-950/50 text-red-400 border border-red-800 px-2 py-0.5 rounded-full">Banned</span>';
+          }
+          const banBtnInRow = cells[COL_ACTIONS]?.querySelector<HTMLButtonElement>(".ban-btn");
+          if (banBtnInRow) {
+            const newUnbanBtn = document.createElement("button");
+            newUnbanBtn.className = "unban-btn text-xs bg-green-950/40 hover:bg-green-900/40 text-green-400 border border-green-800 px-2.5 py-1 rounded-lg transition-colors";
+            newUnbanBtn.dataset.workerId = currentWorkerId!;
+            newUnbanBtn.dataset.workerName = currentWorkerName;
+            newUnbanBtn.textContent = "Unban";
+            banBtnInRow.replaceWith(newUnbanBtn);
+          }
+        }
+        document.getElementById("ban-modal")?.classList.add("hidden");
+        toast(`${currentWorkerName || "Worker"} has been banned`);
+      } catch (err: any) {
+        if (errEl) { errEl.textContent = err.message; errEl.classList.remove("hidden"); }
         confirmBtn.disabled = false;
         confirmBtn.textContent = "Ban Worker";
       }
     });
 
-    // Strike modal
-    document.querySelectorAll(".strike-btn").forEach(btn => {
-      btn.addEventListener("click", () => {
-        currentWorkerId = (btn as HTMLElement).dataset.workerId ?? null;
-        const name = (btn as HTMLElement).dataset.workerName ?? "";
-        const nameEl = document.getElementById("strike-modal-name");
-        if (nameEl) nameEl.textContent = name;
-        (document.getElementById("strike-reason") as HTMLTextAreaElement).value = "";
-        document.getElementById("strike-error")?.classList.add("hidden");
-        document.getElementById("strike-modal")?.classList.remove("hidden");
-      });
-    });
-
+    // Strike modal cancel
     document.getElementById("strike-cancel")?.addEventListener("click", () => {
       document.getElementById("strike-modal")?.classList.add("hidden");
     });
 
+    // Strike confirm
     document.getElementById("strike-confirm")?.addEventListener("click", async (e) => {
       const reason = (document.getElementById("strike-reason") as HTMLTextAreaElement)?.value?.trim();
       const severity = (document.getElementById("strike-severity") as HTMLSelectElement)?.value;
@@ -387,46 +473,23 @@ const totalPages = Math.ceil(workers.total / workers.per_page);
           body: JSON.stringify({ reason, severity }),
         });
         if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? "Failed");
-        location.reload();
-      } catch (e: any) {
-        if (errEl) { errEl.textContent = e.message; errEl.classList.remove("hidden"); }
+        const data = await res.json().catch(() => ({}));
+        // Targeted DOM update — no reload needed
+        const row = document.querySelector<HTMLTableRowElement>(`tr[data-worker-id="${currentWorkerId}"]`);
+        if (row) {
+          const cells = row.querySelectorAll("td");
+          if (cells[COL_STRIKES]) {
+            const newCount = (data as any).total_strikes ?? 1;
+            cells[COL_STRIKES].innerHTML = `<span class="text-orange-400 font-semibold">${newCount}</span>`;
+          }
+        }
+        document.getElementById("strike-modal")?.classList.add("hidden");
+        toast(`Strike issued to ${currentWorkerName || "worker"}`);
+      } catch (err: any) {
+        if (errEl) { errEl.textContent = err.message; errEl.classList.remove("hidden"); }
         confirmBtn.disabled = false;
         confirmBtn.textContent = "Add Strike";
       }
-    });
-
-    // Unban handlers — two-step confirm
-    document.querySelectorAll<HTMLButtonElement>(".unban-btn").forEach(btn => {
-      btn.addEventListener("click", async () => {
-        const workerId = btn.dataset.workerId;
-        const name = btn.dataset.workerName ?? "this worker";
-        if (btn.dataset.pending !== "true") {
-          const orig = btn.textContent!;
-          btn.dataset.pending = "true";
-          btn.textContent = `Unban ${name}?`;
-          btn.classList.add("!text-orange-400");
-          setTimeout(() => {
-            btn.dataset.pending = "";
-            btn.textContent = orig;
-            btn.classList.remove("!text-orange-400");
-          }, 3000);
-          return;
-        }
-        btn.dataset.pending = "";
-        btn.disabled = true;
-        btn.textContent = "Unbanning…";
-        btn.classList.remove("!text-orange-400");
-        try {
-          const res = await fetch(`/api/admin/workers/${workerId}/ban`, { method: "DELETE" });
-          if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? "Failed");
-          toast(`${name} has been unbanned`);
-          setTimeout(() => location.reload(), 800);
-        } catch (e: any) {
-          toast(e.message ?? "Failed to unban worker", false);
-          btn.disabled = false;
-          btn.textContent = "Unban";
-        }
-      });
     });
   </script>
 </Layout>

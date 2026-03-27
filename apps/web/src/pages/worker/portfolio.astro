@@ -189,20 +189,30 @@ document.getElementById('pin-form').addEventListener('submit', async e => {
   const caption = document.getElementById('pin-caption').value.trim();
   const order = parseInt(document.getElementById('pin-order').value) || 0;
   const errEl = document.getElementById('pin-error');
+  const submitBtn = e.target.querySelector('button[type="submit"]');
+  if (submitBtn) { submitBtn.textContent = 'Pinning…'; submitBtn.disabled = true; }
+  errEl.classList.add('hidden');
 
-  const res = await fetch('/api/worker/portfolio', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ task_id: taskId, caption: caption || null, display_order: order }),
-  });
-  if (res.ok) {
-    toast('Task pinned to portfolio!');
-    document.getElementById('pin-modal').classList.add('hidden');
-    setTimeout(() => location.reload(), 500);
-  } else {
-    const err = await res.json().catch(() => ({}));
-    errEl.textContent = err.detail || 'Failed to pin task';
+  try {
+    const res = await fetch('/api/worker/portfolio', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ task_id: taskId, caption: caption || null, display_order: order }),
+    });
+    if (res.ok) {
+      toast('Task pinned to portfolio!');
+      document.getElementById('pin-modal').classList.add('hidden');
+      setTimeout(() => location.reload(), 500);
+    } else {
+      const err = await res.json().catch(() => ({}));
+      errEl.textContent = err.detail || 'Failed to pin task';
+      errEl.classList.remove('hidden');
+      if (submitBtn) { submitBtn.textContent = 'Pin Task'; submitBtn.disabled = false; }
+    }
+  } catch (_) {
+    errEl.textContent = 'Network error — please try again.';
     errEl.classList.remove('hidden');
+    if (submitBtn) { submitBtn.textContent = 'Pin Task'; submitBtn.disabled = false; }
   }
 });
 
