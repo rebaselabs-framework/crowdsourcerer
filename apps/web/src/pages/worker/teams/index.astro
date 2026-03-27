@@ -329,10 +329,23 @@ const EMOJI_OPTIONS = ["👥", "🚀", "⚡", "🔥", "💡", "🎯", "🛠️",
   </div>
 
   <script is:inline>
-    // Confirm-required forms (data-confirm attribute replaces onsubmit="return confirm(...)")
+    // Two-step confirm for data-confirm forms (replaces browser confirm())
     document.querySelectorAll("form[data-confirm]").forEach(function(form) {
+      var btn = form.querySelector("button[type='submit']");
+      if (!btn) return;
       form.addEventListener("submit", function(e) {
-        if (!confirm(form.dataset.confirm)) e.preventDefault();
+        if (btn.dataset.pending !== "true") {
+          e.preventDefault();
+          var orig = btn.textContent;
+          btn.dataset.pending = "true";
+          btn.textContent = "Sure?";
+          btn.classList.add("text-red-400");
+          setTimeout(function() {
+            btn.dataset.pending = "";
+            btn.textContent = orig;
+            btn.classList.remove("text-red-400");
+          }, 3000);
+        }
       });
     });
 

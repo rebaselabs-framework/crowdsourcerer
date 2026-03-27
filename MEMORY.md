@@ -437,14 +437,73 @@ Also: template-marketplace index.ts had wrong backend URL (`/v1/template-marketp
 - **notification-preferences.astro**: replaced two blocking `alert()` calls with `showToast(msg, true)` error toasts; `showToast()` now accepts `isError` param and dynamically applies red/emerald colour classes so one toast element covers both success and error states.
 - **worker/portfolio.astro**: rewrote edit-form submit handler with proper error display, loading state, and try/catch/finally — API errors now surface inline instead of failing silently.
 
+## Session 2026-03-27 (continued) — Systematic alert()/confirm()/prompt() purge (commits 9d5f50a–c365216)
+
+**Eliminated all blocking browser dialogs across entire frontend (32 occurrences fixed across 22 files).**
+
+Pattern approach:
+- `alert()` → toast notification (auto-dismiss after 3.5–4s)
+- `alert()` for form validation → inline error div adjacent to submit button
+- `confirm()` → dark-themed modal OR two-step button confirm (click twice within 3s)
+- `prompt()` for text input → proper modal with `<input>` field
+- `prompt()` for displaying secret → reuse existing amber `#secret-box` reveal div
+
+Key fixes:
+- **earnings.astro**: cancel payout confirm→modal; export alert→toast; add `res.ok` check before JSON parse in CSV export
+- **credits.astro**: checkout failure alert→inline `#checkout-error` div
+- **triggers.astro**: fire-trigger alert→toast + re-enable button; delete confirm→two-step
+- **admin/alerts, reputation, workers.astro**: all alert() → toasts; add loading states
+- **webhooks.astro**: 14 alert() → toasts; 3 confirm() → two-step; prompt() for rotated secret → reuse `#secret-box`; inline `#create-ep-error` and `#tpl-error` form error divs
+- **notifications.astro**: "clear all" confirm→modal with count in body
+- **worker/tasks/[id].astro**: release task confirm→modal with error display
+- **worker/certifications.astro**: "answer all questions" alert→inline `#quiz-submit-error`
+- **worker/availability.astro**: blackout-date remove confirm→two-step; alert→toast
+- **worker/watchlist.astro**: 2 alert→toast
+- **worker/portfolio.astro**: remove-pin confirm→two-step
+- **task-templates.astro**: unpublish confirm→two-step; publish prompt()→modal with text input; alert→toast
+- **template-marketplace.astro**: unpublish confirm→two-step
+- **skill-quiz.astro**: submit failure alert→dynamically inserted inline error
+- **tasks/[id]/index.astro**: duplicate-params alert→toast; dep-remove confirm→two-step; dep errors→toast
+- **marketplace.astro**: save-search error alert→toast
+- **experiments.astro**: traffic % alert→inline `#traffic-error` div
+- **search/tasks.astro**: "no filters" alert→temporary button state
+
+**Zero blocking alert()/confirm()/prompt() dialogs remain in the frontend (excluding docs/sandbox, admin form-submit patterns, and security-critical 2FA disable confirm).**
+
+**new-task.astro**: submit button shows "Submitting…" + disabled on valid submit to prevent double-submit
+
+## Session 2026-03-27 (continued) — Stripe webhook race fix + dark-mode CSS + confirm() purge round 2
+
+**Stripe webhook concurrent user mutation race fixed (`stripe_webhooks.py`):**
+- `_get_user_by_customer()` and `_get_user_by_email()` now accept `for_update: bool = False` kwarg
+- All 4 call sites that mutate user state (`checkout.session.completed` payment, `subscription.created/updated`, `subscription.deleted`, `invoice.payment_succeeded`) now pass `for_update=True`
+- The log entry insert + `flush()` is the serialisation point (unique constraint on `stripe_event_id` blocks duplicate events); the user row lock prevents lost-update races when two *different* Stripe events for the same customer arrive concurrently
+- `invoice.payment_failed` (notification only, no state mutation) left unlocked
+
+**pipelines.astro — comprehensive dark-mode CSS fix:**
+- Error div: `bg-red-50 border-red-200 text-red-700` → `bg-red-950/30 border-red-800 text-red-300`
+- Step cards: `bg-blue-50/orange-50 border-blue-200/orange-200` → `bg-*-900/20 border-*-800/50`
+- Mode badges: `bg-blue-100/orange-100 text-blue-700/orange-700` → `bg-*-900/40 text-*-300`
+- Condition/pass/fail/retry badges: all light → dark (`bg-*-900/40 text-*-300`)
+- Retry run button: `bg-amber-100 border-amber-200` → `bg-amber-900/30 border-amber-800`
+- Cancel run button: `bg-red-50 border-red-200` → `bg-red-900/30 border-red-800`
+- Step detail output boxes: `bg-green-50/red-50/blue-50 border-green-200/red-200/blue-200` → dark equivalents
+- Final pipeline output: `bg-violet-50 border-violet-200 text-violet-700 text-gray-600` → `bg-violet-900/20 border-violet-800/50 text-violet-300 text-gray-400`
+- Delete button: `confirm()` → two-step confirm (click once → "Delete?", click again within 3s → submits form)
+
+**worker/teams/index.astro + teams/[teamId].astro — confirm() replaced:**
+- Both pages used `data-confirm` + `confirm()` pattern; replaced with two-step button confirm
+- `[teamId].astro` had two inline `onsubmit={...confirm(...)}` — converted to `data-confirm` attributes
+- Both scripts now use `is:inline` (no TypeScript type casts needed)
+
 ## Priorities for Next Session 🔜
 
 PHASE: Pre-alpha development. Focus on quality/depth. NOT in scope: launch tasks, marketing, directory listings.
 
-1. **More UX depth audits**: Continue auditing existing pages for bugs and UX gaps — worker earnings, admin pages, task creation flow, marketplace.
+1. **More UX depth audits**: Continue auditing existing pages for bugs and UX gaps — admin pages, task creation flow, marketplace.
 2. **Proxy route test coverage**: 13+ Astro proxy routes still lack tests. Would need Vitest setup in the web package first.
-3. **Race condition audit**: Look for more race conditions in worker pay/approval flows (payout_requests, submission approval).
-4. **Stripe webhook idempotency**: Currently uses `processed=True` check but no unique DB constraint on `stripe_event_id` — rare race window if Stripe delivers same event twice rapidly before first commits.
+3. **Race condition audit**: Look for more race conditions in worker pay/approval flows.
+4. **cache.astro**: Admin cache flush page still uses `confirm()` dialogs (low priority — admin only).
 
 ## Known Warnings (non-blocking)
 

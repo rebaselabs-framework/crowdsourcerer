@@ -299,7 +299,7 @@ const pendingInvites: any[] = team?.pending_invites ?? [];
                   <span>Joined {new Date(member.joined_at).toLocaleDateString()}</span>
                   {/* Owner can remove others; anyone can leave (self) */}
                   {member.user_id !== me?.id && isOwner && member.role !== "owner" && (
-                    <form method="POST" class="inline" onsubmit={`return confirm('Remove ${member.name} from the team?')`}>
+                    <form method="POST" class="inline" data-confirm={`Remove ${member.name} from the team?`}>
                       <input type="hidden" name="action" value="remove_member" />
                       <input type="hidden" name="user_id" value={member.user_id} />
                       <input type="hidden" name="member_name" value={member.name} />
@@ -309,7 +309,7 @@ const pendingInvites: any[] = team?.pending_invites ?? [];
                     </form>
                   )}
                   {member.user_id === me?.id && member.role !== "owner" && (
-                    <form method="POST" class="inline" onsubmit="return confirm('Leave this team?')">
+                    <form method="POST" class="inline" data-confirm="Leave this team?">
                       <input type="hidden" name="action" value="leave_team" />
                       <input type="hidden" name="user_id" value={member.user_id} />
                       <button type="submit" class="text-gray-500 hover:text-gray-400 transition-colors text-xs">
@@ -346,11 +346,24 @@ const pendingInvites: any[] = team?.pending_invites ?? [];
       </div>
     )}
   </div>
-  <script>
-    // Confirm-required forms use data-confirm instead of onsubmit="return confirm(...)"
+  <script is:inline>
+    // Two-step confirm for data-confirm forms (replaces browser confirm())
     document.querySelectorAll("form[data-confirm]").forEach(function(form) {
+      var btn = form.querySelector("button[type='submit']");
+      if (!btn) return;
       form.addEventListener("submit", function(e) {
-        if (!confirm((form as HTMLFormElement).dataset.confirm)) e.preventDefault();
+        if (btn.dataset.pending !== "true") {
+          e.preventDefault();
+          var orig = btn.textContent;
+          btn.dataset.pending = "true";
+          btn.textContent = "Sure?";
+          btn.classList.add("text-red-400");
+          setTimeout(function() {
+            btn.dataset.pending = "";
+            btn.textContent = orig;
+            btn.classList.remove("text-red-400");
+          }, 3000);
+        }
       });
     });
   </script>

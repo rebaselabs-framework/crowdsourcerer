@@ -64,17 +64,23 @@ def _price_to_plan(price_id: str) -> Optional[str]:
     return None
 
 
-async def _get_user_by_customer(db: AsyncSession, customer_id: str) -> Optional[UserDB]:
-    result = await db.execute(
-        select(UserDB).where(UserDB.stripe_customer_id == customer_id)
-    )
+async def _get_user_by_customer(
+    db: AsyncSession, customer_id: str, for_update: bool = False
+) -> Optional[UserDB]:
+    q = select(UserDB).where(UserDB.stripe_customer_id == customer_id)
+    if for_update:
+        q = q.with_for_update()
+    result = await db.execute(q)
     return result.scalar_one_or_none()
 
 
-async def _get_user_by_email(db: AsyncSession, email: str) -> Optional[UserDB]:
-    result = await db.execute(
-        select(UserDB).where(UserDB.email == email)
-    )
+async def _get_user_by_email(
+    db: AsyncSession, email: str, for_update: bool = False
+) -> Optional[UserDB]:
+    q = select(UserDB).where(UserDB.email == email)
+    if for_update:
+        q = q.with_for_update()
+    result = await db.execute(q)
     return result.scalar_one_or_none()
 
 
@@ -159,9 +165,9 @@ async def stripe_webhook(
 
             user: Optional[UserDB] = None
             if customer_id:
-                user = await _get_user_by_customer(db, customer_id)
+                user = await _get_user_by_customer(db, customer_id, for_update=True)
             if not user and customer_email:
-                user = await _get_user_by_email(db, customer_email)
+                user = await _get_user_by_email(db, customer_email, for_update=True)
 
             if user:
                 # Store stripe_customer_id if not already set
@@ -210,7 +216,7 @@ async def stripe_webhook(
             items = event_data.get("items", {}).get("data", [])
             price_id = items[0]["price"]["id"] if items else None
 
-            user = await _get_user_by_customer(db, customer_id) if customer_id else None
+            user = await _get_user_by_customer(db, customer_id, for_update=True) if customer_id else None
             if user and price_id:
                 new_plan = _price_to_plan(price_id)
                 if new_plan and status in ("active", "trialing"):
@@ -238,7 +244,7 @@ async def stripe_webhook(
         # ── customer.subscription.deleted ─────────────────────────────────────
         elif event_type == "customer.subscription.deleted":
             customer_id = event_data.get("customer")
-            user = await _get_user_by_customer(db, customer_id) if customer_id else None
+            user = await _get_user_by_customer(db, customer_id, for_update=True) if customer_id else None
             if user:
                 user.plan = "free"
                 log_entry.user_id = user.id
@@ -260,7 +266,7 @@ async def stripe_webhook(
 
             # Only add credits for subscription renewals, skip initial setup invoice
             if billing_reason == "subscription_cycle" and customer_id:
-                user = await _get_user_by_customer(db, customer_id)
+                user = await _get_user_by_customer(db, customer_id, for_update=True)
                 if user:
                     # Small bonus credit renewal gift (5% of monthly value, capped at 50)
                     bonus = min(50, int((amount_paid / 100) * settings.credits_per_usd * 0.05))
