@@ -1,6 +1,10 @@
 ---
 /**
- * Scheduled Tasks — view and manage tasks that are waiting to run at a future time.
+ * Dashboard — Scheduled Tasks
+ *
+ * Lists the requester's pending scheduled tasks (scheduled_at in the future).
+ * Tasks are grouped by date and displayed with countdown timers.
+ * Allows cancellation via a confirmation modal.
  */
 import Layout from "@/layouts/Layout.astro";
 import { apiFetch, getToken } from "@/lib/api";
@@ -8,69 +12,178 @@ import { apiFetch, getToken } from "@/lib/api";
 const token = getToken(Astro.cookies);
 if (!token) return Astro.redirect("/login?next=/dashboard/scheduled");
 
-let tasks: any = { items: [], total: 0, has_next: false };
+let data: any = { items: [], total: 0 };
 let error: string | null = null;
 
 try {
-  // Use the dedicated scheduled tasks endpoint (returns future-scheduled pending tasks)
-  tasks = await apiFetch<any>("/v1/tasks/scheduled?limit=100", { token });
+  data = await apiFetch<any>("/v1/tasks/scheduled?limit=100", { token });
 } catch (e: any) {
-  if (e.message?.includes("401")) return Astro.redirect("/login");
+  if (e.message?.includes("401") || e.message?.includes("403")) {
+    return Astro.redirect("/login");
+  }
   error = e.message ?? "Failed to load scheduled tasks.";
 }
 
-// Group by date
-function fmtDate(iso: string) {
-  return new Date(iso).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+const items: any[] = data?.items ?? [];
+
+// ── Lookup tables ─────────────────────────────────────────────────────────────
+
+const TASK_ICONS: Record<string, string> = {
+  web_research: "🌐", entity_lookup: "🏢", document_parse: "📄",
+  data_transform: "🔄", llm_generate: "🤖", screenshot: "📸",
+  audio_transcribe: "🎙️", pii_detect: "🔒", code_execute: "⚡", web_intel: "🕵️",
+  label_image: "🖼️", label_text: "🏷️", rate_quality: "⭐",
+  verify_fact: "✅", moderate_content: "🛡️", compare_rank: "📊",
+  answer_question: "💬", transcription_review: "📝",
+};
+
+const TASK_LABELS: Record<string, string> = {
+  web_research: "Web Research", entity_lookup: "Entity Lookup",
+  document_parse: "Doc Parse", data_transform: "Data Transform",
+  llm_generate: "LLM Generate", screenshot: "Screenshot",
+  audio_transcribe: "Transcribe", pii_detect: "PII Detect",
+  code_execute: "Code Execute", web_intel: "Web Intel",
+  label_image: "Label Image", label_text: "Label Text",
+  rate_quality: "Rate Quality", verify_fact: "Verify Fact",
+  moderate_content: "Moderate Content", compare_rank: "Compare & Rank",
+  answer_question: "Answer Question", transcription_review: "Review Transcript",
+};
+
+const PRIORITY_CLS: Record<string, string> = {
+  critical: "bg-red-900/50 border-red-700 text-red-300",
+  high:     "bg-orange-900/50 border-orange-700 text-orange-300",
+  normal:   "bg-gray-800 border-gray-700 text-gray-400",
+  low:      "bg-gray-800 border-gray-700 text-gray-500",
+};
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function fmtDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-US", {
+    weekday: "short", month: "short", day: "numeric", year: "numeric",
+  });
 }
-function fmtTime(iso: string) {
-  return new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+
+function fmtTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString("en-US", {
+    hour: "2-digit", minute: "2-digit",
+  });
 }
+
+function timeUntil(iso: string): string {
+  const diff = new Date(iso).getTime() - Date.now();
+  if (diff <= 0) return "Imminent";
+  const totalMins = Math.floor(diff / 60000);
+  const days = Math.floor(totalMins / 1440);
+  const hrs  = Math.floor((totalMins % 1440) / 60);
+  const mins = totalMins % 60;
+  if (days > 0) return `${days}d ${hrs}h`;
+  if (hrs > 0)  return `${hrs}h ${mins}m`;
+  return `${mins}m`;
+}
+
+// ── Group by calendar date ────────────────────────────────────────────────────
 
 const groups: Record<string, any[]> = {};
-for (const task of tasks.items) {
-  const key = fmtDate(task.scheduled_at);
-  if (!groups[key]) groups[key] = [];
-  groups[key].push(task);
+for (const t of items) {
+  const key = fmtDate(t.scheduled_at);
+  (groups[key] ??= []).push(t);
 }
-// Sort keys chronologically
-const sortedDates = Object.keys(groups).sort((a, b) =>
-  new Date(groups[a][0].scheduled_at).getTime() - new Date(groups[b][0].scheduled_at).getTime()
+const sortedDates = Object.keys(groups).sort(
+  (a, b) => new Date(groups[a][0].scheduled_at).getTime() - new Date(groups[b][0].scheduled_at).getTime()
 );
+
+// Summary counts
+const aiCount    = items.filter((t: any) => t.execution_mode === "ai").length;
+const humanCount = items.filter((t: any) => t.execution_mode === "human").length;
+const nextTask   = items[0] ?? null; // already sorted asc by API
 ---
 
-<Layout title="Scheduled Tasks — CrowdSorcerer">
-  <div class="max-w-4xl mx-auto px-6 py-10">
+<Layout title="Scheduled Tasks — Dashboard">
+  <div class="max-w-5xl mx-auto px-4 sm:px-6 py-10">
+
     <!-- Header -->
-    <div class="flex items-center justify-between mb-8">
+    <div class="mb-8 flex items-start justify-between gap-4">
       <div>
         <div class="text-sm text-gray-500 mb-1">
           <a href="/dashboard" class="hover:text-gray-300 transition-colors">Dashboard</a>
           <span class="mx-2">›</span>
           <span>Scheduled Tasks</span>
         </div>
-        <h1 class="text-2xl font-bold">Scheduled Tasks</h1>
+        <h1 class="text-2xl font-bold text-gray-100">Scheduled Tasks</h1>
         <p class="text-sm text-gray-400 mt-1">
-          Tasks waiting to run at a future time. The sweeper checks every minute.
+          Tasks queued to run at a future time. They activate automatically when their scheduled time arrives.
         </p>
       </div>
-      <a href="/dashboard/tasks/new"
-        class="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium rounded-lg transition-colors">
-        + Schedule a task
+      <a
+        href="/dashboard/new-task"
+        class="shrink-0 px-4 py-2 bg-violet-700 hover:bg-violet-600 text-white text-sm font-medium rounded-lg transition-colors"
+      >
+        + New Task
       </a>
     </div>
 
-    {error ? (
-      <div class="bg-red-900/30 border border-red-800 text-red-300 p-4 rounded-lg mb-6">{error}</div>
-    ) : tasks.items.length === 0 ? (
+    {error && (
+      <div class="mb-6 px-4 py-3 bg-red-950/40 border border-red-800 rounded-xl text-red-300 text-sm">
+        {error}
+      </div>
+    )}
+
+    {/* Summary stat cards */}
+    {items.length > 0 && (
+      <div class="grid grid-cols-3 gap-4 mb-8">
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
+          <div class="text-2xl font-bold text-gray-100">{items.length}</div>
+          <div class="text-xs text-gray-500 mt-1">Scheduled</div>
+        </div>
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
+          <div class="text-2xl font-bold text-violet-400">{aiCount}</div>
+          <div class="text-xs text-gray-500 mt-1">AI tasks</div>
+        </div>
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
+          <div class="text-2xl font-bold text-amber-400">{humanCount}</div>
+          <div class="text-xs text-gray-500 mt-1">Human tasks</div>
+        </div>
+      </div>
+    )}
+
+    {/* Next task countdown banner */}
+    {nextTask && (
+      <div class="mb-6 bg-violet-950/30 border border-violet-800/50 rounded-xl px-5 py-4 flex items-center gap-4">
+        <div class="text-2xl">{TASK_ICONS[nextTask.type] ?? "📋"}</div>
+        <div class="flex-1 min-w-0">
+          <div class="text-sm font-medium text-violet-200">
+            Next: {TASK_LABELS[nextTask.type] ?? nextTask.type.replace(/_/g, " ")}
+          </div>
+          <div class="text-xs text-violet-400 mt-0.5">
+            {fmtDate(nextTask.scheduled_at)} at {fmtTime(nextTask.scheduled_at)}
+          </div>
+        </div>
+        <div class="shrink-0 text-right">
+          <div
+            class="text-lg font-bold text-violet-300 tabular-nums"
+            data-countdown={nextTask.scheduled_at}
+          >
+            {timeUntil(nextTask.scheduled_at)}
+          </div>
+          <div class="text-xs text-violet-500 mt-0.5">until launch</div>
+        </div>
+      </div>
+    )}
+
+    {/* Task list */}
+    {items.length === 0 ? (
       <div class="bg-gray-900 border border-gray-800 rounded-xl px-6 py-16 text-center">
-        <div class="text-4xl mb-3">⏰</div>
-        <div class="text-gray-300 font-medium mb-1">No scheduled tasks</div>
-        <p class="text-sm text-gray-500 mb-4">
-          Schedule a task to run at any future time — perfect for recurring reports, off-hours processing, or delayed execution.
+        <div class="text-5xl mb-4">⏰</div>
+        <div class="text-gray-300 font-semibold mb-2">No scheduled tasks</div>
+        <p class="text-sm text-gray-500 mb-6">
+          Schedule a task to run at any future time — perfect for off-hours processing, recurring reports, or delayed execution.
+          Set a <strong class="text-gray-400">Scheduled At</strong> date when creating a new task.
         </p>
-        <a href="/dashboard/tasks/new"
-          class="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium rounded-lg transition-colors inline-block">
+        <a
+          href="/dashboard/new-task"
+          class="inline-block px-5 py-2.5 bg-violet-700 hover:bg-violet-600 text-white text-sm font-medium rounded-lg transition-colors"
+        >
           Create a scheduled task →
         </a>
       </div>
@@ -78,58 +191,80 @@ const sortedDates = Object.keys(groups).sort((a, b) =>
       <div class="space-y-6">
         {sortedDates.map(date => (
           <div>
-            <h2 class="text-sm font-semibold text-gray-400 mb-3 flex items-center gap-2">
-              <span class="text-lg">📅</span>
-              {date}
-              <span class="text-gray-600 font-normal">({groups[date].length} task{groups[date].length !== 1 ? "s" : ""})</span>
+            <h2 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3 flex items-center gap-2">
+              📅 {date}
+              <span class="font-normal normal-case text-gray-600">
+                — {groups[date].length} task{groups[date].length !== 1 ? "s" : ""}
+              </span>
             </h2>
             <div class="bg-gray-900 border border-gray-800 rounded-xl divide-y divide-gray-800">
               {groups[date].sort((a: any, b: any) =>
                 new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime()
               ).map((t: any) => (
-                <div class="flex items-center gap-4 px-5 py-4">
-                  <!-- Time -->
-                  <div class="text-amber-400 font-mono text-sm font-medium w-16 shrink-0">
+                <div class="flex items-center gap-4 px-5 py-4 task-row" data-id={t.id}>
+                  {/* Time */}
+                  <div class="text-amber-400 font-mono text-sm font-semibold w-14 shrink-0">
                     {fmtTime(t.scheduled_at)}
                   </div>
 
-                  <!-- Type + tags -->
+                  {/* Icon */}
+                  <div class="shrink-0 text-xl hidden sm:block">
+                    {TASK_ICONS[t.type] ?? "📋"}
+                  </div>
+
+                  {/* Main info */}
                   <div class="flex-1 min-w-0">
                     <div class="flex items-center gap-2 flex-wrap">
-                      <a href={`/dashboard/tasks/${t.id}`}
-                        class="font-mono text-sm text-violet-300 hover:text-violet-200 transition-colors">
-                        {t.type}
+                      <a
+                        href={`/dashboard/tasks/${t.id}`}
+                        class="font-medium text-gray-200 hover:text-violet-300 transition-colors text-sm"
+                      >
+                        {TASK_LABELS[t.type] ?? t.type.replace(/_/g, " ")}
                       </a>
-                      <span class="text-xs px-2 py-0.5 rounded-full bg-gray-800 text-gray-400">
-                        {t.execution_mode}
+                      <span class={`text-xs px-1.5 py-0.5 rounded border ${t.execution_mode === "ai" ? "bg-violet-900/40 border-violet-700/50 text-violet-300" : "bg-amber-900/40 border-amber-700/50 text-amber-300"}`}>
+                        {t.execution_mode === "ai" ? "AI" : "Human"}
                       </span>
-                      <span class="text-xs px-2 py-0.5 rounded-full bg-gray-800 text-gray-400">
-                        {t.priority}
-                      </span>
+                      {t.priority && t.priority !== "normal" && (
+                        <span class={`text-xs px-1.5 py-0.5 rounded border ${PRIORITY_CLS[t.priority] ?? PRIORITY_CLS.normal}`}>
+                          {t.priority}
+                        </span>
+                      )}
                     </div>
-                    {t.tags && t.tags.length > 0 && (
-                      <div class="flex flex-wrap gap-1 mt-1.5">
-                        {(t.tags as string[]).map((tg: string) => (
-                          <span class="px-1.5 py-0.5 bg-gray-800 text-gray-500 text-xs rounded">🏷️ {tg}</span>
+                    {(t.tags ?? []).length > 0 && (
+                      <div class="flex flex-wrap gap-1 mt-1">
+                        {(t.tags as string[]).slice(0, 3).map((tg: string) => (
+                          <span class="px-1.5 py-0.5 bg-gray-800 text-gray-500 text-xs rounded">
+                            🏷️ {tg}
+                          </span>
                         ))}
                       </div>
                     )}
                   </div>
 
-                  <!-- Created at -->
-                  <div class="text-xs text-gray-600 shrink-0 hidden sm:block">
-                    Created {new Date(t.created_at).toLocaleString()}
+                  {/* Countdown */}
+                  <div class="shrink-0 text-right hidden md:block">
+                    <div
+                      class="text-sm font-semibold text-violet-300 tabular-nums"
+                      data-countdown={t.scheduled_at}
+                    >
+                      {timeUntil(t.scheduled_at)}
+                    </div>
+                    <div class="text-xs text-gray-600">until launch</div>
                   </div>
 
-                  <!-- Actions -->
-                  <div class="flex gap-2 shrink-0">
-                    <a href={`/dashboard/tasks/${t.id}`}
-                      class="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs rounded-lg transition-colors">
+                  {/* Actions */}
+                  <div class="shrink-0 flex gap-2">
+                    <a
+                      href={`/dashboard/tasks/${t.id}`}
+                      class="px-2.5 py-1 text-xs font-medium border border-gray-700 rounded-lg text-gray-400 hover:text-gray-200 hover:border-gray-500 transition-colors"
+                    >
                       View
                     </a>
                     <button
-                      class="cancel-btn px-3 py-1.5 bg-red-900/40 hover:bg-red-900/60 text-red-400 text-xs rounded-lg transition-colors"
-                      data-id={t.id}>
+                      class="cancel-btn px-2.5 py-1 text-xs font-medium border border-red-900/60 rounded-lg text-red-400 hover:text-red-300 hover:border-red-700 transition-colors"
+                      data-id={t.id}
+                      data-label={TASK_LABELS[t.type] ?? t.type.replace(/_/g, " ")}
+                    >
                       Cancel
                     </button>
                   </div>
@@ -140,33 +275,107 @@ const sortedDates = Object.keys(groups).sort((a, b) =>
         ))}
 
         <p class="text-xs text-gray-600 text-center pt-2">
-          Showing {tasks.items.length} scheduled task{tasks.items.length !== 1 ? "s" : ""}.
-          <a href="/dashboard/tasks?status=pending" class="text-gray-500 hover:text-gray-400 ml-1">View all pending →</a>
+          Showing {items.length} scheduled task{items.length !== 1 ? "s" : ""}.
+          <a href="/dashboard/tasks" class="text-gray-500 hover:text-gray-400 ml-1">View all tasks →</a>
         </p>
       </div>
     )}
   </div>
-</Layout>
 
-<script is:inline>
-  // Cancel button handler
-  document.querySelectorAll(".cancel-btn").forEach(btn => {
-    btn.addEventListener("click", async () => {
-      const taskId = btn.dataset.id;
-      if (!confirm("Cancel this scheduled task?")) return;
+  <!-- Cancel confirmation modal -->
+  <div id="cancel-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
+    <div class="bg-gray-900 border border-gray-700 rounded-2xl p-6 max-w-sm w-full shadow-2xl">
+      <h3 class="text-base font-semibold text-gray-100 mb-1">Cancel scheduled task?</h3>
+      <p id="cancel-task-name" class="text-sm text-gray-400 mb-3"></p>
+      <p class="text-sm text-gray-500 mb-5">
+        The task will be cancelled and any credits charged will be refunded.
+      </p>
+      <div id="cancel-error" class="hidden mb-3 text-sm text-red-400"></div>
+      <div class="flex gap-3">
+        <button
+          id="cancel-dismiss"
+          class="flex-1 px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium rounded-lg transition-colors"
+        >
+          Keep it
+        </button>
+        <button
+          id="cancel-confirm"
+          class="flex-1 px-4 py-2 bg-red-700 hover:bg-red-600 text-white text-sm font-semibold rounded-lg transition-colors"
+        >
+          Yes, cancel
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script is:inline>
+    // ── Live countdown timers ───────────────────────────────────────────────────
+    function computeCountdown(isoStr) {
+      var diff = new Date(isoStr).getTime() - Date.now();
+      if (diff <= 0) return "Imminent";
+      var totalMins = Math.floor(diff / 60000);
+      var days = Math.floor(totalMins / 1440);
+      var hrs  = Math.floor((totalMins % 1440) / 60);
+      var mins = totalMins % 60;
+      var secs = Math.floor((diff % 60000) / 1000);
+      if (days > 0) return days + "d " + hrs + "h";
+      if (hrs > 0)  return hrs + "h " + mins + "m";
+      if (mins > 0) return mins + "m " + secs + "s";
+      return secs + "s";
+    }
+    function refreshCountdowns() {
+      document.querySelectorAll("[data-countdown]").forEach(function(el) {
+        el.textContent = computeCountdown(el.dataset.countdown);
+      });
+    }
+    refreshCountdowns();
+    setInterval(refreshCountdowns, 1000);
+
+    // ── Cancel modal ────────────────────────────────────────────────────────────
+    var activeTaskId = null;
+    var modal       = document.getElementById("cancel-modal");
+    var nameEl      = document.getElementById("cancel-task-name");
+    var errorEl     = document.getElementById("cancel-error");
+    var confirmBtn  = document.getElementById("cancel-confirm");
+    var dismissBtn  = document.getElementById("cancel-dismiss");
+
+    document.querySelectorAll(".cancel-btn").forEach(function(btn) {
+      btn.addEventListener("click", function() {
+        activeTaskId = btn.dataset.id;
+        nameEl.textContent = (btn.dataset.label ?? "This") + " task";
+        errorEl.classList.add("hidden");
+        modal.classList.remove("hidden");
+      });
+    });
+
+    dismissBtn.addEventListener("click", function() { modal.classList.add("hidden"); });
+    modal.addEventListener("click", function(e) {
+      if (e.target === modal) modal.classList.add("hidden");
+    });
+
+    confirmBtn.addEventListener("click", async function() {
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = "Cancelling…";
+      errorEl.classList.add("hidden");
       try {
-        const res = await fetch(`/api/tasks/${taskId}/cancel`, { method: "POST" });
+        var res = await fetch("/api/tasks/" + activeTaskId + "/cancel", { method: "POST" });
         if (res.ok || res.status === 204) {
-          btn.closest(".flex.items-center")?.remove();
-          // Reload if no items left
-          const remaining = document.querySelectorAll(".cancel-btn").length;
-          if (remaining === 0) window.location.reload();
+          var row = document.querySelector(".task-row[data-id=\"" + activeTaskId + "\"]");
+          if (row) row.remove();
+          modal.classList.add("hidden");
+          if (document.querySelectorAll(".task-row").length === 0) window.location.reload();
         } else {
-          alert("Failed to cancel task.");
+          var data = await res.json().catch(function() { return {}; });
+          errorEl.textContent = data.detail ?? "Failed to cancel task.";
+          errorEl.classList.remove("hidden");
         }
       } catch {
-        alert("Network error.");
+        errorEl.textContent = "Network error.";
+        errorEl.classList.remove("hidden");
+      } finally {
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = "Yes, cancel";
       }
     });
-  });
-</script>
+  </script>
+</Layout>
