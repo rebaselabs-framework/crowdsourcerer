@@ -528,6 +528,44 @@ Key fixes:
 - `marketplace.py rate_template`: replaced `_get_template()` helper call with inline locked SELECT to prevent `rating_sum`/`rating_count` lost-update under concurrent ratings
 - `skills.py update_worker_skill`: `with_for_update()` on `WorkerSkillDB` to prevent lost-update on `tasks_completed`, `tasks_approved`, `credits_earned`, etc. under concurrent task approvals for the same worker+task_type
 
+## Session 2026-03-27 (continued) — Race fixes + targeted DOM updates + loading states (commits c4a89da–c4d6df7)
+
+**Race condition fixes:**
+- `referrals.py apply_referral_on_signup`: `with_for_update()` on referrer (credits_pending lost-update prevention) and referred-user rows; `pay_referral_bonus_on_first_task`: `with_for_update()` on referral row (double-payment race) and referrer row
+- `endorsements.py create_endorsement`: wrapped `db.commit()/db.refresh()` in `try/except IntegrityError` → rollback + 409 (two concurrent requests that both pass the count=0 check are now caught by DB unique constraint)
+- `worker_teams.py accept_invite`: `with_for_update()` on invite row; added 20-member check UNDER the lock (prevents race between two simultaneous accepts pushing team over limit)
+
+**N+1 query eliminations in worker_teams.py:**
+- `list_teams`: replaced 2N per-team queries with single bulk GROUP BY (member counts) + single IN query (user roles) — O(N) → O(1) DB calls per page
+- `list_pending_invites`: replaced 3 queries per invite with 2 bulk IN queries (all teams + all users at once)
+- `get_team`: replaced N individual user queries for members with single IN; replaced 2N invite-user queries with single IN for pending invites
+- `accept_invite`: fetch invite with `with_for_update()`; member count check moved under the lock
+
+**Targeted DOM updates (no more location.reload()):**
+- `dashboard/triggers.astro`: delete card → fade + remove; fire-now → update run count + last-fired inline; added `data-trigger-card`, `data-run-count`, `data-last-fired` attributes; fixed `res.json()` before `res.ok` order
+- `admin/alerts.astro`: resolve → fade + remove card; decrement severity counter badges; update health card to "All Systems OK" when both hit 0; added severity stat IDs + `data-severity` attributes
+- `admin/payouts.astro`: action confirm → find row by `data-payout-id`, update status badge CSS + text, clear action buttons, dim row
+- `worker/challenges.astro`: claim bonus → replace CTA div with "✅ Challenge complete!", update progress bar to emerald, update card border — no reload
+- `worker/saved-searches.astro`: delete last search → replace list with empty-state HTML — no reload
+
+**Error/loading state improvements:**
+- `dashboard/credits.astro`: load-more catch block → `toast()` instead of silent failure
+- `dashboard/new-task.astro`: duplicate task + saved template failures → sets `error` string shown in UI instead of silently blanking
+- `worker/earnings.astro`: payout submit → `submitBtn.disabled=true; "Submitting…"` before fetch; restores on error; fixed `res.ok` check order (was `is:inline` — removed all TypeScript type casts)
+- `worker/marketplace.astro`: watchlist toggle → error toast on failure instead of silent catch
+- `worker/skills.astro`: `var d = await r.json()` → safe parse with `.catch(function(){ return {}; })` after `r.ok` check
+
+## Session 2026-03-27 (continued) — Notification query cleanup + regression tests (commits dc5a4ab, a58ac6d)
+
+**Notification query cleanup (dc5a4ab):**
+- `notifications.py list_notifications + get_unread_count`: removed redundant `select(func.count()).select_from(inner.subquery())` pattern; replaced with direct `select(func.count()).where(...) + db.scalar()` — cleaner and functionally equivalent
+
+**Regression tests added (a58ac6d):**
+- `test_worker_teams.py` (new file, 6 tests): `list_teams` no-membership early return, bulk GROUP BY counts correctly mapped per team, my_role correctly assigned per team; `accept_invite` invite-not-found 404, non-pending 400, team-at-capacity 400 (race-condition guard)
+- `test_endorsements.py` (1 new test): `test_create_endorsement_integrity_error_returns_409` — simulates concurrent duplicate that slips past count=0 guard; verifies IntegrityError on commit → rollback + 409 (not 500)
+
+**Test count: 356 → 363**
+
 ## Priorities for Next Session 🔜
 
 PHASE: Pre-alpha development. Focus on quality/depth. NOT in scope: launch tasks, marketing, directory listings.
