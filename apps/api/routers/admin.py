@@ -164,6 +164,12 @@ async def list_users(
     _: str = Depends(require_admin),
 ):
     """List all users with pagination and filtering."""
+    _VALID_ROLES = {"requester", "worker", "both", "admin"}
+    _VALID_PLANS = {"free", "starter", "pro", "enterprise"}
+    if role and role not in _VALID_ROLES:
+        raise HTTPException(422, f"Invalid role '{role}'. Must be one of: {', '.join(sorted(_VALID_ROLES))}")
+    if plan and plan not in _VALID_PLANS:
+        raise HTTPException(422, f"Invalid plan '{plan}'. Must be one of: {', '.join(sorted(_VALID_PLANS))}")
     q = select(UserDB)
     if search:
         q = q.where(
@@ -302,6 +308,9 @@ async def list_all_tasks(
     _: str = Depends(require_admin),
 ):
     """List all tasks across all users."""
+    _VALID_TASK_STATUSES = {"pending", "queued", "running", "open", "assigned", "completed", "failed", "cancelled", "archived"}
+    if status and status not in _VALID_TASK_STATUSES:
+        raise HTTPException(422, f"Invalid status '{status}'. Must be one of: {', '.join(sorted(_VALID_TASK_STATUSES))}")
     q = select(TaskDB)
     if status:
         q = q.where(TaskDB.status == status)
@@ -1269,6 +1278,8 @@ async def unban_worker(
     worker = await db.get(UserDB, worker_id)
     if not worker:
         raise HTTPException(404, "Worker not found")
+    if not worker.is_banned:
+        raise HTTPException(400, "Worker is not currently banned")
     worker.is_banned = False
     worker.ban_reason = None
     worker.ban_expires_at = None
