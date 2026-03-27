@@ -140,7 +140,7 @@ function tierColor(score: number) {
                   <td colspan="9" class="text-center py-12 text-gray-500">No workers found.</td>
                 </tr>
               ) : workers.map((w: any) => (
-                <tr class:list={["hover:bg-gray-800/30 transition-colors", w.is_banned ? "opacity-60" : ""]}>
+                <tr data-worker-id={w.id} class:list={["hover:bg-gray-800/30 transition-colors", w.is_banned ? "opacity-60" : ""]}>
                   <td class="px-5 py-3">
                     <div class="font-medium text-white">{w.name || w.email.split("@")[0]}</div>
                     <div class="text-xs text-gray-500">{w.email}</div>
@@ -281,6 +281,7 @@ function tierColor(score: number) {
 </Layout>
 
 <script>
+// ── Toast helper ─────────────────────────────────────────────────────────────
 function toast(msg: string, ok = true) {
   const t = document.createElement("div");
   t.className = `fixed bottom-4 right-4 px-4 py-2 rounded-lg text-white text-sm z-50 ${ok ? "bg-emerald-600" : "bg-red-600"}`;
@@ -289,90 +290,71 @@ function toast(msg: string, ok = true) {
   setTimeout(() => t.remove(), 4000);
 }
 
-// Proxy routes handle auth via httpOnly cookie — no client-side token needed
+// ── Score → tier helpers (mirrors Python reputation_tier / tierColor) ─────────
+const COL_SCORE   = 1;
+const COL_TIER    = 2;
+const COL_STRIKES = 3;
+const COL_STATUS  = 7;
+const COL_ACTIONS = 8;
 
-// Strike modal
+function scoreTierColor(s: number) {
+  if (s >= 90) return "text-yellow-400";
+  if (s >= 75) return "text-green-400";
+  if (s >= 60) return "text-blue-400";
+  if (s >= 40) return "text-gray-300";
+  if (s >= 20) return "text-orange-400";
+  return "text-red-400";
+}
+function scoreTierLabel(s: number) {
+  if (s >= 90) return "Elite";
+  if (s >= 75) return "Expert";
+  if (s >= 60) return "Proficient";
+  if (s >= 40) return "Developing";
+  if (s >= 20) return "Novice";
+  return "Untrusted";
+}
+
+// ── Modals ───────────────────────────────────────────────────────────────────
 const strikeModal = document.getElementById("strikeModal")!;
-const strikeForm = document.getElementById("strikeForm")!;
-document.querySelectorAll(".strike-btn").forEach(btn => {
-  btn.addEventListener("click", () => {
-    (document.getElementById("strikeWorkerId") as HTMLInputElement).value = btn.getAttribute("data-worker-id")!;
-    document.getElementById("strikeName")!.textContent = btn.getAttribute("data-worker-name")!;
+const strikeForm  = (document.getElementById("strikeForm") as HTMLFormElement)!;
+const banModal    = document.getElementById("banModal")!;
+const banForm     = (document.getElementById("banForm") as HTMLFormElement)!;
+
+document.getElementById("closeStrike")!.addEventListener("click", () => strikeModal.classList.add("hidden"));
+document.getElementById("closeBan")!.addEventListener("click",   () => banModal.classList.add("hidden"));
+
+// ── Event delegation on <tbody> — handles dynamically-swapped buttons ────────
+document.querySelector("tbody")?.addEventListener("click", async (e) => {
+  const btn = (e.target as HTMLElement).closest<HTMLButtonElement>("button");
+  if (!btn) return;
+
+  // ── Strike button → open strike modal ──────────────────────────────────────
+  if (btn.classList.contains("strike-btn")) {
+    const workerId   = btn.dataset.workerId   ?? "";
+    const workerName = btn.dataset.workerName ?? "";
+    (document.getElementById("strikeWorkerId") as HTMLInputElement).value = workerId;
+    document.getElementById("strikeName")!.textContent = workerName;
     (document.getElementById("strikeReason") as HTMLTextAreaElement).value = "";
     document.getElementById("strikeMsg")!.classList.add("hidden");
     strikeModal.classList.remove("hidden");
-  });
-});
-document.getElementById("closeStrike")!.addEventListener("click", () => strikeModal.classList.add("hidden"));
-strikeForm.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const workerId = (document.getElementById("strikeWorkerId") as HTMLInputElement).value;
-  const severity = (document.getElementById("strikeSeverity") as HTMLSelectElement).value;
-  const reason = (document.getElementById("strikeReason") as HTMLTextAreaElement).value.trim();
-  if (!reason) return;
-  const msg = document.getElementById("strikeMsg")!;
-  try {
-    const res = await fetch(`/api/admin/reputation/workers/${workerId}/strikes`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ severity, reason }),
-    });
-    const data = await res.json();
-    if (res.ok) {
-      msg.textContent = `✅ Strike issued. New score: ${data.new_reputation_score?.toFixed(1)}`;
-      msg.className = "mt-3 text-sm text-center text-green-400";
-      msg.classList.remove("hidden");
-      setTimeout(() => { strikeModal.classList.add("hidden"); location.reload(); }, 1500);
-    } else {
-      msg.textContent = data.detail || "Error issuing strike";
-      msg.className = "mt-3 text-sm text-center text-red-400";
-      msg.classList.remove("hidden");
-    }
-  } catch { msg.textContent = "Network error"; msg.className = "mt-3 text-sm text-center text-red-400"; msg.classList.remove("hidden"); }
-});
+    return;
+  }
 
-// Ban modal
-const banModal = document.getElementById("banModal")!;
-const banForm = document.getElementById("banForm")!;
-document.querySelectorAll(".ban-btn").forEach(btn => {
-  btn.addEventListener("click", () => {
-    (document.getElementById("banWorkerId") as HTMLInputElement).value = btn.getAttribute("data-worker-id")!;
-    document.getElementById("banName")!.textContent = btn.getAttribute("data-worker-name")!;
+  // ── Ban button → open ban modal ─────────────────────────────────────────────
+  if (btn.classList.contains("ban-btn")) {
+    const workerId   = btn.dataset.workerId   ?? "";
+    const workerName = btn.dataset.workerName ?? "";
+    (document.getElementById("banWorkerId") as HTMLInputElement).value = workerId;
+    document.getElementById("banName")!.textContent = workerName;
     (document.getElementById("banReason") as HTMLTextAreaElement).value = "";
     document.getElementById("banMsg")!.classList.add("hidden");
     banModal.classList.remove("hidden");
-  });
-});
-document.getElementById("closeBan")!.addEventListener("click", () => banModal.classList.add("hidden"));
-banForm.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const workerId = (document.getElementById("banWorkerId") as HTMLInputElement).value;
-  const reason = (document.getElementById("banReason") as HTMLTextAreaElement).value.trim();
-  if (!reason) return;
-  const msg = document.getElementById("banMsg")!;
-  try {
-    const res = await fetch(`/api/admin/reputation/workers/${workerId}/ban`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ reason }),
-    });
-    const data = await res.json();
-    if (res.ok) {
-      msg.textContent = "✅ Worker banned.";
-      msg.className = "mt-3 text-sm text-center text-green-400";
-      msg.classList.remove("hidden");
-      setTimeout(() => { banModal.classList.add("hidden"); location.reload(); }, 1500);
-    } else {
-      msg.textContent = data.detail || "Error banning worker";
-      msg.className = "mt-3 text-sm text-center text-red-400";
-      msg.classList.remove("hidden");
-    }
-  } catch { msg.textContent = "Network error"; msg.className = "mt-3 text-sm text-center text-red-400"; msg.classList.remove("hidden"); }
-});
+    return;
+  }
 
-// Unban buttons — two-step confirm
-document.querySelectorAll<HTMLButtonElement>(".unban-btn").forEach(btn => {
-  btn.addEventListener("click", async () => {
+  // ── Unban button → two-step confirm then API ────────────────────────────────
+  if (btn.classList.contains("unban-btn")) {
+    const workerId = btn.dataset.workerId ?? "";
     if (btn.dataset.pending !== "true") {
       const orig = btn.textContent!;
       btn.dataset.pending = "true";
@@ -386,7 +368,6 @@ document.querySelectorAll<HTMLButtonElement>(".unban-btn").forEach(btn => {
       return;
     }
     btn.dataset.pending = "";
-    const workerId = btn.getAttribute("data-worker-id")!;
     const origText = btn.textContent!;
     btn.disabled = true;
     btn.textContent = "Unbanning…";
@@ -395,27 +376,128 @@ document.querySelectorAll<HTMLButtonElement>(".unban-btn").forEach(btn => {
       const res = await fetch(`/api/admin/reputation/workers/${workerId}/unban`, { method: "POST" });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? "Failed");
       toast("Worker unbanned");
-      location.reload();
+      const row = document.querySelector<HTMLTableRowElement>(`tr[data-worker-id="${workerId}"]`);
+      if (row) {
+        const cells = row.cells;
+        const workerName = cells[0].querySelector<HTMLElement>(".font-medium")?.textContent ?? "";
+        cells[COL_STATUS].innerHTML = '<span class="bg-green-900/30 text-green-400 text-xs px-2 py-0.5 rounded-full border border-green-800/30">Active</span>';
+        cells[COL_ACTIONS].querySelector("div")!.innerHTML =
+          `<button class="text-xs text-orange-400 hover:text-orange-300 strike-btn" data-worker-id="${workerId}" data-worker-name="${workerName}" title="Issue strike">⚡ Strike</button>` +
+          `<button class="text-xs text-red-400 hover:text-red-300 ban-btn" data-worker-id="${workerId}" data-worker-name="${workerName}" title="Ban worker">🚫 Ban</button>`;
+        row.classList.remove("opacity-60");
+      }
     } catch (e: any) {
       toast(e.message ?? "Failed to unban worker", false);
       btn.disabled = false;
       btn.textContent = origText;
     }
-  });
+  }
 });
 
-// Recalculate — two-step confirm
+// ── Strike form submit ────────────────────────────────────────────────────────
+strikeForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const workerId = (document.getElementById("strikeWorkerId") as HTMLInputElement).value;
+  const severity = (document.getElementById("strikeSeverity") as HTMLSelectElement).value;
+  const reason   = (document.getElementById("strikeReason") as HTMLTextAreaElement).value.trim();
+  if (!reason) return;
+  const msg = document.getElementById("strikeMsg")!;
+  try {
+    const res  = await fetch(`/api/admin/reputation/workers/${workerId}/strikes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ severity, reason }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      msg.textContent = `✅ Strike issued. New score: ${data.new_reputation_score?.toFixed(1)}`;
+      msg.className = "mt-3 text-sm text-center text-green-400";
+      msg.classList.remove("hidden");
+      // Targeted DOM update
+      const row = document.querySelector<HTMLTableRowElement>(`tr[data-worker-id="${workerId}"]`);
+      if (row) {
+        const cells   = row.cells;
+        const newScore = data.new_reputation_score ?? 0;
+        const color    = scoreTierColor(newScore);
+        const label    = scoreTierLabel(newScore);
+        cells[COL_SCORE].innerHTML   = `<span class="text-lg font-bold ${color}">${newScore.toFixed(1)}</span>`;
+        cells[COL_TIER].innerHTML    = `<span class="text-xs font-medium px-2 py-0.5 rounded-full ${color} bg-gray-800">${label}</span>`;
+        const strikeSpan = cells[COL_STRIKES].querySelector("span");
+        if (strikeSpan) {
+          const newCount = (parseInt(strikeSpan.textContent ?? "0", 10) || 0) + 1;
+          strikeSpan.textContent = String(newCount);
+          strikeSpan.className   = `font-semibold ${newCount > 0 ? "text-red-400" : "text-gray-500"}`;
+        }
+      }
+      setTimeout(() => strikeModal.classList.add("hidden"), 1500);
+    } else {
+      msg.textContent = data.detail || "Error issuing strike";
+      msg.className   = "mt-3 text-sm text-center text-red-400";
+      msg.classList.remove("hidden");
+    }
+  } catch {
+    msg.textContent = "Network error";
+    msg.className   = "mt-3 text-sm text-center text-red-400";
+    msg.classList.remove("hidden");
+  }
+});
+
+// ── Ban form submit ───────────────────────────────────────────────────────────
+banForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const workerId = (document.getElementById("banWorkerId") as HTMLInputElement).value;
+  const reason   = (document.getElementById("banReason") as HTMLTextAreaElement).value.trim();
+  if (!reason) return;
+  const msg = document.getElementById("banMsg")!;
+  try {
+    const res  = await fetch(`/api/admin/reputation/workers/${workerId}/ban`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      msg.textContent = "✅ Worker banned.";
+      msg.className   = "mt-3 text-sm text-center text-green-400";
+      msg.classList.remove("hidden");
+      // Targeted DOM update — ban sets reputation_score=0
+      const row = document.querySelector<HTMLTableRowElement>(`tr[data-worker-id="${workerId}"]`);
+      if (row) {
+        const cells      = row.cells;
+        const workerName = cells[0].querySelector<HTMLElement>(".font-medium")?.textContent ?? "";
+        cells[COL_SCORE].innerHTML   = '<span class="text-lg font-bold text-red-400">0.0</span>';
+        cells[COL_TIER].innerHTML    = '<span class="text-xs font-medium px-2 py-0.5 rounded-full text-red-400 bg-gray-800">Untrusted</span>';
+        cells[COL_STATUS].innerHTML  = '<span class="bg-red-900/50 text-red-400 text-xs px-2 py-0.5 rounded-full border border-red-800/50">Banned</span>';
+        cells[COL_ACTIONS].querySelector("div")!.innerHTML =
+          `<button class="text-xs text-orange-400 hover:text-orange-300 strike-btn" data-worker-id="${workerId}" data-worker-name="${workerName}" title="Issue strike">⚡ Strike</button>` +
+          `<button class="text-xs text-green-400 hover:text-green-300 unban-btn" data-worker-id="${workerId}" title="Unban worker">✅ Unban</button>`;
+        row.classList.add("opacity-60");
+      }
+      setTimeout(() => banModal.classList.add("hidden"), 1500);
+    } else {
+      msg.textContent = data.detail || "Error banning worker";
+      msg.className   = "mt-3 text-sm text-center text-red-400";
+      msg.classList.remove("hidden");
+    }
+  } catch {
+    msg.textContent = "Network error";
+    msg.className   = "mt-3 text-sm text-center text-red-400";
+    msg.classList.remove("hidden");
+  }
+});
+
+// ── Recalculate — two-step confirm ────────────────────────────────────────────
 document.getElementById("recalcBtn")!.addEventListener("click", async () => {
   const btn = document.getElementById("recalcBtn") as HTMLButtonElement;
   if (btn.dataset.pending !== "true") {
     const orig = btn.textContent!;
     btn.dataset.pending = "true";
-    btn.dataset.orig = orig;
-    btn.textContent = "Sure? Recalculate all?";
+    btn.dataset.orig    = orig;
+    btn.textContent     = "Sure? Recalculate all?";
     btn.classList.add("!text-red-400");
     setTimeout(() => {
       btn.dataset.pending = "";
-      btn.textContent = btn.dataset.orig ?? orig;
+      btn.textContent     = btn.dataset.orig ?? orig;
       btn.classList.remove("!text-red-400");
     }, 3000);
     return;
@@ -423,7 +505,7 @@ document.getElementById("recalcBtn")!.addEventListener("click", async () => {
   btn.dataset.pending = "";
   const origText = btn.dataset.orig ?? "";
   btn.textContent = "Recalculating…";
-  btn.disabled = true;
+  btn.disabled    = true;
   btn.classList.remove("!text-red-400");
   try {
     const res = await fetch("/api/admin/reputation/recalculate", { method: "POST" });
@@ -434,7 +516,7 @@ document.getElementById("recalcBtn")!.addEventListener("click", async () => {
   } catch {
     toast("Failed to recalculate — please try again", false);
     btn.textContent = origText;
-    btn.disabled = false;
+    btn.disabled    = false;
   }
 });
 </script>

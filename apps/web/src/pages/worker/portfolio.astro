@@ -7,16 +7,19 @@ if (!token) return Astro.redirect('/login');
 
 // Fetch portfolio items
 let items: any[] = [];
+let portfolioError = "";
 try {
   items = await apiFetch<any[]>('/v1/worker/portfolio', { token });
-} catch {}
+} catch (e: any) {
+  portfolioError = e.message ?? "Failed to load portfolio";
+}
 
 // Fetch recently completed tasks for pinning
 let completedTasks: any[] = [];
 try {
   const data = await apiFetch<any>('/v1/tasks?status=completed&limit=50', { token });
   completedTasks = (data.tasks ?? data).slice(0, 50);
-} catch {}
+} catch { /* non-fatal — modal will just have no task options */ }
 
 ---
 <Layout title="My Portfolio Showcase">
@@ -35,6 +38,9 @@ try {
     </div>
 
     <!-- Portfolio grid -->
+    {portfolioError && (
+      <div class="bg-red-950/30 border border-red-800 rounded-xl p-4 text-red-300 text-sm mb-4">{portfolioError}</div>
+    )}
     {items.length === 0 ? (
       <div class="bg-gray-900 border border-gray-800 rounded-xl p-12 text-center">
         <div class="text-5xl mb-3">📌</div>

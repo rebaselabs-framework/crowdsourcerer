@@ -370,8 +370,27 @@ document.getElementById("del-cancel")?.addEventListener("click", () => delModal.
 delModal.addEventListener("click", (e) => { if (e.target === delModal) delModal.classList.add("hidden"); });
 document.getElementById("del-confirm")?.addEventListener("click", async () => {
   if (!deleteId) return;
-  await fetch(`/api/task-templates/${deleteId}`, { method: "DELETE" });
-  location.reload();
+  const delConfirmBtn = document.getElementById("del-confirm") as HTMLButtonElement;
+  const origText = delConfirmBtn.textContent;
+  delConfirmBtn.disabled = true;
+  delConfirmBtn.textContent = "Deleting…";
+  try {
+    const res = await fetch(`/api/task-templates/${deleteId}`, { method: "DELETE" });
+    if (res.ok || res.status === 204) {
+      location.reload();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      delModal.classList.add("hidden");
+      toast(err.detail ?? "Failed to delete template", false);
+      delConfirmBtn.disabled = false;
+      delConfirmBtn.textContent = origText;
+    }
+  } catch {
+    delModal.classList.add("hidden");
+    toast("Network error — please try again", false);
+    delConfirmBtn.disabled = false;
+    delConfirmBtn.textContent = origText;
+  }
 });
 
 // Form submit
