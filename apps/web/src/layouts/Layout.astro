@@ -32,14 +32,20 @@ const isLoggedIn = !!token;
 let unreadCount = 0;
 let unreadMsgCount = 0;
 let emailVerified = true; // default true to avoid false-positive banners on fetch failure
-if (isLoggedIn) {
-  try {
-    const API_URL = import.meta.env.PUBLIC_API_URL ?? "http://api:8100";
-    const authHeader = { Authorization: `Bearer ${token}` };
-    const [notifRes, msgRes, meRes] = await Promise.allSettled([
+let activeAnnouncements: Array<{id: string; title: string; message: string; type: string}> = [];
+try {
+  const API_URL = import.meta.env.PUBLIC_API_URL ?? "http://api:8100";
+  // authHeader typed as Record<string,string> to satisfy fetch()'s HeadersInit
+  const authHeader: Record<string, string> = token
+    ? { Authorization: `Bearer ${token}` }
+    : {};
+
+  if (isLoggedIn) {
+    const [notifRes, msgRes, meRes, annRes] = await Promise.allSettled([
       fetch(`${API_URL}/v1/notifications/unread-count`, { headers: authHeader }),
       fetch(`${API_URL}/v1/tasks/messages/unread-count`, { headers: authHeader }),
       fetch(`${API_URL}/v1/users/me`, { headers: authHeader }),
+      fetch(`${API_URL}/v1/announcements`, { headers: authHeader }),
     ]);
     if (notifRes.status === "fulfilled" && notifRes.value.ok) {
       const data = await notifRes.value.json();
@@ -51,11 +57,20 @@ if (isLoggedIn) {
     }
     if (meRes.status === "fulfilled" && meRes.value.ok) {
       const data = await meRes.value.json();
-      emailVerified = data.email_verified !== false; // treat missing field as verified
+      emailVerified = data.email_verified !== false;
     }
-  } catch {
-    // silently ignore — non-critical
+    if (annRes.status === "fulfilled" && annRes.value.ok) {
+      activeAnnouncements = await annRes.value.json();
+    }
+  } else {
+    // Even when logged out, fetch public announcements
+    const annRes = await fetch(`${API_URL}/v1/announcements`).catch(() => null);
+    if (annRes?.ok) {
+      activeAnnouncements = await annRes.json();
+    }
   }
+} catch {
+  // silently ignore — non-critical
 }
 
 // Show email verification banner only when logged in, unverified, and not on the verify page
@@ -65,6 +80,17 @@ const showVerifyBanner =
   !Astro.url.pathname.startsWith("/verify-email");
 
 const currentPath = Astro.url.pathname;
+
+// Announcement banner styles (defined in frontmatter so TS generics don't appear in JSX)
+const ANN_BG: Record<string, string> = {
+  info:        "bg-blue-500/10 border-blue-500/30 text-blue-300",
+  warning:     "bg-amber-500/10 border-amber-500/30 text-amber-300",
+  maintenance: "bg-red-500/10 border-red-500/30 text-red-300",
+  feature:     "bg-emerald-500/10 border-emerald-500/30 text-emerald-300",
+};
+const ANN_ICON: Record<string, string> = {
+  info: "ℹ️", warning: "⚠️", maintenance: "🔧", feature: "✨",
+};
 ---
 
 <!doctype html>
@@ -506,6 +532,30 @@ const currentPath = Astro.url.pathname;
       </div>
     )}
 
+    <!-- Platform announcements — dismissible per ID via localStorage -->
+    {activeAnnouncements.map((ann) => (
+      <div
+        id={`ann-banner-${ann.id}`}
+        class:list={["border-b px-4 py-2.5", ANN_BG[ann.type] ?? ANN_BG["info"]]}
+      >
+        <div class="max-w-5xl mx-auto flex items-center justify-between gap-3 text-sm">
+          <div class="flex items-center gap-2 min-w-0">
+            <span class="flex-shrink-0">{ANN_ICON[ann.type] ?? ANN_ICON["info"]}</span>
+            <span class="font-semibold flex-shrink-0">{ann.title}:</span>
+            <span class="truncate opacity-90">{ann.message}</span>
+          </div>
+          <button
+            type="button"
+            class="ann-dismiss-btn flex-shrink-0 opacity-60 hover:opacity-100 transition-opacity text-xs"
+            data-ann-id={ann.id}
+            aria-label="Dismiss"
+          >
+            ✕
+          </button>
+        </div>
+      </div>
+    ))}
+
     <!-- Content -->
     <!-- Extra bottom padding on mobile to account for the bottom nav bar -->
     <div class:list={["pb-0", isLoggedIn ? "sm:pb-0 pb-20" : ""]}>
@@ -855,6 +905,25 @@ const currentPath = Astro.url.pathname;
           }
         </script>
       </>
+    )}
+
+    <!-- Platform announcement dismiss (hide on click + remember via localStorage) -->
+    {activeAnnouncements.length > 0 && (
+      <script>
+        (function hideDismissedAnnouncements() {
+          // On load: hide any banners the user already dismissed in a previous session
+          document.querySelectorAll<HTMLElement>(".ann-dismiss-btn").forEach(btn => {
+            const annId = btn.dataset.annId!;
+            if (localStorage.getItem("ann_dismissed_" + annId)) {
+              document.getElementById("ann-banner-" + annId)?.remove();
+            }
+            btn.addEventListener("click", () => {
+              localStorage.setItem("ann_dismissed_" + annId, "1");
+              document.getElementById("ann-banner-" + annId)?.remove();
+            });
+          });
+        })();
+      </script>
     )}
 
     <!-- Email verification banner JS (resend + dismiss) -->

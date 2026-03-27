@@ -1,0 +1,236 @@
+---
+/**
+ * Admin — Platform Announcements
+ *
+ * Create, edit, activate/deactivate, and delete broadcast banners.
+ * Banners appear in the global Layout for all users (filtered by target_role).
+ */
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Astro.cookies);
+if (!token) return Astro.redirect("/login?next=/admin/announcements");
+
+// ── POST handlers ──────────────────────────────────────────────────────────
+if (Astro.request.method === "POST") {
+  const form = await Astro.request.formData();
+  const action = form.get("action") as string;
+
+  try {
+    if (action === "create") {
+      const expiresAt = form.get("expires_at") as string | null;
+      await apiFetch("/v1/admin/announcements", {
+        method: "POST", token,
+        body: JSON.stringify({
+          title:       form.get("title"),
+          message:     form.get("message"),
+          type:        form.get("type") ?? "info",
+          target_role: form.get("target_role") ?? "all",
+          is_active:   true,
+          expires_at:  expiresAt ? new Date(expiresAt).toISOString() : null,
+        }),
+      });
+    } else if (action === "toggle") {
+      const id      = form.get("id") as string;
+      const current = form.get("is_active") === "true";
+      await apiFetch(`/v1/admin/announcements/${id}`, {
+        method: "PATCH", token,
+        body: JSON.stringify({ is_active: !current }),
+      });
+    } else if (action === "delete") {
+      const id = form.get("id") as string;
+      await apiFetch(`/v1/admin/announcements/${id}`, { method: "DELETE", token });
+    }
+  } catch (_) {
+    // Fall through — errors shown on reload
+  }
+  return Astro.redirect("/admin/announcements");
+}
+
+// ── Load data ──────────────────────────────────────────────────────────────
+let announcements: any[] = [];
+let error: string | null = null;
+
+try {
+  announcements = await apiFetch<any[]>("/v1/admin/announcements", { token });
+} catch (e: any) {
+  if (e.message?.includes("403") || e.message?.includes("401")) {
+    return Astro.redirect("/login");
+  }
+  error = e.message ?? "Failed to load announcements";
+}
+
+const TYPE_LABELS: Record<string, string> = {
+  info: "ℹ️ Info", warning: "⚠️ Warning",
+  maintenance: "🔧 Maintenance", feature: "✨ Feature",
+};
+const TYPE_COLORS: Record<string, string> = {
+  info:        "bg-blue-900/40 border-blue-800 text-blue-300",
+  warning:     "bg-amber-900/40 border-amber-800 text-amber-300",
+  maintenance: "bg-red-900/40 border-red-800 text-red-300",
+  feature:     "bg-emerald-900/40 border-emerald-800 text-emerald-300",
+};
+---
+
+<Layout title="Announcements — Admin">
+  <div class="max-w-4xl mx-auto px-4 sm:px-6 py-10">
+    <div class="mb-8 flex items-center justify-between">
+      <div>
+        <h1 class="text-2xl font-bold text-gray-100">Platform Announcements</h1>
+        <p class="text-sm text-gray-400 mt-1">
+          Create dismissible banners shown to users across the platform.
+        </p>
+      </div>
+      <a href="/admin" class="text-sm text-gray-400 hover:text-gray-200 transition-colors">← Admin</a>
+    </div>
+
+    {error && (
+      <div class="mb-6 px-4 py-3 bg-red-950/40 border border-red-800 rounded-xl text-red-300 text-sm">
+        {error}
+      </div>
+    )}
+
+    <!-- Create form -->
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 mb-8">
+      <h2 class="text-base font-semibold text-gray-200 mb-4">New Announcement</h2>
+      <form method="POST" class="space-y-4">
+        <input type="hidden" name="action" value="create" />
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <!-- Title -->
+          <div class="sm:col-span-2">
+            <label class="block text-xs font-medium text-gray-400 mb-1">Title <span class="text-red-400">*</span></label>
+            <input
+              type="text" name="title" required maxlength="200"
+              placeholder="e.g. Scheduled maintenance this Saturday"
+              class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-violet-500"
+            />
+          </div>
+
+          <!-- Message -->
+          <div class="sm:col-span-2">
+            <label class="block text-xs font-medium text-gray-400 mb-1">Message <span class="text-red-400">*</span></label>
+            <textarea
+              name="message" required rows="2"
+              placeholder="Brief description shown in the banner…"
+              class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-violet-500 resize-none"
+            ></textarea>
+          </div>
+
+          <!-- Type -->
+          <div>
+            <label class="block text-xs font-medium text-gray-400 mb-1">Type</label>
+            <select name="type" class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-200 focus:outline-none focus:border-violet-500">
+              <option value="info">ℹ️ Info</option>
+              <option value="warning">⚠️ Warning</option>
+              <option value="maintenance">🔧 Maintenance</option>
+              <option value="feature">✨ Feature</option>
+            </select>
+          </div>
+
+          <!-- Target role -->
+          <div>
+            <label class="block text-xs font-medium text-gray-400 mb-1">Audience</label>
+            <select name="target_role" class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-200 focus:outline-none focus:border-violet-500">
+              <option value="all">Everyone</option>
+              <option value="requester">Requesters only</option>
+              <option value="worker">Workers only</option>
+            </select>
+          </div>
+
+          <!-- Expires at -->
+          <div class="sm:col-span-2">
+            <label class="block text-xs font-medium text-gray-400 mb-1">
+              Expires at <span class="text-gray-600">(leave blank for no expiry)</span>
+            </label>
+            <input
+              type="datetime-local" name="expires_at"
+              class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-200 focus:outline-none focus:border-violet-500"
+            />
+          </div>
+        </div>
+
+        <div class="flex justify-end pt-2">
+          <button
+            type="submit"
+            class="px-5 py-2 bg-violet-700 hover:bg-violet-600 text-white text-sm font-semibold rounded-lg transition-colors"
+          >
+            Publish announcement
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <!-- Existing announcements -->
+    <div class="space-y-3">
+      {announcements.length === 0 ? (
+        <div class="text-center py-12 text-gray-500 text-sm bg-gray-900/50 border border-gray-800 rounded-xl">
+          No announcements yet. Create one above.
+        </div>
+      ) : announcements.map((ann: any) => {
+        const isExpired = ann.expires_at && new Date(ann.expires_at) < new Date();
+        const cls = TYPE_COLORS[ann.type] ?? TYPE_COLORS.info;
+        return (
+          <div class:list={["border rounded-xl p-4", cls, !ann.is_active && "opacity-50"]}>
+            <div class="flex items-start justify-between gap-4">
+              <div class="min-w-0">
+                <div class="flex items-center gap-2 flex-wrap mb-1">
+                  <span class="text-xs font-semibold">{TYPE_LABELS[ann.type] ?? ann.type}</span>
+                  <span class="text-xs opacity-70">·</span>
+                  <span class="text-xs opacity-70">
+                    {ann.target_role === "all" ? "Everyone" :
+                     ann.target_role === "requester" ? "Requesters" : "Workers"}
+                  </span>
+                  {isExpired && (
+                    <span class="text-xs px-1.5 py-0.5 bg-red-900/50 border border-red-800/60 rounded text-red-400">
+                      Expired
+                    </span>
+                  )}
+                  {!ann.is_active && (
+                    <span class="text-xs px-1.5 py-0.5 bg-gray-800 border border-gray-700 rounded text-gray-500">
+                      Inactive
+                    </span>
+                  )}
+                </div>
+                <p class="font-semibold text-sm">{ann.title}</p>
+                <p class="text-xs opacity-80 mt-0.5">{ann.message}</p>
+                <p class="text-xs opacity-50 mt-1">
+                  Created {new Date(ann.created_at).toLocaleDateString()}
+                  {ann.expires_at && ` · Expires ${new Date(ann.expires_at).toLocaleString()}`}
+                </p>
+              </div>
+              <div class="flex gap-2 flex-shrink-0">
+                <!-- Toggle active/inactive -->
+                <form method="POST">
+                  <input type="hidden" name="action" value="toggle" />
+                  <input type="hidden" name="id" value={ann.id} />
+                  <input type="hidden" name="is_active" value={String(ann.is_active)} />
+                  <button
+                    type="submit"
+                    class="px-2.5 py-1 text-xs font-medium border rounded-lg transition-colors
+                      border-gray-600 text-gray-400 hover:border-gray-400 hover:text-gray-200"
+                    title={ann.is_active ? "Deactivate" : "Activate"}
+                  >
+                    {ann.is_active ? "Deactivate" : "Activate"}
+                  </button>
+                </form>
+                <!-- Delete -->
+                <form method="POST">
+                  <input type="hidden" name="action" value="delete" />
+                  <input type="hidden" name="id" value={ann.id} />
+                  <button
+                    type="submit"
+                    class="px-2.5 py-1 text-xs font-medium border border-red-800/60 text-red-400 hover:border-red-600 hover:text-red-300 rounded-lg transition-colors"
+                    onclick="return confirm('Delete this announcement?')"
+                  >
+                    Delete
+                  </button>
+                </form>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  </div>
+</Layout>

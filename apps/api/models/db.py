@@ -1685,3 +1685,34 @@ class PasswordResetTokenDB(Base):
     expires_at = Column(DateTime(timezone=True), nullable=False)
     used = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+class PlatformAnnouncementDB(Base):
+    """Admin-created broadcast announcements shown as banners to all users.
+
+    Useful for maintenance windows, new feature launches, beta programme notices,
+    and any platform-wide communication.
+
+    type:        visual style of the banner (info=blue, warning=amber,
+                 maintenance=red, feature=emerald)
+    target_role: audience filter — "all" shows to every authenticated user;
+                 "requester" / "worker" restricts to that role only.
+    starts_at:   earliest moment the banner should appear (default=now).
+    expires_at:  NULL = show indefinitely; otherwise stop showing after this UTC
+                 timestamp.
+    is_active:   soft-delete / instant hide without deleting the record.
+    """
+    __tablename__ = "platform_announcements"
+
+    id            = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    title         = Column(String(200), nullable=False)
+    message       = Column(Text, nullable=False)
+    type          = Column(SAEnum("info", "warning", "maintenance", "feature",
+                                  name="announcement_type_enum"), default="info", nullable=False)
+    target_role   = Column(SAEnum("all", "requester", "worker",
+                                  name="announcement_role_enum"), default="all", nullable=False)
+    is_active     = Column(Boolean, default=True, nullable=False)
+    starts_at     = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    expires_at    = Column(DateTime(timezone=True), nullable=True)
+    created_at    = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    created_by_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)

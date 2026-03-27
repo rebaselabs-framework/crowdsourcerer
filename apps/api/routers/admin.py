@@ -1197,14 +1197,23 @@ async def list_workers(
     )
     workers = result.scalars().all()
 
-    items = []
-    for w in workers:
-        active_strikes = await db.scalar(
-            select(func.count()).where(
-                WorkerStrikeDB.worker_id == w.id,
+    # Bulk-load active strike counts to avoid N+1 (one query instead of one-per-worker)
+    worker_ids = [w.id for w in workers]
+    active_strikes_map: dict = {}
+    if worker_ids:
+        strikes_res = await db.execute(
+            select(WorkerStrikeDB.worker_id, func.count().label("cnt"))
+            .where(
+                WorkerStrikeDB.worker_id.in_(worker_ids),
                 WorkerStrikeDB.is_active == True,
             )
-        ) or 0
+            .group_by(WorkerStrikeDB.worker_id)
+        )
+        active_strikes_map = {str(r.worker_id): r.cnt for r in strikes_res.all()}
+
+    items = []
+    for w in workers:
+        active_strikes = active_strikes_map.get(str(w.id), 0)
         items.append({
             "id": str(w.id),
             "email": w.email,
