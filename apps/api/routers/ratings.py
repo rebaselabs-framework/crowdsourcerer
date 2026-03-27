@@ -82,7 +82,7 @@ async def _refresh_worker_avg(worker_id: UUID, db: AsyncSession) -> None:
 async def rate_task(
     task_id: UUID,
     body: RateTaskRequest,
-    user_id: UUID = Depends(require_scope(SCOPE_TASKS_WRITE)),
+    user_id: str = Depends(require_scope(SCOPE_TASKS_WRITE)),
     db: AsyncSession = Depends(get_db),
 ):
     """Rate a worker's output for this task (requester only, once per task)."""
@@ -92,7 +92,7 @@ async def rate_task(
         raise HTTPException(status_code=404, detail="Task not found")
 
     # Only the task owner can rate
-    if task.user_id != user_id:
+    if str(task.user_id) != user_id:
         raise HTTPException(status_code=403, detail="Only the task requester can leave a rating")
 
     # Task must be completed
@@ -175,7 +175,7 @@ async def rate_task(
 @router.get("/{task_id}/rating", response_model=Optional[RatingOut])
 async def get_task_rating(
     task_id: UUID,
-    user_id: UUID = Depends(require_scope(SCOPE_TASKS_READ)),
+    user_id: str = Depends(require_scope(SCOPE_TASKS_READ)),
     db: AsyncSession = Depends(get_db),
 ):
     """Get the rating left for this task (if any)."""
@@ -184,7 +184,7 @@ async def get_task_rating(
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    if task.user_id != user_id:
+    if str(task.user_id) != user_id:
         raise HTTPException(status_code=403, detail="Access denied")
 
     rating_res = await db.execute(
@@ -216,7 +216,7 @@ worker_router = APIRouter(prefix="/v1/workers", tags=["ratings"])
 
 @worker_router.get("/me/ratings", response_model=WorkerRatingSummary)
 async def my_ratings(
-    user_id: UUID = Depends(get_current_user_id),
+    user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
     """Get my incoming feedback ratings summary (worker view)."""
