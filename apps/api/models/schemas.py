@@ -1452,6 +1452,7 @@ class RequesterOnboardingStatusOut(BaseModel):
     all_complete: bool
     bonus_claimed: bool
     bonus_credits: int = 200
+    skipped_at: Optional[datetime] = None
 
 
 # ─── Webhook Payload Templates ─────────────────────────────────────────────

@@ -56,9 +56,8 @@ let error: string | null = null;
 try {
   announcements = await apiFetch<any[]>("/v1/admin/announcements", { token });
 } catch (e: any) {
-  if (e.message?.includes("403") || e.message?.includes("401")) {
-    return Astro.redirect("/login");
-  }
+  if (e.message?.includes("401")) return Astro.redirect("/login");
+  if (e.message?.includes("403")) return Astro.redirect("/dashboard");
   error = e.message ?? "Failed to load announcements";
 }
 

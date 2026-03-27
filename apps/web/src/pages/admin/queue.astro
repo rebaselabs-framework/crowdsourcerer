@@ -19,6 +19,7 @@ try {
   if (modeFilter) qs.set("execution_mode", modeFilter);
   queue = await apiFetch<any>(`/v1/admin/queue?${qs}`, { token });
 } catch (e: any) {
+  if ((e as Error).message?.includes("401")) return Astro.redirect("/login");
   if ((e as Error).message?.includes("403")) return Astro.redirect("/dashboard");
   error = (e as Error).message ?? "Failed to load task queue";
 }

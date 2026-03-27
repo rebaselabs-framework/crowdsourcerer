@@ -1259,6 +1259,7 @@ class RequesterOnboardingDB(Base):
     step_invite_team = Column(Boolean, default=False, nullable=False)
 
     completed_at = Column(DateTime(timezone=True), nullable=True)
+    skipped_at = Column(DateTime(timezone=True), nullable=True)
     bonus_claimed = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
 

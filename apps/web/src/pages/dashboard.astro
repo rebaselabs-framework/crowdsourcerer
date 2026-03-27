@@ -62,9 +62,8 @@ const TASK_TYPE_LABELS: Record<string, string> = {
 // Show onboarding banner if not yet complete and not skipped
 const showOnboardingBanner = Boolean(
   onboardingStatus &&
-  !onboardingStatus.is_complete &&
-  !onboardingStatus.skipped_at &&
-  (onboardingStatus.completed_steps ?? 0) === 0
+  !onboardingStatus.all_complete &&
+  !onboardingStatus.skipped_at
 );
 ---
 

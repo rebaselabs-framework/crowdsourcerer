@@ -11,7 +11,8 @@ let error: string | null = null;
 try {
   health = await apiFetch<any>("/v1/admin/health", { token });
 } catch (e: any) {
-  if (e.message?.includes("403") || e.message?.includes("401")) {
+  if (e.message?.includes("401")) return Astro.redirect("/login");
+  if (e.message?.includes("403")) {
     error = "forbidden";
   } else {
     error = "Failed to load health data";

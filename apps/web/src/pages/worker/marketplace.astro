@@ -47,9 +47,8 @@ try {
     tasks = await apiFetch(`/v1/worker/tasks?${params}`, { token });
   }
 } catch (e: any) {
-  if ((e as Error).message?.includes("403")) {
-    return Astro.redirect("/worker");
-  }
+  if ((e as Error).message?.includes("401")) return Astro.redirect("/login");
+  if ((e as Error).message?.includes("403")) return Astro.redirect("/worker");
   error = (e as Error).message ?? "Failed to load tasks";
 }
 

@@ -16,9 +16,8 @@ let error: string | null = null;
 try {
   cacheStats = await apiFetch<any>("/v1/admin/cache/stats", { token });
 } catch (e: any) {
-  if (e.message?.includes("403") || e.message?.includes("401")) {
-    return Astro.redirect("/login");
-  }
+  if (e.message?.includes("401")) return Astro.redirect("/login");
+  if (e.message?.includes("403")) return Astro.redirect("/dashboard");
   error = "Failed to load cache statistics";
 }
 

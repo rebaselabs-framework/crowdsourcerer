@@ -40,6 +40,7 @@ try {
     assignments = (await apiFetch<any[]>(`/v1/worker/assignments?status=submitted&page_size=${PAGE_SIZE}&page=${page}`, { token })) ?? [];
   }
 } catch (e: any) {
+  if ((e as Error).message?.includes("401")) return Astro.redirect("/login");
   if ((e as Error).message?.includes("403")) return Astro.redirect("/worker");
   error = (e as Error).message ?? "Failed to load";
 }

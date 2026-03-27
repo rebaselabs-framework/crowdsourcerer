@@ -62,6 +62,7 @@ def _build_status(rec: RequesterOnboardingDB) -> RequesterOnboardingStatusOut:
         total_steps=len(REQUESTER_ONBOARDING_STEPS),
         all_complete=(completed_count == len(REQUESTER_ONBOARDING_STEPS)),
         bonus_claimed=rec.bonus_claimed,
+        skipped_at=rec.skipped_at,
     )
 
 
@@ -134,6 +135,20 @@ async def skip_step(
     return _build_status(rec)
 
 
+@router.post("/skip", response_model=RequesterOnboardingStatusOut)
+async def skip_onboarding(
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Skip the entire onboarding flow (persisted to DB — won't resurface on next login)."""
+    rec = await _get_or_create_record(user_id, db)
+    if not rec.completed_at:  # Already completed → no-op; just return status
+        rec.skipped_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(rec)
+    return _build_status(rec)
+
+
 @router.post("/reset", status_code=204, response_model=None)
 async def reset_onboarding(
     db: AsyncSession = Depends(get_db),
@@ -151,6 +166,7 @@ async def reset_onboarding(
         rec.step_set_webhook = False
         rec.step_invite_team = False
         rec.completed_at = None
+        rec.skipped_at = None
         rec.bonus_claimed = False
         await db.commit()
 
