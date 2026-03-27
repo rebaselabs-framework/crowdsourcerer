@@ -578,6 +578,30 @@ Key fixes:
 - `admin/workers.astro`: replaced per-button `querySelectorAll` + `addEventListener` with single `<tbody>` click listener (event delegation handles dynamically-swapped buttons); ban success → row bg `bg-red-950/10`, status cell "Banned" badge, Ban→Unban swap — no reload; strike success → update strikes cell with `data.total_strikes` — no reload; unban success → clear row bg, status cell "Active" badge, Unban→Ban swap — no reload; column constants `COL_STRIKES=4`, `COL_STATUS=5`, `COL_ACTIONS=7`
 - `worker/portfolio.astro`: pin form submit shows "Pinning…" + disabled while in-flight; restores button text + re-enables on error so user can retry
 
+## Session 2026-03-27 (continued) — Race conditions, test fixes, UX silent failures (commits 1fd7302–5f58ef1)
+
+**UX silent failure + missing res.ok fixes (1fd7302):**
+- `admin/health.astro`: auto-refresh was updating "Updated HH:MM" timestamp even on API error; added `if (!r.ok) throw` guard before `.json()` parse
+- `notifications.astro` (4 fixes): clear-all had no `res.ok` check; mark-all-read had no check; per-notification delete removed card even on failure; pollUnreadCount parsed JSON without `res.ok`; added `#clear-all-error` inline error element + button disabled state during fetch
+- `task-templates.astro`: delete confirm had no disabled state, no error feedback, no `res.ok` check; added loading state + inline error toast on failure
+- `worker/portfolio.astro`: SSR empty `catch {}` → catches error and surfaces `portfolioError` string as red warning banner
+- `admin/reputation.astro`: full event-delegation refactor; strike/ban/unban now do targeted DOM updates (score, tier, strikes, status badge, action button swap) instead of `location.reload()`; added `scoreTierColor()` + `scoreTierLabel()` JS mirrors of Python functions; `data-worker-id` on every `<tr>`
+
+**Test suite fix (00b27db):**
+- `test_notifications.py`: 3 tests failing — `list_notifications` and `get_unread_count` use `db.scalar()` (not `db.execute()`) since commit dc5a4ab, but `_make_db()` didn't set `db.scalar = AsyncMock()`
+- Fixed: added `db.scalar = AsyncMock()` to `_make_db()`; rewired 3 tests to use `db.scalar.side_effect/return_value` for counts and `db.execute.return_value` for result sets
+
+**Race condition fixes (2effbf3):**
+- `orgs.py accept_invite`: OrgInviteDB SELECT lacked `.with_for_update()` — two concurrent accepts of same token could both pass `accepted_at IS NULL` check
+- `applications.py accept_application` + `reject_application`: both TaskApplicationDB SELECTs lacked `.with_for_update()`; two concurrent accepts could both see `status="pending"`, both accept, create duplicate TaskAssignmentDB records
+- `test_applications.py TestAcceptRejectRaceGuard` (2 tests): verify 400 returned when app.status is already "accepted"/"rejected" (race already won), no commit called
+
+**Race condition fix + tests (5f58ef1):**
+- `orgs.py cancel_invite`: OrgInviteDB SELECT lacked `.with_for_update()` — two concurrent cancels could both see the invite as existing
+- `test_race_conditions.py TestCancelPayoutRequest` (3 new tests): happy path credits refunded + CreditTransactionDB created, 404 not found, 409 non-pending status guard
+
+**Test count: 1078 → 1081**
+
 ## Priorities for Next Session 🔜
 
 PHASE: Pre-alpha development. Focus on quality/depth. NOT in scope: launch tasks, marketing, directory listings.
