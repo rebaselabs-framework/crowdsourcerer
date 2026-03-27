@@ -1,0 +1,324 @@
+---
+/**
+ * Admin — Quality Monitoring
+ *
+ * Shows workers with high rejection rates across the platform.
+ * Allows admins to issue warning strikes directly from this page.
+ */
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Astro.cookies);
+if (!token) return Astro.redirect("/login?next=/admin/quality");
+
+// Query params
+const threshold = parseFloat(Astro.url.searchParams.get("threshold") ?? "0.6");
+const minEvaluated = parseInt(Astro.url.searchParams.get("min_evaluated") ?? "5", 10);
+const validThreshold = isNaN(threshold) ? 0.6 : Math.min(Math.max(threshold, 0), 1);
+const validMin = isNaN(minEvaluated) ? 5 : Math.max(minEvaluated, 1);
+
+let data: any = null;
+let error: string | null = null;
+
+try {
+  data = await apiFetch<any>(
+    `/v1/admin/quality?threshold=${validThreshold}&min_evaluated=${validMin}&limit=100`,
+    { token }
+  );
+} catch (e: any) {
+  if (e.message?.includes("403") || e.message?.includes("401")) {
+    return Astro.redirect("/login");
+  }
+  error = e.message ?? "Failed to load quality data";
+}
+
+const stats = data?.platform_stats ?? {};
+const workers: any[] = data?.low_accuracy_workers ?? [];
+
+function accuracyColor(pct: number): string {
+  if (pct < 40) return "text-red-400";
+  if (pct < 60) return "text-amber-400";
+  return "text-yellow-300";
+}
+function accuracyBg(pct: number): string {
+  if (pct < 40) return "bg-red-900/40 border-red-800";
+  if (pct < 60) return "bg-amber-900/30 border-amber-800";
+  return "bg-yellow-900/20 border-yellow-800";
+}
+---
+
+<Layout title="Quality Monitoring — Admin">
+  <div class="max-w-6xl mx-auto px-4 sm:px-6 py-10">
+    <!-- Header -->
+    <div class="mb-8 flex items-center justify-between">
+      <div>
+        <div class="text-sm text-gray-500 mb-1">
+          <a href="/admin" class="hover:text-gray-300 transition-colors">Admin</a>
+          <span class="mx-2">›</span>
+          <span>Quality Monitoring</span>
+        </div>
+        <h1 class="text-2xl font-bold text-gray-100">Quality Monitoring</h1>
+        <p class="text-sm text-gray-400 mt-1">
+          Workers with high rejection rates. Based on all reviewed task assignments.
+        </p>
+      </div>
+      <!-- Threshold filter -->
+      <form method="GET" class="flex items-end gap-3">
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Threshold (% approval)</label>
+          <select
+            name="threshold"
+            class="bg-gray-800 border border-gray-700 text-gray-200 text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-violet-500"
+          >
+            {[0.4, 0.5, 0.6, 0.7, 0.8].map(t => (
+              <option value={t} selected={Math.abs(validThreshold - t) < 0.01}>
+                Below {Math.round(t * 100)}%
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Min reviews</label>
+          <select
+            name="min_evaluated"
+            class="bg-gray-800 border border-gray-700 text-gray-200 text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-violet-500"
+          >
+            {[3, 5, 10, 20].map(n => (
+              <option value={n} selected={validMin === n}>{n}+</option>
+            ))}
+          </select>
+        </div>
+        <button
+          type="submit"
+          class="px-4 py-2 bg-violet-700 hover:bg-violet-600 text-white text-sm font-medium rounded-lg transition-colors"
+        >
+          Filter
+        </button>
+      </form>
+    </div>
+
+    {error && (
+      <div class="mb-6 px-4 py-3 bg-red-950/40 border border-red-800 rounded-xl text-red-300 text-sm">{error}</div>
+    )}
+
+    {/* Platform stats */}
+    {stats.total_workers_evaluated !== undefined && (
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
+          <div class="text-2xl font-bold text-gray-100">{stats.total_workers_evaluated}</div>
+          <div class="text-xs text-gray-500 mt-1">Workers evaluated</div>
+          <div class="text-xs text-gray-600 mt-0.5">{stats.min_evaluated}+ reviews each</div>
+        </div>
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
+          <div class="text-2xl font-bold text-emerald-400">{stats.avg_accuracy_pct}%</div>
+          <div class="text-xs text-gray-500 mt-1">Platform avg approval rate</div>
+        </div>
+        <div class={`border rounded-xl p-4 ${stats.workers_at_risk > 0 ? "bg-red-950/30 border-red-800" : "bg-gray-900 border-gray-800"}`}>
+          <div class={`text-2xl font-bold ${stats.workers_at_risk > 0 ? "text-red-400" : "text-gray-100"}`}>
+            {stats.workers_at_risk}
+          </div>
+          <div class="text-xs text-gray-500 mt-1">Workers at risk</div>
+          <div class="text-xs text-gray-600 mt-0.5">Below {Math.round((stats.threshold ?? validThreshold) * 100)}% approval</div>
+        </div>
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
+          <div class="text-2xl font-bold text-amber-400">{stats.pct_at_risk}%</div>
+          <div class="text-xs text-gray-500 mt-1">At-risk ratio</div>
+        </div>
+      </div>
+    )}
+
+    {/* Worker table */}
+    {workers.length === 0 ? (
+      <div class="bg-gray-900 border border-gray-800 rounded-xl px-6 py-16 text-center">
+        <div class="text-4xl mb-3">✅</div>
+        <div class="text-gray-300 font-medium mb-1">No quality concerns</div>
+        <p class="text-sm text-gray-500">
+          No workers with {validMin}+ reviewed tasks are below the {Math.round(validThreshold * 100)}% approval threshold.
+        </p>
+      </div>
+    ) : (
+      <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+        <div class="px-5 py-3 border-b border-gray-800 flex items-center justify-between">
+          <h2 class="text-sm font-semibold text-gray-300">
+            Workers below {Math.round(validThreshold * 100)}% approval rate
+            <span class="ml-2 text-gray-500 font-normal">({workers.length} found)</span>
+          </h2>
+        </div>
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-gray-800 text-xs text-gray-500">
+              <th class="px-5 py-3 text-left font-medium">Worker</th>
+              <th class="px-5 py-3 text-center font-medium">Approval rate</th>
+              <th class="px-4 py-3 text-center font-medium">Reviews</th>
+              <th class="px-4 py-3 text-center font-medium">Rejected</th>
+              <th class="px-4 py-3 text-center font-medium">Tasks done</th>
+              <th class="px-4 py-3 text-center font-medium">Strikes</th>
+              <th class="px-5 py-3 text-right font-medium">Actions</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-800">
+            {workers.map((w: any) => (
+              <tr class="hover:bg-gray-800/40 transition-colors">
+                <td class="px-5 py-3">
+                  <div class="font-medium text-gray-200">{w.name ?? w.email.split("@")[0]}</div>
+                  <div class="text-xs text-gray-500">{w.email}</div>
+                  {w.is_banned && (
+                    <span class="text-xs px-1.5 py-0.5 bg-red-900/50 border border-red-800/60 rounded text-red-400 mt-1 inline-block">
+                      Banned
+                    </span>
+                  )}
+                </td>
+                <td class="px-5 py-3 text-center">
+                  <span class={`text-lg font-bold ${accuracyColor(w.accuracy_pct)}`}>
+                    {w.accuracy_pct}%
+                  </span>
+                  <div class="w-20 bg-gray-700 rounded-full h-1.5 mx-auto mt-1">
+                    <div
+                      class={`h-1.5 rounded-full ${w.accuracy_pct < 40 ? "bg-red-500" : w.accuracy_pct < 60 ? "bg-amber-500" : "bg-yellow-400"}`}
+                      style={`width: ${w.accuracy_pct}%`}
+                    ></div>
+                  </div>
+                </td>
+                <td class="px-4 py-3 text-center text-gray-300">{w.total_evaluated}</td>
+                <td class="px-4 py-3 text-center text-red-400">{w.rejected_count}</td>
+                <td class="px-4 py-3 text-center text-gray-400">{w.worker_tasks_completed}</td>
+                <td class="px-4 py-3 text-center">
+                  {w.strike_count > 0 ? (
+                    <span class="text-amber-400 font-semibold">{w.strike_count}</span>
+                  ) : (
+                    <span class="text-gray-600">0</span>
+                  )}
+                </td>
+                <td class="px-5 py-3 text-right">
+                  <div class="flex gap-2 justify-end">
+                    <a
+                      href={`/admin/workers?search=${encodeURIComponent(w.email)}`}
+                      class="px-2.5 py-1 text-xs font-medium border border-gray-700 rounded-lg text-gray-400 hover:text-gray-200 hover:border-gray-500 transition-colors"
+                    >
+                      View
+                    </a>
+                    <button
+                      class="warn-btn px-2.5 py-1 text-xs font-medium border border-amber-800/60 rounded-lg text-amber-400 hover:text-amber-300 hover:border-amber-600 transition-colors"
+                      data-id={w.id}
+                      data-name={w.name ?? w.email.split("@")[0]}
+                    >
+                      Issue warning
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )}
+  </div>
+
+  <!-- Issue warning modal -->
+  <div id="warn-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
+    <div class="bg-gray-900 border border-gray-700 rounded-2xl p-6 max-w-md w-full shadow-2xl">
+      <h3 class="text-base font-semibold text-gray-100 mb-1">Issue Warning Strike</h3>
+      <p id="warn-worker-name" class="text-sm text-gray-400 mb-4"></p>
+      <div class="space-y-3">
+        <div>
+          <label class="block text-xs font-medium text-gray-400 mb-1">Reason <span class="text-red-400">*</span></label>
+          <textarea
+            id="warn-reason"
+            rows="3"
+            placeholder="e.g. Approval rate consistently below platform average across 10+ tasks"
+            class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-violet-500 resize-none"
+          ></textarea>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-400 mb-1">Severity</label>
+          <select id="warn-severity" class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-200 focus:outline-none focus:border-violet-500">
+            <option value="warning">⚠️ Warning (informational)</option>
+            <option value="minor">🔴 Minor (affects reputation)</option>
+            <option value="major">🔴🔴 Major (significant penalty)</option>
+          </select>
+        </div>
+      </div>
+      <div id="warn-error" class="hidden mt-3 text-sm text-red-400"></div>
+      <div class="flex gap-3 mt-5">
+        <button
+          id="warn-cancel"
+          class="flex-1 px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium rounded-lg transition-colors"
+        >
+          Cancel
+        </button>
+        <button
+          id="warn-submit"
+          class="flex-1 px-4 py-2 bg-amber-700 hover:bg-amber-600 text-white text-sm font-semibold rounded-lg transition-colors"
+        >
+          Issue warning
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script is:inline>
+    let activeWorkerId = null;
+    const modal = document.getElementById("warn-modal");
+    const warnName = document.getElementById("warn-worker-name");
+    const warnReason = document.getElementById("warn-reason");
+    const warnSeverity = document.getElementById("warn-severity");
+    const warnError = document.getElementById("warn-error");
+    const warnSubmit = document.getElementById("warn-submit");
+    const warnCancel = document.getElementById("warn-cancel");
+
+    document.querySelectorAll(".warn-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        activeWorkerId = btn.dataset.id;
+        warnName.textContent = "For: " + btn.dataset.name;
+        warnReason.value = "";
+        warnError.classList.add("hidden");
+        modal.classList.remove("hidden");
+        setTimeout(() => warnReason.focus(), 50);
+      });
+    });
+
+    warnCancel.addEventListener("click", () => modal.classList.add("hidden"));
+    modal.addEventListener("click", e => { if (e.target === modal) modal.classList.add("hidden"); });
+
+    warnSubmit.addEventListener("click", async () => {
+      const reason = warnReason.value.trim();
+      if (!reason) {
+        warnError.textContent = "Reason is required.";
+        warnError.classList.remove("hidden");
+        return;
+      }
+      warnSubmit.disabled = true;
+      warnSubmit.textContent = "Issuing…";
+      warnError.classList.add("hidden");
+      try {
+        const res = await fetch(`/api/admin/workers/${activeWorkerId}/strikes`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reason, severity: warnSeverity.value }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok) {
+          modal.classList.add("hidden");
+          // Update strike count in the table
+          const row = document.querySelector(`[data-id="${activeWorkerId}"]`)?.closest("tr");
+          if (row) {
+            const strikeCell = row.querySelectorAll("td")[5];
+            if (strikeCell) {
+              const current = parseInt(strikeCell.textContent || "0", 10);
+              strikeCell.innerHTML = `<span class="text-amber-400 font-semibold">${current + 1}</span>`;
+            }
+          }
+        } else {
+          warnError.textContent = data.detail ?? "Failed to issue warning.";
+          warnError.classList.remove("hidden");
+        }
+      } catch {
+        warnError.textContent = "Network error.";
+        warnError.classList.remove("hidden");
+      } finally {
+        warnSubmit.disabled = false;
+        warnSubmit.textContent = "Issue warning";
+      }
+    });
+  </script>
+</Layout>

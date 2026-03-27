@@ -11,7 +11,7 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, cast, Date as SADate, and_, or_
+from sqlalchemy import select, func, cast, Float, Date as SADate, and_, or_, case
 
 import time as _time_module
 
@@ -1361,6 +1361,106 @@ async def pardon_strike(
     await db.commit()
     logger.info("worker_strike_pardoned", strike_id=str(strike_id), admin_id=admin_id)
     return {"pardoned": True, "strike_id": str(strike_id)}
+
+
+@router.get("/quality")
+async def get_quality_monitoring(
+    threshold: float = Query(0.6, ge=0.0, le=1.0, description="Flag workers with approval rate below this value"),
+    min_evaluated: int = Query(5, ge=1, le=1000, description="Min reviewed assignments to include a worker"),
+    limit: int = Query(50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(require_admin),
+):
+    """Admin: workers with high rejection rates (platform-wide quality monitoring).
+
+    Returns:
+    - platform_stats: aggregated metrics (avg accuracy, workers at risk, etc.)
+    - low_accuracy_workers: workers below the threshold, ordered by accuracy asc
+    """
+    # Per-worker approved/rejected counts from all reviewed assignments
+    subq = (
+        select(
+            TaskAssignmentDB.worker_id,
+            func.count().label("total_evaluated"),
+            func.sum(
+                case((TaskAssignmentDB.status == "approved", 1), else_=0)
+            ).label("approved_count"),
+        )
+        .where(TaskAssignmentDB.status.in_(["approved", "rejected"]))
+        .group_by(TaskAssignmentDB.worker_id)
+        .having(func.count() >= min_evaluated)
+        .subquery("wq")
+    )
+
+    # Float accuracy expression: approved_count / total_evaluated
+    acc_expr = cast(subq.c.approved_count, Float) / cast(subq.c.total_evaluated, Float)
+
+    # Platform-wide stats (single query)
+    stats_row = (
+        await db.execute(
+            select(
+                func.count().label("total_workers"),
+                func.avg(acc_expr).label("avg_accuracy"),
+                func.sum(case((acc_expr < threshold, 1), else_=0)).label("at_risk"),
+            ).select_from(subq)
+        )
+    ).one()
+    total_workers = stats_row.total_workers or 0
+    avg_accuracy = float(stats_row.avg_accuracy or 0.0)
+    at_risk = int(stats_row.at_risk or 0)
+
+    # Fetch low-accuracy workers with user details (single query)
+    rows = (
+        await db.execute(
+            select(
+                UserDB.id,
+                UserDB.name,
+                UserDB.email,
+                UserDB.worker_tasks_completed,
+                UserDB.reputation_score,
+                UserDB.strike_count,
+                UserDB.is_banned,
+                subq.c.total_evaluated,
+                subq.c.approved_count,
+                acc_expr.label("accuracy"),
+            )
+            .join(subq, UserDB.id == subq.c.worker_id)
+            .where(acc_expr < threshold)
+            .order_by(acc_expr.asc())
+            .limit(limit)
+        )
+    ).all()
+
+    workers = [
+        {
+            "id": str(r.id),
+            "name": r.name,
+            "email": r.email,
+            "accuracy": round(float(r.accuracy), 4),
+            "accuracy_pct": round(float(r.accuracy) * 100, 1),
+            "total_evaluated": r.total_evaluated,
+            "approved_count": r.approved_count,
+            "rejected_count": r.total_evaluated - r.approved_count,
+            "worker_tasks_completed": r.worker_tasks_completed or 0,
+            "reputation_score": round(float(r.reputation_score or 0.0), 3),
+            "strike_count": r.strike_count or 0,
+            "is_banned": r.is_banned,
+        }
+        for r in rows
+    ]
+
+    return {
+        "platform_stats": {
+            "total_workers_evaluated": total_workers,
+            "avg_accuracy": round(avg_accuracy, 4),
+            "avg_accuracy_pct": round(avg_accuracy * 100, 1),
+            "workers_at_risk": at_risk,
+            "pct_at_risk": round(at_risk / total_workers * 100 if total_workers > 0 else 0.0, 1),
+            "threshold": threshold,
+            "min_evaluated": min_evaluated,
+        },
+        "low_accuracy_workers": workers,
+    }
 
 
 # ─── System Health ──────────────────────────────────────────────────────────
