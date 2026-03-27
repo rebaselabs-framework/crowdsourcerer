@@ -153,19 +153,19 @@ async def test_payout_create_missing_body_is_422(client):
 
 
 @pytest.mark.asyncio
-async def test_payout_create_invalid_method_is_400(client):
-    """Payout with unknown payout_method → 400 (manual check)."""
+async def test_payout_create_invalid_method_is_422(client):
+    """Payout with unknown payout_method → 422 (Pydantic Literal validation)."""
     token = _make_token()
     r = await client.post(
         "/v1/payouts",
         json={
             "credits_requested": 2000,
-            "payout_method": "bitcoin",   # not in ALLOWED_METHODS
+            "payout_method": "bitcoin",   # not in Literal["paypal", "bank_transfer", "crypto"]
             "payout_details": {"address": "1abc"},
         },
         headers={"Authorization": f"Bearer {token}"},
     )
-    assert r.status_code == 400
+    assert r.status_code == 422
 
 
 @pytest.mark.asyncio

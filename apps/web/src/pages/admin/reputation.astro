@@ -408,7 +408,7 @@ strikeForm.addEventListener("submit", async (e) => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ severity, reason }),
     });
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
     if (res.ok) {
       msg.textContent = `✅ Strike issued. New score: ${data.new_reputation_score?.toFixed(1)}`;
       msg.className = "mt-3 text-sm text-center text-green-400";
@@ -455,7 +455,7 @@ banForm.addEventListener("submit", async (e) => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ reason }),
     });
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
     if (res.ok) {
       msg.textContent = "✅ Worker banned.";
       msg.className   = "mt-3 text-sm text-center text-green-400";

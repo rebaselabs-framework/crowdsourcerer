@@ -550,8 +550,8 @@ class QualityReportOut(BaseModel):
 # ─── Payout ───────────────────────────────────────────────────────────────
 
 class PayoutRequestCreate(BaseModel):
-    credits_requested: int
-    payout_method: str  # paypal | bank_transfer | crypto
+    credits_requested: int = Field(ge=1, le=10_000_000)
+    payout_method: Literal["paypal", "bank_transfer", "crypto"]
     payout_details: dict[str, Any]  # {"email": "..."} or {"address": "..."}
 
 
