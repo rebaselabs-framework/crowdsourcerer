@@ -73,7 +73,9 @@ jobs:
 
       - name: Install SDK + dev deps
         working-directory: packages/python-sdk
-        run: pip install -e ".[dev]"
+        run: |
+          pip install --upgrade pip hatchling
+          pip install -e ".[dev]"
 
       - name: Run tests
         working-directory: packages/python-sdk
@@ -129,27 +131,10 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       # Step 1: astro check — catches TypeScript errors, bad imports, Astro 5 syntax issues.
-      # Must produce: "0 errors". Any error here = broken deploy.
+      # Must exit 0 (= no errors). Any error here = broken deploy.
       - name: Astro type check (0 errors required)
         working-directory: apps/web
-        run: |
-          set -e
-          OUTPUT=$(pnpm exec astro check 2>&1)
-          echo "$OUTPUT"
-          if echo "$OUTPUT" | grep -qE "^[0-9]+ error"; then
-            echo ""
-            echo "❌ astro check reported errors — build blocked"
-            exit 1
-          fi
-          if echo "$OUTPUT" | grep -qiE "error"; then
-            # Confirm it's really 0 errors by checking the summary line
-            if ! echo "$OUTPUT" | grep -qE "0 errors"; then
-              echo ""
-              echo "❌ astro check may have errors — review output above"
-              exit 1
-            fi
-          fi
-          echo "✅ astro check: 0 errors"
+        run: pnpm exec astro check
         env:
           PUBLIC_API_URL: http://localhost:8100
 
