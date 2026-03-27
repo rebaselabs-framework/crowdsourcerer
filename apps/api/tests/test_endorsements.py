@@ -404,6 +404,60 @@ async def test_create_endorsement_duplicate_409():
         app.dependency_overrides.clear()
 
 
+@pytest.mark.asyncio
+async def test_create_endorsement_integrity_error_returns_409():
+    """POST /v1/workers/{id}/endorse — concurrent duplicate caught by IntegrityError → 409.
+
+    This tests the race-condition path: two requests simultaneously pass the
+    count=0 guard and both reach db.commit().  The DB unique constraint fires,
+    raising IntegrityError; the handler must roll back and return 409 (not 500).
+    """
+    from main import app
+    from core.database import get_db
+    from sqlalchemy.exc import IntegrityError
+
+    worker     = _make_worker()
+    task       = _make_task(status="completed")
+    assignment = _make_assignment()
+    db = _make_db()
+    call_num = [0]
+
+    def _side_effect(stmt):
+        call_num[0] += 1
+        if call_num[0] == 1:
+            return _scalar_result(worker)
+        if call_num[0] == 2:
+            return _scalar_result(task)
+        return _scalar_result(assignment)
+
+    db.execute.side_effect = _side_effect
+    db.scalar.return_value = 0   # count check passes — no existing endorsement yet
+    db.rollback = AsyncMock()    # _make_db() doesn't set this as async; ensure it is
+
+    # Simulate DB unique constraint violation on commit
+    db.commit.side_effect = IntegrityError(
+        "INSERT INTO worker_endorsements ...",
+        {},
+        Exception("duplicate key value violates unique constraint"),
+    )
+
+    app.dependency_overrides[get_db] = _db_override(db)
+
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            r = await c.post(
+                f"/v1/workers/{WORKER_ID}/endorse",
+                json={"task_id": TASK_ID},
+                headers={"Authorization": f"Bearer {_real_token(REQUESTER_ID)}"},
+            )
+        assert r.status_code == 409
+        assert "already endorsed" in r.json()["detail"].lower()
+        # Rollback must have been issued
+        db.rollback.assert_awaited_once()
+    finally:
+        app.dependency_overrides.clear()
+
+
 # ── AvailabilitySlotIn validation (pure Pydantic) ─────────────────────────────
 
 def test_availability_slot_valid():
