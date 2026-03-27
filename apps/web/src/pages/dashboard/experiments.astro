@@ -332,6 +332,7 @@ const taskTypes = [
               Create Experiment
             </button>
           </div>
+          <div id="traffic-error" class="hidden text-sm text-red-400 bg-red-950/20 border border-red-800 rounded-lg px-3 py-2 mt-3"></div>
         </form>
       </div>
     </div>
@@ -372,7 +373,14 @@ const taskTypes = [
       const total = Array.from(inputs).reduce((s, i) => s + parseFloat(i.value || "0"), 0);
       if (Math.abs(total - 100) > 1) {
         e.preventDefault();
-        alert(`Traffic percentages must sum to 100 (currently ${total.toFixed(1)})`);
+        const errEl = document.getElementById("traffic-error");
+        if (errEl) {
+          errEl.textContent = `Traffic percentages must sum to 100 (currently ${total.toFixed(1)}%)`;
+          errEl.classList.remove("hidden");
+          errEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        }
+      } else {
+        document.getElementById("traffic-error")?.classList.add("hidden");
       }
     });
     (window as any).addVariant = addVariant;

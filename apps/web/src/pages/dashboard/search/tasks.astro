@@ -458,7 +458,14 @@ function filterQs(extra: Record<string, string> = {}): string {
       const url = new URL(window.location.href);
       url.searchParams.delete("page");
       const qs = url.searchParams.toString();
-      if (!qs) { alert("No active filters to save."); return; }
+      if (!qs) {
+        const btn = saveBtn as HTMLButtonElement;
+        const orig = btn.textContent;
+        btn.textContent = "⚠ Set filters first";
+        btn.classList.add("text-amber-400");
+        setTimeout(() => { btn.textContent = orig; btn.classList.remove("text-amber-400"); }, 2500);
+        return;
+      }
       const name = prompt("Name this filter set:", "My filters");
       if (!name) return;
       const filters = loadSavedFilters();
