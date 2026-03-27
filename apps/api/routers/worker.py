@@ -9,7 +9,7 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, or_
+from sqlalchemy import select, func, and_, or_, case as sa_case, cast, Float
 
 import asyncio as _asyncio_wh
 from core.auth import get_current_user_id
@@ -337,6 +337,175 @@ async def get_worker_stats(
         streak_at_risk=streak_at_risk,
         last_active_date=last_active_date_str,
     )
+
+
+# ─── Worker performance analytics ─────────────────────────────────────────
+
+@router.get("/performance")
+async def get_worker_performance(
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """
+    Worker performance analytics:
+    - Overall approval rate (all-time and last 30 days)
+    - Approval rate breakdown by task type
+    - Platform average approval rate (anonymized, for comparison)
+    - Weekly trend (last 8 weeks)
+    - Approximate rank percentile among evaluated workers
+    """
+    now_utc = datetime.now(timezone.utc)
+    thirty_days_ago = now_utc - timedelta(days=30)
+
+    # ── All-time approval/rejection counts ────────────────────────────────────
+    all_time_res = (
+        await db.execute(
+            select(
+                func.count().label("total"),
+                func.sum(sa_case((TaskAssignmentDB.status == "approved", 1), else_=0)).label("approved"),
+            )
+            .where(
+                TaskAssignmentDB.worker_id == user_id,
+                TaskAssignmentDB.status.in_(["approved", "rejected"]),
+            )
+        )
+    ).one()
+    at_total = all_time_res.total or 0
+    at_approved = all_time_res.approved or 0
+    at_rate = round(at_approved / at_total, 4) if at_total > 0 else None
+
+    # ── Last 30 days ──────────────────────────────────────────────────────────
+    recent_res = (
+        await db.execute(
+            select(
+                func.count().label("total"),
+                func.sum(sa_case((TaskAssignmentDB.status == "approved", 1), else_=0)).label("approved"),
+            )
+            .join(TaskDB, TaskAssignmentDB.task_id == TaskDB.id)
+            .where(
+                TaskAssignmentDB.worker_id == user_id,
+                TaskAssignmentDB.status.in_(["approved", "rejected"]),
+                TaskAssignmentDB.submitted_at >= thirty_days_ago,
+            )
+        )
+    ).one()
+    r30_total = recent_res.total or 0
+    r30_approved = recent_res.approved or 0
+    r30_rate = round(r30_approved / r30_total, 4) if r30_total > 0 else None
+
+    # ── Breakdown by task type ────────────────────────────────────────────────
+    by_type_res = await db.execute(
+        select(
+            TaskDB.type,
+            func.count().label("total"),
+            func.sum(sa_case((TaskAssignmentDB.status == "approved", 1), else_=0)).label("approved"),
+        )
+        .join(TaskDB, TaskAssignmentDB.task_id == TaskDB.id)
+        .where(
+            TaskAssignmentDB.worker_id == user_id,
+            TaskAssignmentDB.status.in_(["approved", "rejected"]),
+        )
+        .group_by(TaskDB.type)
+        .order_by(func.count().desc())
+    )
+    by_type = [
+        {
+            "type": r.type,
+            "total": r.total or 0,
+            "approved": r.approved or 0,
+            "rejected": (r.total or 0) - (r.approved or 0),
+            "approval_rate": round((r.approved or 0) / r.total, 4) if (r.total or 0) > 0 else None,
+            "approval_rate_pct": round((r.approved or 0) / r.total * 100, 1) if (r.total or 0) > 0 else None,
+        }
+        for r in by_type_res.all()
+    ]
+
+    # ── Platform average approval rate ────────────────────────────────────────
+    # Aggregate across all workers with >= 5 reviewed assignments
+    platform_subq = (
+        select(
+            TaskAssignmentDB.worker_id,
+            func.count().label("total"),
+            func.sum(sa_case((TaskAssignmentDB.status == "approved", 1), else_=0)).label("approved"),
+        )
+        .where(TaskAssignmentDB.status.in_(["approved", "rejected"]))
+        .group_by(TaskAssignmentDB.worker_id)
+        .having(func.count() >= 5)
+        .subquery("platform_wq")
+    )
+    platform_acc = cast(platform_subq.c.approved, Float) / cast(platform_subq.c.total, Float)
+    platform_stats_row = (
+        await db.execute(
+            select(
+                func.count().label("total_workers"),
+                func.avg(platform_acc).label("avg_rate"),
+            ).select_from(platform_subq)
+        )
+    ).one()
+    platform_avg = float(platform_stats_row.avg_rate or 0.0)
+    platform_workers = platform_stats_row.total_workers or 0
+
+    # Rank percentile: what fraction of evaluated workers have a LOWER rate than this worker
+    rank_percentile = None
+    if at_total >= 5 and at_rate is not None and platform_workers > 0:
+        below_count_row = (
+            await db.execute(
+                select(func.count()).select_from(platform_subq).where(
+                    platform_acc < at_rate
+                )
+            )
+        ).scalar() or 0
+        rank_percentile = round(below_count_row / platform_workers * 100, 0)
+
+    # ── Weekly trend (last 8 weeks) ───────────────────────────────────────────
+    eight_weeks_ago = now_utc - timedelta(weeks=8)
+    weekly_res = await db.execute(
+        select(
+            func.date_trunc("week", TaskAssignmentDB.submitted_at).label("week_start"),
+            func.count().label("total"),
+            func.sum(sa_case((TaskAssignmentDB.status == "approved", 1), else_=0)).label("approved"),
+        )
+        .where(
+            TaskAssignmentDB.worker_id == user_id,
+            TaskAssignmentDB.status.in_(["approved", "rejected"]),
+            TaskAssignmentDB.submitted_at >= eight_weeks_ago,
+        )
+        .group_by(func.date_trunc("week", TaskAssignmentDB.submitted_at))
+        .order_by(func.date_trunc("week", TaskAssignmentDB.submitted_at).asc())
+    )
+    weekly_trend = [
+        {
+            "week_start": r.week_start.isoformat() if r.week_start else None,
+            "total": r.total or 0,
+            "approved": r.approved or 0,
+            "approval_rate": round((r.approved or 0) / r.total, 4) if (r.total or 0) > 0 else None,
+            "approval_rate_pct": round((r.approved or 0) / r.total * 100, 1) if (r.total or 0) > 0 else None,
+        }
+        for r in weekly_res.all()
+    ]
+
+    return {
+        "all_time": {
+            "total_reviewed": at_total,
+            "approved": at_approved,
+            "rejected": at_total - at_approved,
+            "approval_rate": at_rate,
+            "approval_rate_pct": round(at_rate * 100, 1) if at_rate is not None else None,
+        },
+        "last_30d": {
+            "total_reviewed": r30_total,
+            "approved": r30_approved,
+            "rejected": r30_total - r30_approved,
+            "approval_rate": r30_rate,
+            "approval_rate_pct": round(r30_rate * 100, 1) if r30_rate is not None else None,
+        },
+        "by_task_type": by_type,
+        "platform_avg_approval_rate": round(platform_avg, 4),
+        "platform_avg_approval_rate_pct": round(platform_avg * 100, 1),
+        "platform_evaluated_workers": platform_workers,
+        "rank_percentile": rank_percentile,
+        "weekly_trend": weekly_trend,
+    }
 
 
 # ─── Activity calendar ────────────────────────────────────────────────────
