@@ -1106,7 +1106,9 @@ async def cancel_task(
     user_id: str = Depends(require_scope(SCOPE_TASKS_WRITE)),
 ):
     result = await db.execute(
-        select(TaskDB).where(TaskDB.id == task_id, TaskDB.user_id == user_id)
+        select(TaskDB).where(
+            TaskDB.id == task_id, TaskDB.user_id == user_id
+        ).with_for_update()
     )
     task = result.scalar_one_or_none()
     if not task:
@@ -1398,9 +1400,12 @@ async def reject_submission(
             exc_info=True,
         )
 
-    # Refund worker reward to requester
+    # Refund worker reward to requester — lock the user row to prevent a lost-update
+    # race when multiple submissions are rejected concurrently for the same task.
     refund_amount = assignment.earnings_credits
-    requester_result = await db.execute(select(UserDB).where(UserDB.id == user_id))
+    requester_result = await db.execute(
+        select(UserDB).where(UserDB.id == user_id).with_for_update()
+    )
     requester = requester_result.scalar_one_or_none()
     if requester and refund_amount > 0:
         requester.credits += refund_amount

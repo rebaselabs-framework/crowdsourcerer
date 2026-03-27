@@ -180,14 +180,16 @@ async def my_payout_summary(
 @router.delete("/{payout_id}", status_code=204, response_model=None)
 async def cancel_payout_request(
     payout_id: UUID,
-    user_id: UUID = Depends(get_current_user_id),
+    user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """Cancel a pending payout and refund the credits."""
+    # Lock the payout row first so concurrent cancellations can't both pass
+    # the status check and both refund credits (double-refund race).
     result = await db.execute(
         select(PayoutRequestDB).where(
             and_(PayoutRequestDB.id == payout_id, PayoutRequestDB.worker_id == user_id)
-        )
+        ).with_for_update()
     )
     payout = result.scalar_one_or_none()
     if not payout:
@@ -195,8 +197,10 @@ async def cancel_payout_request(
     if payout.status not in ("pending",):
         raise HTTPException(409, f"Cannot cancel a payout with status '{payout.status}'")
 
-    # Refund credits
-    user_res = await db.execute(select(UserDB).where(UserDB.id == user_id))
+    # Refund credits — lock user row to prevent concurrent credit modifications.
+    user_res = await db.execute(
+        select(UserDB).where(UserDB.id == user_id).with_for_update()
+    )
     user = user_res.scalar_one()
     user.credits += payout.credits_requested
     payout.status = "rejected"

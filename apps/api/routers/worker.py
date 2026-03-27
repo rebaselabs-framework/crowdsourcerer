@@ -788,12 +788,14 @@ async def submit_task(
     user_id: str = Depends(get_current_user_id),
 ):
     """Submit your completion of a claimed task."""
+    # Lock the assignment row so two concurrent submit requests can't both pass
+    # the status == "active" check and both write a submission (double-submit).
     result = await db.execute(
         select(TaskAssignmentDB).where(
             TaskAssignmentDB.task_id == task_id,
             TaskAssignmentDB.worker_id == user_id,
             TaskAssignmentDB.status == "active",
-        )
+        ).with_for_update()
     )
     assignment = result.scalar_one_or_none()
     if not assignment:
