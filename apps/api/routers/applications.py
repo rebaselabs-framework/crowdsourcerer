@@ -196,10 +196,12 @@ async def accept_application(
         raise HTTPException(status_code=403, detail="Only the task owner can accept applications")
 
     app_result = await db.execute(
-        select(TaskApplicationDB).where(
+        select(TaskApplicationDB)
+        .where(
             TaskApplicationDB.id == app_id,
             TaskApplicationDB.task_id == task_id,
         )
+        .with_for_update()
     )
     app = app_result.scalar_one_or_none()
     if not app:
@@ -282,10 +284,12 @@ async def reject_application(
         raise HTTPException(status_code=403, detail="Only the task owner can reject applications")
 
     app_result = await db.execute(
-        select(TaskApplicationDB).where(
+        select(TaskApplicationDB)
+        .where(
             TaskApplicationDB.id == app_id,
             TaskApplicationDB.task_id == task_id,
         )
+        .with_for_update()
     )
     app = app_result.scalar_one_or_none()
     if not app:

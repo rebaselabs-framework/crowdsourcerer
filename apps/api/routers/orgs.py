@@ -486,11 +486,13 @@ async def accept_invite(
     now = datetime.now(timezone.utc)
 
     result = await db.execute(
-        select(OrgInviteDB).where(
+        select(OrgInviteDB)
+        .where(
             OrgInviteDB.token == token,
             OrgInviteDB.accepted_at.is_(None),
             OrgInviteDB.expires_at > now,
         )
+        .with_for_update()
     )
     invite = result.scalar_one_or_none()
     if not invite:

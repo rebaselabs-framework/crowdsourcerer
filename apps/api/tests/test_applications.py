@@ -639,3 +639,91 @@ class TestRejectApplication:
                 db.commit.assert_awaited_once()
             finally:
                 app.dependency_overrides.pop(get_db, None)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Test 8 — accept_application: race condition guard (already-accepted returns 400)
+# Test 9 — reject_application: race condition guard (already-rejected returns 400)
+# Both endpoints now lock the row with .with_for_update() before the status check.
+# These tests verify the status guard fires correctly for non-pending applications.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestAcceptRejectRaceGuard:
+    """Verify accept/reject correctly reject non-pending applications."""
+
+    @pytest.mark.asyncio
+    async def test_accept_already_accepted_returns_400(self, app, requester_headers):
+        """If app.status == 'accepted' (concurrent race won by another request),
+        accept_application must return 400, not 500 or silently double-assign."""
+        task    = _make_task(status="open", owner_id=REQUESTER_ID)
+        the_app = _make_application(
+            app_id=APP_ID, task_id=TASK_ID, worker_id=WORKER_ID_1,
+            status="accepted",   # already accepted — race condition scenario
+        )
+
+        db = _make_mock_db()
+        call_count = 0
+
+        def _side_effect(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return _scalar_result(task)
+            return _scalar_result(the_app)
+
+        db.execute.side_effect = _side_effect
+
+        from core.database import get_db
+        app.dependency_overrides[get_db] = _db_override(db)
+        try:
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as c:
+                r = await c.post(
+                    f"/v1/tasks/{TASK_ID}/applications/{APP_ID}/accept",
+                    headers=requester_headers,
+                )
+            assert r.status_code == 400, r.text
+            assert "already accepted" in r.json()["detail"].lower()
+            # Must NOT have committed (no double-assignment)
+            db.commit.assert_not_awaited()
+        finally:
+            app.dependency_overrides.pop(get_db, None)
+
+    @pytest.mark.asyncio
+    async def test_reject_already_rejected_returns_400(self, app, requester_headers):
+        """If app.status == 'rejected' (concurrent race), reject_application
+        must return 400, not 500."""
+        task    = _make_task(status="open", owner_id=REQUESTER_ID)
+        the_app = _make_application(
+            app_id=APP_ID, task_id=TASK_ID, worker_id=WORKER_ID_1,
+            status="rejected",   # already rejected
+        )
+
+        db = _make_mock_db()
+        call_count = 0
+
+        def _side_effect(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return _scalar_result(task)
+            return _scalar_result(the_app)
+
+        db.execute.side_effect = _side_effect
+
+        from core.database import get_db
+        app.dependency_overrides[get_db] = _db_override(db)
+        try:
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as c:
+                r = await c.post(
+                    f"/v1/tasks/{TASK_ID}/applications/{APP_ID}/reject",
+                    headers=requester_headers,
+                )
+            assert r.status_code == 400, r.text
+            assert "already rejected" in r.json()["detail"].lower()
+            db.commit.assert_not_awaited()
+        finally:
+            app.dependency_overrides.pop(get_db, None)
