@@ -283,6 +283,14 @@ async def enroll_task(
     if exp.status != "running":
         raise HTTPException(400, "Experiment must be running to enroll tasks")
 
+    # Verify the task being enrolled belongs to this user — prevents enrolling
+    # other requesters' tasks into our experiment (IDOR / info-disclosure).
+    task_check = await db.execute(
+        select(TaskDB).where(TaskDB.id == req.task_id, TaskDB.user_id == UUID(user_id))
+    )
+    if not task_check.scalar_one_or_none():
+        raise HTTPException(404, "Task not found or does not belong to you")
+
     # Check task not already enrolled
     exist = await db.execute(
         select(ABParticipantDB).where(ABParticipantDB.task_id == req.task_id)
@@ -368,7 +376,15 @@ async def record_outcome(
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ):
-    """Record the outcome of a task enrolled in the experiment (called internally)."""
+    """Record the outcome of a task enrolled in the experiment (called internally).
+
+    Requires experiment ownership — only the requester who owns the experiment
+    can record outcomes for it. Without this check any authenticated user could
+    tamper with another user's experiment statistics.
+    """
+    # Verify the caller owns this experiment before allowing stat modification.
+    await _get_exp(experiment_id, user_id, db)
+
     res = await db.execute(
         select(ABParticipantDB).where(
             ABParticipantDB.experiment_id == experiment_id,

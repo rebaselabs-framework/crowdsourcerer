@@ -500,6 +500,7 @@ async def list_task_invites(
         select(WorkerInviteDB)
         .where(WorkerInviteDB.task_id == task_id)
         .order_by(WorkerInviteDB.created_at.desc())
+        .limit(500)  # hard cap — prevents unbounded response on tasks with many invites
     )
     invites = result.scalars().all()
 
@@ -539,6 +540,7 @@ async def list_my_invites(
         select(WorkerInviteDB)
         .where(WorkerInviteDB.worker_id == user_id)
         .order_by(WorkerInviteDB.created_at.desc())
+        .limit(200)  # hard cap — workers with many invites won't cause huge responses
     )
     if status:
         q = q.where(WorkerInviteDB.status == status)

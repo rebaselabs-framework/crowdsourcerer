@@ -37,7 +37,10 @@ async def list_api_keys(
     user_id: str = Depends(get_current_user_id),
 ):
     result = await db.execute(
-        select(ApiKeyDB).where(ApiKeyDB.user_id == user_id)
+        select(ApiKeyDB)
+        .where(ApiKeyDB.user_id == user_id)
+        .order_by(ApiKeyDB.created_at.desc())
+        .limit(100)  # hard cap — prevents unbounded response
     )
     return result.scalars().all()
 
