@@ -413,7 +413,7 @@ const dailyPct = daily && !daily.unlimited ? Math.min(100, Math.round((daily.use
                   >
                     {isSelected ? "Hide" : "Details"}
                   </a>
-                  <form method="POST" onsubmit="return confirm('Revoke this API key?')">
+                  <form method="POST" data-confirm="Revoke this API key?">
                     <input type="hidden" name="action" value="delete" />
                     <input type="hidden" name="key_id" value={key.id} />
                     <button type="submit"
@@ -489,15 +489,42 @@ const dailyPct = daily && !daily.unlimited ? Math.min(100, Math.round((daily.use
 </Layout>
 
 <script>
-  // Copy new key
+  // Copy new key — fall back to selecting text if clipboard API unavailable
   const newKeyInput = document.getElementById("new-key-input") as HTMLInputElement | null;
   const copyNewKeyBtn = document.getElementById("copy-new-key");
   copyNewKeyBtn?.addEventListener("click", async () => {
     if (newKeyInput) {
-      await navigator.clipboard.writeText(newKeyInput.value).catch(() => {});
-      copyNewKeyBtn.textContent = "Copied!";
-      setTimeout(() => { copyNewKeyBtn.textContent = "Copy"; }, 2000);
+      try {
+        await navigator.clipboard.writeText(newKeyInput.value);
+        copyNewKeyBtn.textContent = "Copied!";
+        setTimeout(() => { copyNewKeyBtn.textContent = "Copy"; }, 2000);
+      } catch {
+        // Clipboard API blocked — select text so user can copy manually
+        newKeyInput.select();
+        copyNewKeyBtn.textContent = "Select all ↑";
+        setTimeout(() => { copyNewKeyBtn.textContent = "Copy"; }, 3000);
+      }
     }
+  });
+
+  // Two-step confirm for revoke forms
+  document.querySelectorAll<HTMLFormElement>("form[data-confirm]").forEach(form => {
+    const btn = form.querySelector<HTMLButtonElement>("button[type='submit']");
+    if (!btn) return;
+    form.addEventListener("submit", e => {
+      if (btn.dataset.pending !== "true") {
+        e.preventDefault();
+        const orig = btn.textContent!;
+        btn.dataset.pending = "true";
+        btn.textContent = "Sure?";
+        btn.classList.add("!text-red-400", "!border-red-600");
+        setTimeout(() => {
+          btn.dataset.pending = "";
+          btn.textContent = orig;
+          btn.classList.remove("!text-red-400", "!border-red-600");
+        }, 3000);
+      }
+    });
   });
 
   // Toggle scopes panel

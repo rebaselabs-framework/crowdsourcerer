@@ -164,34 +164,54 @@ const hitRate =
     setTimeout(() => statusEl.classList.add("hidden"), 4000);
   }
 
-  async function flushCache(params: string, label: string) {
-    const confirmed = confirm(`${label} — are you sure?`);
-    if (!confirmed) return;
-    try {
-      const res = await fetch(`/api/admin/cache/flush?${params}`, { method: "DELETE" });
-      const body = await res.json().catch(() => ({}));
-      if (res.ok) {
-        showStatus(`✅ Deleted ${body.deleted ?? 0} cache entries. Reload to refresh stats.`, true);
-      } else {
-        showStatus(`Error: ${body.detail ?? "Unknown error"}`, false);
+  function setupFlushBtn(btn: HTMLButtonElement, params: string) {
+    btn.addEventListener("click", async () => {
+      // First click — two-step confirm
+      if (btn.dataset.pending !== "true") {
+        const orig = btn.textContent!;
+        btn.dataset.pending = "true";
+        btn.dataset.orig = orig;
+        btn.textContent = "Sure?";
+        btn.classList.add("text-red-400");
+        setTimeout(() => {
+          if (btn.dataset.pending === "true") {
+            btn.dataset.pending = "";
+            btn.textContent = btn.dataset.orig ?? orig;
+            btn.classList.remove("text-red-400");
+          }
+        }, 3000);
+        return;
       }
-    } catch {
-      showStatus("Network error — please try again.", false);
-    }
+      // Second click — execute flush
+      btn.dataset.pending = "";
+      const orig = btn.dataset.orig ?? btn.textContent!;
+      btn.disabled = true;
+      btn.textContent = "Flushing…";
+      try {
+        const res = await fetch(`/api/admin/cache/flush?${params}`, { method: "DELETE" });
+        const body = await res.json().catch(() => ({}));
+        if (res.ok) {
+          showStatus(`✅ Deleted ${body.deleted ?? 0} cache entries. Reload to refresh stats.`, true);
+        } else {
+          showStatus(`Error: ${body.detail ?? "Unknown error"}`, false);
+        }
+      } catch {
+        showStatus("Network error — please try again.", false);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = orig;
+        btn.classList.remove("text-red-400");
+      }
+    });
   }
 
-  document.getElementById("flush-expired-btn")?.addEventListener("click", () =>
-    flushCache("expired_only=true", "Flush all expired cache entries")
-  );
-
-  document.getElementById("flush-all-btn")?.addEventListener("click", () =>
-    flushCache("", "Flush ALL cache entries (this cannot be undone)")
-  );
+  const expiredBtn = document.getElementById("flush-expired-btn") as HTMLButtonElement | null;
+  const allBtn = document.getElementById("flush-all-btn") as HTMLButtonElement | null;
+  if (expiredBtn) setupFlushBtn(expiredBtn, "expired_only=true");
+  if (allBtn) setupFlushBtn(allBtn, "");
 
   document.querySelectorAll<HTMLButtonElement>(".flush-type-btn").forEach(btn => {
-    btn.addEventListener("click", () => {
-      const type = btn.dataset.type!;
-      flushCache(`task_type=${encodeURIComponent(type)}`, `Flush all cached entries for '${type}'`);
-    });
+    const type = btn.dataset.type!;
+    setupFlushBtn(btn, `task_type=${encodeURIComponent(type)}`);
   });
 </script>

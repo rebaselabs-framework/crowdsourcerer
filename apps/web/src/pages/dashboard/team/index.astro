@@ -58,10 +58,12 @@ if (Astro.request.method === "POST") {
       });
     }
   } catch (e: any) {
-    // Fall through on error
+    return Astro.redirect(`/dashboard/team?error=${encodeURIComponent(e.message ?? "Action failed")}`);
   }
   return Astro.redirect("/dashboard/team");
 }
+
+const postError = Astro.url.searchParams.get("error");
 
 let orgs: any[] = [];
 let me: any = null;
@@ -121,6 +123,9 @@ const ROLE_COLORS: Record<string, string> = {
       </button>
     </div>
 
+    {postError && (
+      <div class="bg-red-900/30 border border-red-700 text-red-300 rounded-xl p-4 mb-6">✗ {postError}</div>
+    )}
     {error && (
       <div class="bg-red-900/30 border border-red-700 text-red-300 rounded-xl p-4 mb-6">{error}</div>
     )}
@@ -279,14 +284,13 @@ const ROLE_COLORS: Record<string, string> = {
                         {member.role}
                       </span>
                       {isOwnerOrAdmin && member.user_id !== me?.id && member.role !== "owner" && (
-                        <form method="POST">
+                        <form method="POST" data-confirm="Remove this member?">
                           <input type="hidden" name="action" value="remove_member" />
                           <input type="hidden" name="org_id" value={org.id} />
                           <input type="hidden" name="user_id" value={member.user_id} />
                           <button
                             type="submit"
-                            class="text-xs text-red-500 hover:text-red-700"
-                            onclick={"return confirm('Remove this member?')"}
+                            class="text-xs text-red-500 hover:text-red-400 transition-colors"
                           >
                             Remove
                           </button>
@@ -418,4 +422,26 @@ const ROLE_COLORS: Record<string, string> = {
     </div>
 
   </div>
+
+  <script is:inline>
+    // Two-step confirm for data-confirm forms (replaces browser confirm())
+    document.querySelectorAll("form[data-confirm]").forEach(function(form) {
+      var btn = form.querySelector("button[type='submit']");
+      if (!btn) return;
+      form.addEventListener("submit", function(e) {
+        if (btn.dataset.pending !== "true") {
+          e.preventDefault();
+          var orig = btn.textContent;
+          btn.dataset.pending = "true";
+          btn.textContent = "Sure?";
+          btn.classList.add("text-red-400");
+          setTimeout(function() {
+            btn.dataset.pending = "";
+            btn.textContent = orig;
+            btn.classList.remove("text-red-400");
+          }, 3000);
+        }
+      });
+    });
+  </script>
 </Layout>
