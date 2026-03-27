@@ -422,3 +422,130 @@ class TestAdminReviewPayoutRaceConditions:
         # payout status must be updated to rejected
         assert payout.status == "rejected"
         db.commit.assert_awaited_once()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# cancel_payout_request tests (HTTP) — DELETE /v1/payouts/{payout_id}
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestCancelPayoutRequest:
+    """cancel_payout_request: happy path, 404, 409 (status guard)."""
+
+    @pytest.fixture
+    def worker_headers(self):
+        return {"Authorization": f"Bearer {_real_token(WORKER_ID)}"}
+
+    def _db_for_cancel(self, payout: MagicMock, user: MagicMock) -> MagicMock:
+        """Build a mock DB whose execute() returns payout (call 1) and user (call 2)."""
+        db = _make_mock_db()
+        call_count = 0
+
+        def _side_effect(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return _scalar_result(payout)   # payout row (with_for_update)
+            if call_count == 2:
+                return _scalar_result(user)     # user row (with_for_update)
+            # Subsequent calls (notification helpers)
+            r = MagicMock()
+            r.scalar_one_or_none = MagicMock(return_value=None)
+            r.scalar_one         = MagicMock(return_value=None)
+            r.scalars = MagicMock(return_value=MagicMock(all=MagicMock(return_value=[])))
+            return r
+
+        db.execute.side_effect = _side_effect
+        return db
+
+    @pytest.mark.asyncio
+    async def test_cancel_pending_payout_refunds_credits(self, app, worker_headers):
+        """Cancelling a pending payout refunds credits and creates CreditTransactionDB."""
+        from models.db import CreditTransactionDB
+
+        CREDITS = 200
+        payout = _make_payout(status="pending", credits=CREDITS)
+        user   = _make_worker_user(credits=100)
+        db     = self._db_for_cancel(payout, user)
+
+        added_objects: list = []
+        original_add = db.add
+        def _capture_add(obj):
+            added_objects.append(obj)
+            return original_add(obj)
+        db.add = _capture_add
+
+        from core.database import get_db
+        app.dependency_overrides[get_db] = _db_override(db)
+        try:
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as c:
+                r = await c.delete(
+                    f"/v1/payouts/{PAYOUT_ID}",
+                    headers=worker_headers,
+                )
+            assert r.status_code == 204, r.text
+
+            # Credits must be refunded
+            assert user.credits == 100 + CREDITS, (
+                f"Expected user.credits=300, got {user.credits}"
+            )
+
+            # Payout must be marked rejected (cancelled)
+            assert payout.status == "rejected"
+            assert payout.admin_note == "Cancelled by worker"
+
+            # A CreditTransactionDB must have been added
+            credit_txns = [o for o in added_objects if isinstance(o, CreditTransactionDB)]
+            assert len(credit_txns) == 1
+            txn = credit_txns[0]
+            assert txn.amount == CREDITS
+            assert txn.type == "refund"
+
+            db.commit.assert_awaited_once()
+        finally:
+            app.dependency_overrides.pop(get_db, None)
+
+    @pytest.mark.asyncio
+    async def test_cancel_not_found_returns_404(self, app, worker_headers):
+        """Cancelling a payout that does not exist (or belongs to another user) → 404."""
+        db = _make_mock_db()
+        db.execute.return_value = _scalar_result(None)   # not found
+
+        from core.database import get_db
+        app.dependency_overrides[get_db] = _db_override(db)
+        try:
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as c:
+                r = await c.delete(
+                    f"/v1/payouts/{PAYOUT_ID}",
+                    headers=worker_headers,
+                )
+            assert r.status_code == 404, r.text
+            db.commit.assert_not_awaited()
+        finally:
+            app.dependency_overrides.pop(get_db, None)
+
+    @pytest.mark.asyncio
+    async def test_cancel_non_pending_returns_409(self, app, worker_headers):
+        """Cancelling an already-processing payout (race guard) must return 409."""
+        payout = _make_payout(status="processing", credits=100)
+        db     = _make_mock_db()
+        db.execute.return_value = _scalar_result(payout)
+
+        from core.database import get_db
+        app.dependency_overrides[get_db] = _db_override(db)
+        try:
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as c:
+                r = await c.delete(
+                    f"/v1/payouts/{PAYOUT_ID}",
+                    headers=worker_headers,
+                )
+            assert r.status_code == 409, r.text
+            assert "processing" in r.json()["detail"].lower()
+            db.commit.assert_not_awaited()
+        finally:
+            app.dependency_overrides.pop(get_db, None)

@@ -461,10 +461,12 @@ async def cancel_invite(
     await _get_org_and_require_role(org_id, user_id, db, min_role="admin")
 
     result = await db.execute(
-        select(OrgInviteDB).where(
+        select(OrgInviteDB)
+        .where(
             OrgInviteDB.id == invite_id,
             OrgInviteDB.org_id == org_id,
         )
+        .with_for_update()
     )
     invite = result.scalar_one_or_none()
     if not invite:
