@@ -30,23 +30,29 @@ if (Astro.request.method === "POST") {
       await apiFetch<any>(`/v1/tasks/${id}/applications/${appId}/accept`, {
         method: "POST", token,
       });
-    } catch (_) {}
-    return Astro.redirect(`/dashboard/tasks/${id}`);
+      return Astro.redirect(`/dashboard/tasks/${id}`);
+    } catch (e: any) {
+      return Astro.redirect(`/dashboard/tasks/${id}?action_error=${encodeURIComponent(e.message ?? "Failed to accept application")}`);
+    }
   } else if (action === "reject_application") {
     const appId = form.get("app_id") as string;
     try {
       await apiFetch<any>(`/v1/tasks/${id}/applications/${appId}/reject`, {
         method: "POST", token,
       });
-    } catch (_) {}
-    return Astro.redirect(`/dashboard/tasks/${id}`);
+      return Astro.redirect(`/dashboard/tasks/${id}`);
+    } catch (e: any) {
+      return Astro.redirect(`/dashboard/tasks/${id}?action_error=${encodeURIComponent(e.message ?? "Failed to reject application")}`);
+    }
   } else if (action === "withdraw_application") {
     try {
       await apiFetch<any>(`/v1/tasks/${id}/applications`, {
         method: "DELETE", token,
       });
-    } catch (_) {}
-    return Astro.redirect(`/dashboard/tasks/${id}`);
+      return Astro.redirect(`/dashboard/tasks/${id}`);
+    } catch (e: any) {
+      return Astro.redirect(`/dashboard/tasks/${id}?action_error=${encodeURIComponent(e.message ?? "Failed to withdraw application")}`);
+    }
   } else if (action === "assign_team") {
     const teamId = form.get("team_id") as string;
     try {
@@ -54,15 +60,19 @@ if (Astro.request.method === "POST") {
         method: "POST", token,
         body: JSON.stringify({ team_id: teamId }),
       });
-    } catch (_) {}
-    return Astro.redirect(`/dashboard/tasks/${id}`);
+      return Astro.redirect(`/dashboard/tasks/${id}`);
+    } catch (e: any) {
+      return Astro.redirect(`/dashboard/tasks/${id}?action_error=${encodeURIComponent(e.message ?? "Failed to assign team")}`);
+    }
   } else if (action === "remove_team") {
     try {
       await apiFetch<any>(`/v1/tasks/${id}/assign-team`, {
         method: "DELETE", token,
       });
-    } catch (_) {}
-    return Astro.redirect(`/dashboard/tasks/${id}`);
+      return Astro.redirect(`/dashboard/tasks/${id}`);
+    } catch (e: any) {
+      return Astro.redirect(`/dashboard/tasks/${id}?action_error=${encodeURIComponent(e.message ?? "Failed to remove team")}`);
+    }
   } else {
     const assignmentId = form.get("assignment_id") as string;
     const reason = form.get("reason") as string | undefined;
@@ -73,12 +83,15 @@ if (Astro.request.method === "POST") {
         token,
         body: JSON.stringify({ reason: reason || null }),
       });
-    } catch (_) {
-      // Fall through — errors shown on reload
+      return Astro.redirect(`/dashboard/tasks/${id}`);
+    } catch (e: any) {
+      return Astro.redirect(`/dashboard/tasks/${id}?action_error=${encodeURIComponent(e.message ?? "Action failed — please try again")}`);
     }
-    return Astro.redirect(`/dashboard/tasks/${id}`);
   }
 }
+
+// Read action error from redirect (POST handler surfaces errors via query param)
+const actionError = Astro.url.searchParams.get("action_error") ?? "";
 
 let task: any = null;
 let submissions: any[] = [];
@@ -337,9 +350,9 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
       <span class="font-mono">{id?.slice(0, 8)}…</span>
     </div>
 
-    {rerunError && (
+    {(rerunError || actionError) && (
       <div class="bg-red-900/30 border border-red-700/50 rounded-xl px-5 py-3 mb-4 text-red-300 text-sm">
-        ⚠️ Rerun failed: {rerunError}
+        ⚠️ {rerunError ? `Rerun failed: ${rerunError}` : actionError}
       </div>
     )}
 

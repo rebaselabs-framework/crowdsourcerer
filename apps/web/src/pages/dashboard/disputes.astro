@@ -407,7 +407,7 @@ async function submitEvidence(taskId, btn) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.detail ?? "Failed");
     showMsg(msgEl, "✅ Evidence submitted!", "green");
     if (contentEl) contentEl.value = "";
@@ -431,7 +431,7 @@ async function assignMediator(taskId, btn) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ mediator_user_id: mediatorId }),
     });
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.detail ?? "Failed");
     showMsg(msgEl, `✅ Mediator ${data.mediator_email} assigned!`, "green");
     setTimeout(()=>window.location.reload(), 800);

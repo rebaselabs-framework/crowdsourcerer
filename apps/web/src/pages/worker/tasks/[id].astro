@@ -824,10 +824,18 @@ document.getElementById("release-confirm")?.addEventListener("click", async () =
   const confirmBtn = document.getElementById("release-confirm") as HTMLButtonElement | null;
   if (confirmBtn) { confirmBtn.textContent = "Releasing…"; confirmBtn.disabled = true; }
   try {
-    await fetch(`/api/worker/tasks/${taskId}/release`, { method: "DELETE" });
-    window.location.href = "/worker/marketplace";
+    const res = await fetch(`/api/worker/tasks/${taskId}/release`, { method: "DELETE" });
+    if (res.ok || res.status === 204) {
+      window.location.href = "/worker/marketplace";
+    } else {
+      const body = await res.json().catch(() => ({}));
+      releaseModal?.classList.add("hidden");
+      if (releaseErrEl) { releaseErrEl.textContent = body.detail ?? "Failed to release. Please try again."; releaseErrEl.classList.remove("hidden"); }
+      if (confirmBtn) { confirmBtn.textContent = "Release task"; confirmBtn.disabled = false; }
+    }
   } catch {
-    if (releaseErrEl) { releaseErrEl.textContent = "Failed to release. Please try again."; releaseErrEl.classList.remove("hidden"); }
+    releaseModal?.classList.add("hidden");
+    if (releaseErrEl) { releaseErrEl.textContent = "Network error — please try again."; releaseErrEl.classList.remove("hidden"); }
     if (confirmBtn) { confirmBtn.textContent = "Release task"; confirmBtn.disabled = false; }
   }
 });
