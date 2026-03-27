@@ -420,6 +420,18 @@ Also: template-marketplace index.ts had wrong backend URL (`/v1/template-marketp
 
 **Test count**: 1069 (unchanged — no new tests needed for these targeted fixes).
 
+## Session 2026-03-27 (continued) — Critical grading bugs + admin hardening (commits 8454856, e6d81ba)
+
+**Admin API hardening (8454856):**
+- `list_users`: validate `?role=` against {requester,worker,both,admin}; `?plan=` against {free,starter,pro,enterprise}
+- `list_all_tasks`: validate `?status=` against 9 valid task statuses
+- `unban_worker`: raise 400 if `worker.is_banned` is already False (prevents confusing no-op audit entries)
+
+**Skill quiz grading fixed (e6d81ba) — CRITICAL BUG:**
+- `submit_quiz` was calling `random.shuffle(qs_list)` producing a DIFFERENT question order than `get_quiz_questions` returned. `answer[i]` was graded against the wrong question — every quiz was graded completely wrong.
+- Fix: added `question_ids: list[str]` to `SkillQuizSubmitRequest`; frontend now sends the IDs in display order; backend looks up questions by ID instead of relying on array position after shuffle.
+- Legacy fallback: if no `question_ids` provided, sort by ID (deterministic) instead of random.shuffle.
+
 ## Priorities for Next Session 🔜
 
 PHASE: Pre-alpha development. Focus on quality/depth. NOT in scope: launch tasks, marketing, directory listings.
