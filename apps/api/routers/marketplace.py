@@ -341,7 +341,21 @@ async def rate_template(
     if not (1 <= req.rating <= 5):
         raise HTTPException(status_code=400, detail="Rating must be 1–5")
 
-    t = await _get_template(template_id, user_id, db)
+    # Lock the template row before reading rating_sum/rating_count to prevent
+    # concurrent ratings from causing a lost-update on the aggregate counters.
+    uid = UUID(user_id)
+    t_result = await db.execute(
+        select(TaskTemplateDB).where(
+            TaskTemplateDB.id == template_id,
+            or_(
+                TaskTemplateDB.is_public == True,
+                TaskTemplateDB.creator_id == uid,
+            ),
+        ).with_for_update()
+    )
+    t = t_result.scalar_one_or_none()
+    if not t:
+        raise HTTPException(status_code=404, detail="Template not found")
 
     # Check for existing rating
     existing_result = await db.execute(

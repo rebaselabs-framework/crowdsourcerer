@@ -89,7 +89,8 @@ async def create_task(
     if req.org_id:
         from models.db import OrganizationDB, OrgMemberDB
         org_result = await db.execute(
-            select(OrganizationDB).where(OrganizationDB.id == req.org_id)
+            # Lock org row before balance check to prevent concurrent over-spend
+            select(OrganizationDB).where(OrganizationDB.id == req.org_id).with_for_update()
         )
         org = org_result.scalar_one_or_none()
         if not org:
@@ -1940,7 +1941,10 @@ async def _run_task(task_id: str, user_id: str):
                 # Refund the difference so the requester only pays the nominal fee
                 refund_amount = full_cost - CACHE_HIT_FEE_CREDITS
                 if refund_amount > 0:
-                    user_result = await db.execute(select(UserDB).where(UserDB.id == user_id))
+                    user_result = await db.execute(
+                        # Lock user row before crediting refund to prevent lost-update race
+                        select(UserDB).where(UserDB.id == user_id).with_for_update()
+                    )
                     owner = user_result.scalar_one_or_none()
                     if owner:
                         owner.credits += refund_amount
@@ -2185,7 +2189,8 @@ async def rerun_task(
     if original.org_id:
         from models.db import OrganizationDB
         org_result = await db.execute(
-            select(OrganizationDB).where(OrganizationDB.id == original.org_id)
+            # Lock org row before balance check to prevent concurrent over-spend
+            select(OrganizationDB).where(OrganizationDB.id == original.org_id).with_for_update()
         )
         org = org_result.scalar_one_or_none()
         if org and org.credits >= estimated_credits:

@@ -77,13 +77,15 @@ async def update_worker_skill(
     credits_earned: int,
 ) -> None:
     """Upsert the worker_skills row for (worker_id, task_type)."""
+    # Lock the skill row so concurrent approvals/rejections for the same
+    # (worker, task_type) don't race on Python-level counter increments.
     result = await db.execute(
         select(WorkerSkillDB).where(
             and_(
                 WorkerSkillDB.worker_id == worker_id,
                 WorkerSkillDB.task_type == task_type,
             )
-        )
+        ).with_for_update()
     )
     skill = result.scalar_one_or_none()
 
