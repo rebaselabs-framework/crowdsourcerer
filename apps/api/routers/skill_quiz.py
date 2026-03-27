@@ -292,21 +292,22 @@ async def submit_quiz(
     )
     all_qs = {str(q.id): q for q in res.scalars().all()}
 
-    # The client submits answers in the order questions were returned.
-    # We need the question IDs — fetch the most recent quiz session's questions.
-    # Simple approach: just take questions in DB order matching count
-    qs_list = list(all_qs.values())
-    # Use a deterministic sample based on submission
-    n = min(total, len(qs_list))
+    if not all_qs:
+        raise HTTPException(400, "No questions available for this skill category. Please try again later.")
+
+    if payload.question_ids:
+        # Client sent the question IDs in the order they were displayed — use them for
+        # correct positional grading (fixes the re-shuffle misalignment bug).
+        questions_used = [all_qs[qid] for qid in payload.question_ids if qid in all_qs]
+    else:
+        # Legacy fallback: no question_ids provided — use deterministic ordering so
+        # grading matches what the GET endpoint returned (alphabetical by ID).
+        qs_list = sorted(all_qs.values(), key=lambda q: str(q.id))
+        questions_used = qs_list[:total]
+
+    n = len(questions_used)
     if n == 0:
         raise HTTPException(400, "No questions available for this skill category. Please try again later.")
-    # Seed-based: re-sample deterministically (use random with no seed = server picks)
-    # For grading, we need to know WHICH questions were asked.
-    # Better: client sends (question_id, answer) pairs.
-    # For now, trust that the answers array length matches the questions returned.
-    # We'll store question IDs as the first n from the random sample.
-    random.shuffle(qs_list)
-    questions_used = qs_list[:n]
 
     score = 0
     results = []

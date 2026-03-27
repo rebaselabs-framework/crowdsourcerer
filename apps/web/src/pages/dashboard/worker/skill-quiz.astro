@@ -310,7 +310,7 @@ const selectedCategory = categories.find((c: any) => c.category === categoryPara
       const resp = await fetch(`/api/worker/skill-quiz/${CATEGORY}/submit`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ answers }),
+        body: JSON.stringify({ answers, question_ids: QUESTION_IDS }),
         credentials: "include",
       });
       const data = await resp.json();

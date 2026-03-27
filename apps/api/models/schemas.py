@@ -1317,7 +1317,8 @@ class SkillQuizQuestionOut(BaseModel):
 
 
 class SkillQuizSubmitRequest(BaseModel):
-    answers: list[int]  # index of chosen option per question (same order as questions)
+    answers: list[int]        # index of chosen option per question
+    question_ids: list[str] = []  # UUIDs of questions in the same order as answers
 
 
 class SkillQuizResultOut(BaseModel):
