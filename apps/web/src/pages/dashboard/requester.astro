@@ -15,6 +15,7 @@ let overview: any = null;
 let failedTasks: any = null;
 let costs: any = null;
 let quota: any = null;
+let reviewSummary: any = null;
 
 try {
   // Critical: block on user + credits (auth-gating, visible above the fold)
@@ -24,12 +25,13 @@ try {
   ]);
   // Non-critical: analytics/costs/quota — cap at 2s each so slow DB queries
   // don't hold up the whole page. If they timeout, sections render as empty.
-  [overview, , failedTasks, costs, quota] = await Promise.all([
+  [overview, , failedTasks, costs, quota, reviewSummary] = await Promise.all([
     withTimeout(apiFetch<any>("/v1/analytics/overview?days=30", { token }), 2000),
     withTimeout(apiFetch<any>("/v1/tasks?page_size=8", { token }), 2000),
     withTimeout(apiFetch<any>("/v1/tasks?status=failed&page_size=5", { token }), 2000),
     withTimeout(apiFetch<any>("/v1/analytics/costs?months=3", { token }), 2000),
     withTimeout(apiFetch<any>("/v1/quota", { token }), 2000),
+    withTimeout(apiFetch<any>("/v1/tasks/review-summary", { token }), 2000).catch(() => null),
   ]);
 } catch (e) {
   return Astro.redirect("/login");
@@ -45,6 +47,7 @@ const avgMinStr = avgMin != null ? (avgMin < 1 ? `${Math.round(avgMin * 60)}s` :
 const creditsSpent30d = overview?.credits_spent_30d ?? 0;
 const totalCreditsSpent = overview?.total_credits_spent ?? 0;
 const workersUsed = overview?.workers_used ?? 0;
+const pendingReviews = reviewSummary?.pending_count ?? 0;
 
 // Task type breakdown from costs
 const byType: Array<{ type: string; count: number; credits: number }> =
@@ -144,16 +147,19 @@ function fmt(d: string) {
           unique contributors
         </div>
       </div>
-      <!-- Avg completion time -->
-      <div class="bg-gray-900 border border-gray-800 rounded-2xl p-5">
-        <div class="text-xs text-gray-400 mb-1">Avg time</div>
-        <div class="text-2xl font-bold text-teal-300">
-          {avgMinStr ?? "—"}
+      <!-- Pending reviews -->
+      <a href="/dashboard/review" class={`rounded-2xl p-5 transition-colors block ${pendingReviews > 0 ? "bg-amber-900/20 border border-amber-800/50 hover:bg-amber-900/30" : "bg-gray-900 border border-gray-800 hover:border-gray-600"}`}>
+        <div class="flex items-center justify-between mb-1">
+          <div class="text-xs text-gray-400">Pending reviews</div>
+          {pendingReviews > 0 && <span class="text-xs text-amber-400">→ Review</span>}
+        </div>
+        <div class={`text-2xl font-bold ${pendingReviews > 0 ? "text-amber-300" : "text-gray-300"}`}>
+          {pendingReviews}
         </div>
         <div class="text-xs text-gray-500 mt-0.5">
-          per task completion
+          {pendingReviews > 0 ? "worker submissions waiting" : "all submissions reviewed"}
         </div>
-      </div>
+      </a>
     </div>
 
     <div class="grid lg:grid-cols-3 gap-6 mb-6">
@@ -405,6 +411,7 @@ function fmt(d: string) {
         { href: "/dashboard/revenue",      icon: "💰", label: "Revenue",       sub: "Spend & forecast" },
         { href: "/dashboard/tasks",        icon: "📋", label: "All Tasks",    sub: "History" },
         { href: "/dashboard/review",       icon: "✅", label: "Review",       sub: "Submissions" },
+        { href: "/dashboard/scheduled",    icon: "⏰", label: "Scheduled",    sub: "Pending tasks" },
         { href: "/dashboard/webhooks",     icon: "📡", label: "Webhooks",     sub: "Events" },
         { href: "/dashboard/experiments",  icon: "🧪", label: "A/B Tests",   sub: "Experiments" },
         { href: "/dashboard/api-keys",     icon: "🔑", label: "API Keys",     sub: "Manage" },

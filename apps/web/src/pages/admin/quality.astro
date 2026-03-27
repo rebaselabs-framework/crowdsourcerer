@@ -40,11 +40,6 @@ function accuracyColor(pct: number): string {
   if (pct < 60) return "text-amber-400";
   return "text-yellow-300";
 }
-function accuracyBg(pct: number): string {
-  if (pct < 40) return "bg-red-900/40 border-red-800";
-  if (pct < 60) return "bg-amber-900/30 border-amber-800";
-  return "bg-yellow-900/20 border-yellow-800";
-}
 ---
 
 <Layout title="Quality Monitoring — Admin">
