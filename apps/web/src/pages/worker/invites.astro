@@ -138,6 +138,10 @@ const statusIcon: Record<string, string> = {
       const statusEl = document.getElementById(`invite-${inviteId}-status`)!;
       const card     = document.getElementById(`invite-${inviteId}`)!;
 
+      // Disable action buttons to prevent double-submission
+      const actionBtns = card.querySelectorAll<HTMLButtonElement>("button");
+      actionBtns.forEach(btn => { btn.disabled = true; });
+
       statusEl.textContent = action === "accept" ? "Processing…" : "Declining…";
       statusEl.className = "text-sm mt-2 text-center text-gray-500";
       statusEl.classList.remove("hidden");
@@ -153,6 +157,8 @@ const statusIcon: Record<string, string> = {
         if (!res.ok) {
           statusEl.textContent = data.detail ?? "Something went wrong";
           statusEl.className = "text-sm mt-2 text-center text-red-600";
+          // Re-enable buttons so the worker can retry
+          actionBtns.forEach(btn => { btn.disabled = false; });
           return;
         }
 
@@ -168,6 +174,7 @@ const statusIcon: Record<string, string> = {
       } catch {
         statusEl.textContent = "Network error. Please try again.";
         statusEl.className = "text-sm mt-2 text-center text-red-600";
+        actionBtns.forEach(btn => { btn.disabled = false; });
       }
     }
     (window as any).respondToInvite = respondToInvite;

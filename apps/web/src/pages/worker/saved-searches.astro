@@ -268,20 +268,46 @@ function filtersToLabel(filters: Record<string, any>): string {
 
   // ── Toggle alert ───────────────────────────────────────────────────────────
   window.__toggleAlert = async function(id, enabled) {
-    await fetch("/api/worker/saved-searches/" + id, {
+    var res = await fetch("/api/worker/saved-searches/" + id, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ alert_enabled: enabled }),
-    });
+    }).catch(function() { return null; });
+    if (!res || !res.ok) {
+      // Revert checkbox to previous state
+      var card = document.querySelector("[data-search-id=\"" + id + "\"]");
+      if (card) {
+        var cb = card.querySelector("input[type=\"checkbox\"]");
+        if (cb) cb.checked = !enabled;
+        var err = document.createElement("span");
+        err.className = "text-xs text-red-400 ml-2";
+        err.textContent = "⚠ Save failed";
+        cb && cb.parentNode && cb.parentNode.appendChild(err);
+        setTimeout(function() { err.remove(); }, 3000);
+      }
+    }
   };
 
   // ── Update frequency ───────────────────────────────────────────────────────
   window.__updateFrequency = async function(id, frequency) {
-    await fetch("/api/worker/saved-searches/" + id, {
+    var res = await fetch("/api/worker/saved-searches/" + id, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ alert_frequency: frequency }),
-    });
+    }).catch(function() { return null; });
+    if (!res || !res.ok) {
+      var card = document.querySelector("[data-search-id=\"" + id + "\"]");
+      if (card) {
+        var sel = card.querySelector("select");
+        if (sel) {
+          var err = document.createElement("span");
+          err.className = "text-xs text-red-400 ml-1";
+          err.textContent = "⚠ Save failed";
+          sel.parentNode && sel.parentNode.appendChild(err);
+          setTimeout(function() { err.remove(); }, 3000);
+        }
+      }
+    }
   };
 
   // ── Delete (two-step confirm — replaces confirm()) ─────────────────────────

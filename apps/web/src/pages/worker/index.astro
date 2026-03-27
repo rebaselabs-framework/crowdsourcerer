@@ -784,6 +784,9 @@ const noSkills = Array.isArray(profileStatus?.missing) &&
     btn.addEventListener("click", async () => {
       const status = (btn as HTMLElement).dataset.status;
       if (!status) return;
+      // Disable all availability buttons while saving
+      const allBtns = document.querySelectorAll<HTMLButtonElement>(".availability-btn");
+      allBtns.forEach(b => { b.disabled = true; });
       try {
         const res = await fetch("/api/worker/availability", {
           method: "PATCH",
@@ -792,7 +795,7 @@ const noSkills = Array.isArray(profileStatus?.missing) &&
         });
         if (res.ok) {
           // Update button styles
-          document.querySelectorAll(".availability-btn").forEach(b => {
+          allBtns.forEach(b => {
             const s = (b as HTMLElement).dataset.status;
             b.className = b.className.replace(
               /bg-\w+-\d+\/\d+ text-\w+-\d+ border-\w+-\d+/g, ""
@@ -815,8 +818,23 @@ const noSkills = Array.isArray(profileStatus?.missing) &&
                 "bg-gray-800", "text-gray-400", "border-gray-600");
             }
           });
+        } else {
+          const errData = await res.json().catch(() => ({}));
+          const t = document.createElement("div");
+          t.className = "fixed bottom-4 right-4 px-4 py-2 rounded-lg text-white text-sm z-50 bg-red-600";
+          t.textContent = (errData as any).detail ?? "Failed to update availability";
+          document.body.appendChild(t);
+          setTimeout(() => t.remove(), 4000);
         }
-      } catch { /* ignore */ }
+      } catch {
+        const t = document.createElement("div");
+        t.className = "fixed bottom-4 right-4 px-4 py-2 rounded-lg text-white text-sm z-50 bg-red-600";
+        t.textContent = "Network error — could not update availability";
+        document.body.appendChild(t);
+        setTimeout(() => t.remove(), 4000);
+      } finally {
+        allBtns.forEach(b => { b.disabled = false; });
+      }
     });
   });
 

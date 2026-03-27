@@ -387,10 +387,20 @@ document.querySelectorAll<HTMLButtonElement>(".unban-btn").forEach(btn => {
     }
     btn.dataset.pending = "";
     const workerId = btn.getAttribute("data-worker-id")!;
+    const origText = btn.textContent!;
     btn.disabled = true;
     btn.textContent = "Unbanning…";
-    await fetch(`/api/admin/reputation/workers/${workerId}/unban`, { method: "POST" });
-    location.reload();
+    btn.classList.remove("text-orange-400");
+    try {
+      const res = await fetch(`/api/admin/reputation/workers/${workerId}/unban`, { method: "POST" });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? "Failed");
+      toast("Worker unbanned");
+      location.reload();
+    } catch (e: any) {
+      toast(e.message ?? "Failed to unban worker", false);
+      btn.disabled = false;
+      btn.textContent = origText;
+    }
   });
 });
 
@@ -417,7 +427,8 @@ document.getElementById("recalcBtn")!.addEventListener("click", async () => {
   btn.classList.remove("!text-red-400");
   try {
     const res = await fetch("/api/admin/reputation/recalculate", { method: "POST" });
-    const data = await res.json();
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? "Failed");
+    const data = await res.json().catch(() => ({}));
     toast(data.message || "Reputation scores recalculated");
     setTimeout(() => location.reload(), 1200);
   } catch {
