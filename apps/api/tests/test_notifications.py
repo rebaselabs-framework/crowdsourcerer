@@ -95,6 +95,7 @@ def _make_db() -> MagicMock:
     db          = MagicMock()
     db.add      = MagicMock()
     db.execute  = AsyncMock()
+    db.scalar   = AsyncMock()   # used by list_notifications + get_unread_count
     db.commit   = AsyncMock()
     db.delete   = AsyncMock()
 
@@ -157,20 +158,15 @@ async def test_list_notifications_happy_path():
 
     notif = _make_notification(notif_id=NOTIF_ID, is_read=False)
     db = _make_db()
-    call_num = [0]
+    scalar_call = [0]
 
-    def _side_effect(stmt):
-        call_num[0] += 1
-        if call_num[0] == 1:
-            # total count
-            return _scalar_result(1)
-        if call_num[0] == 2:
-            # unread count
-            return _scalar_result(1)
-        # items
-        return _scalars_result([notif])
+    def _scalar_side(stmt):
+        scalar_call[0] += 1
+        # call 1 = total, call 2 = unread_count
+        return 1
 
-    db.execute.side_effect = _side_effect
+    db.scalar.side_effect = _scalar_side
+    db.execute.return_value = _scalars_result([notif])
     app.dependency_overrides[get_db] = _db_override(db)
 
     try:
@@ -197,15 +193,8 @@ async def test_list_notifications_unread_only():
     from core.database import get_db
 
     db = _make_db()
-    call_num = [0]
-
-    def _side_effect(stmt):
-        call_num[0] += 1
-        if call_num[0] <= 2:
-            return _scalar_result(0)
-        return _scalars_result([])
-
-    db.execute.side_effect = _side_effect
+    db.scalar.return_value = 0      # total=0, unread_count=0 (both scalar calls)
+    db.execute.return_value = _scalars_result([])
     app.dependency_overrides[get_db] = _db_override(db)
 
     try:
@@ -230,7 +219,7 @@ async def test_get_unread_count():
     from core.database import get_db
 
     db = _make_db()
-    db.execute.return_value = _scalar_result(7)
+    db.scalar.return_value = 7      # get_unread_count now calls db.scalar()
     app.dependency_overrides[get_db] = _db_override(db)
 
     try:
