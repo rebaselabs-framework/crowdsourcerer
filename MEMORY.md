@@ -602,6 +602,31 @@ Key fixes:
 
 **Test count: 1078 → 1081**
 
+## Session 2026-03-27 (continued) — Race conditions, SSR errors, LIKE escaping (commits 88d3f19–655ff7f)
+
+**SSR action error propagation (commits 88d3f19, 3dc8b79):**
+All Astro SSR POST handlers that were silently swallowing API errors now redirect with `?action_error=<msg>` so users see what went wrong:
+- `review.astro`: approve/reject now surfaces error via toast (reads `action_error` from redirect URL); also fixed `res.ok` check order
+- `tasks/[id]/index.astro`: all 5 form-based actions (accept/reject application, withdraw, assign/remove team, approve/reject submission); added `actionError` banner alongside `rerunError`
+- `disputes.astro`: added `.catch(() => ({}))` to both `.json()` calls (evidence submit + mediator assign) to prevent unhandled parse errors on non-JSON responses
+- `worker/tasks/[id].astro`: release-confirm handler lacked `res.ok` check — was navigating to marketplace even on API error
+- `pipelines.astro`: create/delete/run all propagate errors via `?action_error=`; run success now redirects to `?id=<pipeline>` for detail reload
+- `worker/onboarding.astro`: skip action propagates error; `complete_step` silent (correct — state visible on reload)
+- `requester-onboarding.astro`: reset action propagates error; complete_step/skip_step silent
+
+**Race conditions fixed (commits b4ed568, dd453a1):**
+- `pipelines.py _execute_pipeline_run`: user row fetch for per-step credit charge lacked `.with_for_update()` — concurrent steps could overspend
+- `worker_marketplace.py respond_to_invite`: `WorkerInviteDB` SELECT lacked `.with_for_update()` — concurrent accept+decline race
+- `worker_teams.py decline_invite`: `WorkerTeamInviteDB` SELECT lacked `.with_for_update()` (accept_invite already had it; decline didn't)
+- `test_race_conditions.py`: added `TestRespondToInviteRaceGuard` (2 tests) and `TestDeclineTeamInviteRaceGuard` (1 test)
+
+**LIKE wildcard escaping (commit 655ff7f):**
+- User input with `%` or `_` was interpreted as SQL wildcards in 17 ILIKE/LIKE calls across search.py, global_search.py, tasks.py
+- Added `_esc_like()` helper to all 3 files; all callers now also pass `escape="\\"` so PostgreSQL interprets escaped sequences correctly
+- Correctness fix: searching for "50%" now finds literal "50%" instead of "50" + anything
+
+**Test count: 1081 → 1084**
+
 ## Priorities for Next Session 🔜
 
 PHASE: Pre-alpha development. Focus on quality/depth. NOT in scope: launch tasks, marketing, directory listings.
