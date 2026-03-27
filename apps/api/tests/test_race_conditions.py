@@ -549,3 +549,133 @@ class TestCancelPayoutRequest:
             db.commit.assert_not_awaited()
         finally:
             app.dependency_overrides.pop(get_db, None)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# respond_to_invite tests — POST /v1/worker/invites/{invite_id}/respond
+# ═══════════════════════════════════════════════════════════════════════════════
+
+INVITE_ID      = str(uuid.uuid4())
+TEAM_INVITE_ID = str(uuid.uuid4())
+
+
+class TestRespondToInviteRaceGuard:
+    """respond_to_invite: already-responded invite → 400 (status guard)."""
+
+    @pytest.fixture
+    def worker_headers(self):
+        return {"Authorization": f"Bearer {_real_token(WORKER_ID)}"}
+
+    @pytest.mark.asyncio
+    async def test_respond_already_accepted_returns_400(self, app, worker_headers):
+        """Simulates a race where the invite was already accepted — returns 400, no commit."""
+        invite = MagicMock()
+        invite.id        = uuid.UUID(INVITE_ID)
+        invite.worker_id = uuid.UUID(WORKER_ID)
+        invite.status    = "accepted"  # race won by another request
+
+        db = _make_mock_db()
+        db.execute.return_value = _scalar_result(invite)
+
+        from core.database import get_db
+        app.dependency_overrides[get_db] = _db_override(db)
+        try:
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as c:
+                r = await c.post(
+                    f"/v1/worker/invites/{INVITE_ID}/respond",
+                    json={"action": "decline"},
+                    headers=worker_headers,
+                )
+            assert r.status_code == 400, r.text
+            assert "accepted" in r.json()["detail"].lower()
+            db.commit.assert_not_awaited()
+        finally:
+            app.dependency_overrides.pop(get_db, None)
+
+    @pytest.mark.asyncio
+    async def test_respond_already_declined_returns_400(self, app, worker_headers):
+        """Invite already declined (e.g. clicked twice) → 400."""
+        invite = MagicMock()
+        invite.id        = uuid.UUID(INVITE_ID)
+        invite.worker_id = uuid.UUID(WORKER_ID)
+        invite.status    = "declined"
+
+        db = _make_mock_db()
+        db.execute.return_value = _scalar_result(invite)
+
+        from core.database import get_db
+        app.dependency_overrides[get_db] = _db_override(db)
+        try:
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as c:
+                r = await c.post(
+                    f"/v1/worker/invites/{INVITE_ID}/respond",
+                    json={"action": "accept"},
+                    headers=worker_headers,
+                )
+            assert r.status_code == 400, r.text
+            assert "declined" in r.json()["detail"].lower()
+            db.commit.assert_not_awaited()
+        finally:
+            app.dependency_overrides.pop(get_db, None)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# decline_invite tests — POST /v1/worker-teams/invites/{team_invite_id}/decline
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestDeclineTeamInviteRaceGuard:
+    """decline_invite: already-accepted team invite → 400 (status guard)."""
+
+    @pytest.fixture
+    def worker_headers(self):
+        return {"Authorization": f"Bearer {_real_token(WORKER_ID)}"}
+
+    def _db_for_decline(self, invite: MagicMock) -> MagicMock:
+        """call 1 = _require_worker (UserDB), call 2 = invite fetch."""
+        db = _make_mock_db()
+        call_count = 0
+
+        def _side_effect(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                worker = MagicMock()
+                worker.id   = uuid.UUID(WORKER_ID)
+                worker.role = "worker"
+                return _scalar_result(worker)
+            if call_count == 2:
+                return _scalar_result(invite)
+            return _scalar_result(None)
+
+        db.execute.side_effect = _side_effect
+        return db
+
+    @pytest.mark.asyncio
+    async def test_decline_already_accepted_returns_400(self, app, worker_headers):
+        """Team invite already accepted (race) → 400, no commit."""
+        invite = MagicMock()
+        invite.id          = uuid.UUID(TEAM_INVITE_ID)
+        invite.invitee_id  = uuid.UUID(WORKER_ID)
+        invite.status      = "accepted"  # accepted by another concurrent request
+
+        db = self._db_for_decline(invite)
+
+        from core.database import get_db
+        app.dependency_overrides[get_db] = _db_override(db)
+        try:
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as c:
+                r = await c.post(
+                    f"/v1/worker-teams/invites/{TEAM_INVITE_ID}/decline",
+                    headers=worker_headers,
+                )
+            assert r.status_code == 400, r.text
+            assert "accepted" in r.json()["detail"].lower()
+            db.commit.assert_not_awaited()
+        finally:
+            app.dependency_overrides.pop(get_db, None)
