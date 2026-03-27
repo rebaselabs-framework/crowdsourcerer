@@ -22,12 +22,18 @@ if (Astro.request.method === "POST") {
         token,
         body: JSON.stringify({ name, description: description || null, steps }),
       });
-    } catch (_) {}
+      return Astro.redirect("/dashboard/pipelines");
+    } catch (e: any) {
+      return Astro.redirect(`/dashboard/pipelines?action_error=${encodeURIComponent(e.message ?? "Failed to create pipeline")}`);
+    }
   } else if (action === "delete") {
     const pipelineId = form.get("pipeline_id") as string;
     try {
       await apiFetch(`/v1/pipelines/${pipelineId}`, { method: "DELETE", token });
-    } catch (_) {}
+      return Astro.redirect("/dashboard/pipelines");
+    } catch (e: any) {
+      return Astro.redirect(`/dashboard/pipelines?action_error=${encodeURIComponent(e.message ?? "Failed to delete pipeline")}`);
+    }
   } else if (action === "run") {
     const pipelineId = form.get("pipeline_id") as string;
     const inputJson = form.get("input_json") as string;
@@ -38,13 +44,17 @@ if (Astro.request.method === "POST") {
         token,
         body: JSON.stringify({ input }),
       });
-    } catch (_) {}
+      return Astro.redirect(`/dashboard/pipelines?id=${pipelineId}`);
+    } catch (e: any) {
+      return Astro.redirect(`/dashboard/pipelines?id=${pipelineId}&action_error=${encodeURIComponent(e.message ?? "Failed to start pipeline run")}`);
+    }
   }
   return Astro.redirect("/dashboard/pipelines");
 }
 
 const page = Number(Astro.url.searchParams.get("page") ?? 1);
 const selectedId = Astro.url.searchParams.get("id");
+const actionError = Astro.url.searchParams.get("action_error") ?? "";
 
 let pipelinesData: any = { items: [], total: 0 };
 let pipelineDetail: any = null;
@@ -96,8 +106,10 @@ function statusBadge(status: string) {
       </button>
     </div>
 
-    {error && (
-      <div class="bg-red-950/30 border border-red-800 text-red-300 px-4 py-3 rounded-lg mb-6">{error}</div>
+    {(error || actionError) && (
+      <div class="bg-red-950/30 border border-red-800 text-red-300 px-4 py-3 rounded-lg mb-6">
+        {error ?? actionError}
+      </div>
     )}
 
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">

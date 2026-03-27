@@ -13,18 +13,25 @@ if (Astro.request.method === "POST") {
   const form = await Astro.request.formData();
   const action = form.get("action") as string;
 
-  try {
-    if (action === "skip") {
+  if (action === "skip") {
+    try {
       await apiFetch("/v1/onboarding/skip", { method: "POST", token });
       return Astro.redirect("/worker");
-    } else if (action === "complete_step") {
-      const step = form.get("step") as string;
-      await apiFetch(`/v1/onboarding/steps/${step}/complete`, { method: "POST", token });
+    } catch (e: any) {
+      return Astro.redirect(`/worker/onboarding?action_error=${encodeURIComponent(e.message ?? "Failed to skip onboarding")}`);
     }
-  } catch (_) {}
+  } else if (action === "complete_step") {
+    const step = form.get("step") as string;
+    try {
+      await apiFetch(`/v1/onboarding/steps/${step}/complete`, { method: "POST", token });
+    } catch (_) {
+      // Step stays incomplete on page refresh — no additional feedback needed
+    }
+  }
   return Astro.redirect("/worker/onboarding");
 }
 
+const actionError = Astro.url.searchParams.get("action_error") ?? "";
 let progress: any = null;
 let error: string | null = null;
 
@@ -91,6 +98,9 @@ const stepDetails: Record<string, { icon: string; title: string; desc: string; a
       ) : null}
     </div>
 
+    {actionError && (
+      <div class="bg-red-900/30 border border-red-800 text-red-300 p-4 rounded-lg mb-4">⚠️ {actionError}</div>
+    )}
     {error ? (
       <div class="bg-red-900/30 border border-red-800 text-red-300 p-4 rounded-lg">{error}</div>
     ) : progress && (
