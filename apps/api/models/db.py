@@ -292,6 +292,10 @@ class TaskAssignmentDB(Base):
     released_at = Column(DateTime(timezone=True), nullable=True)
     timeout_at = Column(DateTime(timezone=True), nullable=True)  # When the claim expires
 
+    # Optional feedback from the requester when they approve/reject the submission
+    requester_note = Column(Text, nullable=True)
+    reviewed_at    = Column(DateTime(timezone=True), nullable=True)
+
     task = relationship("TaskDB", back_populates="assignments", foreign_keys=[task_id])
     worker = relationship("UserDB", back_populates="assignments", foreign_keys=[worker_id])
 

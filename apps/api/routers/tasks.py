@@ -1219,6 +1219,8 @@ async def approve_submission(
         )
 
     assignment.status = "approved"
+    assignment.requester_note = req.reason or None
+    assignment.reviewed_at = datetime.now(timezone.utc)
 
     # Update worker skill profile
     try:
@@ -1246,12 +1248,13 @@ async def approve_submission(
     # In-app notification to worker
     try:
         from core.notify import create_notification, NotifType
+        _note_suffix = f" Note: {req.reason}" if req.reason else ""
         await create_notification(
             db, assignment.worker_id,
             NotifType.SUBMISSION_APPROVED,
             "Submission approved! 🎉",
             f"Your {task.type.replace('_', ' ')} submission was approved. "
-            f"You earned {assignment.earnings_credits} credits and {assignment.xp_earned} XP.",
+            f"You earned {assignment.earnings_credits} credits and {assignment.xp_earned} XP.{_note_suffix}",
             link="/worker/earnings",
         )
     except Exception:
@@ -1376,6 +1379,8 @@ async def reject_submission(
         )
 
     assignment.status = "rejected"
+    assignment.requester_note = req.reason or None
+    assignment.reviewed_at = datetime.now(timezone.utc)
 
     # Update worker skill profile
     try:
@@ -1427,12 +1432,15 @@ async def reject_submission(
     # In-app notification to worker
     try:
         from core.notify import create_notification, NotifType
+        _reject_note = (
+            f" Requester note: {req.reason}" if req.reason
+            else " Check the task guidelines and try again."
+        )
         await create_notification(
             db, assignment.worker_id,
             NotifType.SUBMISSION_REJECTED,
             "Submission rejected",
-            f"Your {task.type.replace('_', ' ')} submission was not accepted. "
-            "Check the task guidelines and try again.",
+            f"Your {task.type.replace('_', ' ')} submission was not accepted.{_reject_note}",
             link="/worker/marketplace",
         )
     except Exception:

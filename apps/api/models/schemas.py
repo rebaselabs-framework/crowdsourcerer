@@ -348,6 +348,8 @@ class TaskAssignmentOut(BaseModel):
     submitted_at: Optional[datetime] = None
     released_at: Optional[datetime] = None
     timeout_at: Optional[datetime] = None
+    requester_note: Optional[str] = None
+    reviewed_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
 
@@ -510,12 +512,14 @@ class SubmissionOut(BaseModel):
     xp_earned: int
     claimed_at: datetime
     submitted_at: Optional[datetime] = None
+    requester_note: Optional[str] = None
+    reviewed_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
 
 
 class SubmissionReviewRequest(BaseModel):
-    reason: Optional[str] = None  # Optional rejection reason or approval note
+    reason: Optional[str] = None  # Optional feedback/note from requester (stored as requester_note)
 
 
 class SubmissionReviewResponse(BaseModel):
