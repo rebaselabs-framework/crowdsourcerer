@@ -777,23 +777,23 @@ async def list_task_tags(
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(require_scope(SCOPE_TASKS_READ)),
 ):
-    """Return all unique tags used by this user's tasks with usage counts."""
-    from sqlalchemy import cast, String, func as sqlfunc
-    from sqlalchemy.dialects.postgresql import JSONB
-    # PostgreSQL: unnest JSON array of tags, group + count
+    """Return the top 200 unique tags used by this user's tasks with usage counts."""
+    # Cap rows fetched to limit memory: we sample the 5 000 most-recently tagged
+    # tasks rather than pulling every task the user ever created.
     result = await db.execute(
-        select(TaskDB.tags, TaskDB.id).where(
+        select(TaskDB.tags).where(
             TaskDB.user_id == user_id,
             TaskDB.tags.isnot(None),
-        )
+        ).order_by(TaskDB.created_at.desc()).limit(5_000)
     )
-    rows = result.all()
+    rows = result.scalars().all()
     tag_counts: dict[str, int] = {}
-    for row in rows:
-        tags_list = row[0] or []
-        for tag in tags_list:
+    for tags_list in rows:
+        for tag in (tags_list or []):
             tag_counts[tag] = tag_counts.get(tag, 0) + 1
-    return [TagStats(tag=t, count=c) for t, c in sorted(tag_counts.items(), key=lambda x: -x[1])]
+    # Return top 200 tags by frequency to keep response size bounded.
+    sorted_tags = sorted(tag_counts.items(), key=lambda x: -x[1])[:200]
+    return [TagStats(tag=t, count=c) for t, c in sorted_tags]
 
 
 @router.get("", response_model=PaginatedTasks)

@@ -760,10 +760,24 @@ async def get_marketplace_task(
     if not user or user.role not in ("worker", "both"):
         raise HTTPException(status_code=403, detail="Not enrolled as a worker.")
 
+    # Allow viewing open marketplace tasks OR tasks this worker has already claimed
+    # (so they can see task details while filling in their submission).
+    # Without this, a worker could enumerate any task ID and read the full input/output
+    # of tasks they have no relationship with — an IDOR vulnerability.
     result = await db.execute(
         select(TaskDB).where(
             TaskDB.id == task_id,
             TaskDB.execution_mode == "human",
+            or_(
+                TaskDB.status == "open",
+                TaskDB.id.in_(
+                    select(TaskAssignmentDB.task_id).where(
+                        TaskAssignmentDB.task_id == task_id,
+                        TaskAssignmentDB.worker_id == user_id,
+                        TaskAssignmentDB.status.in_(["active", "submitted"]),
+                    )
+                ),
+            ),
         )
     )
     task = result.scalar_one_or_none()

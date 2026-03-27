@@ -392,9 +392,10 @@ async def fire_webhook_trigger(
         await db.commit()
         logger.info("trigger.webhook_fired", trigger_id=str(trigger.id), run_id=summary.get("run_id"))
         return {"triggered": True, "run_id": summary.get("run_id")}
-    except Exception as exc:
+    except Exception:
         logger.exception("trigger.webhook_error", trigger_id=str(trigger.id))
-        raise HTTPException(status_code=500, detail=f"Trigger execution failed: {exc}")
+        # Do not leak internal exception details to the caller (info-leakage risk).
+        raise HTTPException(status_code=500, detail="Pipeline execution failed. Check server logs.")
 
 
 # ─── Manual fire ─────────────────────────────────────────────────────────────
@@ -419,9 +420,10 @@ async def manually_fire_trigger(
         summary = await _fire_trigger(trigger, db)
         await db.commit()
         return {"triggered": True, "run_id": summary.get("run_id")}
-    except Exception as exc:
+    except Exception:
         logger.exception("trigger.manual_fire_error", trigger_id=str(trigger_id))
-        raise HTTPException(status_code=500, detail=f"Trigger execution failed: {exc}")
+        # Do not leak internal exception details to the caller (info-leakage risk).
+        raise HTTPException(status_code=500, detail="Pipeline execution failed. Check server logs.")
 
 
 # ─── Background scheduler (called from sweeper) ───────────────────────────────
