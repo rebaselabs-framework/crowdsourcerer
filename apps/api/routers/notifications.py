@@ -28,25 +28,25 @@ async def list_notifications(
     db: AsyncSession = Depends(get_db),
 ):
     """Return paginated notifications for the authenticated user."""
-    base = select(NotificationDB).where(NotificationDB.user_id == user_id)
+    base_where = [NotificationDB.user_id == user_id]
     if unread_only:
-        base = base.where(NotificationDB.is_read == False)  # noqa: E712
+        base_where.append(NotificationDB.is_read == False)  # noqa: E712
 
-    total_q = await db.execute(select(func.count()).select_from(base.subquery()))
-    total = total_q.scalar_one()
-
-    unread_q = await db.execute(
-        select(func.count()).select_from(
-            select(NotificationDB)
-            .where(NotificationDB.user_id == user_id)
-            .where(NotificationDB.is_read == False)  # noqa: E712
-            .subquery()
+    # Two scalar aggregates + one data fetch — simpler than subquery wrappers
+    total = (await db.scalar(select(func.count()).where(*base_where))) or 0
+    unread_count = (await db.scalar(
+        select(func.count()).where(
+            NotificationDB.user_id == user_id,
+            NotificationDB.is_read == False,  # noqa: E712
         )
-    )
-    unread_count = unread_q.scalar_one()
+    )) or 0
 
     rows_q = await db.execute(
-        base.order_by(NotificationDB.created_at.desc()).limit(limit).offset(offset)
+        select(NotificationDB)
+        .where(*base_where)
+        .order_by(NotificationDB.created_at.desc())
+        .limit(limit)
+        .offset(offset)
     )
     items = rows_q.scalars().all()
 
@@ -63,15 +63,13 @@ async def get_unread_count(
     db: AsyncSession = Depends(get_db),
 ):
     """Return just the unread notification count (lightweight for nav badge)."""
-    result = await db.execute(
-        select(func.count()).select_from(
-            select(NotificationDB)
-            .where(NotificationDB.user_id == user_id)
-            .where(NotificationDB.is_read == False)  # noqa: E712
-            .subquery()
+    count = (await db.scalar(
+        select(func.count()).where(
+            NotificationDB.user_id == user_id,
+            NotificationDB.is_read == False,  # noqa: E712
         )
-    )
-    return UnreadCountOut(unread_count=result.scalar_one())
+    )) or 0
+    return UnreadCountOut(unread_count=count)
 
 
 @router.post("/{notification_id}/read", response_model=NotificationOut)
