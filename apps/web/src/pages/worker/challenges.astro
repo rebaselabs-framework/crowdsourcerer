@@ -200,11 +200,30 @@ const TASK_TYPE_ICONS: Record<string, string> = {
     try {
       const res = await fetch("/api/challenges/claim", { method: "POST" });
       if (res.ok) {
-        window.location.reload();
+        // Update DOM in place — no page reload needed
+        // 1. Replace the CTA button area with "claimed" state
+        const ctaContainer = btn.parentElement;
+        if (ctaContainer) {
+          const claimed = document.createElement("div");
+          claimed.className = "flex items-center gap-3 text-emerald-400 font-semibold";
+          claimed.innerHTML = '<span class="text-2xl">✅</span><span>Challenge complete! Bonus claimed for today.</span>';
+          ctaContainer.replaceWith(claimed);
+        }
+        // 2. Update the progress bar to emerald (claimed colour)
+        const progressBar = document.querySelector<HTMLElement>(".h-full.rounded-full");
+        if (progressBar) {
+          progressBar.className = "h-full rounded-full transition-all bg-gradient-to-r from-emerald-600 to-emerald-400";
+          progressBar.style.width = "100%";
+        }
+        // 3. Update the card border to reflect completion
+        const card = document.querySelector<HTMLElement>("[class*='from-amber-900']");
+        if (card) {
+          card.className = card.className.replace("border-amber-600/60", "border-emerald-600/60");
+        }
       } else {
         const body = await res.json().catch(() => ({}));
         if (msg) {
-          msg.textContent = body.detail ?? "Failed to claim. Try again.";
+          msg.textContent = (body as any).detail ?? "Failed to claim. Try again.";
           msg.classList.remove("hidden");
         }
         if (btn) {

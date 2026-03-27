@@ -307,7 +307,10 @@ function filtersToLabel(filters: Record<string, any>): string {
       var card = document.querySelector("[data-search-id=\"" + id + "\"]");
       if (card) card.parentNode.removeChild(card);
       var list = document.getElementById("searches-list");
-      if (list && list.children.length === 0) window.location.reload();
+      if (list && list.children.length === 0) {
+        // Replace list with empty state — no reload needed
+        list.outerHTML = '<div class="rounded-xl bg-gray-900 border border-gray-800 p-12 text-center"><div class="text-5xl mb-4">🔍</div><h2 class="text-lg font-semibold mb-2">No saved searches yet</h2><p class="text-gray-400 text-sm mb-6">Browse the marketplace, apply filters, then click <strong>"Save this search"</strong> to get instant notifications when matching tasks appear.</p><a href="/marketplace" class="px-5 py-2.5 bg-violet-700 hover:bg-violet-600 text-white text-sm font-semibold rounded-xl transition-colors">Browse marketplace</a></div>';
+      }
     } else {
       btn.disabled = false;
       btn.textContent = "🗑️";
