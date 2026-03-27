@@ -566,6 +566,18 @@ Key fixes:
 
 **Test count: 356 → 363**
 
+## Session 2026-03-27 (continued) — Silent failure fixes + targeted DOM updates (commits 52b6593, a898ce0)
+
+**Silent failure + missing error handling fixes (52b6593):**
+- `admin/reputation.astro`: unban had NO try/catch — failures were silent; added try/catch with error toast + button restore; recalculate now checks `res.ok` before parsing JSON
+- `worker/saved-searches.astro`: `__toggleAlert` + `__updateFrequency` both had no `res.ok` check; now revert checkbox/select + show inline "⚠ Save failed" on error
+- `worker/invites.astro`: `respondToInvite` now disables all buttons in the card before the async call, re-enables on any error path (prevents double-submit + leaves UI in correct state)
+- `worker/index.astro`: availability toggle — disable all `.availability-btn` during fetch, error toast on `!res.ok` or network error, re-enable in `finally`; replaced silent `catch { /* ignore */ }`
+
+**Targeted DOM updates + event delegation (a898ce0):**
+- `admin/workers.astro`: replaced per-button `querySelectorAll` + `addEventListener` with single `<tbody>` click listener (event delegation handles dynamically-swapped buttons); ban success → row bg `bg-red-950/10`, status cell "Banned" badge, Ban→Unban swap — no reload; strike success → update strikes cell with `data.total_strikes` — no reload; unban success → clear row bg, status cell "Active" badge, Unban→Ban swap — no reload; column constants `COL_STRIKES=4`, `COL_STATUS=5`, `COL_ACTIONS=7`
+- `worker/portfolio.astro`: pin form submit shows "Pinning…" + disabled while in-flight; restores button text + re-enables on error so user can retry
+
 ## Priorities for Next Session 🔜
 
 PHASE: Pre-alpha development. Focus on quality/depth. NOT in scope: launch tasks, marketing, directory listings.
