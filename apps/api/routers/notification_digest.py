@@ -175,7 +175,7 @@ async def send_test_digest(
         .join(UserDB, UserDB.id == TaskAssignmentDB.worker_id)
         .where(
             TaskDB.user_id == user_id,
-            TaskAssignmentDB.created_at >= week_ago,
+            TaskAssignmentDB.claimed_at >= week_ago,
         )
         .group_by(UserDB.id, UserDB.name, UserDB.email)
         .order_by(func.count(TaskAssignmentDB.id).desc())

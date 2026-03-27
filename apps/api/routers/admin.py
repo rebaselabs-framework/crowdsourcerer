@@ -808,7 +808,7 @@ async def trigger_weekly_digest(
     # tasks completed this week, grouped by requester
     tcomp_res = await db.execute(
         select(TaskDB.user_id, sqlfunc.count(TaskDB.id).label("cnt"))
-        .where(TaskDB.status == "completed", TaskDB.updated_at >= week_start)
+        .where(TaskDB.status == "completed", TaskDB.completed_at >= week_start)
         .group_by(TaskDB.user_id)
     )
     tasks_completed_by_user = {str(r.user_id): r.cnt for r in tcomp_res}
