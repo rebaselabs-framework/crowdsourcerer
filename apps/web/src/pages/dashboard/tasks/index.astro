@@ -197,8 +197,17 @@ const STATUS_COLORS: Record<string, string> = {
     <!-- Bulk feedback toast -->
     <div id="bulk-toast" class="hidden mb-4 px-4 py-3 rounded-lg text-sm border"></div>
 
+    <!-- Filter loading bar (shown while filter navigates) -->
+    <div id="filter-loading" class="hidden mb-4 flex items-center gap-2 text-sm text-gray-400 px-1">
+      <svg class="animate-spin h-4 w-4 text-violet-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+      </svg>
+      Filtering tasks…
+    </div>
+
     <!-- Task list -->
-    <div class="bg-gray-900 border border-gray-800 rounded-xl">
+    <div id="task-list-container" class="bg-gray-900 border border-gray-800 rounded-xl transition-opacity duration-150">
       {tasks.items.length === 0 ? (
         <div class="px-6 py-16 text-center">
           <div class="text-4xl mb-3">🔮</div>
@@ -355,6 +364,36 @@ const STATUS_COLORS: Record<string, string> = {
 </Layout>
 
 <script>
+  // ── Filter loading indicator ──────────────────────────────────────────────
+  const filterForm = document.querySelector<HTMLFormElement>("form");
+  const filterLoading = document.getElementById("filter-loading");
+  const taskListContainer = document.getElementById("task-list-container");
+
+  function showFilterLoading() {
+    filterLoading?.classList.remove("hidden");
+    filterLoading?.classList.add("flex");
+    if (taskListContainer) {
+      taskListContainer.style.opacity = "0.4";
+      taskListContainer.style.pointerEvents = "none";
+    }
+  }
+
+  // Submit on filter form submit
+  filterForm?.addEventListener("submit", showFilterLoading);
+
+  // Also auto-submit + show loading when any select in the filter form changes
+  filterForm?.querySelectorAll<HTMLSelectElement>("select").forEach(sel => {
+    sel.addEventListener("change", () => {
+      showFilterLoading();
+      filterForm.submit();
+    });
+  });
+
+  // Show loading on pagination link clicks
+  document.querySelectorAll<HTMLAnchorElement>("a[href*='?page=']").forEach(a => {
+    a.addEventListener("click", showFilterLoading);
+  });
+
   // ── Selection state ──────────────────────────────────────────────────────
   const selected = new Set<string>();
   const toolbar = document.getElementById("bulk-toolbar") as HTMLDivElement;

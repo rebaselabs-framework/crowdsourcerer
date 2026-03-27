@@ -18,6 +18,7 @@ let priorAssignment: any = null;  // submitted / approved / rejected — already
 let error = "";
 let user: any = null;
 let taskMessages: any[] = [];
+let timedOutAssignment: any = null;
 
 try {
   [user, task] = await Promise.all([
@@ -27,23 +28,28 @@ try {
   if (!user || (user.role !== "worker" && user.role !== "both")) {
     return Astro.redirect("/worker");
   }
-  // Check active assignment AND prior submissions in parallel
-  const [activeAssignments, submittedAssignments, approvedAssignments, rejectedAssignments] =
+  // Check active assignment AND prior submissions in parallel (including timed_out)
+  const [activeAssignments, submittedAssignments, approvedAssignments, rejectedAssignments, timedOutAssignments] =
     await Promise.all([
       apiFetch<any[]>(`/v1/worker/assignments?status=active&page_size=50`, { token }),
       apiFetch<any[]>(`/v1/worker/assignments?status=submitted&page_size=50`, { token }).catch(() => []),
       apiFetch<any[]>(`/v1/worker/assignments?status=approved&page_size=50`, { token }).catch(() => []),
       apiFetch<any[]>(`/v1/worker/assignments?status=rejected&page_size=50`, { token }).catch(() => []),
+      apiFetch<any[]>(`/v1/worker/assignments?status=timed_out&page_size=50`, { token }).catch(() => []),
     ]);
   activeAssignment = activeAssignments?.find((a: any) => a.task_id === id) ?? null;
   hasActiveAssignment = !!activeAssignment;
   if (!hasActiveAssignment) {
-    // Check if worker already submitted/was approved/rejected for this task
+    // Check if worker already submitted/was approved/rejected/timed_out for this task
     priorAssignment =
       submittedAssignments?.find((a: any) => a.task_id === id) ??
       approvedAssignments?.find((a: any) => a.task_id === id) ??
       rejectedAssignments?.find((a: any) => a.task_id === id) ??
       null;
+    // Check for timed_out assignment (sweeper expired it between page loads)
+    if (!priorAssignment) {
+      timedOutAssignment = timedOutAssignments?.find((a: any) => a.task_id === id) ?? null;
+    }
   }
   // Non-blocking: load task messages so worker can ask requester for clarification
   try {
@@ -313,6 +319,36 @@ const timeoutIso = activeAssignment?.timeout_at ?? null;
             >
               ← Back to marketplace
             </a>
+          </div>
+        ) : timedOutAssignment ? (
+          <!-- Assignment was timed_out by sweeper between page loads -->
+          <div class="rounded-2xl border border-amber-700 bg-amber-950/30 p-6 text-center">
+            <div class="text-4xl mb-3">⏰</div>
+            <h2 class="text-lg font-bold mb-2 text-amber-300">Assignment expired</h2>
+            <p class="text-sm text-gray-400 mb-4">
+              Your time limit ran out before you could submit. The task has been re-opened for other workers to claim.
+            </p>
+            <p class="text-xs text-gray-500 mb-5">
+              Expired {new Date(timedOutAssignment.timeout_at ?? timedOutAssignment.updated_at).toLocaleString()}
+            </p>
+            <div class="flex flex-col sm:flex-row gap-3 justify-center">
+              {task.status === "open" && (
+                <button
+                  id="claim-btn"
+                  data-task-id={task.id}
+                  class="px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-xl transition-colors"
+                >
+                  Claim it again
+                </button>
+              )}
+              <a
+                href="/worker/marketplace"
+                class="px-6 py-3 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium rounded-xl transition-colors"
+              >
+                ← Back to marketplace
+              </a>
+            </div>
+            <p id="claim-error" class="text-sm text-red-400 mt-3 hidden"></p>
           </div>
         ) : !hasActiveAssignment ? (
           <!-- Pre-claim: show claim button -->
@@ -796,10 +832,25 @@ document.getElementById("submit-btn")?.addEventListener("click", async (e) => {
       window.location.href = `/worker/submitted?${params}`;
     } else {
       const body = await res.json().catch(() => ({}));
-      errEl.textContent = body.detail ?? "Submission failed. Try again.";
-      errEl.classList.remove("hidden");
-      btn.disabled = false;
-      btn.textContent = originalText;
+      if (res.status === 410) {
+        // Assignment expired between page load and submit — show CTA to marketplace
+        errEl.innerHTML = 'Assignment expired — your time ran out. Redirecting to marketplace…&nbsp;<a href="/worker/marketplace" class="underline font-medium">Go now →</a>';
+        errEl.classList.remove("hidden");
+        btn.disabled = true;
+        btn.textContent = "Assignment expired";
+        btn.classList.remove("bg-emerald-600", "hover:bg-emerald-500");
+        btn.classList.add("bg-gray-700", "cursor-not-allowed", "opacity-60");
+        // Disable release button too
+        const relBtn = document.getElementById("release-btn") as HTMLButtonElement | null;
+        if (relBtn) { relBtn.disabled = true; relBtn.textContent = "Expired"; relBtn.classList.add("opacity-40", "cursor-not-allowed"); }
+        // Auto-redirect after 4 seconds
+        setTimeout(() => { window.location.href = "/worker/marketplace"; }, 4000);
+      } else {
+        errEl.textContent = body.detail ?? "Submission failed. Try again.";
+        errEl.classList.remove("hidden");
+        btn.disabled = false;
+        btn.textContent = originalText;
+      }
     }
   } catch {
     errEl.textContent = "Network error. Please try again.";
@@ -871,6 +922,14 @@ document.getElementById("release-confirm")?.addEventListener("click", async () =
         submitBtn.textContent = "Assignment expired";
         submitBtn.classList.remove("bg-emerald-600", "hover:bg-emerald-500");
         submitBtn.classList.add("bg-gray-700", "cursor-not-allowed", "opacity-60");
+      }
+      // Disable release button too — it will 404 once the assignment is timed_out
+      const releaseBtn = document.getElementById("release-btn") as HTMLButtonElement | null;
+      if (releaseBtn) {
+        releaseBtn.disabled = true;
+        releaseBtn.textContent = "Expired";
+        releaseBtn.classList.add("opacity-40", "cursor-not-allowed");
+        releaseBtn.classList.remove("hover:border-red-600/60", "hover:text-red-400");
       }
       clearInterval(timer);
       return;
