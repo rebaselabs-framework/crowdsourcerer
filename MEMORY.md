@@ -390,13 +390,26 @@ Also: template-marketplace index.ts had wrong backend URL (`/v1/template-marketp
 - `TaskApplicationDB.(worker_id, status)`: migration 0051 ✓
 - `TaskMessageDB.(task_id, sender_id, recipient_id)`: migration 0052 ✓
 
+## Session 2026-03-27 (continued) — Worker performance, scheduled tasks improvements (commits 232d3c5–263d81f)
+
+**Worker performance stats feature (232d3c5):**
+- `GET /v1/worker/performance`: 5 queries — all-time + 30d approval rates, by-task-type breakdown, platform avg + rank percentile (anonymised, None if < 5 reviews), 8-week weekly trend.
+- `/api/worker/performance.ts`: httpOnly-safe proxy route.
+- `/worker/performance.astro`: stat cards (all-time, 30d, platform avg, rank percentile), platform comparison bars with contextual message, by-type table with progress bars, 8-week bar chart.
+- `worker/index.astro`: added "📊 My Performance" quick-link.
+- 8 new tests in `test_worker_performance.py`; test count: 1050 → 1058.
+
+**Scheduled tasks page improvements (263d81f):**
+- `/dashboard/scheduled.astro`: rewrote from basic page — task type icons/labels map (18 types), execution mode + priority colour badges, 3-stat summary cards (total/AI/human), next-task countdown banner, live 1s countdown timers per row, confirm-modal cancel replacing browser `confirm()`. Fixed wrong new-task link: `/dashboard/tasks/new` → `/dashboard/new-task`.
+- `test_scheduled_tasks.py`: 11 tests — 401 auth guard, 200 with valid token, empty list, required fields, total==len(items), tags None→[], tags preserved, scheduled_at ISO, limit >200 → 422, limit=0 → 422, multi-type items. Test count: 1058 → 1069.
+
 ## Priorities for Next Session 🔜
 
 PHASE: Pre-alpha development. Focus on quality/depth. NOT in scope: launch tasks, marketing, directory listings.
 
-1. **Feature additions**: Consider task scheduling improvements (scheduled task UI at /dashboard/scheduled), better worker performance comparison (anonymous benchmarking), or admin quality monitoring (low-accuracy worker reports).
-2. **Proxy route test coverage**: 13+ Astro proxy routes still lack tests. Would need Vitest setup in the web package first.
-3. **Notification preferences**: The `/dashboard/notification-preferences.astro` page exists — check if the API backend for it is complete.
+1. **Proxy route test coverage**: 13+ Astro proxy routes still lack tests. Would need Vitest setup in the web package first.
+2. **Feature depth**: Look for UX gaps in existing pages — especially worker certifications, task messaging UI, worker teams pages.
+3. **Pre-existing Astro hints (6)**: `worker/certifications.astro:17` (`result` unused — actually a false positive), `worker/skills.astro:446` (async fn hint), `experiments.astro:237` / `pipelines.astro:427` / `team/index.astro:407` / `worker/teams/[teamId].astro:351` (unreachable onclick code hints).
 
 ## Known Warnings (non-blocking)
 
