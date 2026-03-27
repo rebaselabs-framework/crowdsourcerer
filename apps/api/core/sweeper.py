@@ -521,7 +521,7 @@ async def send_daily_digests(session_factory) -> int:
                     notifs = notifs_res.scalars().all()
                     highlights = [
                         {
-                            "title": n.title or n.notif_type,
+                            "title": n.title or n.type,
                             "body": n.body or "",
                             "link": n.link or "/dashboard/notifications",
                         }

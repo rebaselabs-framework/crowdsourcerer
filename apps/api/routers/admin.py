@@ -961,7 +961,7 @@ async def trigger_daily_digest(
 
         notifs = notifs_by_user.get(user.id, [])
         highlights = [
-            {"title": n.title or n.notif_type, "body": n.body or "", "link": n.link or ""}
+            {"title": n.title or n.type, "body": n.body or "", "link": n.link or ""}
             for n in notifs
         ]
 
