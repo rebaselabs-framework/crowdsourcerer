@@ -46,6 +46,9 @@ Issues = "https://github.com/rebaselabs-framework/crowdsourcerer/issues"
 [tool.hatch.version]
 path = "crowdsourcerer/__init__.py"
 
+[tool.hatch.build.targets.wheel]
+packages = ["crowdsourcerer"]
+
 [tool.ruff]
 line-length = 100
 

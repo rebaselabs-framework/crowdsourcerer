@@ -130,6 +130,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Build workspace packages first so @crowdsourcerer/types types are available
+      - name: Build workspace packages
+        run: pnpm -r --filter=!@crowdsourcerer/web build
+
       # Step 1: astro check — catches TypeScript errors, bad imports, Astro 5 syntax issues.
       # Must exit 0 (= no errors). Any error here = broken deploy.
       - name: Astro type check (0 errors required)
