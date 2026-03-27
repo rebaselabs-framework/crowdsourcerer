@@ -170,18 +170,18 @@ const showOnboardingBanner = Boolean(
           </div>
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
             {[
-              { type: "web_research",   icon: "🌐", label: "Web Research",   desc: "Scrape any URL + extract key points",   credits: 10, color: "violet" },
-              { type: "llm_generate",   icon: "🤖", label: "LLM Generate",   desc: "Generate text with Claude or GPT-4",   credits: 1,  color: "indigo" },
-              { type: "entity_lookup",  icon: "🏢", label: "Entity Lookup",  desc: "Enrich a company or person's profile", credits: 5,  color: "sky"    },
-            ].map(({ type, icon, label, desc, credits, color }) => (
+              { type: "web_research",  icon: "🌐", label: "Web Research",  desc: "Scrape any URL + extract key points",   credits: 10, hoverBorder: "hover:border-violet-700/60", textClass: "text-violet-400", hoverText: "group-hover:text-violet-300" },
+              { type: "llm_generate",  icon: "🤖", label: "LLM Generate",  desc: "Generate text with Claude or GPT-4",   credits: 1,  hoverBorder: "hover:border-indigo-700/60",  textClass: "text-indigo-400",  hoverText: "group-hover:text-indigo-300"  },
+              { type: "entity_lookup", icon: "🏢", label: "Entity Lookup", desc: "Enrich a company or person's profile", credits: 5,  hoverBorder: "hover:border-sky-700/60",    textClass: "text-sky-400",     hoverText: "group-hover:text-sky-300"     },
+            ].map(({ type, icon, label, desc, credits, hoverBorder, textClass, hoverText }) => (
               <a href={`/dashboard/new-task?preset=${type}`}
-                class={`group bg-gray-800/60 hover:bg-gray-800 border border-gray-700 hover:border-${color}-700/60 rounded-xl p-4 transition-all`}>
+                class={`group bg-gray-800/60 hover:bg-gray-800 border border-gray-700 ${hoverBorder} rounded-xl p-4 transition-all`}>
                 <div class="text-2xl mb-2">{icon}</div>
                 <div class="text-sm font-semibold text-gray-200 group-hover:text-white mb-1">{label}</div>
                 <div class="text-xs text-gray-500 mb-3">{desc}</div>
                 <div class="flex items-center justify-between">
                   <span class="text-xs text-gray-600">{credits} credit{credits !== 1 ? "s" : ""}</span>
-                  <span class={`text-xs text-${color}-400 group-hover:text-${color}-300 font-medium`}>Try it →</span>
+                  <span class={`text-xs ${textClass} ${hoverText} font-medium`}>Try it →</span>
                 </div>
               </a>
             ))}
