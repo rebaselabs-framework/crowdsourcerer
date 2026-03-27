@@ -114,7 +114,7 @@ async def _build_item(pin: WorkerPortfolioItemDB, db: AsyncSession) -> Portfolio
 @router.post("/portfolio", response_model=PortfolioItemOut, status_code=status.HTTP_201_CREATED)
 async def pin_task(
     body: PinTaskRequest,
-    user_id: UUID = Depends(get_current_user_id),
+    user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
     """Pin a completed task to my portfolio showcase."""
@@ -177,7 +177,7 @@ async def pin_task(
 
 @router.get("/portfolio", response_model=list[PortfolioItemOut])
 async def get_my_portfolio(
-    user_id: UUID = Depends(get_current_user_id),
+    user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
     """Get my portfolio pins."""
@@ -194,7 +194,7 @@ async def get_my_portfolio(
 async def update_pin(
     pin_id: UUID,
     body: UpdatePinRequest,
-    user_id: UUID = Depends(get_current_user_id),
+    user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
     """Update caption or display order for a pinned task."""
@@ -221,7 +221,7 @@ async def update_pin(
 @router.delete("/portfolio/{pin_id}", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 async def delete_pin(
     pin_id: UUID,
-    user_id: UUID = Depends(get_current_user_id),
+    user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
     """Remove a task from my portfolio."""

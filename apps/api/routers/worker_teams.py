@@ -35,6 +35,8 @@ from models.schemas import (
 
 logger = structlog.get_logger()
 router = APIRouter(prefix="/v1/worker-teams", tags=["worker-teams"])
+# Separate router for task-scoped endpoints (can't share the worker-teams prefix)
+tasks_router = APIRouter(prefix="/v1/tasks", tags=["worker-teams"])
 
 INVITE_TTL_DAYS = 14  # invites expire after 14 days
 
@@ -495,7 +497,7 @@ class AssignTeamRequest(BaseModel):
     team_id: UUID
 
 
-@router.post("/v1/tasks/{task_id}/assign-team", status_code=200)
+@tasks_router.post("/{task_id}/assign-team", status_code=200)
 async def assign_team_to_task(
     task_id: UUID,
     req: AssignTeamRequest,
@@ -542,7 +544,7 @@ async def assign_team_to_task(
     return {"task_id": str(task_id), "assigned_team_id": str(req.team_id), "team_name": team.name}
 
 
-@router.delete("/v1/tasks/{task_id}/assign-team", status_code=204, response_model=None)
+@tasks_router.delete("/{task_id}/assign-team", status_code=204, response_model=None)
 async def remove_team_from_task(
     task_id: UUID,
     db: AsyncSession = Depends(get_db),
