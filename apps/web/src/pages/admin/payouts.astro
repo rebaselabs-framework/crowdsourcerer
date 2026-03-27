@@ -256,24 +256,62 @@ function formatDetails(method: string, details: Record<string, string>): string 
     }
   });
 
+  // Status badge CSS classes mirroring server-side STATUS_STYLES
+  const STATUS_STYLES: Record<string, string> = {
+    pending: "bg-yellow-900/40 text-yellow-300 border-yellow-700/40",
+    processing: "bg-blue-900/40 text-blue-300 border-blue-700/40",
+    paid: "bg-emerald-900/40 text-emerald-400 border-emerald-700/40",
+    rejected: "bg-red-900/40 text-red-400 border-red-700/40",
+  };
+
   modalConfirm.addEventListener("click", async () => {
     if (!pendingPayoutId || !pendingAction) return;
     modalError.classList.add("hidden");
     modalConfirm.textContent = "Processing…";
     (modalConfirm as HTMLButtonElement).disabled = true;
 
+    const noteText = modalNote.value.trim() || null;
+
     try {
       const res = await fetch(`/api/admin/payouts/${pendingPayoutId}/review`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          status: pendingAction,
-          admin_note: modalNote.value.trim() || null,
-        }),
+        body: JSON.stringify({ status: pendingAction, admin_note: noteText }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail ?? "Failed to update");
-      window.location.reload();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((data as any).detail ?? "Failed to update");
+
+      // Close modal
+      modal.classList.add("hidden");
+
+      // Update row in place — no page reload needed
+      const row = document.querySelector<HTMLTableRowElement>(`[data-payout-id="${pendingPayoutId}"]`);
+      if (row) {
+        const cells = row.querySelectorAll("td");
+        // Status cell (index 4)
+        if (cells[4]) {
+          const badge = cells[4].querySelector("span");
+          if (badge) {
+            badge.textContent = pendingAction;
+            badge.className = `text-xs px-2 py-0.5 rounded border capitalize ${STATUS_STYLES[pendingAction] ?? "bg-gray-800 text-gray-400 border-gray-700"}`;
+          }
+          if (noteText) {
+            let noteEl = cells[4].querySelector("div");
+            if (!noteEl) { noteEl = document.createElement("div"); cells[4].appendChild(noteEl); }
+            noteEl.className = "text-xs text-gray-500 mt-1 italic";
+            noteEl.textContent = noteText;
+          }
+        }
+        // Actions cell (index 5) — clear buttons since terminal actions applied
+        if (cells[5]) cells[5].innerHTML = "";
+        // Dim row slightly to indicate it's been processed
+        row.classList.add("opacity-60");
+      }
+
+      pendingPayoutId = null;
+      pendingAction = null;
+      modalConfirm.textContent = "Confirm";
+      (modalConfirm as HTMLButtonElement).disabled = false;
     } catch (err: any) {
       modalError.textContent = err.message;
       modalError.classList.remove("hidden");

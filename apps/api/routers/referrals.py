@@ -147,9 +147,10 @@ async def apply_referral_on_signup(
     Gives the new user REFERRED_BONUS extra credits (beyond the base 100).
     Referrer bonus is paid after the referred user completes their first task.
     """
-    # Find referrer
+    # Find referrer — lock row to prevent concurrent credits_pending lost-update
+    # when multiple referred users sign up simultaneously using the same code.
     res = await db.execute(
-        select(UserDB).where(UserDB.referral_code == referral_code)
+        select(UserDB).where(UserDB.referral_code == referral_code).with_for_update()
     )
     referrer = res.scalar_one_or_none()
     if not referrer:
@@ -169,8 +170,10 @@ async def apply_referral_on_signup(
     )
     db.add(referral)
 
-    # Give referred user their signup bonus (immediate)
-    res2 = await db.execute(select(UserDB).where(UserDB.id == referred_user_id))
+    # Give referred user their signup bonus — lock row before incrementing credits
+    res2 = await db.execute(
+        select(UserDB).where(UserDB.id == referred_user_id).with_for_update()
+    )
     new_user = res2.scalar_one_or_none()
     if new_user:
         new_user.credits += REFERRED_BONUS
@@ -197,19 +200,22 @@ async def pay_referral_bonus_on_first_task(
     Called when a worker completes their first task.
     Pays the referrer's pending bonus and marks it as paid.
     """
-    # Check if this user was referred and the bonus hasn't been paid
+    # Lock the referral row first — prevents double-payment if this function
+    # is called concurrently (e.g. two fast task completions racing on first-task).
     res = await db.execute(
         select(ReferralDB).where(
             ReferralDB.referred_id == worker_id,
             ReferralDB.bonus_paid == False,  # noqa: E712
-        )
+        ).with_for_update()
     )
     referral = res.scalar_one_or_none()
     if not referral:
         return
 
-    # Pay referrer
-    ref_res = await db.execute(select(UserDB).where(UserDB.id == referral.referrer_id))
+    # Lock referrer row before credit mutations to prevent lost-update race
+    ref_res = await db.execute(
+        select(UserDB).where(UserDB.id == referral.referrer_id).with_for_update()
+    )
     referrer = ref_res.scalar_one_or_none()
     if referrer:
         referrer.credits += referral.referrer_bonus_credits

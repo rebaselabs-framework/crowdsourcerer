@@ -82,15 +82,15 @@ function relTime(iso: string): string {
     <!-- Summary stats -->
     <div class="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-8">
       <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
-        <div class={`text-3xl font-bold ${activeCritical > 0 ? "text-red-400" : "text-gray-500"}`}>{activeCritical}</div>
+        <div id="stat-critical" class={`text-3xl font-bold ${activeCritical > 0 ? "text-red-400" : "text-gray-500"}`}>{activeCritical}</div>
         <div class="text-xs text-gray-500 mt-1 uppercase tracking-wide">Active Critical</div>
       </div>
       <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
-        <div class={`text-3xl font-bold ${activeWarning > 0 ? "text-amber-400" : "text-gray-500"}`}>{activeWarning}</div>
+        <div id="stat-warning" class={`text-3xl font-bold ${activeWarning > 0 ? "text-amber-400" : "text-gray-500"}`}>{activeWarning}</div>
         <div class="text-xs text-gray-500 mt-1 uppercase tracking-wide">Active Warnings</div>
       </div>
-      <div class={`rounded-xl border p-4 text-center col-span-2 sm:col-span-1 ${activeCritical === 0 && activeWarning === 0 ? "bg-emerald-900/20 border-emerald-700" : "bg-gray-900 border-gray-800"}`}>
-        <div class={`text-3xl font-bold ${activeCritical === 0 && activeWarning === 0 ? "text-emerald-600" : "text-gray-400"}`}>
+      <div id="stat-health" class={`rounded-xl border p-4 text-center col-span-2 sm:col-span-1 ${activeCritical === 0 && activeWarning === 0 ? "bg-emerald-900/20 border-emerald-700" : "bg-gray-900 border-gray-800"}`}>
+        <div id="stat-health-icon" class={`text-3xl font-bold ${activeCritical === 0 && activeWarning === 0 ? "text-emerald-600" : "text-gray-400"}`}>
           {activeCritical === 0 && activeWarning === 0 ? "✓" : "⚠"}
         </div>
         <div class="text-xs text-gray-500 mt-1 uppercase tracking-wide">
@@ -214,6 +214,7 @@ function relTime(iso: string): string {
                 <button
                   class="resolve-btn flex-shrink-0 text-sm px-4 py-2 rounded-lg border border-gray-700 hover:bg-emerald-900/20 hover:border-emerald-700 hover:text-emerald-400 text-gray-400 transition-colors font-medium"
                   data-id={alert.id}
+                  data-severity={alert.severity}
                 >
                   ✓ Resolve
                 </button>
@@ -256,6 +257,7 @@ function relTime(iso: string): string {
     document.querySelectorAll<HTMLButtonElement>(".resolve-btn").forEach(btn => {
       btn.addEventListener("click", async () => {
         const id = btn.dataset.id;
+        const severity = btn.dataset.severity ?? "";
         if (!id) return;
 
         btn.disabled = true;
@@ -265,17 +267,42 @@ function relTime(iso: string): string {
           const res = await fetch(`/api/admin/alerts/${id}/resolve`, { method: "POST" });
           if (!res.ok) throw new Error("Failed");
 
-          // Fade out the alert card
+          // Fade out the alert card — no page reload needed
           const card = btn.closest("[data-alert-id]") as HTMLElement | null;
           if (card) {
             card.style.transition = "opacity 0.4s";
-            card.style.opacity = "0.3";
-            setTimeout(() => {
-              card.remove();
-              // Update summary stats by reloading the page after a brief delay
-              window.location.reload();
-            }, 500);
+            card.style.opacity = "0";
+            setTimeout(() => card.remove(), 450);
           }
+
+          // Decrement the severity counter badge
+          const statId = severity === "critical" ? "stat-critical" : severity === "warning" ? "stat-warning" : null;
+          if (statId) {
+            const el = document.getElementById(statId);
+            if (el) {
+              const n = Math.max(0, parseInt(el.textContent ?? "0", 10) - 1);
+              el.textContent = String(n);
+              if (n === 0) { el.className = el.className.replace(/text-(red|amber)-400/, "text-gray-500"); }
+            }
+          }
+
+          // Update health status card if both counters now zero
+          const critEl = document.getElementById("stat-critical");
+          const warnEl = document.getElementById("stat-warning");
+          const healthIcon = document.getElementById("stat-health-icon");
+          const healthCard = document.getElementById("stat-health");
+          if (critEl && warnEl && healthIcon && healthCard) {
+            const nCrit = parseInt(critEl.textContent ?? "1", 10);
+            const nWarn = parseInt(warnEl.textContent ?? "1", 10);
+            if (nCrit === 0 && nWarn === 0) {
+              healthCard.className = healthCard.className.replace("bg-gray-900 border-gray-800", "bg-emerald-900/20 border-emerald-700");
+              healthIcon.className = healthIcon.className.replace("text-gray-400", "text-emerald-600");
+              healthIcon.textContent = "✓";
+              healthIcon.nextElementSibling!.textContent = "All Systems OK";
+            }
+          }
+
+          toast("Alert resolved");
         } catch {
           btn.disabled = false;
           btn.textContent = "✓ Resolve";

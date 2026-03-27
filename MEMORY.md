@@ -496,6 +496,38 @@ Key fixes:
 - `[teamId].astro` had two inline `onsubmit={...confirm(...)}` — converted to `data-confirm` attributes
 - Both scripts now use `is:inline` (no TypeScript type casts needed)
 
+## Session 2026-03-27 (continued) — confirm()/alert()/prompt() round 3 + more race conditions (commits 8817ed2–0b90a97)
+
+**Race condition fixes in certifications + orgs (8817ed2):**
+- `certifications.py submit_certification`: `with_for_update()` on `WorkerCertificationDB` fetch — prevents lost-update on `attempt_count`, stale cooldown checks, and duplicate-insert races under concurrent submissions
+- `orgs.py transfer_credits`: `with_for_update()` on re-fetched `OrganizationDB` before balance check; lock order org→user prevents deadlocks; also changed `org, member = _get_org_and_require_role(...)` → `_, member = ...` (org was discarded)
+
+**UX audit round 3 — confirm()/alert() elimination across 14 pages (commits 468e26c, 667905f, 4c6be3b, bae98f4):**
+- `admin/cache.astro`: `confirm()` in `flushCache()` → `setupFlushBtn()` two-step pattern; "Flushing…" disabled state during fetch; restores in `finally`
+- `dashboard/api-keys.astro`: `onsubmit="return confirm('Revoke…')"` → `data-confirm` attribute + two-step handler; clipboard failure `.catch(() => {})` → try/catch with `input.select()` fallback
+- `dashboard/team/index.astro`: Remove-member `onclick confirm()` → form `data-confirm`; silent SSR error swallow → `?error=` redirect + display block; added `<script is:inline>` two-step handler
+- `dashboard/experiments/[id].astro`: Added `submitBtn.disabled = true` + "Enrolling…" text during enroll fetch; restores in `finally`
+- `dashboard/experiments.astro`: Delete form `onsubmit confirm()` → `data-confirm`; added `type="submit"` to delete button (was missing); added two-step handler to existing TS script
+- `dashboard/saved-searches.astro`: Toggle failure `alert()` → "⚠ Error" button text flash + `!text-red-400`; delete `confirm()` → two-step on delete button with loading state
+- `dashboard/security.astro`: 2FA disable `confirm()` → two-step on `btnDisable` ("⚠️ Confirm disable" → execute on second click within 3s)
+- `admin/reputation.astro`: Unban `confirm()` → two-step "Sure?" on each unban button; recalculate "Recalculate ALL…" `confirm()` → two-step
+- `admin/announcements.astro`: Delete announcement `onclick confirm()` on button → `data-confirm` on form; added `<script is:inline>` two-step handler
+- `admin/workers.astro`: Unban `confirm(\`Unban ${name}?\`)` → two-step "Sure? Unban ${name}?" per-button
+- `docs/sandbox.astro`: "Enter API key" `alert()` → focus input + border highlight + button text flash; "Invalid JSON" `alert()` → button text flash
+- `workers/[id].astro`: Clipboard fallback `window.prompt("Copy…", url)` → creates `<input readOnly>` appended to parent, focused + selected, removed after 8s
+- `marketplace.astro`: Save-search `prompt("Name…")` → inline DOM expansion (button `replaceWith` wrapper containing `<input> + Save + Cancel`; Enter confirms, Escape cancels)
+- `dashboard/search/tasks.astro`: Save-filters `prompt("Name…")` → same inline TypeScript DOM expansion pattern
+- `dashboard/referrals.astro`: Clipboard `.catch(() => {})` always showing "Copied!" → try/catch; success → "Copied!"; failure → `urlInput?.select()` + "Select all ↑"
+
+**Zero `confirm()`/`alert()`/`prompt()` dialogs remain anywhere in the frontend** (verified via grep).
+
+**Race conditions in tasks.py, marketplace.py, skills.py (commit 0b90a97):**
+- `tasks.py create_task`: `with_for_update()` on `OrganizationDB` before org-pool balance check
+- `tasks.py rerun_task`: same fix for org-pool balance check
+- `tasks.py execute_ai_task / _run_task`: `with_for_update()` on `UserDB` in cache-hit refund path
+- `marketplace.py rate_template`: replaced `_get_template()` helper call with inline locked SELECT to prevent `rating_sum`/`rating_count` lost-update under concurrent ratings
+- `skills.py update_worker_skill`: `with_for_update()` on `WorkerSkillDB` to prevent lost-update on `tasks_completed`, `tasks_approved`, `credits_earned`, etc. under concurrent task approvals for the same worker+task_type
+
 ## Priorities for Next Session 🔜
 
 PHASE: Pre-alpha development. Focus on quality/depth. NOT in scope: launch tasks, marketing, directory listings.
@@ -503,7 +535,6 @@ PHASE: Pre-alpha development. Focus on quality/depth. NOT in scope: launch tasks
 1. **More UX depth audits**: Continue auditing existing pages for bugs and UX gaps — admin pages, task creation flow, marketplace.
 2. **Proxy route test coverage**: 13+ Astro proxy routes still lack tests. Would need Vitest setup in the web package first.
 3. **Race condition audit**: Look for more race conditions in worker pay/approval flows.
-4. **cache.astro**: Admin cache flush page still uses `confirm()` dialogs (low priority — admin only).
 
 ## Known Warnings (non-blocking)
 

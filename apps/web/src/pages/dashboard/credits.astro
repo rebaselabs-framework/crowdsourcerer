@@ -166,6 +166,14 @@ const PACKS = [
     el.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
 
+  function toast(msg: string, ok = true) {
+    const t = document.createElement("div");
+    t.className = `fixed bottom-4 right-4 px-4 py-2 rounded-lg text-white text-sm z-50 ${ok ? "bg-emerald-600" : "bg-red-600"}`;
+    t.textContent = msg;
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), 4000);
+  }
+
   // ── Buy credits ────────────────────────────────────────────────────────────
   // Use /api/credits/checkout proxy — cs_token is httpOnly so client JS
   // cannot read it directly from document.cookie.
@@ -254,6 +262,7 @@ const PACKS = [
     } catch {
       loadMoreBtn.textContent = originalText;
       loadMoreBtn.disabled = false;
+      toast("Failed to load transactions — please try again", false);
     }
   });
 
