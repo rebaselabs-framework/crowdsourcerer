@@ -34,8 +34,15 @@ try {
     msgUnreadByTask[thread.task_id] = thread.unread_count ?? 0;
     msgTotalByTask[thread.task_id] = thread.total_messages ?? 0;
   }
-} catch (e) {
-  return Astro.redirect("/login");
+} catch (e: any) {
+  // Only redirect to login for actual auth failures (401/403).
+  // Other errors (network timeout, 500, etc.) should show an in-page error
+  // rather than kicking the user to the login page unexpectedly.
+  if (e.message?.includes("401") || e.message?.includes("403")) {
+    return Astro.redirect("/login");
+  }
+  // For other errors, continue rendering with empty data — the page will show
+  // an empty state with a retry suggestion rather than an unexpected redirect.
 }
 
 const STATUS_COLORS: Record<string, string> = {
