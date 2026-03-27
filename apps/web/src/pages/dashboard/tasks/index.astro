@@ -427,7 +427,7 @@ const STATUS_COLORS: Record<string, string> = {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ task_ids: [...selected], action: "retry" }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         const s = data.succeeded?.length ?? 0;
         const f = data.failed?.length ?? 0;
@@ -462,7 +462,7 @@ const STATUS_COLORS: Record<string, string> = {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ task_ids: [...selected] }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         const n = data.cancelled ?? 0;
         const sk = data.skipped ?? 0;
@@ -497,7 +497,7 @@ const STATUS_COLORS: Record<string, string> = {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ task_ids: [...selected] }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         const n = data.archived ?? 0;
         const sk = data.skipped ?? 0;

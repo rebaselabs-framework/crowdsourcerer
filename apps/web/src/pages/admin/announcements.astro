@@ -41,11 +41,13 @@ if (Astro.request.method === "POST") {
       const id = form.get("id") as string;
       await apiFetch(`/v1/admin/announcements/${id}`, { method: "DELETE", token });
     }
-  } catch (_) {
-    // Fall through — errors shown on reload
+  } catch (e: any) {
+    return Astro.redirect(`/admin/announcements?action_error=${encodeURIComponent(e.message ?? "Action failed — please try again")}`);
   }
   return Astro.redirect("/admin/announcements");
 }
+
+const actionError = Astro.url.searchParams.get("action_error") ?? "";
 
 // ── Load data ──────────────────────────────────────────────────────────────
 let announcements: any[] = [];
@@ -84,9 +86,9 @@ const TYPE_COLORS: Record<string, string> = {
       <a href="/admin" class="text-sm text-gray-400 hover:text-gray-200 transition-colors">← Admin</a>
     </div>
 
-    {error && (
+    {(actionError || error) && (
       <div class="mb-6 px-4 py-3 bg-red-950/40 border border-red-800 rounded-xl text-red-300 text-sm">
-        {error}
+        {actionError || error}
       </div>
     )}
 

@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
+from sqlalchemy.exc import IntegrityError
 
 from core.auth import get_current_user_id
 from core.database import get_db
@@ -136,7 +137,11 @@ async def rate_task(
         comment=body.comment,
     )
     db.add(rating)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="You have already rated this task")
 
     # Refresh aggregate on worker (single aggregate query, not full table scan)
     await _refresh_worker_avg(worker_id, db)

@@ -140,23 +140,22 @@ async def pin_task(
     if not assignment and not is_ai_task_owner:
         raise HTTPException(status_code=403, detail="You did not work on this task")
 
-    # Check duplicate
+    # Lock all existing portfolio rows for this worker to serialise concurrent
+    # pin requests — prevents two simultaneous requests from both passing the
+    # cap check and pushing the count above _MAX_PORTFOLIO.
     existing_res = await db.execute(
-        select(WorkerPortfolioItemDB).where(
-            WorkerPortfolioItemDB.worker_id == user_id,
-            WorkerPortfolioItemDB.task_id == body.task_id,
-        )
+        select(WorkerPortfolioItemDB)
+        .where(WorkerPortfolioItemDB.worker_id == user_id)
+        .with_for_update()
     )
-    if existing_res.scalar_one_or_none():
+    existing_items = existing_res.scalars().all()
+
+    # Check duplicate
+    if any(str(item.task_id) == str(body.task_id) for item in existing_items):
         raise HTTPException(status_code=409, detail="Task already pinned to portfolio")
 
-    # Enforce max cap (scalar COUNT)
-    count = await db.scalar(
-        select(func.count()).select_from(WorkerPortfolioItemDB).where(
-            WorkerPortfolioItemDB.worker_id == user_id
-        )
-    ) or 0
-    if count >= _MAX_PORTFOLIO:
+    # Enforce max cap
+    if len(existing_items) >= _MAX_PORTFOLIO:
         raise HTTPException(
             status_code=400,
             detail=f"Portfolio is full ({_MAX_PORTFOLIO} items max). Remove one first.",

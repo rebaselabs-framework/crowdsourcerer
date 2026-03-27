@@ -816,7 +816,7 @@ if not verify(request.get_data(), YOUR_SECRET, sig):
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ url, description, events }),
         });
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         if (!res.ok) {
           showFormErr("create-ep-error", data.detail ?? "Failed to create endpoint");
           btn.disabled = false; btn.textContent = "Register endpoint";
@@ -857,7 +857,7 @@ if not verify(request.get_data(), YOUR_SECRET, sig):
         btn.disabled = true; btn.textContent = "Testing…";
         try {
           const res = await fetch(`/api/webhooks/endpoints/${epId}/test`, { method: "POST" });
-          const data = await res.json();
+          const data = await res.json().catch(() => ({}));
           if (data.success) {
             btn.textContent = `✓ ${data.status_code} (${data.duration_ms}ms)`;
             btn.className = btn.className.replace("text-gray-400", "text-green-400").replace("border-gray-700", "border-green-700");
@@ -911,7 +911,7 @@ if not verify(request.get_data(), YOUR_SECRET, sig):
         btn.disabled = true;
         try {
           const res = await fetch(`/api/webhooks/endpoints/${epId}/rotate-secret`, { method: "POST" });
-          const data = await res.json();
+          const data = await res.json().catch(() => ({}));
           if (res.ok) {
             // Reveal new secret in the secret-box (same as creation flow)
             const secretBox = document.getElementById("secret-box");
@@ -953,7 +953,7 @@ if not verify(request.get_data(), YOUR_SECRET, sig):
           if (res.ok || res.status === 204) {
             btn.closest("[data-ep-id]")?.remove();
           } else {
-            const d = await res.json();
+            const d = await res.json().catch(() => ({}));
             toast(d.detail ?? "Failed to delete endpoint", false);
             btn.disabled = false;
           }
@@ -1054,7 +1054,7 @@ if not verify(request.get_data(), YOUR_SECRET, sig):
         btn.disabled = true; btn.textContent = "…";
         try {
           const res = await fetch(`/api/webhooks/${logId}/retry`, { method: "POST" });
-          const data = await res.json();
+          const data = await res.json().catch(() => ({}));
           if (res.ok) {
             if (data.success) {
               btn.textContent = "✓ OK";
@@ -1087,7 +1087,7 @@ if not verify(request.get_data(), YOUR_SECRET, sig):
         btn.disabled = true; btn.textContent = "…";
         try {
           const res = await fetch(`/api/webhooks/${logId}/replay`, { method: "POST" });
-          const data = await res.json();
+          const data = await res.json().catch(() => ({}));
           if (res.ok) {
             const succeeded = data.endpoints_succeeded ?? 0;
             const total = data.endpoints_targeted ?? 0;
