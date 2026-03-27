@@ -53,7 +53,7 @@ async def list_comments(
     page: int = Query(1, ge=1),
     per_page: int = Query(50, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
-    user_id: UUID = Depends(get_current_user_id),
+    user_id: str = Depends(get_current_user_id),
 ):
     """List comments on a task (requester + their assigned workers only)."""
     task = await db.get(TaskDB, task_id)
@@ -62,7 +62,7 @@ async def list_comments(
     current_user = await db.get(UserDB, user_id)
 
     # Access check: must be requester or have an assignment
-    is_requester = task.user_id == user_id
+    is_requester = str(task.user_id) == user_id
     if not is_requester and not current_user.is_admin:
         asgn = await db.scalar(
             select(func.count()).where(
@@ -107,7 +107,7 @@ async def post_comment(
     task_id: UUID,
     payload: CommentCreate,
     db: AsyncSession = Depends(get_db),
-    user_id: UUID = Depends(get_current_user_id),
+    user_id: str = Depends(get_current_user_id),
 ):
     """Post a comment on a task."""
     task = await db.get(TaskDB, task_id)
@@ -115,7 +115,7 @@ async def post_comment(
         raise HTTPException(404, "Task not found")
     current_user = await db.get(UserDB, user_id)
 
-    is_requester = task.user_id == user_id
+    is_requester = str(task.user_id) == user_id
 
     # Access check
     if not is_requester and not current_user.is_admin:
@@ -202,7 +202,7 @@ async def edit_comment(
     comment_id: UUID,
     payload: CommentEdit,
     db: AsyncSession = Depends(get_db),
-    user_id: UUID = Depends(get_current_user_id),
+    user_id: str = Depends(get_current_user_id),
 ):
     """Edit own comment (within 15 minutes of posting)."""
     comment = await db.get(TaskCommentDB, comment_id)
@@ -210,7 +210,7 @@ async def edit_comment(
         raise HTTPException(404, "Comment not found")
     current_user = await db.get(UserDB, user_id)
 
-    if comment.user_id != user_id and not current_user.is_admin:
+    if str(comment.user_id) != user_id and not current_user.is_admin:
         raise HTTPException(403, "Can only edit your own comments")
 
     age = (datetime.now(timezone.utc) - comment.created_at).total_seconds()
@@ -230,7 +230,7 @@ async def delete_comment(
     task_id: UUID,
     comment_id: UUID,
     db: AsyncSession = Depends(get_db),
-    user_id: UUID = Depends(get_current_user_id),
+    user_id: str = Depends(get_current_user_id),
 ):
     """Delete a comment (own comment or admin)."""
     comment = await db.get(TaskCommentDB, comment_id)
@@ -238,7 +238,7 @@ async def delete_comment(
         raise HTTPException(404, "Comment not found")
     current_user = await db.get(UserDB, user_id)
 
-    if comment.user_id != user_id and not current_user.is_admin:
+    if str(comment.user_id) != user_id and not current_user.is_admin:
         raise HTTPException(403, "Can only delete your own comments")
 
     await db.delete(comment)
