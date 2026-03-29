@@ -47,7 +47,7 @@ def _render_payload_template(template_str: str, context: dict[str, Any]) -> dict
     rendered = re.sub(r"\{\{(\s*\w[\w.]*\s*)\}\}", replacer, template_str)
     try:
         return json.loads(rendered)
-    except Exception as exc:
+    except (json.JSONDecodeError, ValueError) as exc:
         raise ValueError(f"Rendered template is not valid JSON: {exc}") from exc
 
 
@@ -106,7 +106,7 @@ async def upsert_payload_template(
     sanitised = _re.sub(r"\{\{[^}]+\}\}", '"__placeholder__"', body.template)
     try:
         json.loads(sanitised)
-    except Exception:
+    except (json.JSONDecodeError, ValueError):
         raise HTTPException(400, "template must be a valid JSON string (with optional {{field}} placeholders)")
 
     # Upsert: delete existing then insert fresh

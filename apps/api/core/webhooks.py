@@ -40,6 +40,24 @@ from models.db import WebhookLogDB, TaskDB, WebhookEndpointDB, WebhookPayloadTem
 logger = structlog.get_logger()
 
 # ---------------------------------------------------------------------------
+# Module-level shared HTTP client for webhook delivery.
+# Avoids creating a new TCP connection per retry / per endpoint.
+# ---------------------------------------------------------------------------
+_webhook_client: httpx.AsyncClient | None = None
+
+
+def _get_webhook_client() -> httpx.AsyncClient:
+    """Return (or lazily create) a shared async HTTP client for webhooks."""
+    global _webhook_client
+    if _webhook_client is None or _webhook_client.is_closed:
+        _webhook_client = httpx.AsyncClient(
+            timeout=10.0,
+            limits=httpx.Limits(max_connections=50, max_keepalive_connections=20),
+            headers={"User-Agent": "CrowdSorcerer-Webhooks/1.0"},
+        )
+    return _webhook_client
+
+# ---------------------------------------------------------------------------
 # All recognised event type strings
 # ---------------------------------------------------------------------------
 ALL_EVENTS = [
@@ -319,17 +337,16 @@ async def _deliver_to_endpoint(
         success = False
 
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.post(
-                    endpoint.url,
-                    content=payload_bytes,
-                    headers={
-                        "Content-Type": "application/json",
-                        "X-Crowdsourcerer-Event": event_type,
-                        "X-Crowdsourcerer-Signature": sig,
-                        "User-Agent": "CrowdSorcerer-Webhooks/1.0",
-                    },
-                )
+            client = _get_webhook_client()
+            resp = await client.post(
+                endpoint.url,
+                content=payload_bytes,
+                headers={
+                    "Content-Type": "application/json",
+                    "X-Crowdsourcerer-Event": event_type,
+                    "X-Crowdsourcerer-Signature": sig,
+                },
+            )
             status_code = resp.status_code
             if resp.status_code < 500:
                 success = resp.status_code < 400
@@ -471,22 +488,22 @@ async def _deliver(
         success = False
 
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.post(url, json=payload)
-                status_code = resp.status_code
-                if resp.status_code < 500:
-                    success = resp.status_code < 400
-                    if not success:
-                        error_msg = f"Client error: HTTP {resp.status_code}"
-                        logger.warning("webhook_client_error", url=url, status=resp.status_code,
-                                       event=event_type)
-                    duration_ms = int((_time.perf_counter() - t0) * 1000)
-                    await _log(task_id, user_id, url, event_type, attempt + 1,
-                               status_code, success, error_msg, duration_ms)
-                    return  # don't retry 4xx
-                error_msg = f"Server error: HTTP {resp.status_code}"
-                logger.warning("webhook_server_error", url=url, status=resp.status_code,
-                               attempt=attempt + 1, event=event_type)
+            client = _get_webhook_client()
+            resp = await client.post(url, json=payload)
+            status_code = resp.status_code
+            if resp.status_code < 500:
+                success = resp.status_code < 400
+                if not success:
+                    error_msg = f"Client error: HTTP {resp.status_code}"
+                    logger.warning("webhook_client_error", url=url, status=resp.status_code,
+                                   event=event_type)
+                duration_ms = int((_time.perf_counter() - t0) * 1000)
+                await _log(task_id, user_id, url, event_type, attempt + 1,
+                           status_code, success, error_msg, duration_ms)
+                return  # don't retry 4xx
+            error_msg = f"Server error: HTTP {resp.status_code}"
+            logger.warning("webhook_server_error", url=url, status=resp.status_code,
+                           attempt=attempt + 1, event=event_type)
         except Exception as exc:
             error_msg = str(exc)
             logger.warning("webhook_failed", url=url, error=error_msg, attempt=attempt + 1,
@@ -541,12 +558,12 @@ async def retry_webhook_log(*, log_id: str, user_id: str) -> dict:
     success = False
 
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(original.url, json=payload)
-            status_code = resp.status_code
-            success = resp.status_code < 400
-            if not success:
-                error_msg = f"HTTP {resp.status_code}"
+        client = _get_webhook_client()
+        resp = await client.post(original.url, json=payload)
+        status_code = resp.status_code
+        success = resp.status_code < 400
+        if not success:
+            error_msg = f"HTTP {resp.status_code}"
     except Exception as exc:
         error_msg = str(exc)
 
@@ -682,18 +699,17 @@ async def replay_webhook_log(*, log_id: str, user_id: str) -> dict:
         success = False
 
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.post(
-                    ep.url,
-                    content=payload_bytes,
-                    headers={
-                        "Content-Type": "application/json",
-                        "X-Crowdsourcerer-Event": event_type,
-                        "X-Crowdsourcerer-Signature": sig,
-                        "X-Crowdsourcerer-Replay": "true",
-                        "User-Agent": "CrowdSorcerer-Webhooks/1.0",
-                    },
-                )
+            client = _get_webhook_client()
+            resp = await client.post(
+                ep.url,
+                content=payload_bytes,
+                headers={
+                    "Content-Type": "application/json",
+                    "X-Crowdsourcerer-Event": event_type,
+                    "X-Crowdsourcerer-Signature": sig,
+                    "X-Crowdsourcerer-Replay": "true",
+                },
+            )
             status_code = resp.status_code
             success = resp.status_code < 400
             if not success:

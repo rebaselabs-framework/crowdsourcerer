@@ -49,7 +49,7 @@ def _hash_password(password: str) -> str:
 def _verify_password(password: str, hashed: str) -> bool:
     try:
         return _bcrypt.checkpw(password.encode(), hashed.encode())
-    except Exception:
+    except (ValueError, TypeError):
         return False
 limiter = Limiter(key_func=get_remote_address)
 

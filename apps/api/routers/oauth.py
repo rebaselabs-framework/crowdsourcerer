@@ -79,7 +79,7 @@ def _verify_state(state: str) -> dict:
     padded = encoded + "=" * (-len(encoded) % 4)
     try:
         payload = json.loads(base64.urlsafe_b64decode(padded))
-    except Exception:
+    except (json.JSONDecodeError, ValueError, UnicodeDecodeError):
         raise HTTPException(status_code=400, detail="Invalid OAuth state encoding")
 
     if time.time() - payload.get("ts", 0) > _STATE_TTL_SECONDS:

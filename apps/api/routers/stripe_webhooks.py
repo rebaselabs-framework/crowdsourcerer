@@ -121,7 +121,7 @@ async def stripe_webhook(
     # Parse event
     try:
         event = json.loads(raw_body)
-    except Exception:
+    except (json.JSONDecodeError, ValueError):
         raise HTTPException(400, "Invalid JSON payload")
 
     event_id = event.get("id", "")

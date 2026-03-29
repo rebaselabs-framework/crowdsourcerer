@@ -30,7 +30,7 @@ def _summarise(data: Optional[dict], max_len: int = 200) -> Optional[str]:
     try:
         s = json.dumps(data, default=str)
         return s if len(s) <= max_len else s[:max_len] + "…"
-    except Exception:
+    except (TypeError, ValueError, OverflowError):
         return str(data)[:max_len]
 
 

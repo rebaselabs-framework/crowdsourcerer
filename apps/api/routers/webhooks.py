@@ -10,7 +10,6 @@ from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 
-import httpx
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +17,7 @@ from sqlalchemy import select, func
 
 from pydantic import BaseModel
 from core.auth import get_current_user_id
+from core.webhooks import _get_webhook_client
 from core.background import safe_create_task
 from core.database import get_db
 from core.scopes import (
@@ -279,17 +279,16 @@ async def test_endpoint(
 
     start = time.monotonic()
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(
-                ep.url,
-                content=payload_bytes,
-                headers={
-                    "Content-Type": "application/json",
-                    "X-Crowdsourcerer-Event": "test.ping",
-                    "X-Crowdsourcerer-Signature": sig,
-                    "User-Agent": "CrowdSorcerer-Webhooks/1.0",
-                },
-            )
+        client = _get_webhook_client()
+        resp = await client.post(
+            ep.url,
+            content=payload_bytes,
+            headers={
+                "Content-Type": "application/json",
+                "X-Crowdsourcerer-Event": "test.ping",
+                "X-Crowdsourcerer-Signature": sig,
+            },
+        )
         duration_ms = int((time.monotonic() - start) * 1000)
         success = 200 <= resp.status_code < 300
         return {

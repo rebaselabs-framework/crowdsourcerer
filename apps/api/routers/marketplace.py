@@ -10,13 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_, and_
 
 from core.database import get_db
-
-_LIKE_ESC = "\\"
-
-
-def _esc_like(s: str) -> str:
-    """Escape ILIKE/LIKE special characters so user search input is treated literally."""
-    return s.replace(_LIKE_ESC, _LIKE_ESC * 2).replace("%", f"{_LIKE_ESC}%").replace("_", f"{_LIKE_ESC}_")
+from core.sql import esc_like, LIKE_ESC
 from core.scopes import (
     require_scope,
     SCOPE_MARKETPLACE_READ,
@@ -212,10 +206,10 @@ async def list_templates(
     if execution_mode:
         q = q.where(TaskTemplateDB.execution_mode == execution_mode)
     if search:
-        s = f"%{_esc_like(search)}%"
+        s = f"%{esc_like(search)}%"
         q = q.where(or_(
-            TaskTemplateDB.name.ilike(s, escape=_LIKE_ESC),
-            TaskTemplateDB.description.ilike(s, escape=_LIKE_ESC),
+            TaskTemplateDB.name.ilike(s, escape=LIKE_ESC),
+            TaskTemplateDB.description.ilike(s, escape=LIKE_ESC),
         ))
 
     total = await db.scalar(select(func.count()).select_from(q.subquery())) or 0

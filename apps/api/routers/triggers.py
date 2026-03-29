@@ -75,7 +75,7 @@ def _compute_next_fire(cron_expr: str, after: Optional[datetime] = None) -> Opti
         if nxt.tzinfo is None:
             nxt = nxt.replace(tzinfo=timezone.utc)
         return nxt
-    except Exception:
+    except (ValueError, KeyError, TypeError):
         return None
 
 
@@ -210,7 +210,7 @@ async def create_trigger(
             from croniter import croniter  # type: ignore
             if not croniter.is_valid(body.cron_expression):
                 raise ValueError("invalid")
-        except Exception:
+        except (ValueError, KeyError, TypeError):
             raise HTTPException(status_code=422, detail=f"Invalid cron expression: '{body.cron_expression}'")
 
     webhook_token = None
@@ -324,7 +324,7 @@ async def update_trigger(
             from croniter import croniter  # type: ignore
             if not croniter.is_valid(body.cron_expression):
                 raise ValueError("invalid")
-        except Exception:
+        except (ValueError, KeyError, TypeError):
             raise HTTPException(status_code=422, detail=f"Invalid cron expression: '{body.cron_expression}'")
         trigger.cron_expression = body.cron_expression
         trigger.next_fire_at = _compute_next_fire(body.cron_expression)
@@ -384,7 +384,7 @@ async def fire_webhook_trigger(
         body = await request.json()
         if not isinstance(body, dict):
             body = {}
-    except Exception:
+    except (ValueError, UnicodeDecodeError):
         body = {}
 
     try:

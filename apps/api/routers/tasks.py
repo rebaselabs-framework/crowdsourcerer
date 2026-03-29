@@ -32,16 +32,10 @@ from models.schemas import (
 )
 from workers.base import get_rebasekit_client, WorkerError
 from workers.router import execute_task, TASK_CREDITS
+from core.sql import esc_like, LIKE_ESC
 
 logger = structlog.get_logger()
 router = APIRouter(prefix="/v1/tasks", tags=["tasks"])
-
-_LIKE_ESC = "\\"
-
-
-def _esc_like(s: str) -> str:
-    """Escape ILIKE/LIKE special characters so user search input is treated literally."""
-    return s.replace(_LIKE_ESC, _LIKE_ESC * 2).replace("%", f"{_LIKE_ESC}%").replace("_", f"{_LIKE_ESC}_")
 
 # Default credits cost for human tasks (requester pays this to fund worker rewards)
 HUMAN_TASK_BASE_CREDITS: dict[str, int] = {
@@ -659,9 +653,9 @@ async def public_task_feed(
     if type:
         base_q = base_q.where(TaskDB.type == type)
     if q and q.strip():
-        search_term = f"%{_esc_like(q.strip().lower())}%"
+        search_term = f"%{esc_like(q.strip().lower())}%"
         base_q = base_q.where(
-            func.lower(TaskDB.task_instructions).like(search_term, escape=_LIKE_ESC)
+            func.lower(TaskDB.task_instructions).like(search_term, escape=LIKE_ESC)
         )
     if min_reward is not None:
         base_q = base_q.where(TaskDB.worker_reward_credits >= min_reward)
@@ -824,12 +818,12 @@ async def list_tasks(
         query = query.where(TaskDB.tags.contains([tag]))
     if q and q.strip():
         # Case-insensitive search on task_instructions; falls back to type match
-        search_term = f"%{_esc_like(q.strip())}%"
+        search_term = f"%{esc_like(q.strip())}%"
         from sqlalchemy import or_, cast, Text
         query = query.where(
             or_(
-                TaskDB.task_instructions.ilike(search_term, escape=_LIKE_ESC),
-                cast(TaskDB.input, Text).ilike(search_term, escape=_LIKE_ESC),
+                TaskDB.task_instructions.ilike(search_term, escape=LIKE_ESC),
+                cast(TaskDB.input, Text).ilike(search_term, escape=LIKE_ESC),
             )
         )
     if has_submissions is True:
