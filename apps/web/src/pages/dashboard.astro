@@ -14,6 +14,7 @@ let tasks: any = null;
 let apiKeys: any = [];
 let onboardingStatus: any = null;
 let pendingReviewCount = 0;
+let dashboardError: string | null = null;
 
 try {
   [user, credits, tasks, apiKeys] = await Promise.all([
@@ -22,8 +23,9 @@ try {
     apiFetch<any>("/v1/tasks?page_size=5", { token }),
     apiFetch<any>("/v1/api-keys", { token }),
   ]);
-} catch (e) {
-  return Astro.redirect("/login");
+} catch (e: any) {
+  if (e.message?.includes("401") || e.message?.includes("403")) return Astro.redirect("/login");
+  dashboardError = "Failed to load dashboard data. Please try again.";
 }
 
 // Non-blocking: fetch onboarding status + pending review count
@@ -69,6 +71,13 @@ const showOnboardingBanner = Boolean(
 
 <Layout title="Dashboard — CrowdSorcerer">
   <div class="max-w-5xl mx-auto px-6 py-10">
+
+    {dashboardError && (
+      <div class="bg-red-900/30 border border-red-800 text-red-300 rounded-xl p-5 mb-6 flex items-center justify-between gap-4">
+        <span>⚠️ {dashboardError}</span>
+        <a href="/dashboard" class="text-sm text-red-400 hover:text-red-300 underline whitespace-nowrap">Try again</a>
+      </div>
+    )}
 
     <!-- New-user onboarding banner -->
     {showOnboardingBanner && (

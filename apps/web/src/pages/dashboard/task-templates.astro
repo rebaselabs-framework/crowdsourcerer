@@ -6,9 +6,13 @@ const token = getToken(Astro.cookies);
 if (!token) return Astro.redirect("/login");
 
 let templateData: any = { templates: [], total: 0 };
+let templateError: string | null = null;
 try {
   templateData = await apiFetch<any>("/v1/task-templates", { token });
-} catch {}
+} catch (e: any) {
+  if (e.message?.includes("401") || e.message?.includes("403")) return Astro.redirect("/login");
+  templateError = e.message ?? "Failed to load templates";
+}
 
 const templates: any[] = templateData?.templates ?? [];
 const total: number = templateData?.total ?? 0;
@@ -52,8 +56,15 @@ const HUMAN_TYPES = new Set([
       </div>
     </div>
 
+    {templateError && (
+      <div class="bg-red-900/30 border border-red-800 text-red-300 rounded-xl p-5 mb-6 flex items-center justify-between gap-4">
+        <span>⚠️ {templateError}</span>
+        <a href="/dashboard/task-templates" class="text-sm text-red-400 hover:text-red-300 underline whitespace-nowrap">Try again</a>
+      </div>
+    )}
+
     <!-- Empty state -->
-    {templates.length === 0 && (
+    {templates.length === 0 && !templateError && (
       <div class="bg-gray-900 border border-gray-800 rounded-2xl p-12 text-center">
         <div class="text-5xl mb-4">📋</div>
         <h3 class="text-xl font-semibold text-gray-200 mb-2">No templates yet</h3>

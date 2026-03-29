@@ -116,9 +116,9 @@ const statusColor: Record<string, string> = {
                 </div>
                 <div class="flex items-center gap-2 flex-shrink-0">
                   {item.task_status === "open" && (
-                    <a href={`/worker/marketplace`}
+                    <a href={`/worker/tasks/${item.task_id}`}
                        class="text-xs bg-green-600 text-white px-3 py-1.5 rounded-lg hover:bg-green-700">
-                      Claim
+                      Claim →
                     </a>
                   )}
                   <button

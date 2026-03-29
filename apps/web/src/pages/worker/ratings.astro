@@ -9,9 +9,13 @@ if (!token) return Astro.redirect('/login');
 let summary: { avg_score: number | null; total_ratings: number; distribution: Record<number, number>; recent: any[] } = {
   avg_score: null, total_ratings: 0, distribution: {1:0,2:0,3:0,4:0,5:0}, recent: []
 };
+let ratingsError: string | null = null;
 try {
   summary = await apiFetch<any>('/v1/workers/me/ratings', { token });
-} catch {}
+} catch (e: any) {
+  if (e.message?.includes("401") || e.message?.includes("403")) return Astro.redirect("/login");
+  ratingsError = e.message ?? "Failed to load ratings";
+}
 
 const { avg_score, total_ratings, distribution, recent } = summary;
 const dist = distribution;
@@ -24,6 +28,13 @@ function stars(score: number) {
   <div class="max-w-3xl mx-auto px-4 py-8">
     <h1 class="text-2xl font-bold mb-1">⭐ My Feedback Ratings</h1>
     <p class="text-gray-500 text-sm mb-6">Ratings left by requesters after approving your work.</p>
+
+    {ratingsError && (
+      <div class="bg-red-900/30 border border-red-800 text-red-300 rounded-xl p-5 mb-6 flex items-center justify-between gap-4">
+        <span>⚠️ {ratingsError}</span>
+        <a href="/worker/ratings" class="text-sm text-red-400 hover:text-red-300 underline whitespace-nowrap">Try again</a>
+      </div>
+    )}
 
     <!-- Summary KPI strip -->
     <div class="grid grid-cols-3 gap-4 mb-8">
@@ -104,7 +115,7 @@ function stars(score: number) {
                   <div class="text-xs text-gray-400">
                     {new Date(r.created_at).toLocaleDateString()}
                   </div>
-                  <a href={`/dashboard/tasks/${r.task_id}`} class="text-xs text-violet-300 hover:underline">
+                  <a href={`/worker/tasks/${r.task_id}`} class="text-xs text-violet-300 hover:underline">
                     View Task →
                   </a>
                 </div>

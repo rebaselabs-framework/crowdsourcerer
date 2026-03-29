@@ -26,7 +26,8 @@ try {
     { token }
   );
 } catch (e: any) {
-  error = (e as Error).message ?? "Failed to load payouts";
+  if (e.message?.includes("401") || e.message?.includes("403")) return Astro.redirect("/login");
+  error = e.message ?? "Failed to load payouts";
 }
 
 const payouts = data?.items ?? [];
