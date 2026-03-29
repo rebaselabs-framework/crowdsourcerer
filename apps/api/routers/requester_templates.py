@@ -13,6 +13,13 @@ from uuid import UUID
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func, or_
+
+_LIKE_ESC = "\\"
+
+
+def _esc_like(s: str) -> str:
+    """Escape ILIKE/LIKE special characters so user search input is treated literally."""
+    return s.replace(_LIKE_ESC, _LIKE_ESC * 2).replace("%", f"{_LIKE_ESC}%").replace("_", f"{_LIKE_ESC}_")
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth import get_current_user_id
@@ -241,7 +248,7 @@ async def unpublish_template(
 
 @marketplace_router.get("", response_model=MarketplaceTemplateListOut)
 async def browse_marketplace(
-    search: Optional[str] = Query(None, description="Search title / description"),
+    search: Optional[str] = Query(None, max_length=200, description="Search title / description"),
     task_type: Optional[str] = Query(None),
     tag: Optional[str] = Query(None, description="Filter by marketplace tag"),
     sort: str = Query("popular", description="popular | newest | most_used"),
@@ -260,12 +267,12 @@ async def browse_marketplace(
         conditions.append(RequesterSavedTemplateDB.task_type == task_type)
 
     if search:
-        q = f"%{search.lower()}%"
+        q = f"%{_esc_like(search.lower())}%"
         conditions.append(
             or_(
-                RequesterSavedTemplateDB.marketplace_title.ilike(q),
-                RequesterSavedTemplateDB.name.ilike(q),
-                RequesterSavedTemplateDB.marketplace_description.ilike(q),
+                RequesterSavedTemplateDB.marketplace_title.ilike(q, escape=_LIKE_ESC),
+                RequesterSavedTemplateDB.name.ilike(q, escape=_LIKE_ESC),
+                RequesterSavedTemplateDB.marketplace_description.ilike(q, escape=_LIKE_ESC),
             )
         )
 

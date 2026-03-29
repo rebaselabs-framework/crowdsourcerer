@@ -189,7 +189,8 @@ async def export_tasks(
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid to_date format (use YYYY-MM-DD)")
 
-    q = select(TaskDB).where(and_(*conditions)).order_by(TaskDB.created_at.desc())
+    MAX_EXPORT_ROWS = 10_000
+    q = select(TaskDB).where(and_(*conditions)).order_by(TaskDB.created_at.desc()).limit(MAX_EXPORT_ROWS)
     result = await db.execute(q)
     tasks = result.scalars().all()
 

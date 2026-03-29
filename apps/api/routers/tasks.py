@@ -408,8 +408,11 @@ async def create_tasks_batch(
             db.add(txn)
             actual_credits_charged += est
             created.append((task, est, is_human))
+        except HTTPException as e:
+            failed.append({"index": i, "type": task_req.type, "error": e.detail})
         except Exception as e:
-            failed.append({"index": i, "type": task_req.type, "error": str(e)})
+            logger.error("batch_tasks.item_error", index=i, type=task_req.type, error=str(e))
+            failed.append({"index": i, "type": task_req.type, "error": "Internal error creating task"})
 
     # Refund credits for any tasks that failed to create
     overcharged = total_credits - actual_credits_charged

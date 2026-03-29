@@ -12,6 +12,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth import get_current_user_id, require_admin  # noqa: F401
 from core.database import get_db
+
+_LIKE_ESC = "\\"
+
+
+def _esc_like(s: str) -> str:
+    """Escape ILIKE/LIKE special characters so user search input is treated literally."""
+    return s.replace(_LIKE_ESC, _LIKE_ESC * 2).replace("%", f"{_LIKE_ESC}%").replace("_", f"{_LIKE_ESC}_")
 from core.reputation import compute_reputation, refresh_worker_reputation, reputation_tier
 from core.notify import create_notification, NotifType
 from models.db import UserDB, WorkerStrikeDB, WorkerCertificationDB
@@ -140,7 +147,7 @@ async def list_workers_reputation(
     is_banned: Optional[bool] = Query(None),
     min_score: Optional[float] = Query(None),
     max_score: Optional[float] = Query(None),
-    search: Optional[str] = Query(None),
+    search: Optional[str] = Query(None, max_length=200),
     _admin=Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
@@ -153,8 +160,9 @@ async def list_workers_reputation(
     if max_score is not None:
         q = q.where(UserDB.reputation_score <= max_score)
     if search:
+        term = f"%{_esc_like(search)}%"
         q = q.where(
-            UserDB.email.ilike(f"%{search}%") | UserDB.name.ilike(f"%{search}%")
+            UserDB.email.ilike(term, escape=_LIKE_ESC) | UserDB.name.ilike(term, escape=_LIKE_ESC)
         )
 
     col = getattr(UserDB, sort_by, UserDB.reputation_score)

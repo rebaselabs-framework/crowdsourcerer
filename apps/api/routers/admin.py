@@ -17,6 +17,13 @@ import time as _time_module
 
 from core.auth import get_current_user_id, require_admin
 from core.database import get_db, AsyncSessionLocal
+
+_LIKE_ESC = "\\"
+
+
+def _esc_like(s: str) -> str:
+    """Escape ILIKE/LIKE special characters so user search input is treated literally."""
+    return s.replace(_LIKE_ESC, _LIKE_ESC * 2).replace("%", f"{_LIKE_ESC}%").replace("_", f"{_LIKE_ESC}_")
 from core.sweeper import sweep_once, get_sweeper_task, _sweep_scheduled_tasks, _LAST_SWEEP_AT
 from core.audit import log_admin_action
 from core.result_cache import cache_stats, cache_flush
@@ -157,7 +164,7 @@ async def get_platform_stats(
 async def list_users(
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=100),
-    search: Optional[str] = Query(None),
+    search: Optional[str] = Query(None, max_length=200),
     role: Optional[str] = Query(None),
     plan: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
@@ -172,8 +179,9 @@ async def list_users(
         raise HTTPException(422, f"Invalid plan '{plan}'. Must be one of: {', '.join(sorted(_VALID_PLANS))}")
     q = select(UserDB)
     if search:
+        term = f"%{_esc_like(search)}%"
         q = q.where(
-            UserDB.email.ilike(f"%{search}%") | UserDB.name.ilike(f"%{search}%")
+            UserDB.email.ilike(term, escape=_LIKE_ESC) | UserDB.name.ilike(term, escape=_LIKE_ESC)
         )
     if role:
         q = q.where(UserDB.role == role)
@@ -1187,10 +1195,11 @@ async def list_workers(
     """List workers with ban status and strike count for admin management."""
     query = select(UserDB).where(UserDB.role.in_(["worker", "both"]))
     if search:
+        term = f"%{_esc_like(search)}%"
         query = query.where(
             or_(
-                UserDB.email.ilike(f"%{search}%"),
-                UserDB.name.ilike(f"%{search}%"),
+                UserDB.email.ilike(term, escape=_LIKE_ESC),
+                UserDB.name.ilike(term, escape=_LIKE_ESC),
             )
         )
     if status == "banned":
