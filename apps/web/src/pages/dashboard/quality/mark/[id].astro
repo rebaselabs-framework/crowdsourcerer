@@ -37,6 +37,7 @@ if (Astro.request.method === "POST") {
     });
     return Astro.redirect("/dashboard/quality?marked=1");
   } catch (e: any) {
+    if (e.message?.includes("401") || e.message?.includes("403")) return Astro.redirect("/login");
     apiError = e.message?.includes("400") ? "Invalid request. Make sure this is a human task." : "Failed to mark as gold standard";
   }
 }

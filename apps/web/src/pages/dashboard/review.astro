@@ -21,6 +21,7 @@ if (Astro.request.method === "POST") {
     });
     return Astro.redirect("/dashboard/review");
   } catch (e: any) {
+    if (e.message?.includes("401") || e.message?.includes("403")) return Astro.redirect("/login");
     return Astro.redirect(`/dashboard/review?action_error=${encodeURIComponent(e.message ?? "Action failed — please try again")}`);
   }
 }

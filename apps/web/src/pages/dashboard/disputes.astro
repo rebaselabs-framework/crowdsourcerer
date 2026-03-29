@@ -18,7 +18,9 @@ if (Astro.request.method === "POST") {
         method: "POST", token,
         body: JSON.stringify({ winning_assignment_id: assignmentId, resolution_note: note || null }),
       });
-    } catch (_) {}
+    } catch (e: any) {
+      if (e.message?.includes("401") || e.message?.includes("403")) return Astro.redirect("/login");
+    }
   }
   return Astro.redirect("/dashboard/disputes");
 }

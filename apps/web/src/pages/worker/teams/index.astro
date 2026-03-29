@@ -52,6 +52,7 @@ if (Astro.request.method === "POST") {
       actionSuccess = "Team deleted.";
     }
   } catch (e: any) {
+    if (e.message?.includes("401") || e.message?.includes("403")) return Astro.redirect("/login");
     actionError = e.message || "Action failed";
   }
 }

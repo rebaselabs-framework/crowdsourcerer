@@ -20,6 +20,7 @@ if (Astro.request.method === "POST") {
       });
       actionSuccess = "Application withdrawn";
     } catch (e: any) {
+      if (e.message?.includes("401") || e.message?.includes("403")) return Astro.redirect("/login");
       actionError = e.message || "Failed to withdraw";
     }
   }

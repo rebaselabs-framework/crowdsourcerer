@@ -26,6 +26,7 @@ if (Astro.request.method === "POST") {
       `/worker/certifications?result_type=${encodeURIComponent(taskType)}&score=${r.score}&passed=${r.passed}&earned=${r.earned_points}&total=${r.total_points}&correct=${r.correct_count}&count=${r.question_count}`
     );
   } catch (e: any) {
+    if (e.message?.includes("401") || e.message?.includes("403")) return Astro.redirect("/login");
     return Astro.redirect(`/worker/certifications?error=attempt_failed&type=${taskType}`);
   }
 }

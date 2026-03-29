@@ -24,6 +24,7 @@ if (Astro.request.method === "POST") {
       });
       return Astro.redirect("/dashboard/pipelines");
     } catch (e: any) {
+      if (e.message?.includes("401") || e.message?.includes("403")) return Astro.redirect("/login");
       return Astro.redirect(`/dashboard/pipelines?action_error=${encodeURIComponent(e.message ?? "Failed to create pipeline")}`);
     }
   } else if (action === "delete") {
@@ -32,6 +33,7 @@ if (Astro.request.method === "POST") {
       await apiFetch(`/v1/pipelines/${pipelineId}`, { method: "DELETE", token });
       return Astro.redirect("/dashboard/pipelines");
     } catch (e: any) {
+      if (e.message?.includes("401") || e.message?.includes("403")) return Astro.redirect("/login");
       return Astro.redirect(`/dashboard/pipelines?action_error=${encodeURIComponent(e.message ?? "Failed to delete pipeline")}`);
     }
   } else if (action === "run") {
@@ -46,6 +48,7 @@ if (Astro.request.method === "POST") {
       });
       return Astro.redirect(`/dashboard/pipelines?id=${pipelineId}`);
     } catch (e: any) {
+      if (e.message?.includes("401") || e.message?.includes("403")) return Astro.redirect("/login");
       return Astro.redirect(`/dashboard/pipelines?id=${pipelineId}&action_error=${encodeURIComponent(e.message ?? "Failed to start pipeline run")}`);
     }
   }

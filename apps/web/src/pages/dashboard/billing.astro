@@ -28,6 +28,7 @@ if (Astro.request.method === "POST") {
         ? `Alert set: you'll be notified when balance drops below ${threshold.toLocaleString()} credits.`
         : "Credit alert disabled.";
     } catch (e: any) {
+      if (e.message?.includes("401") || e.message?.includes("403")) return Astro.redirect("/login");
       alertError = e.message ?? "Failed to update alert";
     }
   }

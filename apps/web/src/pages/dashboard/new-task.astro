@@ -137,6 +137,7 @@ if (Astro.request.method === "POST") {
       token,
     })).task_id}?launched=1`);
   } catch (e: any) {
+    if (e.message?.includes("401") || e.message?.includes("403")) return Astro.redirect("/login");
     error = e.message ?? "Failed to submit task";
   }
 }

@@ -42,7 +42,10 @@ if (Astro.request.method === "POST") {
       await apiFetch(`/v1/admin/announcements/${id}`, { method: "DELETE", token });
     }
   } catch (e: any) {
-    return Astro.redirect(`/admin/announcements?action_error=${encodeURIComponent(e.message ?? "Action failed — please try again")}`);
+    const msg = e.message ?? "";
+    if (msg.includes("401")) return Astro.redirect("/login");
+    if (msg.includes("403")) return Astro.redirect("/dashboard");
+    return Astro.redirect(`/admin/announcements?action_error=${encodeURIComponent(msg || "Action failed — please try again")}`);
   }
   return Astro.redirect("/admin/announcements");
 }

@@ -16,11 +16,12 @@ let error = "";
 try {
   config = await apiFetch<any>("/v1/admin/config/status", { token });
 } catch (e: any) {
-  error = e.message ?? "Failed to load configuration status";
-  if (error.includes("401")) return Astro.redirect("/login");
-  if (error.includes("403") || error.includes("Not an admin")) {
+  const msg = e.message ?? "";
+  if (msg.includes("401")) return Astro.redirect("/login");
+  if (msg.includes("403") || msg.includes("Not an admin")) {
     return Astro.redirect("/dashboard");
   }
+  error = msg || "Failed to load configuration status";
 }
 
 interface Check {

@@ -442,6 +442,7 @@ const totalNotifications = grouped.reduce((s, g) => s + g.items.length, 0);
     async function pollUnreadCount() {
       try {
         const res = await fetch("/api/notifications/unread-count");
+        if (res.status === 401 || res.status === 403) { window.location.href = "/login"; return; }
         if (!res.ok) return;
         const data = await res.json();
         const count: number = data.unread_count ?? 0;

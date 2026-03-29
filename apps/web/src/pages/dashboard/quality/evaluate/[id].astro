@@ -26,6 +26,7 @@ if (Astro.request.method === "POST") {
       method: "POST",
     });
   } catch (e: any) {
+    if (e.message?.includes("401") || e.message?.includes("403")) return Astro.redirect("/login");
     apiError = "Evaluation failed. Make sure the task is a gold standard with submitted answers.";
   }
 }

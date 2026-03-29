@@ -27,10 +27,10 @@ try {
   if (alertType) p.set("alert_type", alertType);
   data = await apiFetch<any>(`/v1/admin/alerts?${p}`, { token });
 
-  // Fetch counts for summary badges (always active status)
+  // Fetch counts for summary badges (fault-isolated — failure here should not wipe main data)
   const [critRes, warnRes] = await Promise.all([
-    apiFetch<any>(`/v1/admin/alerts?status=active&severity=critical&limit=1`, { token }),
-    apiFetch<any>(`/v1/admin/alerts?status=active&severity=warning&limit=1`,  { token }),
+    apiFetch<any>(`/v1/admin/alerts?status=active&severity=critical&limit=1`, { token }).catch(() => null),
+    apiFetch<any>(`/v1/admin/alerts?status=active&severity=warning&limit=1`,  { token }).catch(() => null),
   ]);
   activeCritical = critRes?.total ?? 0;
   activeWarning  = warnRes?.total ?? 0;

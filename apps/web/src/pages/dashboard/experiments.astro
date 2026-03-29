@@ -51,6 +51,7 @@ if (Astro.request.method === "POST") {
       await apiFetch(`/v1/experiments/${expId}`, { method: "DELETE", token });
     }
   } catch (e: any) {
+    if (e.message?.includes("401") || e.message?.includes("403")) return Astro.redirect("/login");
     return Astro.redirect(`/dashboard/experiments?action_error=${encodeURIComponent(e.message ?? "Action failed — please try again")}`);
   }
   return Astro.redirect("/dashboard/experiments");

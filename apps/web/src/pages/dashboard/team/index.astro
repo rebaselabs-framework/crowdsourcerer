@@ -58,6 +58,7 @@ if (Astro.request.method === "POST") {
       });
     }
   } catch (e: any) {
+    if (e.message?.includes("401") || e.message?.includes("403")) return Astro.redirect("/login");
     return Astro.redirect(`/dashboard/team?error=${encodeURIComponent(e.message ?? "Action failed")}`);
   }
   return Astro.redirect("/dashboard/team");

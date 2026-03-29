@@ -166,6 +166,7 @@ const totalUnread = threads.reduce((s, t) => s + t.unread_count, 0);
     setInterval(async () => {
       try {
         const res = await fetch("/api/tasks/messages/inbox");
+        if (res.status === 401 || res.status === 403) { window.location.href = "/login"; return; }
         if (!res.ok) return;
         const threads: any[] = await res.json();
         // Update unread badges in-place without full re-render

@@ -53,6 +53,7 @@ if (Astro.request.method === "POST") {
     user = await apiFetch<any>('/v1/users/me', { token });
     success = true;
   } catch (e: any) {
+    if (e.message?.includes("401") || e.message?.includes("403")) return Astro.redirect("/login");
     saveError = e.message ?? "Failed to save changes.";
   }
 }

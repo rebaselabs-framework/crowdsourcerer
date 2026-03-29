@@ -22,6 +22,7 @@ if (Astro.request.method === "POST") {
         token,
       })).task_id}`);
     } catch (e: any) {
+      if (e.message?.includes("401") || e.message?.includes("403")) return Astro.redirect("/login");
       rerunError = e.message ?? "Failed to rerun task";
     }
   } else if (action === "accept_application") {
@@ -32,6 +33,7 @@ if (Astro.request.method === "POST") {
       });
       return Astro.redirect(`/dashboard/tasks/${id}`);
     } catch (e: any) {
+      if (e.message?.includes("401") || e.message?.includes("403")) return Astro.redirect("/login");
       return Astro.redirect(`/dashboard/tasks/${id}?action_error=${encodeURIComponent(e.message ?? "Failed to accept application")}`);
     }
   } else if (action === "reject_application") {
@@ -42,6 +44,7 @@ if (Astro.request.method === "POST") {
       });
       return Astro.redirect(`/dashboard/tasks/${id}`);
     } catch (e: any) {
+      if (e.message?.includes("401") || e.message?.includes("403")) return Astro.redirect("/login");
       return Astro.redirect(`/dashboard/tasks/${id}?action_error=${encodeURIComponent(e.message ?? "Failed to reject application")}`);
     }
   } else if (action === "withdraw_application") {
@@ -51,6 +54,7 @@ if (Astro.request.method === "POST") {
       });
       return Astro.redirect(`/dashboard/tasks/${id}`);
     } catch (e: any) {
+      if (e.message?.includes("401") || e.message?.includes("403")) return Astro.redirect("/login");
       return Astro.redirect(`/dashboard/tasks/${id}?action_error=${encodeURIComponent(e.message ?? "Failed to withdraw application")}`);
     }
   } else if (action === "assign_team") {
@@ -62,6 +66,7 @@ if (Astro.request.method === "POST") {
       });
       return Astro.redirect(`/dashboard/tasks/${id}`);
     } catch (e: any) {
+      if (e.message?.includes("401") || e.message?.includes("403")) return Astro.redirect("/login");
       return Astro.redirect(`/dashboard/tasks/${id}?action_error=${encodeURIComponent(e.message ?? "Failed to assign team")}`);
     }
   } else if (action === "remove_team") {
@@ -71,6 +76,7 @@ if (Astro.request.method === "POST") {
       });
       return Astro.redirect(`/dashboard/tasks/${id}`);
     } catch (e: any) {
+      if (e.message?.includes("401") || e.message?.includes("403")) return Astro.redirect("/login");
       return Astro.redirect(`/dashboard/tasks/${id}?action_error=${encodeURIComponent(e.message ?? "Failed to remove team")}`);
     }
   } else {
@@ -85,6 +91,7 @@ if (Astro.request.method === "POST") {
       });
       return Astro.redirect(`/dashboard/tasks/${id}`);
     } catch (e: any) {
+      if (e.message?.includes("401") || e.message?.includes("403")) return Astro.redirect("/login");
       return Astro.redirect(`/dashboard/tasks/${id}?action_error=${encodeURIComponent(e.message ?? "Action failed — please try again")}`);
     }
   }
@@ -2554,6 +2561,7 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
       async function doPoll() {
         try {
           var res = await fetch("/api/tasks/" + taskId + "/status");
+          if (res.status === 401 || res.status === 403) { window.location.href = "/login"; return; }
           if (!res.ok) { schedulePoll(); return; }
           var data = await res.json();
 

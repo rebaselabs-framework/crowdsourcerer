@@ -19,12 +19,15 @@ if (Astro.request.method === "POST") {
     try {
       await apiFetch("/v1/requester-onboarding/reset", { method: "POST", token });
     } catch (e: any) {
+      if (e.message?.includes("401") || e.message?.includes("403")) return Astro.redirect("/login");
       return Astro.redirect(`/dashboard/requester-onboarding?action_error=${encodeURIComponent(e.message ?? "Failed to reset onboarding")}`);
     }
   } else if (action === "skip") {
     try {
       await apiFetch("/v1/requester-onboarding/skip", { method: "POST", token });
-    } catch (_) {}
+    } catch (e: any) {
+      if (e.message?.includes("401") || e.message?.includes("403")) return Astro.redirect("/login");
+    }
     return Astro.redirect("/dashboard");
   } else {
     // complete_step / skip_step — failures are silent (page shows current state on reload)
@@ -34,7 +37,9 @@ if (Astro.request.method === "POST") {
       } else if (action === "skip_step" && step) {
         await apiFetch(`/v1/requester-onboarding/steps/${step}/skip`, { method: "POST", token });
       }
-    } catch (_) {}
+    } catch (e: any) {
+      if (e.message?.includes("401") || e.message?.includes("403")) return Astro.redirect("/login");
+    }
   }
   return Astro.redirect("/dashboard/requester-onboarding");
 }

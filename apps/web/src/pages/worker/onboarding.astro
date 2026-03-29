@@ -18,14 +18,15 @@ if (Astro.request.method === "POST") {
       await apiFetch("/v1/onboarding/skip", { method: "POST", token });
       return Astro.redirect("/worker");
     } catch (e: any) {
+      if (e.message?.includes("401") || e.message?.includes("403")) return Astro.redirect("/login");
       return Astro.redirect(`/worker/onboarding?action_error=${encodeURIComponent(e.message ?? "Failed to skip onboarding")}`);
     }
   } else if (action === "complete_step") {
     const step = form.get("step") as string;
     try {
       await apiFetch(`/v1/onboarding/steps/${step}/complete`, { method: "POST", token });
-    } catch (_) {
-      // Step stays incomplete on page refresh — no additional feedback needed
+    } catch (e: any) {
+      if (e.message?.includes("401") || e.message?.includes("403")) return Astro.redirect("/login");
     }
   }
   return Astro.redirect("/worker/onboarding");
