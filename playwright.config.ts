@@ -3,7 +3,7 @@ import { defineConfig, devices } from "@playwright/test";
 /**
  * Playwright E2E config for CrowdSorcerer.
  *
- * TARGET: The live Coolify deployment (sslip.io auto-domain).
+ * TARGET: The live deployment at crowdsourcerer.rebaselabs.online.
  * Override with E2E_BASE_URL env var for local dev or custom domains.
  *
  * Usage:
@@ -23,8 +23,8 @@ export default defineConfig({
   use: {
     baseURL:
       process.env.E2E_BASE_URL ??
-      "https://bvbzhp7j15a7nxiqf9vm53ey.10.0.1.1.sslip.io",
-    ignoreHTTPSErrors: true, // sslip.io uses self-signed certs
+      "https://crowdsourcerer.rebaselabs.online",
+    ignoreHTTPSErrors: true, // allow self-signed certs in dev/staging
     trace: "on-first-retry",
     screenshot: "only-on-failure",
     headless: true,

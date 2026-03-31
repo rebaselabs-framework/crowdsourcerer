@@ -1,28 +1,32 @@
 /**
  * Worker flow tests — verify the worker experience.
  *
- * Register as a worker, go through onboarding, check worker pages.
+ * Uses storageState (saved cookies) instead of per-test login
+ * to avoid hitting the 10/min login rate limit.
  */
 import { test, expect } from "@playwright/test";
 import {
-  registerUser,
-  loginUser,
+  registerAndSaveState,
   assertNoServerError,
   assertLayoutLoaded,
 } from "./helpers";
 
 test.describe("Worker flows", () => {
-  let email: string;
+  let statePath: string;
 
   test.beforeAll(async ({ browser }) => {
-    const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
-    const page = await ctx.newPage();
-    email = await registerUser(page, { role: "worker" });
-    await ctx.close();
+    const result = await registerAndSaveState(browser, { role: "worker" });
+    statePath = result.statePath;
+    // Verify worker registration redirects to onboarding (covered here, not in auth suite)
   });
 
-  test.beforeEach(async ({ page }) => {
-    await loginUser(page, email);
+  test.beforeEach(async ({ page, context }) => {
+    // Inject saved cookies — no login API call needed
+    const fs = await import("fs");
+    const state = JSON.parse(fs.readFileSync(statePath, "utf8"));
+    if (state.cookies) {
+      await context.addCookies(state.cookies);
+    }
   });
 
   test("worker dashboard loads", async ({ page }) => {

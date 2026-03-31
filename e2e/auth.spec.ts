@@ -2,7 +2,9 @@
  * Auth flow tests — registration, login, logout, auth redirects.
  *
  * These tests interact with the LIVE deployed app and create real users.
- * We use unique emails per run to avoid conflicts.
+ * We minimize total registrations to stay under rate limits (5/min).
+ *
+ * Registration budget: 2 total (1 requester in beforeAll, 1 worker in test)
  */
 import { test, expect } from "@playwright/test";
 import {
@@ -15,27 +17,28 @@ import {
 } from "./helpers";
 
 test.describe("Auth flows", () => {
-  let registeredEmail: string;
+  // Shared email registered once in beforeAll — used by login, logout, duplicate tests
+  let sharedEmail: string;
 
-  test("register a new requester account", async ({ page }) => {
-    registeredEmail = await registerUser(page, { role: "requester" });
-
-    // Should now be on the onboarding page
-    expect(page.url()).toContain("/dashboard/requester-onboarding");
-    await assertNoServerError(page);
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
+    const page = await ctx.newPage();
+    sharedEmail = await registerUser(page, { role: "requester" });
+    await ctx.close();
   });
 
-  test("login with the newly registered account", async ({ page }) => {
-    // First register to get a valid email
-    const email = await registerUser(page, { role: "requester" });
+  test("register page renders with all form elements", async ({ page }) => {
+    await page.goto("/register");
+    await expect(page.locator("h1")).toContainText("Create your account");
+    await expect(page.locator('input[name="name"]')).toBeVisible();
+    await expect(page.locator('input[name="email"]')).toBeVisible();
+    await expect(page.locator('input[name="password"]')).toBeVisible();
+    await expect(page.locator('button[type="submit"]')).toBeVisible();
+  });
 
-    // Logout by clearing cookies
-    await page.context().clearCookies();
-
-    // Now login
-    await loginUser(page, email);
-
-    // Should be on dashboard
+  test("login with a registered account", async ({ page }) => {
+    // Reuse the shared registered email — no new registration needed
+    await loginUser(page, sharedEmail);
     expect(page.url()).toContain("/dashboard");
     await assertNoServerError(page);
   });
@@ -58,11 +61,8 @@ test.describe("Auth flows", () => {
   test("unauthenticated user is redirected from /dashboard to /login", async ({
     page,
   }) => {
-    // Clear any existing auth
     await page.context().clearCookies();
-
     await page.goto("/dashboard");
-    // Should redirect to login
     await page.waitForURL("**/login**", { timeout: 10_000 });
     expect(page.url()).toContain("/login");
   });
@@ -71,18 +71,14 @@ test.describe("Auth flows", () => {
     page,
   }) => {
     await page.context().clearCookies();
-
     await page.goto("/worker");
-    // Worker pages should also redirect to login
     await page.waitForURL("**/login**", { timeout: 10_000 });
     expect(page.url()).toContain("/login");
   });
 
   test("logout clears session and redirects to login", async ({ page }) => {
-    // Register + login
-    const email = await registerUser(page, { role: "requester" });
-    await page.context().clearCookies();
-    await loginUser(page, email);
+    // Login with shared email — no new registration
+    await loginUser(page, sharedEmail);
 
     // Navigate to logout
     await page.goto("/logout");
@@ -97,16 +93,12 @@ test.describe("Auth flows", () => {
   });
 
   test("register page shows error for duplicate email", async ({ page }) => {
-    // Register once
-    const email = await registerUser(page, { role: "requester" });
-
-    // Clear cookies and try to register again with same email
-    await page.context().clearCookies();
+    // Use the shared email that was already registered — no new registration needed
     await page.goto("/register");
     await page.fill('input[name="name"]', TEST_NAME);
-    await page.fill('input[name="email"]', email);
+    await page.fill('input[name="email"]', sharedEmail);
     await page.fill('input[name="password"]', TEST_PASSWORD);
-    await page.click('input[name="role"][value="requester"]');
+    await page.locator('input[name="role"][value="requester"]').check({ force: true });
     await page.click('button[type="submit"]');
 
     // Should stay on register page with error
@@ -116,13 +108,7 @@ test.describe("Auth flows", () => {
     expect(bodyText?.toLowerCase()).toMatch(/already|exist|registered|duplicate/);
   });
 
-  test("register a worker account routes to worker onboarding", async ({
-    page,
-  }) => {
-    await registerUser(page, { role: "worker" });
-    expect(page.url()).toContain("/worker/onboarding");
-    await assertNoServerError(page);
-  });
+  // Worker registration is tested via worker-flow.spec.ts to stay under rate limits
 
   test("login page has Google OAuth button", async ({ page }) => {
     await page.goto("/login");

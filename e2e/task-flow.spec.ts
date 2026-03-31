@@ -3,27 +3,31 @@
  *
  * Register a requester, navigate to new-task, create an AI task,
  * verify it appears in the task list.
+ *
+ * Uses storageState (saved cookies) instead of per-test login.
  */
 import { test, expect } from "@playwright/test";
 import {
-  registerUser,
-  loginUser,
+  registerAndSaveState,
   assertNoServerError,
   assertLayoutLoaded,
 } from "./helpers";
 
 test.describe("Task creation flow", () => {
-  let email: string;
+  let statePath: string;
 
   test.beforeAll(async ({ browser }) => {
-    const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
-    const page = await ctx.newPage();
-    email = await registerUser(page, { role: "requester" });
-    await ctx.close();
+    const result = await registerAndSaveState(browser, { role: "requester" });
+    statePath = result.statePath;
   });
 
-  test.beforeEach(async ({ page }) => {
-    await loginUser(page, email);
+  test.beforeEach(async ({ page, context }) => {
+    // Inject saved cookies — no login API call needed
+    const fs = await import("fs");
+    const state = JSON.parse(fs.readFileSync(statePath, "utf8"));
+    if (state.cookies) {
+      await context.addCookies(state.cookies);
+    }
   });
 
   test("new-task page shows task type grid", async ({ page }) => {

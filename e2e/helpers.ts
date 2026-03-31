@@ -1,13 +1,19 @@
 /**
  * Shared E2E test helpers for CrowdSorcerer.
+ *
+ * Rate limit awareness: the live API enforces 5 registers/min and 10 logins/min.
+ * Tests must minimize API calls by reusing auth state (storageState) instead
+ * of logging in fresh each time.
  */
-import { type Page, expect } from "@playwright/test";
+import { type Page, type BrowserContext, type Browser, expect } from "@playwright/test";
+import * as fs from "fs";
+import * as path from "path";
 
 /** Generate a unique test email for this run to avoid conflicts. */
 export function testEmail(): string {
   const ts = Date.now();
   const rand = Math.random().toString(36).slice(2, 8);
-  return `e2e-${ts}-${rand}@test.crowdsorcerer.local`;
+  return `e2e-${ts}-${rand}@example.com`;
 }
 
 /** Standard test password that meets validation requirements. */
@@ -33,8 +39,8 @@ export async function registerUser(
   await page.fill('input[name="email"]', email);
   await page.fill('input[name="password"]', TEST_PASSWORD);
 
-  // Select role radio
-  await page.click(`input[name="role"][value="${role}"]`);
+  // Select role — radio input is sr-only (visually hidden), so use force: true
+  await page.locator(`input[name="role"][value="${role}"]`).check({ force: true });
 
   // Submit
   await page.click('button[type="submit"]');
@@ -48,7 +54,36 @@ export async function registerUser(
 }
 
 /**
- * Login via the UI. Returns after redirect to /dashboard.
+ * Register a user and save the authenticated browser state to a file.
+ * Returns { email, statePath } for use in test fixtures.
+ *
+ * This saves cookies so subsequent tests can reuse auth without
+ * hitting the login API each time (avoids 10/min login rate limit).
+ */
+export async function registerAndSaveState(
+  browser: Browser,
+  opts?: { role?: "requester" | "worker"; stateFile?: string }
+): Promise<{ email: string; statePath: string }> {
+  const role = opts?.role ?? "requester";
+  const stateDir = path.join(__dirname, "..", "test-results");
+  fs.mkdirSync(stateDir, { recursive: true });
+  const statePath =
+    opts?.stateFile ?? path.join(stateDir, `auth-state-${role}-${Date.now()}.json`);
+
+  const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
+  const page = await ctx.newPage();
+  const email = await registerUser(page, { role });
+
+  // Save cookies/storage for reuse
+  await ctx.storageState({ path: statePath });
+  await ctx.close();
+
+  return { email, statePath };
+}
+
+/**
+ * Login via the UI. Returns after redirect to /dashboard or /worker.
+ * Only use when you can't reuse storageState from registerAndSaveState.
  */
 export async function loginUser(
   page: Page,
@@ -62,19 +97,24 @@ export async function loginUser(
   await page.fill('input[name="password"]', password);
   await page.click('button[type="submit"]');
 
-  // Should redirect to dashboard
-  await page.waitForURL("**/dashboard**", { timeout: 15_000 });
+  // Should redirect to dashboard (requester) or worker area
+  await page.waitForURL(/(dashboard|worker)/, { timeout: 15_000 });
 }
 
 /**
  * Assert no server errors (5xx) or crash pages.
  * Useful as a post-navigation check.
+ *
+ * NOTE: We check for specific error phrases, NOT bare "500"
+ * because pages legitimately contain "500" in content (e.g., "500 credits").
  */
 export async function assertNoServerError(page: Page): Promise<void> {
   const body = await page.textContent("body");
   expect(body).not.toContain("Internal Server Error");
-  expect(body).not.toContain("500");
   expect(body).not.toContain("Application error");
+  expect(body).not.toContain("Server Error (500)");
+  expect(body).not.toContain("502 Bad Gateway");
+  expect(body).not.toContain("503 Service Unavailable");
 }
 
 /**

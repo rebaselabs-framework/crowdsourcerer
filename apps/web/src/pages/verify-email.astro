@@ -32,7 +32,11 @@ if (!token) {
       result = { ok: true, alreadyVerified: data.already_verified === true };
     } else {
       const data = await res.json().catch(() => ({}));
-      result = { ok: false, detail: data.detail ?? "Verification failed." };
+      const d = data.detail;
+      const detail = typeof d === "string" ? d
+        : Array.isArray(d) ? d.map((e: any) => e.msg ?? String(e)).join("; ")
+        : "Verification failed.";
+      result = { ok: false, detail };
     }
   } catch {
     result = { ok: false, detail: "Network error — please try again." };

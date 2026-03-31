@@ -28,7 +28,18 @@ if (Astro.request.method === "POST") {
 
     if (!res.ok) {
       const data = await res.json();
-      error = data.detail ?? "Registration failed";
+      // Handle multiple error formats:
+      // - Pydantic validation: {detail: [{msg: "..."}, ...]}
+      // - Business logic: {detail: "string"}
+      // - Rate limiter: {error: "string"}
+      const d = data.detail ?? data.error;
+      if (typeof d === "string") {
+        error = d;
+      } else if (Array.isArray(d) && d.length > 0) {
+        error = d.map((e: any) => e.msg ?? String(e)).join("; ");
+      } else {
+        error = data.message ?? "Registration failed";
+      }
     } else {
       const data = await res.json();
       setAuthCookies(

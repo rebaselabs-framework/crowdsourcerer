@@ -1,29 +1,36 @@
 /**
  * Dashboard tests — verify authenticated pages and core user flows.
  *
- * These tests register a fresh user and navigate through key dashboard sections.
+ * Uses storageState (saved cookies) instead of per-test login
+ * to avoid hitting the 10/min login rate limit.
  */
 import { test, expect } from "@playwright/test";
 import {
-  registerUser,
-  loginUser,
+  registerAndSaveState,
   assertNoServerError,
   assertLayoutLoaded,
 } from "./helpers";
 
 test.describe("Dashboard (authenticated)", () => {
-  let email: string;
+  let statePath: string;
 
   test.beforeAll(async ({ browser }) => {
-    // Register a user once for all dashboard tests
-    const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
-    const page = await ctx.newPage();
-    email = await registerUser(page, { role: "requester" });
-    await ctx.close();
+    const result = await registerAndSaveState(browser, { role: "requester" });
+    statePath = result.statePath;
   });
 
-  test.beforeEach(async ({ page }) => {
-    await loginUser(page, email);
+  // Use saved auth state — no login API call needed per test
+  test.use({ storageState: undefined as any }); // will be set dynamically
+
+  test.beforeEach(async ({ page, context }) => {
+    // Inject saved cookies into the browser context
+    const fs = await import("fs");
+    const state = JSON.parse(fs.readFileSync(statePath, "utf8"));
+    if (state.cookies) {
+      await context.addCookies(state.cookies);
+    }
+    // Navigate to dashboard — should work without re-login
+    await page.goto("/dashboard");
   });
 
   test("dashboard main page loads with user data", async ({ page }) => {
