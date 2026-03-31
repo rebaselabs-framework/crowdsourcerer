@@ -18,6 +18,14 @@ Payloads always include:
   - occurred_at (ISO-8601 UTC)
   - webhook_id  (UUID string) — unique per delivery attempt; use for idempotency
   - ...event-specific fields...
+
+Retry strategy:
+  - First attempt is always inline (fire-and-forget async).
+  - On 5xx or network error, failed deliveries are enqueued to a persistent
+    database-backed retry queue with exponential backoff (30s → 2m → 10m → 1h → 4h).
+  - 4xx errors are logged but NOT retried (client error).
+  - Previous sessions used in-memory asyncio.sleep() retries which were lost
+    on server restart.  The queue survives restarts.
 """
 from __future__ import annotations
 
@@ -35,6 +43,7 @@ import structlog
 from sqlalchemy import select
 
 from core.database import AsyncSessionLocal
+from core.webhook_retry import enqueue_retry
 from models.db import WebhookLogDB, TaskDB, WebhookEndpointDB, WebhookPayloadTemplateDB, NotificationPreferencesDB
 
 logger = structlog.get_logger()
@@ -160,7 +169,7 @@ async def fire_webhook(
     task_id       — UUID string of the task
     user_id       — UUID string of the task owner (for logging)
     webhook_url   — destination URL
-    webhook_events — list of subscribed events (None → default ["task.completed"])
+    webhook_events — list of subscribed events (None -> default ["task.completed"])
     event_type    — one of ALL_EVENTS
     extra         — additional fields merged into the payload
     max_retries   — max delivery attempts (default 3, exponential back-off)
@@ -296,7 +305,12 @@ async def _deliver_to_endpoint(
     extra: dict[str, Any] | None,
     max_retries: int,
 ) -> None:
-    """Deliver a signed event payload to a single persistent endpoint."""
+    """Deliver a signed event payload to a single persistent endpoint.
+
+    Tries once inline.  On failure (5xx / network error), enqueues to the
+    persistent retry queue with exponential backoff instead of retrying
+    in-memory.  4xx errors are logged but NOT retried.
+    """
     # Build default payload
     default_payload: dict[str, Any] = {
         "event": event_type,
@@ -333,76 +347,82 @@ async def _deliver_to_endpoint(
     sig = hmac.new(endpoint.secret.encode(), sig_input, hashlib.sha256).hexdigest()
 
     endpoint_id = str(endpoint.id)
+    delivery_headers = {
+        "Content-Type": "application/json",
+        "X-Crowdsorcerer-Event": event_type,
+        "X-Crowdsorcerer-Signature": f"t={timestamp},v1={sig}",
+        "X-Crowdsorcerer-Timestamp": timestamp,
+    }
 
-    for attempt in range(max_retries):
-        t0 = _time.perf_counter()
-        status_code: Optional[int] = None
-        error_msg: Optional[str] = None
-        success = False
+    # -- Single inline attempt -------------------------------------------------
+    t0 = _time.perf_counter()
+    status_code: Optional[int] = None
+    error_msg: Optional[str] = None
+    success = False
 
-        try:
-            client = _get_webhook_client()
-            resp = await client.post(
-                endpoint.url,
-                content=payload_bytes,
-                headers={
-                    "Content-Type": "application/json",
-                    "X-Crowdsourcerer-Event": event_type,
-                    "X-Crowdsourcerer-Signature": f"t={timestamp},v1={sig}",
-                    "X-Crowdsourcerer-Timestamp": timestamp,
-                },
-            )
-            status_code = resp.status_code
-            if resp.status_code < 500:
-                success = resp.status_code < 400
-                if not success:
-                    error_msg = f"Client error: HTTP {resp.status_code}"
-                duration_ms = int((_time.perf_counter() - t0) * 1000)
-                await _log_endpoint_delivery(
-                    endpoint_id=endpoint_id,
-                    task_id=task_id,
-                    user_id=user_id,
-                    url=endpoint.url,
-                    event_type=event_type,
-                    attempt=attempt + 1,
-                    status_code=status_code,
-                    success=success,
-                    error=error_msg,
-                    duration_ms=duration_ms,
-                    payload=payload,
-                )
-                await _update_endpoint_stats(endpoint_id=endpoint_id, success=success)
-                return
-            error_msg = f"Server error: HTTP {resp.status_code}"
-            logger.warning("persistent_webhook_server_error", endpoint_id=endpoint_id,
-                           url=endpoint.url, status=resp.status_code, attempt=attempt + 1)
-        except Exception as exc:
-            error_msg = str(exc)
-            logger.warning("persistent_webhook_failed", endpoint_id=endpoint_id,
-                           url=endpoint.url, error=error_msg, attempt=attempt + 1)
-
-        duration_ms = int((_time.perf_counter() - t0) * 1000)
-        await _log_endpoint_delivery(
-            endpoint_id=endpoint_id,
-            task_id=task_id,
-            user_id=user_id,
-            url=endpoint.url,
-            event_type=event_type,
-            attempt=attempt + 1,
-            status_code=status_code,
-            success=False,
-            error=error_msg,
-            duration_ms=duration_ms,
-            payload=payload,
+    try:
+        client = _get_webhook_client()
+        resp = await client.post(
+            endpoint.url,
+            content=payload_bytes,
+            headers=delivery_headers,
         )
+        status_code = resp.status_code
+        if resp.status_code < 400:
+            success = True
+        elif resp.status_code < 500:
+            error_msg = f"Client error: HTTP {resp.status_code}"
+        else:
+            error_msg = f"Server error: HTTP {resp.status_code}"
+    except Exception as exc:
+        error_msg = str(exc)
+        logger.warning("persistent_webhook_failed", endpoint_id=endpoint_id,
+                       url=endpoint.url, error=error_msg)
 
-        if attempt < max_retries - 1:
-            await asyncio.sleep(2 ** attempt)
+    duration_ms = int((_time.perf_counter() - t0) * 1000)
 
-    # All retries exhausted
-    await _update_endpoint_stats(endpoint_id=endpoint_id, success=False)
-    logger.error("persistent_webhook_exhausted_retries", endpoint_id=endpoint_id,
-                 task_id=task_id, event=event_type)
+    # Log the first attempt
+    await _log_endpoint_delivery(
+        endpoint_id=endpoint_id,
+        task_id=task_id,
+        user_id=user_id,
+        url=endpoint.url,
+        event_type=event_type,
+        attempt=1,
+        status_code=status_code,
+        success=success,
+        error=error_msg,
+        duration_ms=duration_ms,
+        payload=payload,
+    )
+
+    if success:
+        await _update_endpoint_stats(endpoint_id=endpoint_id, success=True)
+        return
+
+    # 4xx -> client error, don't retry
+    if status_code and 400 <= status_code < 500:
+        await _update_endpoint_stats(endpoint_id=endpoint_id, success=False)
+        logger.warning("persistent_webhook_client_error", endpoint_id=endpoint_id,
+                       url=endpoint.url, status=status_code)
+        return
+
+    # -- Enqueue for persistent retry (5xx / network error) --------------------
+    if max_retries > 1:
+        await enqueue_retry(
+            endpoint_id=endpoint_id,
+            user_id=user_id,
+            task_id=task_id,
+            event_type=event_type,
+            url=endpoint.url,
+            payload=payload,
+            headers=delivery_headers,
+            max_attempts=max_retries - 1,  # -1 because first attempt was inline
+        )
+    else:
+        await _update_endpoint_stats(endpoint_id=endpoint_id, success=False)
+        logger.error("persistent_webhook_no_retries", endpoint_id=endpoint_id,
+                     task_id=task_id, event=event_type)
 
 
 async def _update_endpoint_stats(*, endpoint_id: str, success: bool) -> None:
@@ -474,7 +494,7 @@ async def _log_endpoint_delivery(
 
 
 # ---------------------------------------------------------------------------
-# Internal delivery loop
+# Internal delivery loop (for per-task webhooks — unsigned, simpler)
 # ---------------------------------------------------------------------------
 
 async def _deliver(
@@ -486,42 +506,55 @@ async def _deliver(
     event_type: str,
     max_retries: int,
 ) -> None:
-    for attempt in range(max_retries):
-        t0 = _time.perf_counter()
-        status_code: Optional[int] = None
-        error_msg: Optional[str] = None
-        success = False
+    """Deliver a per-task webhook.  Single inline attempt; enqueue on failure."""
+    t0 = _time.perf_counter()
+    status_code: Optional[int] = None
+    error_msg: Optional[str] = None
+    success = False
 
-        try:
-            client = _get_webhook_client()
-            resp = await client.post(url, json=payload)
-            status_code = resp.status_code
-            if resp.status_code < 500:
-                success = resp.status_code < 400
-                if not success:
-                    error_msg = f"Client error: HTTP {resp.status_code}"
-                    logger.warning("webhook_client_error", url=url, status=resp.status_code,
-                                   event=event_type)
-                duration_ms = int((_time.perf_counter() - t0) * 1000)
-                await _log(task_id, user_id, url, event_type, attempt + 1,
-                           status_code, success, error_msg, duration_ms)
-                return  # don't retry 4xx
+    try:
+        client = _get_webhook_client()
+        resp = await client.post(url, json=payload)
+        status_code = resp.status_code
+        if resp.status_code < 400:
+            success = True
+        elif resp.status_code < 500:
+            error_msg = f"Client error: HTTP {resp.status_code}"
+            logger.warning("webhook_client_error", url=url, status=resp.status_code,
+                           event_type=event_type)
+        else:
             error_msg = f"Server error: HTTP {resp.status_code}"
             logger.warning("webhook_server_error", url=url, status=resp.status_code,
-                           attempt=attempt + 1, event=event_type)
-        except Exception as exc:
-            error_msg = str(exc)
-            logger.warning("webhook_failed", url=url, error=error_msg, attempt=attempt + 1,
-                           event=event_type)
+                           event_type=event_type)
+    except Exception as exc:
+        error_msg = str(exc)
+        logger.warning("webhook_failed", url=url, error=error_msg, event_type=event_type)
 
-        duration_ms = int((_time.perf_counter() - t0) * 1000)
-        await _log(task_id, user_id, url, event_type, attempt + 1,
-                   status_code, False, error_msg, duration_ms)
+    duration_ms = int((_time.perf_counter() - t0) * 1000)
+    await _log(task_id, user_id, url, event_type, 1,
+               status_code, success, error_msg, duration_ms, payload)
 
-        if attempt < max_retries - 1:
-            await asyncio.sleep(2 ** attempt)  # 1s, 2s backoff
+    if success:
+        return
 
-    logger.error("webhook_exhausted_retries", url=url, task_id=task_id, event=event_type)
+    # 4xx -> don't retry
+    if status_code and 400 <= status_code < 500:
+        return
+
+    # Enqueue for persistent retry (5xx / network error)
+    if max_retries > 1:
+        await enqueue_retry(
+            endpoint_id=None,  # per-task webhook, no persistent endpoint
+            user_id=user_id,
+            task_id=task_id,
+            event_type=event_type,
+            url=url,
+            payload=payload,
+            headers=None,  # per-task webhooks are unsigned
+            max_attempts=max_retries - 1,
+        )
+    else:
+        logger.error("webhook_exhausted_retries", url=url, task_id=task_id, event=event_type)
 
 
 async def retry_webhook_log(*, log_id: str, user_id: str) -> dict:
@@ -717,10 +750,10 @@ async def replay_webhook_log(*, log_id: str, user_id: str) -> dict:
                 content=payload_bytes,
                 headers={
                     "Content-Type": "application/json",
-                    "X-Crowdsourcerer-Event": event_type,
-                    "X-Crowdsourcerer-Signature": f"t={replay_ts},v1={sig}",
-                    "X-Crowdsourcerer-Timestamp": replay_ts,
-                    "X-Crowdsourcerer-Replay": "true",
+                    "X-Crowdsorcerer-Event": event_type,
+                    "X-Crowdsorcerer-Signature": f"t={replay_ts},v1={sig}",
+                    "X-Crowdsorcerer-Timestamp": replay_ts,
+                    "X-Crowdsorcerer-Replay": "true",
                 },
             )
             status_code = resp.status_code

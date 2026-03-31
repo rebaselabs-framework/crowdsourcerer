@@ -560,3 +560,90 @@ async def update_webhook_preferences(
 
     await db.commit()
     return {"ok": True, "prefs": {e: (prefs_row.webhook_event_prefs or {}).get(e, True) for e in ALL_EVENTS}}
+
+
+# ─── Retry queue status ─────────────────────────────────────────────────────
+
+@router.get(
+    "/retry-queue",
+    dependencies=[Depends(require_scope(SCOPE_WEBHOOKS_READ))],
+    summary="Get webhook retry queue status",
+)
+async def get_retry_queue_status(
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return the current user's webhook retry queue summary.
+
+    Shows counts of pending, processing, completed, and dead-letter items.
+    """
+    from models.db import WebhookDeliveryQueueDB
+
+    result = await db.execute(
+        select(
+            WebhookDeliveryQueueDB.status,
+            func.count(WebhookDeliveryQueueDB.id).label("count"),
+        )
+        .where(WebhookDeliveryQueueDB.user_id == user_id)
+        .group_by(WebhookDeliveryQueueDB.status)
+    )
+    rows = result.all()
+
+    stats: dict[str, int] = {
+        "pending": 0,
+        "processing": 0,
+        "completed": 0,
+        "dead_letter": 0,
+    }
+    total = 0
+    for status, count in rows:
+        if status in stats:
+            stats[status] = count
+        total += count
+
+    return {"total": total, **stats}
+
+
+@router.get(
+    "/retry-queue/items",
+    dependencies=[Depends(require_scope(SCOPE_WEBHOOKS_READ))],
+    summary="List webhook retry queue items",
+)
+async def list_retry_queue_items(
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+    status: Optional[str] = Query(None, description="Filter by status: pending, processing, completed, dead_letter"),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+):
+    """List the current user's webhook retry queue items with pagination."""
+    from models.db import WebhookDeliveryQueueDB
+
+    query = select(WebhookDeliveryQueueDB).where(
+        WebhookDeliveryQueueDB.user_id == user_id,
+    )
+    if status:
+        query = query.where(WebhookDeliveryQueueDB.status == status)
+
+    query = query.order_by(WebhookDeliveryQueueDB.created_at.desc()).limit(limit).offset(offset)
+    result = await db.execute(query)
+    items = result.scalars().all()
+
+    return [
+        {
+            "id": str(item.id),
+            "endpoint_id": str(item.endpoint_id) if item.endpoint_id else None,
+            "task_id": str(item.task_id) if item.task_id else None,
+            "event_type": item.event_type,
+            "url": item.url,
+            "attempt": item.attempt,
+            "max_attempts": item.max_attempts,
+            "status": item.status,
+            "next_retry_at": item.next_retry_at.isoformat() if item.next_retry_at else None,
+            "last_error": item.last_error,
+            "last_status_code": item.last_status_code,
+            "created_at": item.created_at.isoformat(),
+            "updated_at": item.updated_at.isoformat(),
+        }
+        for item in items
+    ]

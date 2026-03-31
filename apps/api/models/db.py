@@ -1292,6 +1292,47 @@ class WebhookPayloadTemplateDB(Base):
     user = relationship("UserDB", backref="webhook_payload_templates")
 
 
+class WebhookDeliveryQueueDB(Base):
+    """
+    Persistent webhook retry queue.
+
+    On first delivery failure, items are enqueued here with exponential backoff
+    scheduling.  A background worker polls for due items every 30 seconds and
+    attempts redelivery.  After max_attempts exhausted, status moves to
+    'dead_letter' for manual inspection.
+
+    Status lifecycle: pending → processing → completed | pending (retry) | dead_letter
+    """
+    __tablename__ = "webhook_delivery_queue"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    # Which endpoint this is for (NULL for per-task webhooks without a persistent endpoint)
+    endpoint_id = Column(UUID(as_uuid=True), ForeignKey("webhook_endpoints.id", ondelete="CASCADE"),
+                         nullable=True, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    task_id = Column(UUID(as_uuid=True), ForeignKey("tasks.id", ondelete="SET NULL"),
+                     nullable=True)
+    event_type = Column(String(64), nullable=False)
+    url = Column(String(2048), nullable=False)
+    payload = Column(JSON, nullable=False)
+    # Signed delivery headers (JSON dict) — stored so retries use same signature
+    headers = Column(JSON, nullable=True)
+
+    attempt = Column(Integer, default=1, nullable=False)       # current attempt (1 = first retry)
+    max_attempts = Column(Integer, default=5, nullable=False)  # total retry budget
+    next_retry_at = Column(DateTime(timezone=True), nullable=False, index=True)
+    status = Column(String(20), default="pending", nullable=False, index=True)
+    # pending | processing | completed | dead_letter
+
+    last_error = Column(Text, nullable=True)
+    last_status_code = Column(Integer, nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+
+
 class TaskDependencyDB(Base):
     """
     Task dependency edges — task_id cannot run until depends_on_id is completed.
