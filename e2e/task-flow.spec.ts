@@ -1,30 +1,21 @@
 /**
  * Task creation flow — the core user journey.
  *
- * Register a requester, navigate to new-task, create an AI task,
- * verify it appears in the task list.
- *
- * Uses storageState (saved cookies) instead of per-test login.
+ * Uses the global-setup requester account (storageState) instead of
+ * registering a new account. This avoids rate limit issues.
  */
 import { test, expect } from "@playwright/test";
 import {
-  registerAndSaveState,
   assertNoServerError,
   assertLayoutLoaded,
 } from "./helpers";
+import { REQUESTER_STATE_PATH } from "./global-setup";
 
 test.describe("Task creation flow", () => {
-  let statePath: string;
-
-  test.beforeAll(async ({ browser }) => {
-    const result = await registerAndSaveState(browser, { role: "requester" });
-    statePath = result.statePath;
-  });
-
   test.beforeEach(async ({ page, context }) => {
-    // Inject saved cookies — no login API call needed
+    // Inject saved cookies from global setup
     const fs = await import("fs");
-    const state = JSON.parse(fs.readFileSync(statePath, "utf8"));
+    const state = JSON.parse(fs.readFileSync(REQUESTER_STATE_PATH, "utf8"));
     if (state.cookies) {
       await context.addCookies(state.cookies);
     }

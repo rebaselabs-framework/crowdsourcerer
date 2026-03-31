@@ -13,6 +13,7 @@ import { defineConfig, devices } from "@playwright/test";
  */
 export default defineConfig({
   testDir: "./e2e",
+  globalSetup: "./e2e/global-setup.ts",
   fullyParallel: false, // sequential — tests may share state (registered user)
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,

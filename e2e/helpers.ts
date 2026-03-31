@@ -23,6 +23,9 @@ export const TEST_NAME = "E2E Test User";
 /**
  * Register a new user via the UI and return the email used.
  * Ends on the post-registration redirect (onboarding page).
+ *
+ * Rate-limit aware: if the API returns "Rate limit exceeded" (5 reg/min),
+ * waits 65 seconds and retries (up to 2 retries).
  */
 export async function registerUser(
   page: Page,
@@ -30,27 +33,49 @@ export async function registerUser(
 ): Promise<string> {
   const email = opts?.email ?? testEmail();
   const role = opts?.role ?? "requester";
+  const maxRetries = 2;
 
-  await page.goto("/register");
-  await expect(page.locator("h1")).toContainText("Create your account");
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    await page.goto("/register");
+    await expect(page.locator("h1")).toContainText("Create your account");
 
-  // Fill form
-  await page.fill('input[name="name"]', TEST_NAME);
-  await page.fill('input[name="email"]', email);
-  await page.fill('input[name="password"]', TEST_PASSWORD);
+    // Fill form
+    await page.fill('input[name="name"]', TEST_NAME);
+    await page.fill('input[name="email"]', email);
+    await page.fill('input[name="password"]', TEST_PASSWORD);
 
-  // Select role — radio input is sr-only (visually hidden), so use force: true
-  await page.locator(`input[name="role"][value="${role}"]`).check({ force: true });
+    // Select role — radio input is sr-only (visually hidden), so use force: true
+    await page.locator(`input[name="role"][value="${role}"]`).check({ force: true });
 
-  // Submit
-  await page.click('button[type="submit"]');
+    // Submit
+    await page.click('button[type="submit"]');
 
-  // Should redirect to onboarding
-  const expectedPath =
-    role === "worker" ? "/worker/onboarding" : "/dashboard/requester-onboarding";
-  await page.waitForURL(`**${expectedPath}`, { timeout: 15_000 });
+    // Wait for either redirect or error
+    const expectedPath =
+      role === "worker" ? "/worker/onboarding" : "/dashboard/requester-onboarding";
 
-  return email;
+    try {
+      await page.waitForURL(`**${expectedPath}`, { timeout: 15_000 });
+      return email; // Success — registered and redirected
+    } catch {
+      // Check if we hit the rate limit
+      const body = await page.textContent("body");
+      if (body?.toLowerCase().includes("rate limit") && attempt < maxRetries) {
+        // Wait for the rate limit window to reset (65s to be safe)
+        console.log(`[E2E] Rate limit hit on registration attempt ${attempt + 1}, waiting 65s...`);
+        await page.waitForTimeout(65_000);
+        continue;
+      }
+      // Not a rate limit or out of retries — rethrow
+      throw new Error(
+        `Registration failed after ${attempt + 1} attempt(s). ` +
+        `URL: ${page.url()}, Body snippet: ${body?.slice(0, 200)}`
+      );
+    }
+  }
+
+  // Should never reach here, but TypeScript needs it
+  throw new Error("Registration failed: exhausted all retries");
 }
 
 /**

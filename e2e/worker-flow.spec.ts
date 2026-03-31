@@ -1,29 +1,21 @@
 /**
  * Worker flow tests — verify the worker experience.
  *
- * Uses storageState (saved cookies) instead of per-test login
- * to avoid hitting the 10/min login rate limit.
+ * Uses the global-setup worker account (storageState) instead of
+ * registering a new account. This avoids rate limit issues.
  */
 import { test, expect } from "@playwright/test";
 import {
-  registerAndSaveState,
   assertNoServerError,
   assertLayoutLoaded,
 } from "./helpers";
+import { WORKER_STATE_PATH } from "./global-setup";
 
 test.describe("Worker flows", () => {
-  let statePath: string;
-
-  test.beforeAll(async ({ browser }) => {
-    const result = await registerAndSaveState(browser, { role: "worker" });
-    statePath = result.statePath;
-    // Verify worker registration redirects to onboarding (covered here, not in auth suite)
-  });
-
   test.beforeEach(async ({ page, context }) => {
-    // Inject saved cookies — no login API call needed
+    // Inject saved cookies from global setup
     const fs = await import("fs");
-    const state = JSON.parse(fs.readFileSync(statePath, "utf8"));
+    const state = JSON.parse(fs.readFileSync(WORKER_STATE_PATH, "utf8"));
     if (state.cookies) {
       await context.addCookies(state.cookies);
     }
