@@ -1,5 +1,6 @@
 ---
 import Layout from "@/layouts/Layout.astro";
+import { setAuthCookies } from "@/lib/auth";
 
 // Check for OAuth errors passed back from Google callback
 const oauthError = Astro.url.searchParams.get("oauth_error");
@@ -33,14 +34,13 @@ if (Astro.request.method === "POST") {
       if (data.requires_2fa && data.pending_token) {
         return Astro.redirect(`/login-2fa?pt=${encodeURIComponent(data.pending_token)}`);
       }
-      const access_token = data.access_token;
-      Astro.cookies.set("cs_token", access_token, {
-        httpOnly: true,
-        secure: true,
-        sameSite: "lax",
-        maxAge: 60 * 60 * 24 * 7,
-        path: "/",
-      });
+      setAuthCookies(
+        Astro.cookies,
+        data.access_token,
+        data.refresh_token,
+        data.expires_in,
+        data.refresh_expires_in,
+      );
       return Astro.redirect("/dashboard");
     }
   } catch (e) {

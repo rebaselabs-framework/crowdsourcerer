@@ -1,5 +1,6 @@
 ---
 import Layout from "@/layouts/Layout.astro";
+import { setAuthCookies } from "@/lib/auth";
 
 let error = "";
 
@@ -29,14 +30,14 @@ if (Astro.request.method === "POST") {
       const data = await res.json();
       error = data.detail ?? "Registration failed";
     } else {
-      const { access_token } = await res.json();
-      Astro.cookies.set("cs_token", access_token, {
-        httpOnly: true,
-        secure: true,
-        sameSite: "lax",
-        maxAge: 60 * 60 * 24 * 7,
-        path: "/",
-      });
+      const data = await res.json();
+      setAuthCookies(
+        Astro.cookies,
+        data.access_token,
+        data.refresh_token,
+        data.expires_in,
+        data.refresh_expires_in,
+      );
       // Redirect to the appropriate onboarding flow
       return Astro.redirect(
         role === "worker" ? "/worker/onboarding" : "/dashboard/requester-onboarding"

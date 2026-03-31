@@ -1,15 +1,17 @@
 ---
 /**
- * /auth/google-success — receives a JWT token from the Google OAuth callback
- * and sets the auth cookie before redirecting to the dashboard.
+ * /auth/google-success — receives JWT + refresh token from the Google OAuth
+ * callback and sets httpOnly cookies before redirecting to the dashboard.
  *
  * Called by the FastAPI backend after successful Google OAuth:
- *   /v1/auth/google/callback → 302 /auth/google-success?token=<jwt>&next=/dashboard
+ *   /v1/auth/google/callback → 302 /auth/google-success?token=<jwt>&refresh=<rt>&next=/dashboard
  *
- * This page runs SSR so it can set an httpOnly cookie.
+ * This page runs SSR so it can set httpOnly cookies.
  */
+import { setAuthCookies } from "@/lib/auth";
 
 const token = Astro.url.searchParams.get("token");
+const refreshToken = Astro.url.searchParams.get("refresh");
 const oauthError = Astro.url.searchParams.get("oauth_error");
 
 if (oauthError) {
@@ -20,19 +22,12 @@ if (!token) {
   return Astro.redirect("/login?oauth_error=no_token");
 }
 
-// Set auth cookie (same settings as regular login)
-Astro.cookies.set("cs_token", token, {
-  httpOnly: true,
-  secure: true,
-  sameSite: "lax",
-  maxAge: 60 * 60 * 24 * 7,  // 7 days
-  path: "/",
-});
+// Set auth cookies (access + refresh)
+setAuthCookies(Astro.cookies, token, refreshToken);
 
 // Sanitise next to prevent open redirects (only allow relative paths)
+const next = Astro.url.searchParams.get("next") ?? "/dashboard";
 return Astro.redirect(
-  (Astro.url.searchParams.get("next") ?? "/dashboard").startsWith("/") && !(Astro.url.searchParams.get("next") ?? "/dashboard").startsWith("//")
-    ? (Astro.url.searchParams.get("next") ?? "/dashboard")
-    : "/dashboard"
+  next.startsWith("/") && !next.startsWith("//") ? next : "/dashboard"
 );
 ---

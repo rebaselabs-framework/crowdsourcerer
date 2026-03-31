@@ -1067,6 +1067,16 @@ async def run_sweeper(session_factory: async_sessionmaker, interval: int = SWEEP
                 logger.exception("sweeper.trigger_check_error")
             last_trigger_check = now_ts
 
+        # Clean up expired refresh tokens (once per cycle, lightweight)
+        try:
+            from core.refresh_tokens import cleanup_expired_tokens
+            async with session_factory() as sess:
+                cleaned = await cleanup_expired_tokens(sess)
+                if cleaned:
+                    logger.info("sweeper.refresh_tokens_cleaned", count=cleaned)
+        except Exception:  # noqa: BLE001
+            logger.exception("sweeper.refresh_token_cleanup_error")
+
         # Check and fire system health alerts every cycle
         try:
             from core.system_alerts import check_and_fire_alerts  # noqa: PLC0415

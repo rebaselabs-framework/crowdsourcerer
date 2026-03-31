@@ -234,11 +234,26 @@ async def google_callback(
     await db.commit()
     await db.refresh(user)
 
-    # Issue JWT and redirect to web UI
-    jwt = create_access_token(str(user.id), token_version=user.token_version or 0)
+    # Issue JWT and refresh token, then redirect to web UI
+    jwt_token = create_access_token(str(user.id), token_version=user.token_version or 0)
+
+    # Issue refresh token (best-effort — OAuth still works without it)
+    raw_refresh = ""
+    try:
+        from core.refresh_tokens import create_refresh_token
+        raw_refresh, _refresh_expires = await create_refresh_token(str(user.id), db)
+    except Exception:
+        pass
+
     next_path = state_payload.get("next", "/dashboard")
-    # Redirect to web's /auth/google-success which picks up the token from the query string
-    # and sets the cookie (server-side via Astro route)
+    # Redirect to web's /auth/google-success which picks up the tokens from the query string
+    # and sets httpOnly cookies (server-side via Astro route)
+    refresh_param = f"&refresh={urllib.parse.quote(raw_refresh)}" if raw_refresh else ""
     return RedirectResponse(
-        url=f"/auth/google-success?token={urllib.parse.quote(jwt)}&next={urllib.parse.quote(next_path)}"
+        url=(
+            f"/auth/google-success"
+            f"?token={urllib.parse.quote(jwt_token)}"
+            f"{refresh_param}"
+            f"&next={urllib.parse.quote(next_path)}"
+        )
     )

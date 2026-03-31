@@ -977,11 +977,25 @@ const ANN_ICON: Record<string, string> = {
     {isLoggedIn && (
       <script>
         (function pollNavBadges() {
+          let refreshing = false;
+          async function tryRefreshSession() {
+            if (refreshing) return false;
+            refreshing = true;
+            try {
+              const r = await fetch("/api/auth/refresh", { method: "POST" });
+              return r.ok;
+            } catch { return false; }
+            finally { refreshing = false; }
+          }
           async function refresh() {
             try {
               // Notifications
-              const notifRes = await fetch("/api/notifications/unread-count");
-              if (notifRes.status === 401 || notifRes.status === 403) { window.location.href = "/login"; return; }
+              let notifRes = await fetch("/api/notifications/unread-count");
+              if (notifRes.status === 401 || notifRes.status === 403) {
+                const ok = await tryRefreshSession();
+                if (!ok) { window.location.href = "/login"; return; }
+                notifRes = await fetch("/api/notifications/unread-count");
+              }
               if (notifRes.ok) {
                 const data = await notifRes.json();
                 const count: number = data.unread_count ?? 0;
@@ -995,8 +1009,12 @@ const ANN_ICON: Record<string, string> = {
             } catch { /* ignore */ }
             try {
               // Task messages
-              const msgRes = await fetch("/api/tasks/messages/unread-count");
-              if (msgRes.status === 401 || msgRes.status === 403) { window.location.href = "/login"; return; }
+              let msgRes = await fetch("/api/tasks/messages/unread-count");
+              if (msgRes.status === 401 || msgRes.status === 403) {
+                const ok = await tryRefreshSession();
+                if (!ok) { window.location.href = "/login"; return; }
+                msgRes = await fetch("/api/tasks/messages/unread-count");
+              }
               if (msgRes.ok) {
                 const data = await msgRes.json();
                 const count: number = data.count ?? 0;

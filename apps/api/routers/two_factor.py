@@ -260,7 +260,20 @@ async def verify_2fa(
     access_token = create_access_token(str(user.id), token_version=user.token_version or 0)
     logger.info("2fa_login_success", user_id=str(user.id))
 
+    # Issue refresh token (best-effort)
+    raw_refresh = None
+    refresh_expires_in = None
+    try:
+        from datetime import datetime, timezone
+        from core.refresh_tokens import create_refresh_token
+        raw_refresh, refresh_expires = await create_refresh_token(str(user.id), db)
+        refresh_expires_in = int((refresh_expires - datetime.now(timezone.utc)).total_seconds())
+    except Exception:
+        pass
+
     return TokenResponse(
         access_token=access_token,
         expires_in=settings.jwt_expire_minutes * 60,
+        refresh_token=raw_refresh,
+        refresh_expires_in=refresh_expires_in,
     )

@@ -1718,3 +1718,29 @@ class PlatformAnnouncementDB(Base):
     expires_at    = Column(DateTime(timezone=True), nullable=True)
     created_at    = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     created_by_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+
+class RefreshTokenDB(Base):
+    """Opaque refresh tokens for JWT rotation.
+
+    Each token belongs to a 'family' — all tokens descending from a single
+    login event share the same family_id.  When a refresh token is used:
+
+    1. Old token is revoked (revoked_at set, replaced_by points to new token).
+    2. New token is created in the same family.
+    3. If the OLD token was *already* revoked → replay detected → revoke entire
+       family (prevents token theft from going undetected).
+
+    Token format: ``csrt_`` + 64 random alphanumeric chars.
+    Stored as SHA-256 hex hash (token_hash).
+    """
+    __tablename__ = "refresh_tokens"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    token_hash = Column(String(64), nullable=False, unique=True, index=True)
+    family_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    revoked_at = Column(DateTime(timezone=True), nullable=True)
+    replaced_by = Column(UUID(as_uuid=True), ForeignKey("refresh_tokens.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)

@@ -99,9 +99,22 @@ async def register(
     )
 
     token = create_access_token(str(user.id), token_version=user.token_version or 0)
+
+    # Issue refresh token (best-effort — don't fail registration if this errors)
+    raw_refresh = None
+    refresh_expires_in = None
+    try:
+        from core.refresh_tokens import create_refresh_token
+        raw_refresh, refresh_expires = await create_refresh_token(str(user.id), db)
+        refresh_expires_in = int((refresh_expires - datetime.now(timezone.utc)).total_seconds())
+    except Exception:
+        pass  # access token alone is enough to proceed
+
     return TokenResponse(
         access_token=token,
         expires_in=settings.jwt_expire_minutes * 60,
+        refresh_token=raw_refresh,
+        refresh_expires_in=refresh_expires_in,
     )
 
 
@@ -138,9 +151,22 @@ async def login(
         return LoginWith2FAResponse(pending_token=pending)
 
     token = create_access_token(str(user.id), token_version=user.token_version or 0)
+
+    # Issue refresh token (best-effort — don't fail login if this errors)
+    raw_refresh = None
+    refresh_expires_in = None
+    try:
+        from core.refresh_tokens import create_refresh_token
+        raw_refresh, refresh_expires = await create_refresh_token(str(user.id), db)
+        refresh_expires_in = int((refresh_expires - datetime.now(timezone.utc)).total_seconds())
+    except Exception:
+        pass  # access token alone is enough to proceed
+
     return TokenResponse(
         access_token=token,
         expires_in=settings.jwt_expire_minutes * 60,
+        refresh_token=raw_refresh,
+        refresh_expires_in=refresh_expires_in,
     )
 
 
@@ -235,6 +261,10 @@ async def reset_password(
     rec.used = True
     await db.commit()
 
+    # Revoke all refresh tokens — force re-login on all devices
+    from core.refresh_tokens import revoke_all_user_tokens
+    await revoke_all_user_tokens(str(user.id), db)
+
     return {"message": "Password updated successfully. You can now log in with your new password."}
 
 
@@ -274,6 +304,11 @@ async def change_password(
     user.password_hash = _hash_password(req.new_password)
     user.token_version = (user.token_version or 0) + 1
     await db.commit()
+
+    # Revoke all refresh tokens — force re-login on all devices
+    from core.refresh_tokens import revoke_all_user_tokens
+    await revoke_all_user_tokens(user_id, db)
+
     return {"message": "Password changed successfully."}
 
 
@@ -346,3 +381,62 @@ async def resend_verification(
     )
 
     return {"message": "Verification email sent. Please check your inbox."}
+
+
+# ─── Token refresh / logout ──────────────────────────────────────────────────
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+
+@router.post("/refresh", response_model=TokenResponse)
+@limiter.limit("30/minute")
+async def refresh_token(
+    request: Request,
+    req: RefreshRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Exchange a valid refresh token for a new access + refresh token pair.
+
+    The old refresh token is revoked and a new one issued in the same family.
+    If the refresh token was already revoked (replay attack), the entire token
+    family is invalidated for security.
+    """
+    from core.refresh_tokens import rotate_refresh_token as _rotate
+
+    result = await _rotate(req.refresh_token, db)
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired refresh token",
+        )
+
+    access_token, new_refresh, refresh_expires, _user_id = result
+    refresh_expires_in = int((refresh_expires - datetime.now(timezone.utc)).total_seconds())
+
+    return TokenResponse(
+        access_token=access_token,
+        expires_in=settings.jwt_expire_minutes * 60,
+        refresh_token=new_refresh,
+        refresh_expires_in=refresh_expires_in,
+    )
+
+
+class LogoutRequest(BaseModel):
+    refresh_token: str
+
+
+@router.post("/logout", status_code=200)
+async def logout(
+    req: LogoutRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Revoke a refresh token (log out the session).
+
+    Always returns 200 regardless of whether the token existed — prevent
+    oracle attacks that enumerate valid tokens.
+    """
+    from core.refresh_tokens import revoke_refresh_token
+
+    await revoke_refresh_token(req.refresh_token, db)
+    return {"message": "Logged out successfully."}

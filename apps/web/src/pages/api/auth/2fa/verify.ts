@@ -3,6 +3,7 @@
  * Public endpoint — no cookie auth needed (uses pending_token in body).
  */
 import type { APIRoute } from "astro";
+import { setAuthCookies } from "@/lib/auth";
 
 const API_URL = import.meta.env.PUBLIC_API_URL ?? "http://api:8100";
 
@@ -16,14 +17,15 @@ export const POST: APIRoute = async ({ request, cookies }) => {
     });
     const data = await res.json().catch(() => ({}));
 
-    // If successful, set cookie just like login does
+    // If successful, set both auth cookies
     if (res.ok && data.access_token) {
-      cookies.set("cs_token", data.access_token, {
-        path: "/",
-        httpOnly: true,
-        sameSite: "lax",
-        maxAge: data.expires_in ?? 86400,
-      });
+      setAuthCookies(
+        cookies as any,
+        data.access_token,
+        data.refresh_token,
+        data.expires_in,
+        data.refresh_expires_in,
+      );
     }
 
     return new Response(JSON.stringify(data), {
