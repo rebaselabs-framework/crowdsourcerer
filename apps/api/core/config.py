@@ -63,6 +63,12 @@ class Settings(BaseSettings):
     alert_sweeper_stall_minutes: int = 15       # Fire alert if sweeper hasn't run in N minutes
     alert_cooldown_hours: int = 1               # Don't re-fire same alert type within N hours
 
+    # Webhook secret encryption
+    # Fernet key for encrypting webhook signing secrets at rest.
+    # Generate with: python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    # If empty, a deterministic key is derived from jwt_secret (sufficient for dev).
+    webhook_encryption_key: str = ""
+
     # Google OAuth (social login)
     # To enable: set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET from Google Cloud Console
     # Redirect URI to register: https://crowdsourcerer.rebaselabs.online/v1/auth/google/callback

@@ -1215,8 +1215,11 @@ class WebhookEndpointDB(Base):
     description = Column(String(255), nullable=True)
     # Which events to receive — NULL means ALL events
     events = Column(JSON, nullable=True)
-    # HMAC-SHA256 signing secret — base64url random bytes
-    secret = Column(String(128), nullable=False)
+    # HMAC-SHA256 signing secret — encrypted at rest (enc:... prefix)
+    secret = Column(String(512), nullable=False)
+    # Previous secret for rotation grace period (encrypted, nullable)
+    previous_secret = Column(String(512), nullable=True)
+    previous_secret_expires_at = Column(DateTime(timezone=True), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
     # Stats (cached)
     delivery_count = Column(Integer, default=0, nullable=False)

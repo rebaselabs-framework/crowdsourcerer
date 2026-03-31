@@ -43,6 +43,7 @@ import structlog
 from sqlalchemy import select
 
 from core.database import AsyncSessionLocal
+from core.encryption import decrypt_secret
 from core.webhook_retry import enqueue_retry
 from models.db import WebhookLogDB, TaskDB, WebhookEndpointDB, WebhookPayloadTemplateDB, NotificationPreferencesDB
 
@@ -344,13 +345,24 @@ async def _deliver_to_endpoint(
     timestamp = str(int(_time.time()))
     # Include timestamp in signature to prevent replay attacks
     sig_input = f"{timestamp}.".encode() + payload_bytes
-    sig = hmac.new(endpoint.secret.encode(), sig_input, hashlib.sha256).hexdigest()
+    decrypted_secret = decrypt_secret(endpoint.secret)
+    sig = hmac.new(decrypted_secret.encode(), sig_input, hashlib.sha256).hexdigest()
+
+    # Build signature header — include v0 (old secret) if within rotation grace period
+    sig_header = f"t={timestamp},v1={sig}"
+    now = datetime.now(timezone.utc)
+    if (endpoint.previous_secret
+            and endpoint.previous_secret_expires_at
+            and now < endpoint.previous_secret_expires_at):
+        old_secret = decrypt_secret(endpoint.previous_secret)
+        old_sig = hmac.new(old_secret.encode(), sig_input, hashlib.sha256).hexdigest()
+        sig_header += f",v0={old_sig}"
 
     endpoint_id = str(endpoint.id)
     delivery_headers = {
         "Content-Type": "application/json",
         "X-Crowdsorcerer-Event": event_type,
-        "X-Crowdsorcerer-Signature": f"t={timestamp},v1={sig}",
+        "X-Crowdsorcerer-Signature": sig_header,
         "X-Crowdsorcerer-Timestamp": timestamp,
     }
 
@@ -736,7 +748,8 @@ async def replay_webhook_log(*, log_id: str, user_id: str) -> dict:
         payload_bytes = json.dumps(base_payload).encode()
         replay_ts = str(int(_time.time()))
         sig_input = f"{replay_ts}.".encode() + payload_bytes
-        sig = hmac.new(ep.secret.encode(), sig_input, hashlib.sha256).hexdigest()
+        ep_secret = decrypt_secret(ep.secret)
+        sig = hmac.new(ep_secret.encode(), sig_input, hashlib.sha256).hexdigest()
 
         t0 = _time.perf_counter()
         status_code: Optional[int] = None

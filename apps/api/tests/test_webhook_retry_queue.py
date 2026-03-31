@@ -246,6 +246,8 @@ class TestDeliverToEndpointEnqueues:
         mock_endpoint.id = uuid.uuid4()
         mock_endpoint.url = "https://example.com/webhook"
         mock_endpoint.secret = "test-secret-key"
+        mock_endpoint.previous_secret = None
+        mock_endpoint.previous_secret_expires_at = None
         mock_endpoint.events = None
 
         mock_resp = MagicMock()
@@ -287,6 +289,8 @@ class TestDeliverToEndpointEnqueues:
         mock_endpoint.id = uuid.uuid4()
         mock_endpoint.url = "https://example.com/webhook"
         mock_endpoint.secret = "test-secret-key"
+        mock_endpoint.previous_secret = None
+        mock_endpoint.previous_secret_expires_at = None
         mock_endpoint.events = None
 
         mock_resp = MagicMock()
@@ -326,6 +330,8 @@ class TestDeliverToEndpointEnqueues:
         mock_endpoint.id = uuid.uuid4()
         mock_endpoint.url = "https://example.com/webhook"
         mock_endpoint.secret = "test-secret-key"
+        mock_endpoint.previous_secret = None
+        mock_endpoint.previous_secret_expires_at = None
         mock_endpoint.events = None
 
         mock_resp = MagicMock()

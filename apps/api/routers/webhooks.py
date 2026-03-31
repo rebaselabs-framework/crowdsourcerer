@@ -6,7 +6,7 @@ import hmac
 import json
 import secrets
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID
 
@@ -27,6 +27,7 @@ from core.scopes import (
     SCOPE_WEBHOOKS_READ,
     SCOPE_WEBHOOKS_WRITE,
 )
+from core.encryption import encrypt_secret, decrypt_secret
 from core.url_validation import validate_webhook_url, UnsafeURLError
 from core.webhooks import ALL_EVENTS, DEFAULT_EVENTS, retry_webhook_log, replay_webhook_log
 from models.db import WebhookLogDB, WebhookEndpointDB, NotificationPreferencesDB
@@ -149,7 +150,7 @@ async def create_endpoint(
         url=body.url,
         description=body.description,
         events=body.events,
-        secret=secret,
+        secret=encrypt_secret(secret),
     )
     db.add(ep)
     await db.commit()
@@ -253,14 +254,27 @@ async def rotate_secret(
 ):
     """
     Rotate the signing secret for an endpoint.
-    Returns the new secret (shown **once**).
+
+    Returns the new secret (shown **once**).  The old secret remains valid
+    for 24 hours as a grace period — during that window, webhook deliveries
+    include both ``v1`` (new) and ``v0`` (old) signatures so consumers can
+    verify with either secret while they update their configuration.
     """
     ep = await _get_owned_endpoint(endpoint_id, user_id, db)
     new_secret = secrets.token_urlsafe(32)
-    ep.secret = new_secret
-    ep.updated_at = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc)
+
+    # Move current secret to previous (grace period = 24 hours)
+    ep.previous_secret = ep.secret  # already encrypted (or plaintext for legacy)
+    ep.previous_secret_expires_at = now + timedelta(hours=24)
+
+    ep.secret = encrypt_secret(new_secret)
+    ep.updated_at = now
     await db.commit()
-    return {"secret": new_secret}
+    return {
+        "secret": new_secret,
+        "previous_secret_expires_at": ep.previous_secret_expires_at.isoformat(),
+    }
 
 
 @router.post("/endpoints/{endpoint_id}/test")
@@ -293,7 +307,16 @@ async def test_endpoint(
     payload_bytes = json.dumps(payload).encode()
     timestamp = str(int(time.time()))
     sig_input = f"{timestamp}.".encode() + payload_bytes
-    sig = hmac.new(ep.secret.encode(), sig_input, hashlib.sha256).hexdigest()
+    decrypted_secret = decrypt_secret(ep.secret)
+    sig = hmac.new(decrypted_secret.encode(), sig_input, hashlib.sha256).hexdigest()
+
+    # Build signature header — include v0 (old secret) if within grace period
+    sig_header = f"t={timestamp},v1={sig}"
+    now_utc = datetime.now(timezone.utc)
+    if ep.previous_secret and ep.previous_secret_expires_at and now_utc < ep.previous_secret_expires_at:
+        old_secret = decrypt_secret(ep.previous_secret)
+        old_sig = hmac.new(old_secret.encode(), sig_input, hashlib.sha256).hexdigest()
+        sig_header += f",v0={old_sig}"
 
     start = time.monotonic()
     try:
@@ -304,7 +327,7 @@ async def test_endpoint(
             headers={
                 "Content-Type": "application/json",
                 "X-Crowdsourcerer-Event": "test.ping",
-                "X-Crowdsourcerer-Signature": f"t={timestamp},v1={sig}",
+                "X-Crowdsourcerer-Signature": sig_header,
                 "X-Crowdsourcerer-Timestamp": timestamp,
             },
         )
