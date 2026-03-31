@@ -218,7 +218,7 @@ const taskTypes = [
 
     <div class="grid md:grid-cols-4 gap-8">
       <!-- Sidebar -->
-      <nav class="text-sm space-y-1 md:sticky md:top-8 self-start">
+      <nav class="text-sm space-y-1 md:sticky md:top-8 self-start min-w-0">
         <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Get started</div>
         <a href="#quickstart" class="block py-1 text-gray-400 hover:text-gray-200 transition-colors">Quickstart</a>
         <a href="#authentication" class="block py-1 text-gray-400 hover:text-gray-200 transition-colors">Authentication</a>
@@ -240,8 +240,8 @@ const taskTypes = [
         </a>
       </nav>
 
-      <!-- Content -->
-      <div class="md:col-span-3 space-y-16 text-gray-300">
+      <!-- Content (min-w-0 prevents code blocks from stretching the grid) -->
+      <div class="md:col-span-3 space-y-16 text-gray-300 min-w-0">
 
         <!-- Quickstart -->
         <section id="quickstart">
@@ -274,7 +274,7 @@ curl -X POST https://crowdsourcerer.rebaselabs.online/v1/tasks \\
           <p class="mb-4">
             All API requests require a Bearer token in the <code class="text-violet-300 bg-gray-900 px-1 rounded">Authorization</code> header.
           </p>
-          <pre class="bg-gray-900 border border-gray-800 rounded-lg p-4 text-sm font-mono mb-4">Authorization: Bearer csk_YOUR_API_KEY</pre>
+          <pre class="bg-gray-900 border border-gray-800 rounded-lg p-4 text-sm font-mono overflow-x-auto mb-4">Authorization: Bearer csk_YOUR_API_KEY</pre>
           <p class="text-sm mb-4">Two token types are accepted:</p>
           <ul class="list-disc list-inside space-y-2 text-sm">
             <li>

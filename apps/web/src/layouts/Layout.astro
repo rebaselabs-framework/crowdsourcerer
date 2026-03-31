@@ -194,8 +194,8 @@ const ANN_ICON: Record<string, string> = {
           <span class="hidden sm:inline">CrowdSorcerer</span>
         </a>
 
-        <!-- Desktop nav links -->
-        <div class="hidden md:flex items-center gap-5 text-sm">
+        <!-- Desktop nav links (lg: breakpoint — too many items for md/768px) -->
+        <div class="hidden lg:flex items-center gap-5 text-sm">
           <a href="/use-cases" class:list={["transition-colors", currentPath.startsWith("/use-cases") ? "text-white" : "text-gray-400 hover:text-gray-100"]}>
             Use Cases
           </a>
@@ -288,7 +288,7 @@ const ANN_ICON: Record<string, string> = {
         </div>
 
         <!-- Mobile: notification + hamburger -->
-        <div class="flex items-center gap-3 md:hidden">
+        <div class="flex items-center gap-3 lg:hidden">
           {/* Mobile theme toggle */}
           <button
             id="theme-toggle-mobile"
@@ -333,7 +333,7 @@ const ANN_ICON: Record<string, string> = {
       <!-- Mobile menu (hidden by default) -->
       <div
         id="mobile-menu"
-        class="hidden md:hidden border-t border-gray-800 mt-3 pt-3 pb-2 space-y-1"
+        class="hidden lg:hidden border-t border-gray-800 mt-3 pt-3 pb-2 space-y-1"
         role="menu"
       >
         <a href="/use-cases" class="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
@@ -558,7 +558,7 @@ const ANN_ICON: Record<string, string> = {
 
     <!-- Content -->
     <!-- Extra bottom padding on mobile to account for the bottom nav bar -->
-    <div class:list={["pb-0", isLoggedIn ? "sm:pb-0 pb-20" : ""]}>
+    <div class:list={["pb-0", isLoggedIn ? "lg:pb-0 pb-20" : ""]}>
       <slot />
     </div>
 
@@ -579,9 +579,9 @@ const ANN_ICON: Record<string, string> = {
       </div>
     </footer>
 
-    <!-- Mobile bottom navigation (logged-in only, hidden on md+) -->
+    <!-- Mobile bottom navigation (logged-in only, hidden on lg+) -->
     {isLoggedIn && (
-      <nav class="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-gray-950/98 backdrop-blur-sm border-t border-gray-800 px-1 py-2 safe-area-bottom">
+      <nav class="fixed bottom-0 left-0 right-0 z-50 lg:hidden bg-gray-950/98 backdrop-blur-sm border-t border-gray-800 px-1 py-2 safe-area-bottom">
         <div class="flex items-center justify-around max-w-md mx-auto">
           <!-- Home -->
           <a href="/dashboard" class:list={["flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl transition-colors min-w-0", currentPath === "/dashboard" ? "text-violet-400" : "text-gray-500 hover:text-gray-300"]}>
