@@ -197,11 +197,85 @@ async def delete_org(
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ):
-    """Delete an org (owner only). Remaining org credits are lost."""
+    """Delete an org (owner only).
+
+    Before deletion:
+    - Active tasks billed to this org are cancelled and refunded to the org pool.
+    - Remaining org credits are transferred to the owner's personal balance.
+    """
     org, _ = await _get_org_and_require_role(org_id, user_id, db, min_role="owner")
+
+    # Lock org row to prevent concurrent credit changes during teardown
+    org_locked_result = await db.execute(
+        select(OrganizationDB).where(OrganizationDB.id == org_id).with_for_update()
+    )
+    org = org_locked_result.scalar_one()
+
+    # Cancel active tasks billed to this org and refund credits to the org pool
+    from workers.router import TASK_CREDITS
+    CANCELLABLE = ("pending", "queued", "open")
+    active_result = await db.execute(
+        select(TaskDB).where(
+            TaskDB.org_id == org_id,
+            TaskDB.status.in_(CANCELLABLE),
+        ).with_for_update()
+    )
+    active_tasks = active_result.scalars().all()
+    refunded_from_tasks = 0
+    for task in active_tasks:
+        # Compute task cost the same way creation does
+        from core.config import get_settings as _gs
+        HUMAN_TASK_TYPES = {
+            "label_image", "label_text", "rate_quality", "verify_fact",
+            "moderate_content", "compare_rank", "answer_question",
+            "transcription_review",
+        }
+        if task.type in HUMAN_TASK_TYPES:
+            reward = task.worker_reward_credits or 2
+            assignments = task.assignments_required or 1
+            fee = max(1, int(reward * assignments * 0.2))
+            cost = reward * assignments + fee
+        else:
+            cost = TASK_CREDITS.get(task.type, 5)
+
+        task.status = "cancelled"
+        org.credits += cost
+        refunded_from_tasks += cost
+        db.add(CreditTransactionDB(
+            user_id=user_id,
+            task_id=task.id,
+            amount=cost,
+            type="refund",
+            description=f"Org deletion: task cancelled ({task.type})",
+        ))
+
+    # Transfer remaining org credits to the owner's personal balance
+    remaining = org.credits
+    if remaining > 0:
+        user_result = await db.execute(
+            select(UserDB).where(UserDB.id == user_id).with_for_update()
+        )
+        owner_user = user_result.scalar_one_or_none()
+        if owner_user:
+            owner_user.credits += remaining
+            db.add(CreditTransactionDB(
+                user_id=user_id,
+                amount=remaining,
+                type="transfer",
+                description=f"Org '{org.name}' deleted: credits transferred to owner",
+            ))
+        org.credits = 0
+
     await db.delete(org)
     await db.commit()
-    logger.info("org_deleted", org_id=str(org_id), by=user_id)
+    logger.info(
+        "org_deleted",
+        org_id=str(org_id),
+        by=user_id,
+        tasks_cancelled=len(active_tasks),
+        credits_refunded=refunded_from_tasks,
+        credits_transferred=remaining,
+    )
 
 
 # ── Members ───────────────────────────────────────────────────────────────────

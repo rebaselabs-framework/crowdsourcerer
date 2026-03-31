@@ -8,7 +8,9 @@ from typing import Optional
 
 import pyotp
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from jose import JWTError, jwt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,6 +30,7 @@ from models.schemas import (
 )
 
 logger = structlog.get_logger()
+limiter = Limiter(key_func=get_remote_address)
 router = APIRouter(prefix="/v1/auth/2fa", tags=["2fa"])
 settings = get_settings()
 _ISSUER = "CrowdSorcerer"
@@ -204,7 +207,9 @@ async def disable_2fa(
 # ─── POST /v1/auth/2fa/verify ─────────────────────────────────────────────────
 
 @router.post("/verify", response_model=TokenResponse)
+@limiter.limit("5/minute")
 async def verify_2fa(
+    request: Request,
     req: TwoFAVerifyRequest,
     db: AsyncSession = Depends(get_db),
 ):
