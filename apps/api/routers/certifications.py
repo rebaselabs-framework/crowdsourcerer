@@ -293,7 +293,9 @@ async def list_certifications(
     if count == 0:
         await seed_certifications(db)
 
-    result = await db.execute(select(CertificationDB).order_by(CertificationDB.task_type))
+    result = await db.execute(
+        select(CertificationDB).order_by(CertificationDB.task_type).limit(200)
+    )
     certs = result.scalars().all()
 
     # Bulk-load question counts for all certs in one GROUP BY query
@@ -511,6 +513,7 @@ async def my_certifications(
         .join(CertificationDB, WorkerCertificationDB.cert_id == CertificationDB.id)
         .where(WorkerCertificationDB.worker_id == uid)
         .order_by(WorkerCertificationDB.certified_at.desc().nullslast())
+        .limit(200)  # safety cap
     )
     rows = result.all()
 

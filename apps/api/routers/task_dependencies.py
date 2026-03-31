@@ -147,6 +147,7 @@ async def list_dependencies(
         .join(TaskDB, TaskDependencyDB.depends_on_id == TaskDB.id)
         .where(TaskDependencyDB.task_id == task_id)
         .order_by(TaskDependencyDB.created_at)
+        .limit(200)  # safety cap
     )
     return [_fmt(dep, upstream) for dep, upstream in result.all()]
 
@@ -165,6 +166,7 @@ async def list_dependents(
         .join(TaskDB, TaskDependencyDB.task_id == TaskDB.id)
         .where(TaskDependencyDB.depends_on_id == task_id)
         .order_by(TaskDependencyDB.created_at)
+        .limit(200)  # safety cap
     )
     return [_fmt(dep, downstream) for dep, downstream in result.all()]
 

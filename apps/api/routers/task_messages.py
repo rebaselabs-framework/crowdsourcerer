@@ -12,7 +12,7 @@ from sqlalchemy import select, or_, func, and_
 from core.auth import get_current_user_id
 from core.database import get_db
 from core.notify import create_notification, NotifType
-from models.db import TaskDB, TaskMessageDB, UserDB
+from models.db import TaskDB, TaskMessageDB, TaskAssignmentDB, UserDB
 
 router = APIRouter(prefix="/v1/tasks", tags=["task-messages"])
 
@@ -54,6 +54,21 @@ class InboxThreadOut(BaseModel):
     total_messages: int
 
 
+async def _is_task_participant(
+    task: TaskDB, uid: UUID, db: AsyncSession,
+) -> bool:
+    """Return True if the user is the task requester or has an active/submitted assignment."""
+    if task.user_id == uid:
+        return True
+    asgn_count = await db.scalar(
+        select(func.count()).where(
+            TaskAssignmentDB.task_id == task.id,
+            TaskAssignmentDB.worker_id == uid,
+        )
+    )
+    return bool(asgn_count)
+
+
 @router.post("/{task_id}/messages", response_model=MessageOut, status_code=201)
 async def send_message(
     task_id: UUID,
@@ -61,19 +76,29 @@ async def send_message(
     user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
-    """Send a DM about a task. Recipient must be involved with the task."""
+    """Send a DM about a task. Both sender and recipient must be involved with the task."""
     task_result = await db.execute(select(TaskDB).where(TaskDB.id == task_id))
     task = task_result.scalar_one_or_none()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+
+    current_uuid = UUID(user_id)
+
+    # Sender must be task requester or assigned worker
+    if not await _is_task_participant(task, current_uuid, db):
+        raise HTTPException(status_code=403, detail="You are not involved with this task")
 
     recipient_result = await db.execute(select(UserDB).where(UserDB.id == body.recipient_id))
     recipient = recipient_result.scalar_one_or_none()
     if not recipient:
         raise HTTPException(status_code=404, detail="Recipient not found")
 
-    if body.recipient_id == UUID(user_id):
+    if body.recipient_id == current_uuid:
         raise HTTPException(status_code=400, detail="Cannot message yourself")
+
+    # Recipient must also be involved with the task
+    if not await _is_task_participant(task, body.recipient_id, db):
+        raise HTTPException(status_code=403, detail="Recipient is not involved with this task")
 
     sender_result = await db.execute(select(UserDB).where(UserDB.id == UUID(user_id)))
     sender = sender_result.scalar_one_or_none()
@@ -119,13 +144,17 @@ async def get_task_messages(
     user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get all DMs for a task (only shows messages where you are sender or recipient)."""
+    """Get all DMs for a task (must be task requester or assigned worker)."""
     task_result = await db.execute(select(TaskDB).where(TaskDB.id == task_id))
     task = task_result.scalar_one_or_none()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
     current_uuid = UUID(user_id)
+
+    # Must be involved with the task to read messages
+    if not await _is_task_participant(task, current_uuid, db):
+        raise HTTPException(status_code=403, detail="You are not involved with this task")
     msgs_result = await db.execute(
         select(TaskMessageDB)
         .where(
@@ -198,7 +227,7 @@ async def get_message_inbox(
     """
     current_uuid = UUID(user_id)
 
-    # Fetch all messages where user is sender or recipient
+    # Fetch messages where user is sender or recipient (capped for safety)
     msgs_result = await db.execute(
         select(TaskMessageDB)
         .where(
@@ -208,6 +237,7 @@ async def get_message_inbox(
             )
         )
         .order_by(TaskMessageDB.created_at.asc())
+        .limit(5000)  # safety cap — prevents unbounded memory usage
     )
     all_msgs = msgs_result.scalars().all()
 

@@ -184,6 +184,7 @@ async def get_my_portfolio(
         select(WorkerPortfolioItemDB)
         .where(WorkerPortfolioItemDB.worker_id == user_id)
         .order_by(WorkerPortfolioItemDB.display_order, WorkerPortfolioItemDB.pinned_at)
+        .limit(100)  # safety cap
     )
     pins = pins_res.scalars().all()
     return [await _build_item(p, db) for p in pins]

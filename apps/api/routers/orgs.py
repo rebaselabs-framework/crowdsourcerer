@@ -138,6 +138,7 @@ async def list_my_orgs(
         .join(OrgMemberDB, OrgMemberDB.org_id == OrganizationDB.id)
         .where(OrgMemberDB.user_id == user_id)
         .order_by(OrgMemberDB.joined_at.asc())
+        .limit(200)  # safety cap
     )
     orgs = result.scalars().all()
     if not orgs:
@@ -294,6 +295,7 @@ async def list_members(
         .join(UserDB, UserDB.id == OrgMemberDB.user_id)
         .where(OrgMemberDB.org_id == org_id)
         .order_by(OrgMemberDB.joined_at.asc())
+        .limit(500)  # safety cap
     )
     rows = result.all()
 
@@ -507,6 +509,7 @@ async def list_invites(
             OrgInviteDB.org_id == org_id,
             OrgInviteDB.accepted_at.is_(None),
         ).order_by(OrgInviteDB.created_at.desc())
+        .limit(200)  # safety cap
     )
     invites = result.scalars().all()
     return [
