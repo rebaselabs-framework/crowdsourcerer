@@ -774,6 +774,7 @@ async def _execute_pipeline_run(
                     max_retries = step.max_retries or 0
                     last_error: Optional[Exception] = None
                     succeeded = False
+                    credit_failed = False  # set if step fails due to insufficient credits
 
                     for attempt in range(max_retries + 1):  # 0..max_retries inclusive
                         if attempt > 0:
@@ -823,6 +824,29 @@ async def _execute_pipeline_run(
                                     task_id=task.id,
                                 )
                                 db.add(txn)
+                            else:
+                                # Insufficient credits — fail this step.
+                                # Retrying won't help so we break immediately.
+                                credit_failed = True
+                                credit_err = f"Insufficient credits: need {cost}, have {user.credits}"
+                                sr.task_id = task.id
+                                sr.status = "failed"
+                                sr.error = credit_err
+                                sr.retry_count = attempt
+                                sr.completed_at = utcnow()
+                                # Check for failure branch
+                                next_fail = step.next_on_fail
+                                if next_fail is not None and next_fail >= 0:
+                                    step_outputs[current_idx] = {"error": credit_err, "step": current_idx}
+                                    await db.commit()
+                                    current_idx = next_fail
+                                else:
+                                    run.status = "failed"
+                                    run.error = f"Step {current_idx}: {credit_err}"
+                                    run.completed_at = utcnow()
+                                    await db.commit()
+                                    return  # Pipeline failed — nothing more to do
+                                break  # Exit retry loop
 
                             sr.task_id = task.id
                             sr.output = output
@@ -842,7 +866,12 @@ async def _execute_pipeline_run(
                                 attempt=attempt, error=str(e),
                             )
 
-                    if succeeded:
+                    if credit_failed:
+                        # Already handled branching/failure above; just
+                        # continue the outer while-loop (current_idx was
+                        # already advanced to the failure-branch step).
+                        continue
+                    elif succeeded:
                         # Determine next step (branch on success)
                         current_idx = step.next_on_pass if step.next_on_pass is not None else current_idx + 1
                     else:

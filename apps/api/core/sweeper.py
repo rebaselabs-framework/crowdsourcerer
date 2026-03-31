@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from models.db import TaskDB, TaskAssignmentDB, UserDB, SLABreachDB, TaskDependencyDB, NotificationDB, TaskWatchlistDB, NotificationPreferencesDB
 from core.background import safe_create_task
-from core.webhooks import fire_webhook_for_task
+from core.webhooks import fire_webhook, fire_webhook_for_task
 from core.notify import create_notification, NotifType
 
 logger = structlog.get_logger()
@@ -229,7 +229,7 @@ async def _sweep_sla_breaches(session_factory: async_sessionmaker) -> int:
     Optimised: loads all relevant users in a single query (no N+1),
     and pre-loads already-breached task IDs to skip them without per-task queries.
     """
-    from core.sla import compute_sla_deadline
+    from core.sla import compute_sla_deadline, get_sla_hours
     breached = 0
     now = datetime.now(timezone.utc)
 
@@ -280,7 +280,7 @@ async def _sweep_sla_breaches(session_factory: async_sessionmaker) -> int:
                     user_id=task.user_id,
                     plan=plan,
                     priority=priority,
-                    sla_hours=(now - task.created_at).total_seconds() / 3600,
+                    sla_hours=get_sla_hours(plan, priority),
                     task_created_at=task.created_at,
                     breach_at=deadline,
                 )
@@ -587,33 +587,45 @@ async def _sweep_scheduled_tasks(session_factory: async_sessionmaker) -> int:
             )
             tasks = result.scalars().all()
 
+            # Collect info for background tasks BEFORE commit (objects
+            # expire after commit so we capture ids/fields up front).
+            bg_tasks: list[tuple[str, str, str, str, str | None, int | None]] = []
+
             for task in tasks:
-                try:
-                    if task.execution_mode == "ai":
-                        task.status = "queued"
-                        await db.commit()
-                        # Fire off AI execution
-                        safe_create_task(_run_scheduled_ai_task(str(task.id), str(task.user_id)))
-                    else:
-                        # Human task → publish to marketplace
-                        task.status = "open"
-                        await db.commit()
-                        # Notify workers whose saved searches match
-                        safe_create_task(_notify_scheduled_human_task(
-                            task_type=task.type,
-                            priority=task.priority,
-                            reward_credits=task.worker_reward_credits,
-                        ))
-                    activated += 1
-                    logger.info(
-                        "sweeper.scheduled_task_activated",
-                        task_id=str(task.id),
-                        task_type=task.type,
-                        mode=task.execution_mode,
-                    )
-                except Exception:  # noqa: BLE001
-                    logger.exception("sweeper.scheduled_task_error", task_id=str(task.id))
-                    await db.rollback()
+                if task.execution_mode == "ai":
+                    task.status = "queued"
+                else:
+                    task.status = "open"
+                bg_tasks.append((
+                    str(task.id),
+                    str(task.user_id),
+                    task.execution_mode,
+                    task.type,
+                    task.priority,
+                    task.worker_reward_credits,
+                ))
+                activated += 1
+                logger.info(
+                    "sweeper.scheduled_task_activated",
+                    task_id=str(task.id),
+                    task_type=task.type,
+                    mode=task.execution_mode,
+                )
+
+            if activated:
+                await db.commit()
+
+            # Fire background tasks AFTER commit (locks released, rows
+            # now visible to the background workers' own sessions).
+            for tid, uid, mode, ttype, pri, reward in bg_tasks:
+                if mode == "ai":
+                    safe_create_task(_run_scheduled_ai_task(tid, uid))
+                else:
+                    safe_create_task(_notify_scheduled_human_task(
+                        task_type=ttype,
+                        priority=pri,
+                        reward_credits=reward,
+                    ))
 
         except Exception:  # noqa: BLE001
             logger.exception("sweeper.scheduled_sweep_error")
@@ -738,11 +750,14 @@ async def _sweep_task_dependencies(session_factory: async_sessionmaker) -> int:
                 select(TaskDB).where(
                     TaskDB.id.in_(dep_task_ids),
                     TaskDB.status == "pending",
-                )
+                ).with_for_update(skip_locked=True)
             )
             pending_tasks = tasks_result.scalars().all()
 
             TERMINAL = {"completed", "failed", "cancelled"}
+
+            # Collect background tasks to fire after commit
+            bg_ai_tasks: list[tuple[str, str]] = []
 
             for task in pending_tasks:
                 # Load all upstream dep statuses
@@ -761,23 +776,24 @@ async def _sweep_task_dependencies(session_factory: async_sessionmaker) -> int:
                     continue
 
                 # Unblock!
-                try:
-                    if task.execution_mode == "ai":
-                        task.status = "queued"
-                        await db.commit()
-                        safe_create_task(_run_scheduled_ai_task(str(task.id), str(task.user_id)))
-                    else:
-                        task.status = "open"
-                        await db.commit()
-                    unblocked += 1
-                    logger.info(
-                        "sweeper.dependency_unblocked",
-                        task_id=str(task.id),
-                        mode=task.execution_mode,
-                    )
-                except Exception:  # noqa: BLE001
-                    logger.exception("sweeper.dependency_unblock_error", task_id=str(task.id))
-                    await db.rollback()
+                if task.execution_mode == "ai":
+                    task.status = "queued"
+                    bg_ai_tasks.append((str(task.id), str(task.user_id)))
+                else:
+                    task.status = "open"
+                unblocked += 1
+                logger.info(
+                    "sweeper.dependency_unblocked",
+                    task_id=str(task.id),
+                    mode=task.execution_mode,
+                )
+
+            if unblocked:
+                await db.commit()
+
+            # Fire background tasks after commit
+            for tid, uid in bg_ai_tasks:
+                safe_create_task(_run_scheduled_ai_task(tid, uid))
 
         except Exception:  # noqa: BLE001
             logger.exception("sweeper.dependency_sweep_error")
@@ -815,9 +831,13 @@ async def _sweep_priority_escalation(session_factory: async_sessionmaker) -> int
                 select(TaskDB).where(
                     TaskDB.status.in_(["open", "pending"]),
                     TaskDB.priority_escalated_at.is_(None),  # only escalate once
-                ).limit(1_000)
+                ).with_for_update(skip_locked=True).limit(1_000)
             )
             tasks = result.scalars().all()
+
+            # Collect webhook payloads before commit (task objects expire
+            # after commit, so we capture all needed fields up front).
+            webhook_payloads: list[dict] = []
 
             for task in tasks:
                 priority = task.priority or "normal"
@@ -829,54 +849,66 @@ async def _sweep_priority_escalation(session_factory: async_sessionmaker) -> int
                 if age < threshold:
                     continue  # not yet past SLA
 
-                try:
-                    old_priority = task.priority
-                    task.priority = new_priority
-                    task.priority_escalated_at = now
+                old_priority = task.priority
+                task.priority = new_priority
+                task.priority_escalated_at = now
 
-                    # In-app notification for task owner
-                    await create_notification(
-                        db,
-                        task.user_id,
-                        NotifType.SYSTEM,
-                        "Task priority auto-escalated",
-                        f"Task priority auto-escalated to {new_priority}",
-                        link=f"/dashboard/tasks/{task.id}",
-                    )
+                # In-app notification for task owner
+                await create_notification(
+                    db,
+                    task.user_id,
+                    NotifType.SYSTEM,
+                    "Task priority auto-escalated",
+                    f"Task priority auto-escalated to {new_priority}",
+                    link=f"/dashboard/tasks/{task.id}",
+                )
 
-                    await db.commit()
+                # Capture webhook info before commit (task objects expire
+                # after commit so we capture all needed fields here).
+                webhook_payloads.append({
+                    "task_id": str(task.id),
+                    "user_id": str(task.user_id),
+                    "webhook_url": task.webhook_url,
+                    "webhook_events": task.webhook_events,
+                    "old_priority": old_priority,
+                    "new_priority": new_priority,
+                    "task_type": task.type,
+                })
 
-                    # Fire webhook event
-                    wh_extra = {
-                        "old_priority": old_priority,
-                        "new_priority": new_priority,
-                        "escalated_at": now.isoformat(),
-                        "task_type": task.type,
-                    }
-                    if task.webhook_url:
-                        safe_create_task(fire_webhook_for_task(
-                            task=task,
-                            event_type="task.priority_escalated",
-                            extra=wh_extra,
-                        ))
-                    safe_create_task(fire_persistent_endpoints(
-                        user_id=str(task.user_id),
-                        task_id=str(task.id),
+                escalated += 1
+                logger.info(
+                    "sweeper.priority_escalated",
+                    task_id=str(task.id),
+                    old_priority=old_priority,
+                    new_priority=new_priority,
+                )
+
+            if escalated:
+                await db.commit()
+
+            # Fire webhook events after commit
+            for wp in webhook_payloads:
+                wh_extra = {
+                    "old_priority": wp["old_priority"],
+                    "new_priority": wp["new_priority"],
+                    "escalated_at": now.isoformat(),
+                    "task_type": wp["task_type"],
+                }
+                if wp["webhook_url"]:
+                    safe_create_task(fire_webhook(
+                        task_id=wp["task_id"],
+                        user_id=wp["user_id"],
+                        webhook_url=wp["webhook_url"],
+                        webhook_events=wp["webhook_events"],
                         event_type="task.priority_escalated",
                         extra=wh_extra,
                     ))
-
-                    escalated += 1
-                    logger.info(
-                        "sweeper.priority_escalated",
-                        task_id=str(task.id),
-                        old_priority=old_priority,
-                        new_priority=new_priority,
-                    )
-
-                except Exception:  # noqa: BLE001
-                    logger.exception("sweeper.priority_escalation_error", task_id=str(task.id))
-                    await db.rollback()
+                safe_create_task(fire_persistent_endpoints(
+                    user_id=wp["user_id"],
+                    task_id=wp["task_id"],
+                    event_type="task.priority_escalated",
+                    extra=wh_extra,
+                ))
 
         except Exception:  # noqa: BLE001
             logger.exception("sweeper.priority_escalation_sweep_error")
