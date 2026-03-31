@@ -27,7 +27,12 @@ if (Astro.request.method === "POST") {
     );
 
     if (!res.ok) {
-      error = "Invalid email or password";
+      if (res.status === 429) {
+        const data = await res.json().catch(() => ({}));
+        error = data.error ?? "Too many login attempts — please wait a minute";
+      } else {
+        error = "Invalid email or password";
+      }
     } else {
       const data = await res.json();
       // 2FA required — redirect to TOTP verification page
