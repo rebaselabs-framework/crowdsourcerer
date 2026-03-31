@@ -2086,6 +2086,12 @@ async def config_status(
             "detail": "Enabled — duplicate AI calls will be deduplicated" if s.task_result_cache_enabled else "Disabled",
             "required": False,
         },
+        "auth_tokens": {
+            "name": "Token Security",
+            "configured": True,
+            "detail": f"Access: {s.jwt_expire_minutes}min, Refresh: {s.refresh_token_expire_days}d, Rotation: enabled",
+            "required": False,
+        },
     }
 
     required_ok = all(v["configured"] for v in checks.values() if v.get("required"))
