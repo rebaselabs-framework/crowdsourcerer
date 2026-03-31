@@ -11,7 +11,9 @@ from typing import Optional
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
@@ -35,6 +37,7 @@ from models.schemas import (
 )
 
 logger = structlog.get_logger()
+limiter = Limiter(key_func=get_remote_address)
 router = APIRouter(prefix="/v1/webhooks", tags=["webhooks"])
 
 
@@ -261,7 +264,9 @@ async def rotate_secret(
 
 
 @router.post("/endpoints/{endpoint_id}/test")
+@limiter.limit("5/minute")
 async def test_endpoint(
+    request: Request,
     endpoint_id: UUID,
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(require_scope(SCOPE_WEBHOOKS_WRITE)),
@@ -374,7 +379,9 @@ async def list_webhook_logs(
 
 
 @router.post("/logs/{log_id}/retry")
+@limiter.limit("10/minute")
 async def retry_webhook(
+    request: Request,
     log_id: UUID,
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(require_scope(SCOPE_WEBHOOKS_WRITE)),
@@ -393,7 +400,9 @@ async def retry_webhook(
 
 
 @router.post("/logs/{log_id}/replay")
+@limiter.limit("5/minute")
 async def replay_webhook(
+    request: Request,
     log_id: UUID,
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(require_scope(SCOPE_WEBHOOKS_WRITE)),

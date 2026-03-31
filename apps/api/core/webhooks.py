@@ -111,9 +111,10 @@ def _render_payload_template(template_str: str, context: dict[str, Any]) -> dict
         logger.warning(
             "webhooks.template_render_invalid_json",
             template_preview=template_str[:120],
-            rendered_preview=rendered[:120],
         )
-        return {"_raw": rendered}
+        # Don't include rendered content in payload — it may contain
+        # substituted internal values.  Return a safe error indicator instead.
+        return {"error": "template_render_failed", "message": "Custom webhook template produced invalid JSON"}
 
 
 async def _get_user_event_template(

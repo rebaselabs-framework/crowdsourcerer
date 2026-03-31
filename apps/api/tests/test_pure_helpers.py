@@ -340,13 +340,15 @@ def test_render_dict_value_unquoted_embedding():
     assert result == {"info": {"a": 1}}
 
 
-def test_render_dict_value_quoted_produces_raw():
-    """Dict value inside quotes creates invalid JSON → returns {'_raw': ...}."""
+def test_render_dict_value_quoted_produces_error():
+    """Dict value inside quotes creates invalid JSON → returns error indicator (no internal data leak)."""
     from core.webhooks import _render_payload_template
     ctx = {"meta": {"a": 1}}
     # The inner JSON string breaks the outer JSON structure
     result = _render_payload_template('{"info": "{{meta}}"}', ctx)
-    assert "_raw" in result
+    assert result["error"] == "template_render_failed"
+    # Must NOT contain the rendered template content (prevents internal data leakage)
+    assert "_raw" not in result
 
 
 def test_render_list_value_unquoted_embedding():
@@ -364,13 +366,15 @@ def test_render_no_placeholders_identity_parse():
     assert result == {"static": "value"}
 
 
-def test_render_invalid_json_after_substitution_returns_raw():
-    """If rendered string is not valid JSON, returns {'_raw': rendered}."""
+def test_render_invalid_json_after_substitution_returns_error():
+    """If rendered string is not valid JSON, returns error indicator (no data leak)."""
     from core.webhooks import _render_payload_template
     # A template that isn't JSON after rendering (not wrapped in {})
     result = _render_payload_template("not json {{key}}", {"key": "value"})
-    assert "_raw" in result
-    assert "value" in result["_raw"]
+    assert result["error"] == "template_render_failed"
+    # Must NOT contain the substituted context values
+    assert "_raw" not in result
+    assert "value" not in str(result)
 
 
 def test_render_none_value_becomes_empty_string():
