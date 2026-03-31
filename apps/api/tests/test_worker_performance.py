@@ -42,6 +42,7 @@ def _make_worker_user() -> MagicMock:
     u.worker_tasks_completed = 20
     u.worker_streak_days = 3
     u.worker_last_active_date = datetime.now(timezone.utc)
+    u.token_version = 0
     return u
 
 

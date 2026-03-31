@@ -58,13 +58,14 @@ def _make_db() -> MagicMock:
 
 def _make_worker_user(user_id: str = WORKER_ID) -> MagicMock:
     u = MagicMock()
-    u.id                    = uuid.UUID(user_id)
-    u.email                 = f"{user_id[:8]}@example.com"
-    u.name                  = "Test Worker"
-    u.role                  = "worker"
+    u.id                     = uuid.UUID(user_id)
+    u.email                  = f"{user_id[:8]}@example.com"
+    u.name                   = "Test Worker"
+    u.role                   = "worker"
     u.worker_tasks_completed = 10
-    u.worker_xp             = 500
-    u.worker_level          = 3
+    u.worker_xp              = 500
+    u.worker_level           = 3
+    u.token_version          = 0
     return u
 
 

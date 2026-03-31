@@ -33,12 +33,12 @@ def _hash_api_key(key: str) -> str:
     ).hexdigest()
 
 
-def create_access_token(subject: str, expire_minutes: Optional[int] = None) -> str:
+def create_access_token(subject: str, expire_minutes: Optional[int] = None, token_version: int = 0) -> str:
     expire = datetime.now(timezone.utc) + timedelta(
         minutes=expire_minutes or settings.jwt_expire_minutes
     )
     return jwt.encode(
-        {"sub": subject, "exp": expire},
+        {"sub": subject, "exp": expire, "tv": token_version},
         settings.jwt_secret,
         algorithm=settings.jwt_algorithm,
     )
@@ -95,11 +95,21 @@ async def get_current_user_id(
         return str(api_key.user_id)
 
     # JWT path
-    user_id = decode_access_token(token)
+    try:
+        payload = jwt.decode(
+            token, settings.jwt_secret, algorithms=[settings.jwt_algorithm]
+        )
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
+        )
+
+    user_id = payload.get("sub")
     if not user_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
         )
+
     return user_id
 
 
@@ -125,6 +135,7 @@ async def get_optional_user_id(
 
 
 async def get_current_user(
+    credentials: Optional[HTTPAuthorizationCredentials] = Security(bearer_scheme),
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ):
@@ -136,10 +147,29 @@ async def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found"
         )
+
+    # Validate token version — invalidates tokens issued before password change
+    if credentials and not credentials.credentials.startswith("csk_"):
+        token_ver = 0
+        try:
+            p = jwt.decode(
+                credentials.credentials, settings.jwt_secret,
+                algorithms=[settings.jwt_algorithm],
+            )
+            token_ver = p.get("tv", 0)
+        except JWTError:
+            pass
+        if user.token_version != token_ver:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token invalidated — please log in again",
+            )
+
     return user
 
 
 async def require_admin(
+    credentials: Optional[HTTPAuthorizationCredentials] = Security(bearer_scheme),
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ) -> str:
@@ -152,4 +182,22 @@ async def require_admin(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required",
         )
+
+    # Validate token version
+    if credentials and not credentials.credentials.startswith("csk_"):
+        token_ver = 0
+        try:
+            p = jwt.decode(
+                credentials.credentials, settings.jwt_secret,
+                algorithms=[settings.jwt_algorithm],
+            )
+            token_ver = p.get("tv", 0)
+        except JWTError:
+            pass
+        if user.token_version != token_ver:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token invalidated — please log in again",
+            )
+
     return user_id

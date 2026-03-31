@@ -50,9 +50,10 @@ def _now():
 
 def _make_worker(worker_id: str = WORKER_ID) -> MagicMock:
     w = MagicMock()
-    w.id   = uuid.UUID(worker_id)
-    w.name = "Test Worker"
-    w.role = "worker"
+    w.id            = uuid.UUID(worker_id)
+    w.name          = "Test Worker"
+    w.role          = "worker"
+    w.token_version = 0
     return w
 
 

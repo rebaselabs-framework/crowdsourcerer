@@ -135,10 +135,11 @@ def _make_payout(status: str = "pending", credits: int = 100) -> MagicMock:
 
 def _make_worker_user(credits: int = 500) -> MagicMock:
     u = MagicMock()
-    u.id      = uuid.UUID(WORKER_ID)
-    u.email   = "worker@test.com"
-    u.credits = credits
-    u.is_admin = False
+    u.id            = uuid.UUID(WORKER_ID)
+    u.email         = "worker@test.com"
+    u.credits       = credits
+    u.is_admin      = False
+    u.token_version = 0
     return u
 
 

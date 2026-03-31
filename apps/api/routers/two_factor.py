@@ -252,7 +252,7 @@ async def verify_2fa(
             detail="Invalid 2FA code",
         )
 
-    access_token = create_access_token(str(user.id))
+    access_token = create_access_token(str(user.id), token_version=user.token_version or 0)
     logger.info("2fa_login_success", user_id=str(user.id))
 
     return TokenResponse(

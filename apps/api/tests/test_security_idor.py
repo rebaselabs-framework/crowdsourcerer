@@ -75,12 +75,13 @@ def _db_override(mock_db):
 
 def _make_worker_user() -> MagicMock:
     u = MagicMock()
-    u.id   = uuid.UUID(WORKER_ID)
-    u.role = "worker"
-    u.is_banned = False
+    u.id               = uuid.UUID(WORKER_ID)
+    u.role             = "worker"
+    u.is_banned        = False
     u.reputation_score = 100.0
-    u.plan = "free"
-    u.created_at = datetime.now(timezone.utc)
+    u.plan             = "free"
+    u.token_version    = 0
+    u.created_at       = datetime.now(timezone.utc)
     return u
 
 

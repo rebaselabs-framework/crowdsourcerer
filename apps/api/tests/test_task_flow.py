@@ -126,18 +126,19 @@ def _real_token(user_id: str) -> str:
 
 def _make_requester(credits: int = 1000) -> MagicMock:
     u = MagicMock()
-    u.id                   = uuid.UUID(REQUESTER_ID)
-    u.email                = "requester@test.com"
-    u.role                 = "requester"
-    u.credits              = credits
-    u.name                 = "Test Requester"
-    u.is_banned            = False
-    u.is_admin             = False
-    u.totp_enabled         = False
-    u.plan                 = "free"
+    u.id                     = uuid.UUID(REQUESTER_ID)
+    u.email                  = "requester@test.com"
+    u.role                   = "requester"
+    u.credits                = credits
+    u.name                   = "Test Requester"
+    u.is_banned              = False
+    u.is_admin               = False
+    u.totp_enabled           = False
+    u.plan                   = "free"
     u.credit_alert_threshold = None   # disables credit-alert path
-    u.credit_alert_fired   = False
-    u.created_at           = datetime.now(timezone.utc)
+    u.credit_alert_fired     = False
+    u.created_at             = datetime.now(timezone.utc)
+    u.token_version          = 0
     return u
 
 
@@ -157,6 +158,7 @@ def _make_worker(is_banned: bool = False) -> MagicMock:
     w.worker_last_active_date   = None
     w.worker_reliability        = None
     w.plan                      = "free"
+    w.token_version             = 0
     u_attrs = {"id": uuid.UUID(WORKER_ID), "email": "worker@test.com"}
     return w
 

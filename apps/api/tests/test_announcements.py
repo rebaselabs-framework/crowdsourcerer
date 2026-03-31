@@ -83,10 +83,11 @@ def _token(user_id: str) -> str:
 
 def _make_admin_user() -> MagicMock:
     u = MagicMock()
-    u.id       = uuid.UUID(ADMIN_ID)
-    u.is_admin = True
-    u.role     = "requester"
-    u.credits  = 0
+    u.id            = uuid.UUID(ADMIN_ID)
+    u.is_admin      = True
+    u.role          = "requester"
+    u.credits       = 0
+    u.token_version = 0
     return u
 
 

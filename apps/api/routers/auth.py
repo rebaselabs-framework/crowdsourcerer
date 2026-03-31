@@ -98,7 +98,7 @@ async def register(
         name="email.verification",
     )
 
-    token = create_access_token(str(user.id))
+    token = create_access_token(str(user.id), token_version=user.token_version or 0)
     return TokenResponse(
         access_token=token,
         expires_in=settings.jwt_expire_minutes * 60,
@@ -137,7 +137,7 @@ async def login(
         pending = _create_pending_token(str(user.id))
         return LoginWith2FAResponse(pending_token=pending)
 
-    token = create_access_token(str(user.id))
+    token = create_access_token(str(user.id), token_version=user.token_version or 0)
     return TokenResponse(
         access_token=token,
         expires_in=settings.jwt_expire_minutes * 60,
@@ -231,6 +231,7 @@ async def reset_password(
         raise HTTPException(status_code=400, detail="Account not found or disabled.")
 
     user.password_hash = _hash_password(req.new_password)
+    user.token_version = (user.token_version or 0) + 1
     rec.used = True
     await db.commit()
 
@@ -271,6 +272,7 @@ async def change_password(
         raise HTTPException(status_code=400, detail="Current password is incorrect")
 
     user.password_hash = _hash_password(req.new_password)
+    user.token_version = (user.token_version or 0) + 1
     await db.commit()
     return {"message": "Password changed successfully."}
 

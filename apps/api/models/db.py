@@ -41,6 +41,7 @@ class UserDB(Base):
         nullable=False,
     )
     credits = Column(Integer, default=100, nullable=False)
+    token_version = Column(Integer, default=0, nullable=False)
     stripe_customer_id = Column(String(255), nullable=True, unique=True)
     is_active = Column(Boolean, default=True, nullable=False)
     is_admin = Column(Boolean, default=False, nullable=False)

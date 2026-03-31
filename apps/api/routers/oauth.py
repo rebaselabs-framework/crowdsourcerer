@@ -235,7 +235,7 @@ async def google_callback(
     await db.refresh(user)
 
     # Issue JWT and redirect to web UI
-    jwt = create_access_token(str(user.id))
+    jwt = create_access_token(str(user.id), token_version=user.token_version or 0)
     next_path = state_payload.get("next", "/dashboard")
     # Redirect to web's /auth/google-success which picks up the token from the query string
     # and sets the cookie (server-side via Astro route)

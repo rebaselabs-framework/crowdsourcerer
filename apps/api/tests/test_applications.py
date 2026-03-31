@@ -141,6 +141,7 @@ def _make_worker_user(
     u.reputation_score = reputation_score
     u.is_banned        = is_banned
     u.is_admin         = False
+    u.token_version    = 0
     return u
 
 

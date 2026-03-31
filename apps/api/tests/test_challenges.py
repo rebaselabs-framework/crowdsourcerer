@@ -46,11 +46,12 @@ def _make_user(
     credits: int = 100,
     worker_xp: int = 0,
 ) -> MagicMock:
-    u             = MagicMock()
-    u.id          = uuid.UUID(user_id)
-    u.role        = role
-    u.credits     = credits
-    u.worker_xp   = worker_xp
+    u               = MagicMock()
+    u.id            = uuid.UUID(user_id)
+    u.role          = role
+    u.credits       = credits
+    u.worker_xp     = worker_xp
+    u.token_version = 0
     return u
 
 

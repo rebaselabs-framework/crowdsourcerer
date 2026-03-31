@@ -56,6 +56,7 @@ def _make_user(
     u.credits         = credits
     u.credits_pending = credits_pending
     u.role            = role
+    u.token_version   = 0
     return u
 
 

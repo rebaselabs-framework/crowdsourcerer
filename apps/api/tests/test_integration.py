@@ -53,6 +53,7 @@ def _make_user_db(
     u.password_hash = "$2b$12$testhashtesthashtesthashe"
     u.created_at = datetime.now(timezone.utc)
     u.plan = "free"
+    u.token_version = 0
     return u
 
 
