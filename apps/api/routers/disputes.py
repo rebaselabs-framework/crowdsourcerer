@@ -6,7 +6,9 @@ from typing import Optional
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, Body
+from fastapi import APIRouter, Depends, HTTPException, Query, Body, Request
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
@@ -22,6 +24,7 @@ from models.schemas import (
 
 logger = structlog.get_logger()
 router = APIRouter(prefix="/v1/disputes", tags=["disputes"])
+limiter = Limiter(key_func=get_remote_address)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -414,7 +417,9 @@ async def list_dispute_evidence(
 
 
 @router.post("/tasks/{task_id}/evidence", status_code=201)
+@limiter.limit("10/minute")
 async def submit_dispute_evidence(
+    request: Request,
     task_id: UUID,
     evidence_type: str = Body("text", embed=True),
     content: str = Body(..., embed=True),

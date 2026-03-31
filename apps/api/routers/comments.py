@@ -6,8 +6,10 @@ from typing import Optional
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy import select, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,6 +20,7 @@ from models.db import TaskCommentDB, TaskDB, TaskAssignmentDB, UserDB
 
 logger = structlog.get_logger()
 router = APIRouter(prefix="/v1/tasks", tags=["tasks"])
+limiter = Limiter(key_func=get_remote_address)
 
 MAX_BODY = 500
 MAX_COMMENTS_PER_TASK = 200
@@ -103,7 +106,9 @@ async def list_comments(
 
 
 @router.post("/{task_id}/comments", status_code=201)
+@limiter.limit("20/minute")
 async def post_comment(
+    request: Request,
     task_id: UUID,
     payload: CommentCreate,
     db: AsyncSession = Depends(get_db),

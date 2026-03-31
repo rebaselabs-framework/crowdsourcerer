@@ -4,8 +4,10 @@ import datetime
 from typing import List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_, func, and_
 
@@ -15,6 +17,7 @@ from core.notify import create_notification, NotifType
 from models.db import TaskDB, TaskMessageDB, TaskAssignmentDB, UserDB
 
 router = APIRouter(prefix="/v1/tasks", tags=["task-messages"])
+limiter = Limiter(key_func=get_remote_address)
 
 
 class MessageIn(BaseModel):
@@ -70,7 +73,9 @@ async def _is_task_participant(
 
 
 @router.post("/{task_id}/messages", response_model=MessageOut, status_code=201)
+@limiter.limit("30/minute")
 async def send_message(
+    request: Request,
     task_id: UUID,
     body: MessageIn,
     user_id: str = Depends(get_current_user_id),
