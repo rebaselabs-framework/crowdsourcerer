@@ -571,9 +571,11 @@ async def skill_matched_task_feed(
 
     worker_rep = user.reputation_score or 0.0
 
-    # Fetch a large pool of open tasks for scoring (up to 500 at a time)
+    # Fetch a pool of open tasks for scoring.
+    # Mix newest + highest-priority tasks to avoid staleness bias.
+    # Split the pool: 60% priority-first, 40% newest-first, then deduplicate.
     pool_size = min(500, page_size * 25)
-    q = select(TaskDB).where(
+    _base_where = [
         TaskDB.status == "open",
         TaskDB.execution_mode == "human",
         TaskDB.assignments_completed < TaskDB.assignments_required,
@@ -585,7 +587,33 @@ async def skill_matched_task_feed(
         ),
         TaskDB.user_id != user_id,
         (TaskDB.min_reputation_score == None) | (TaskDB.min_reputation_score <= worker_rep),  # noqa: E711
-    ).order_by(TaskDB.created_at.asc()).limit(pool_size)
+    ]
+    priority_half = int(pool_size * 0.6)
+    newest_half = pool_size - priority_half
+
+    # Priority batch: urgent/older tasks
+    q_priority = (
+        select(TaskDB).where(*_base_where)
+        .order_by(TaskDB.priority.desc(), TaskDB.created_at.asc())
+        .limit(priority_half)
+    )
+    # Newest batch: recently created tasks (avoids starvation of new tasks)
+    q_newest = (
+        select(TaskDB).where(*_base_where)
+        .order_by(TaskDB.created_at.desc())
+        .limit(newest_half)
+    )
+
+    priority_tasks = list((await db.execute(q_priority)).scalars().all())
+    newest_tasks = list((await db.execute(q_newest)).scalars().all())
+
+    # Deduplicate while preserving order
+    seen_ids: set = set()
+    pool_tasks: list = []
+    for t in priority_tasks + newest_tasks:
+        if t.id not in seen_ids:
+            seen_ids.add(t.id)
+            pool_tasks.append(t)
 
     pool_tasks = list((await db.execute(q)).scalars().all())
 

@@ -99,6 +99,7 @@ class InviteOut(BaseModel):
     worker_id: UUID
     worker_name: Optional[str]
     requester_id: UUID
+    requester_name: Optional[str] = None
     message: Optional[str]
     status: str
     created_at: str
@@ -574,6 +575,7 @@ async def list_my_invites(
             expired_ids.append(inv.id)
 
         t = tasks_map.get(str(inv.task_id))
+        r = requesters_map.get(str(inv.requester_id))
         out.append(InviteOut(
             id=inv.id,
             task_id=inv.task_id,
@@ -581,6 +583,7 @@ async def list_my_invites(
             worker_id=inv.worker_id,
             worker_name=None,   # self — not needed
             requester_id=inv.requester_id,
+            requester_name=r.name if r else None,
             message=inv.message,
             status=effective_status,
             created_at=inv.created_at.isoformat(),

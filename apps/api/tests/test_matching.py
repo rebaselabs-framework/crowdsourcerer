@@ -249,6 +249,119 @@ def test_score_always_in_0_1_range():
             assert 0.0 <= result <= 1.0, f"Score out of range: {result} for {kwargs}"
 
 
+# ── Edge cases — zero-skill / minimal-data workers ────────────────────────────
+
+def test_minimum_possible_score_no_skill_no_history():
+    """Worker with no skill data (proficiency=1), no accuracy, no reputation,
+    no activity history → should still return a valid (low) score."""
+    from core.matching import compute_match_score
+    result = compute_match_score(
+        proficiency_level=1,
+        accuracy=None,
+        reputation_score=None,
+        last_task_at=None,
+    )
+    assert result is not None
+    assert 0.0 <= result <= 1.0
+    # Score should be the sum of defaults: prof=0, acc=0.5*0.3, rep=0.5*0.2
+    # = 0 + 0.15 + 0.10 + 0 = 0.25
+    assert abs(result - 0.25) < 0.01
+
+
+def test_proficiency_level_1_normalized_to_zero():
+    """proficiency_level=1 (min) normalizes to 0.0 proficiency component."""
+    from core.matching import compute_match_score, _W_PROFICIENCY
+    # With all other components zeroed out, score should be near zero
+    result = compute_match_score(
+        proficiency_level=1,
+        accuracy=0.0,
+        reputation_score=0.0,
+        last_task_at=None,
+    )
+    assert result is not None
+    assert result == 0.0
+
+
+def test_all_constraints_none_defaults_graceful():
+    """When both min_skill_level and min_reputation_score are None,
+    no hard filtering occurs — all workers pass."""
+    from core.matching import compute_match_score
+    result = compute_match_score(
+        proficiency_level=1,
+        accuracy=None,
+        reputation_score=None,
+        last_task_at=None,
+        min_skill_level=None,
+        min_reputation_score=None,
+    )
+    assert result is not None
+    assert isinstance(result, float)
+
+
+def test_reputation_exactly_at_min_allowed():
+    """reputation_score == min_reputation_score → worker passes (not excluded)."""
+    from core.matching import compute_match_score
+    result = compute_match_score(
+        proficiency_level=3,
+        accuracy=0.8,
+        reputation_score=50.0,
+        last_task_at=_now(),
+        min_reputation_score=50.0,
+    )
+    assert result is not None
+
+
+def test_freshness_half_decay():
+    """last_task_at = 15 days ago → freshness should be ~0.5."""
+    from core.matching import compute_match_score
+    s_15days = compute_match_score(
+        proficiency_level=3, accuracy=0.8, reputation_score=50.0,
+        last_task_at=_days_ago(15)
+    )
+    s_now = compute_match_score(
+        proficiency_level=3, accuracy=0.8, reputation_score=50.0,
+        last_task_at=_now()
+    )
+    s_old = compute_match_score(
+        proficiency_level=3, accuracy=0.8, reputation_score=50.0,
+        last_task_at=None
+    )
+    # 15 days should give a score between fresh and stale
+    assert s_old < s_15days < s_now
+
+
+def test_match_weight_none_treated_as_1():
+    """match_weight=None → should behave the same as match_weight=1.0."""
+    from core.matching import compute_match_score
+    base = dict(proficiency_level=3, accuracy=0.8, reputation_score=50.0, last_task_at=_now())
+    s_none = compute_match_score(**base, match_weight=None)
+    s_one = compute_match_score(**base, match_weight=1.0)
+    assert abs(s_none - s_one) < 1e-9
+
+
+def test_interest_boost_applied_in_rank(monkeypatch):
+    """rank_tasks_for_worker applies a 1.5× interest boost for tasks
+    where the worker has no earned skill but declared interest.
+
+    We test this via compute_match_score directly since rank_tasks_for_worker
+    is async and requires DB setup.
+    """
+    from core.matching import compute_match_score
+    # Without interest boost (weight=1.0)
+    s_normal = compute_match_score(
+        proficiency_level=1, accuracy=None, reputation_score=50.0,
+        last_task_at=None, match_weight=1.0,
+    )
+    # With interest boost (weight=1.5)
+    s_boosted = compute_match_score(
+        proficiency_level=1, accuracy=None, reputation_score=50.0,
+        last_task_at=None, match_weight=1.5,
+    )
+    assert s_boosted > s_normal
+    # Boost should be 1.5x the raw score
+    assert abs(s_boosted - s_normal * 1.5) < 0.01
+
+
 # ── Scope data integrity ──────────────────────────────────────────────────────
 
 def test_all_scopes_no_duplicates():

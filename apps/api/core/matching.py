@@ -61,7 +61,9 @@ def compute_match_score(
 
     acc_score = accuracy if accuracy is not None else 0.5  # neutral if no data
 
-    rep_score = (reputation_score or 50.0) / 100.0  # normalise 0–100 → 0–1
+    # Use explicit None check — `or 50.0` would incorrectly replace 0.0
+    # (a valid minimum reputation) with the neutral default.
+    rep_score = (reputation_score if reputation_score is not None else 50.0) / 100.0
 
     # Freshness: decays with days since last task; 0 days = 1.0, 30+ days = 0.0
     if last_task_at:
