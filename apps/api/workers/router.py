@@ -153,9 +153,10 @@ async def _audio_transcribe(client: RebaseKitClient, inp: dict) -> dict:
     # Note: only URL-based audio is supported; base64_audio is not supported by this service.
     payload: dict[str, Any] = {
         "url": inp["url"],  # required: URL of the audio file
-        "language": inp.get("language"),
         "export_format": "json",
     }
+    if inp.get("language"):
+        payload["language"] = inp["language"]
     result = await client.post("/audio/transcribe", payload)
     return {"raw": result, "summary": (result.get("text") or "")[:500]}
 

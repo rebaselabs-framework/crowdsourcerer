@@ -666,8 +666,10 @@ async def respond_to_invite(
         logger.info("invite.declined", invite_id=str(invite_id))
         return {"status": "declined"}
 
-    # Accept — attempt to claim the task
-    task_result = await db.execute(select(TaskDB).where(TaskDB.id == invite.task_id))
+    # Accept — attempt to claim the task (lock to prevent over-assignment race)
+    task_result = await db.execute(
+        select(TaskDB).where(TaskDB.id == invite.task_id).with_for_update()
+    )
     task = task_result.scalar_one_or_none()
     if not task:
         raise HTTPException(status_code=404, detail="Task no longer exists")
@@ -686,18 +688,24 @@ async def respond_to_invite(
     if active_assignments >= max_slots:
         raise HTTPException(status_code=400, detail="Task has no available slots")
 
-    # Create assignment
+    # Create assignment with timeout and earnings (matching claim_task behavior)
+    from datetime import timedelta
+    timeout_at = now + timedelta(minutes=task.claim_timeout_minutes)
     assignment = TaskAssignmentDB(
         id=_uuid.uuid4(),
         task_id=invite.task_id,
         worker_id=user_id,
         status="active",
         claimed_at=now,
+        timeout_at=timeout_at,
+        earnings_credits=task.worker_reward_credits or 2,
     )
     db.add(assignment)
 
-    # Update task status
-    task.status = "assigned"
+    # Only mark task as "assigned" when all slots are now filled
+    slots_in_progress = task.assignments_completed + active_assignments + 1
+    if slots_in_progress >= max_slots:
+        task.status = "assigned"
 
     invite.status = "accepted"
     await db.flush()

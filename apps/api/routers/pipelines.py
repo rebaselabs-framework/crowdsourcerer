@@ -964,15 +964,29 @@ async def resume_pipeline_after_human_step(
         await db.commit()
         return
 
+    # Look up the pipeline step definition to respect branching (next_on_pass)
+    step_result = await db.execute(
+        select(TaskPipelineStepDB).where(
+            TaskPipelineStepDB.pipeline_id == run.pipeline_id,
+            TaskPipelineStepDB.step_order == sr.step_order,
+        )
+    )
+    step_def = step_result.scalar_one_or_none()
+
     await db.commit()
 
-    # Resume execution starting from the NEXT step
-    next_step = sr.step_order + 1
+    # Resume execution: use next_on_pass branch if configured, else linear
+    next_step = (
+        step_def.next_on_pass
+        if step_def and step_def.next_on_pass is not None
+        else sr.step_order + 1
+    )
     logger.info(
         "pipeline_resuming_after_human_step",
         run_id=str(run.id),
         completed_step=sr.step_order,
         next_step=next_step,
+        branched=step_def.next_on_pass is not None if step_def else False,
     )
 
     # Fire the continuation as a background task (non-blocking)

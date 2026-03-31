@@ -277,8 +277,10 @@ async def admin_review_payout(
     if not payout:
         raise HTTPException(404, "Payout request not found")
 
-    if payout.status == "paid":
-        raise HTTPException(409, "Payout already marked as paid")
+    # Block transitions from terminal states to prevent double-refund exploits
+    # (e.g., rejected → processing → rejected would refund credits twice)
+    if payout.status in ("paid", "rejected"):
+        raise HTTPException(409, f"Payout is already {payout.status} — no further changes allowed")
 
     # If rejecting — refund the credits (lock user row to prevent double-refund race)
     if body.status == "rejected" and payout.status in ("pending", "processing"):

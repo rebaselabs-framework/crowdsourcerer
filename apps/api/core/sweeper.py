@@ -132,7 +132,11 @@ async def sweep_once(session_factory: async_sessionmaker) -> dict:
                     if task and task.status == "assigned":
                         # After marking this assignment timed_out, how many remain?
                         # Subtract 1 because this assignment is no longer "active"
-                        active_count = max(0, active_counts.get(str(task.id), 0) - 1)
+                        # Update the dict so subsequent iterations for the SAME task
+                        # see the decremented count (not the stale original).
+                        prev = active_counts.get(str(task.id), 0)
+                        active_counts[str(task.id)] = max(0, prev - 1)
+                        active_count = active_counts[str(task.id)]
 
                         if active_count < task.assignments_required:
                             task.status = "open"

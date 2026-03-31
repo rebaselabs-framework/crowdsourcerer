@@ -542,15 +542,20 @@ async def retry_webhook_log(*, log_id: str, user_id: str) -> dict:
         if original is None:
             raise ValueError("Webhook log not found or access denied")
 
-    # Re-fire with the same URL and event_type
+    # Re-fire with the original stored payload if available; fall back to minimal
     event_type = original.event_type or "task.completed"
-    payload: dict = {
-        "event": event_type,
-        "task_id": str(original.task_id),
-        "occurred_at": _utcnow_iso(),
-        "is_manual_retry": True,
-        "original_log_id": str(original.id),
-    }
+    if original.payload and isinstance(original.payload, dict):
+        payload = dict(original.payload)
+        payload["is_manual_retry"] = True
+        payload["original_log_id"] = str(original.id)
+    else:
+        payload = {
+            "event": event_type,
+            "task_id": str(original.task_id),
+            "occurred_at": _utcnow_iso(),
+            "is_manual_retry": True,
+            "original_log_id": str(original.id),
+        }
 
     t0 = _time.perf_counter()
     status_code: Optional[int] = None

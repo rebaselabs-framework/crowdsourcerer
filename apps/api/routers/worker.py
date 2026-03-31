@@ -1013,27 +1013,32 @@ async def submit_task(
         select(TaskDB).where(TaskDB.id == task_id).with_for_update()
     )
     task = task_result.scalar_one_or_none()
-    if task:
-        task_type_for_xp = task.type
-        task.assignments_completed += 1
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    # Reject submissions on cancelled/failed/archived tasks — no credits should
+    # be disbursed and no state mutations should occur.
+    if task.status in ("cancelled", "failed", "archived"):
+        raise HTTPException(status_code=409, detail=f"Task is {task.status} — submissions are no longer accepted")
+    task_type_for_xp = task.type
+    task.assignments_completed += 1
 
-        # Determine task lifecycle based on consensus strategy
-        if task.assignments_completed >= task.assignments_required:
-            if task.consensus_strategy == "any_first":
-                # any_first: first submission that fills the slot wins → auto-complete
-                task.status = "completed"
-                task.completed_at = now
-                task.winning_assignment_id = assignment.id
-                task.output = req.response
-                _pipeline_task_completed = (task.id, req.response)  # trigger pipeline resume
-            else:
-                # For majority_vote / unanimous / requester_review:
-                # All assignments are in — run consensus check below.
-                # check_and_apply_consensus will set status and output.
-                pass  # handled after commit via check_and_apply_consensus
-        elif task.status == "assigned":
-            # Reopen for more workers if needed
-            task.status = "open"
+    # Determine task lifecycle based on consensus strategy
+    if task.assignments_completed >= task.assignments_required:
+        if task.consensus_strategy == "any_first":
+            # any_first: first submission that fills the slot wins → auto-complete
+            task.status = "completed"
+            task.completed_at = now
+            task.winning_assignment_id = assignment.id
+            task.output = req.response
+            _pipeline_task_completed = (task.id, req.response)  # trigger pipeline resume
+        else:
+            # For majority_vote / unanimous / requester_review:
+            # All assignments are in — run consensus check below.
+            # check_and_apply_consensus will set status and output.
+            pass  # handled after commit via check_and_apply_consensus
+    elif task.status == "assigned":
+        # Reopen for more workers if needed
+        task.status = "open"
 
     # Update worker stats.  Lock the worker row so concurrent task submissions
     # (two different tasks finishing at the same time for the same worker) don't
@@ -1307,12 +1312,13 @@ async def release_task(
     user_id: str = Depends(get_current_user_id),
 ):
     """Give up a claimed task. Returns it to the marketplace."""
+    # Lock assignment to prevent double-release race
     result = await db.execute(
         select(TaskAssignmentDB).where(
             TaskAssignmentDB.task_id == task_id,
             TaskAssignmentDB.worker_id == user_id,
             TaskAssignmentDB.status == "active",
-        )
+        ).with_for_update()
     )
     assignment = result.scalar_one_or_none()
     if not assignment:
@@ -1322,14 +1328,18 @@ async def release_task(
     assignment.status = "released"
     assignment.released_at = now
 
-    # Put task back to open if it was assigned
-    task_result = await db.execute(select(TaskDB).where(TaskDB.id == task_id))
+    # Put task back to open if it was assigned (lock to prevent race with concurrent claim)
+    task_result = await db.execute(
+        select(TaskDB).where(TaskDB.id == task_id).with_for_update()
+    )
     task = task_result.scalar_one_or_none()
     if task and task.status == "assigned":
         task.status = "open"
 
-    # Update reliability
-    worker_result = await db.execute(select(UserDB).where(UserDB.id == user_id))
+    # Update reliability (lock worker row to prevent lost-update with concurrent submit)
+    worker_result = await db.execute(
+        select(UserDB).where(UserDB.id == user_id).with_for_update()
+    )
     worker = worker_result.scalar_one_or_none()
     if worker:
         completed = worker.worker_tasks_completed

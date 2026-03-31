@@ -437,6 +437,8 @@ async def run_due_schedule_triggers(session_factory: async_sessionmaker) -> int:
     fired = 0
 
     async with session_factory() as db:
+        # skip_locked prevents concurrent sweeper instances from double-firing
+        # the same trigger (each instance picks a disjoint set of due triggers).
         result = await db.execute(
             select(PipelineTriggerDB).where(
                 and_(
@@ -445,7 +447,7 @@ async def run_due_schedule_triggers(session_factory: async_sessionmaker) -> int:
                     PipelineTriggerDB.next_fire_at != None,  # noqa: E711
                     PipelineTriggerDB.next_fire_at <= now,
                 )
-            )
+            ).with_for_update(skip_locked=True)
         )
         due_triggers = result.scalars().all()
 

@@ -50,6 +50,46 @@ HUMAN_TASK_BASE_CREDITS: dict[str, int] = {
 }
 
 
+def _compute_task_cost(task: TaskDB) -> int:
+    """Recompute the credits originally charged for a task."""
+    if task.execution_mode == "human":
+        wr = task.worker_reward_credits or HUMAN_TASK_BASE_CREDITS.get(task.type, 2)
+        ar = task.assignments_required or 1
+        platform_fee = max(1, int(wr * ar * 0.2))
+        return wr * ar + platform_fee
+    return TASK_CREDITS.get(task.type, 5)
+
+
+async def _refund_task_credits(
+    db: AsyncSession, task: TaskDB, amount: int, user_id: str,
+) -> None:
+    """Refund *amount* credits to the task's billing target (org or user)."""
+    if task.org_id:
+        from models.db import OrganizationDB
+        org_res = await db.execute(
+            select(OrganizationDB).where(OrganizationDB.id == task.org_id).with_for_update()
+        )
+        org = org_res.scalar_one_or_none()
+        if org:
+            org.credits += amount
+    else:
+        user_res = await db.execute(
+            select(UserDB).where(UserDB.id == user_id).with_for_update()
+        )
+        user = user_res.scalar_one_or_none()
+        if user:
+            user.credits += amount
+
+    txn = CreditTransactionDB(
+        user_id=user_id,
+        task_id=task.id,
+        amount=amount,
+        type="refund",
+        description=f"Task cancelled: {task.type}",
+    )
+    db.add(txn)
+
+
 @router.post("", response_model=TaskCreateResponse, status_code=201)
 async def create_task(
     req: TaskCreateRequest,
@@ -575,14 +615,14 @@ async def get_task_templates():
             {
                 "id": "web_research",
                 "name": "Web Research",
-                "description": "AI researches a topic and returns a summary",
+                "description": "AI researches a URL and returns a summary",
                 "type": "web_research",
                 "icon": "🔍",
                 "category": "ai",
                 "estimated_credits": 10,
                 "default_input": {
-                    "query": "",
-                    "max_sources": 5,
+                    "url": "",
+                    "instruction": "Extract the main content from this page",
                 },
             },
             {
@@ -889,6 +929,9 @@ async def bulk_task_action(
                 failed.append({"task_id": str(task_id), "reason": f"cannot cancel task with status '{task.status}'"})
                 continue
             task.status = "cancelled"
+            refund = _compute_task_cost(task)
+            if refund > 0:
+                await _refund_task_credits(db, task, refund, user_id)
             succeeded.append(str(task_id))
 
         elif req.action == "retry":
@@ -948,6 +991,9 @@ async def bulk_cancel_tasks(
             skipped += 1
             continue
         task.status = "cancelled"
+        refund = _compute_task_cost(task)
+        if refund > 0:
+            await _refund_task_credits(db, task, refund, user_id)
         cancelled_ids.append(str(task_id))
 
     await db.commit()
@@ -1008,6 +1054,96 @@ async def bulk_archive_tasks(
         archived=len(archived_ids),
         skipped=skipped,
         task_ids=archived_ids,
+    )
+
+
+# ─── SSE — dashboard live stream (all active tasks) ─────────────────────────
+# NOTE: this MUST be registered BEFORE the /{task_id} catch-all route,
+# otherwise "/stream" is matched as a task_id UUID and returns 422.
+
+@router.get("/stream")
+async def dashboard_task_stream(
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Server-Sent Events stream for the task dashboard.
+
+    Polls all of the current user's non-terminal tasks and emits events
+    whenever any status, progress, or priority changes.  Closes automatically
+    once no active tasks remain (or after 10 minutes).
+
+    Event format::
+
+        data: {"task_id": "...", "status": "...", "assignments_completed": N,
+               "assignments_required": N, "priority": "...",
+               "completed_at": "ISO-or-null", "error": "or-null"}
+
+    A ``{"event": "heartbeat"}`` is sent every 5 s to keep connections alive.
+    A ``{"event": "stream_end"}`` is sent before the connection closes.
+    """
+    TERMINAL = {"completed", "failed", "cancelled", "archived"}
+
+    async def event_generator() -> AsyncIterator[str]:
+        from core.database import AsyncSessionLocal
+
+        poll_interval = 2.0   # seconds between DB checks
+        max_polls = 300        # 10 minutes at 2s intervals
+        # last seen snapshot: task_id → (status, assignments_completed, priority)
+        snapshot: dict[str, tuple[str, int, str]] = {}
+        heartbeat_counter = 0
+
+        for _ in range(max_polls):
+            async with AsyncSessionLocal() as session:
+                result = await session.execute(
+                    select(TaskDB).where(
+                        TaskDB.user_id == user_id,
+                        TaskDB.status.notin_(list(TERMINAL)),
+                    )
+                )
+                active_tasks = result.scalars().all()
+
+            for t in active_tasks:
+                tid = str(t.id)
+                current = (t.status, t.assignments_completed or 0, t.priority or "normal")
+                if snapshot.get(tid) != current:
+                    snapshot[tid] = current
+                    payload = {
+                        "task_id": tid,
+                        "status": t.status,
+                        "assignments_completed": t.assignments_completed or 0,
+                        "assignments_required": t.assignments_required or 1,
+                        "priority": t.priority or "normal",
+                        "priority_escalated_at": (
+                            t.priority_escalated_at.isoformat()
+                            if getattr(t, "priority_escalated_at", None)
+                            else None
+                        ),
+                        "completed_at": t.completed_at.isoformat() if t.completed_at else None,
+                        "error": t.error,
+                    }
+                    yield f"data: {json.dumps(payload)}\n\n"
+
+            # If nothing active, we're done
+            if not active_tasks:
+                break
+
+            # Heartbeat every ~5 s (every 2-3 polls)
+            heartbeat_counter += 1
+            if heartbeat_counter % 3 == 0:
+                yield 'data: {"event": "heartbeat"}\n\n'
+
+            await asyncio.sleep(poll_interval)
+
+        yield 'data: {"event": "stream_end"}\n\n'
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )
 
 
@@ -1121,6 +1257,12 @@ async def cancel_task(
     if task.status not in ("pending", "queued", "open"):
         raise HTTPException(status_code=409, detail="Task cannot be cancelled")
     task.status = "cancelled"
+
+    # Refund credits that were charged at task creation
+    refund = _compute_task_cost(task)
+    if refund > 0:
+        await _refund_task_credits(db, task, refund, user_id)
+
     await db.commit()
 
 
@@ -1677,94 +1819,6 @@ async def task_status_stream(
     )
 
 
-# ─── SSE — dashboard live stream (all active tasks) ─────────────────────────
-
-@router.get("/stream")
-async def dashboard_task_stream(
-    db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id),
-):
-    """Server-Sent Events stream for the task dashboard.
-
-    Polls all of the current user's non-terminal tasks and emits events
-    whenever any status, progress, or priority changes.  Closes automatically
-    once no active tasks remain (or after 10 minutes).
-
-    Event format::
-
-        data: {"task_id": "...", "status": "...", "assignments_completed": N,
-               "assignments_required": N, "priority": "...",
-               "completed_at": "ISO-or-null", "error": "or-null"}
-
-    A ``{"event": "heartbeat"}`` is sent every 5 s to keep connections alive.
-    A ``{"event": "stream_end"}`` is sent before the connection closes.
-    """
-    TERMINAL = {"completed", "failed", "cancelled", "archived"}
-
-    async def event_generator() -> AsyncIterator[str]:
-        from core.database import AsyncSessionLocal
-
-        poll_interval = 2.0   # seconds between DB checks
-        max_polls = 300        # 10 minutes at 2s intervals
-        # last seen snapshot: task_id → (status, assignments_completed, priority)
-        snapshot: dict[str, tuple[str, int, str]] = {}
-        heartbeat_counter = 0
-
-        for _ in range(max_polls):
-            async with AsyncSessionLocal() as session:
-                result = await session.execute(
-                    select(TaskDB).where(
-                        TaskDB.user_id == user_id,
-                        TaskDB.status.notin_(list(TERMINAL)),
-                    )
-                )
-                active_tasks = result.scalars().all()
-
-            for t in active_tasks:
-                tid = str(t.id)
-                current = (t.status, t.assignments_completed or 0, t.priority or "normal")
-                if snapshot.get(tid) != current:
-                    snapshot[tid] = current
-                    payload = {
-                        "task_id": tid,
-                        "status": t.status,
-                        "assignments_completed": t.assignments_completed or 0,
-                        "assignments_required": t.assignments_required or 1,
-                        "priority": t.priority or "normal",
-                        "priority_escalated_at": (
-                            t.priority_escalated_at.isoformat()
-                            if getattr(t, "priority_escalated_at", None)
-                            else None
-                        ),
-                        "completed_at": t.completed_at.isoformat() if t.completed_at else None,
-                        "error": t.error,
-                    }
-                    yield f"data: {json.dumps(payload)}\n\n"
-
-            # If nothing active, we're done
-            if not active_tasks:
-                break
-
-            # Heartbeat every ~5 s (every 2-3 polls)
-            heartbeat_counter += 1
-            if heartbeat_counter % 3 == 0:
-                yield 'data: {"event": "heartbeat"}\n\n'
-
-            await asyncio.sleep(poll_interval)
-
-        yield 'data: {"event": "stream_end"}\n\n'
-
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
-
-
 # ─── SSE — LLM output token stream ─────────────────────────────────────────
 
 @router.get("/{task_id}/output-stream")
@@ -1912,7 +1966,11 @@ async def _run_task(task_id: str, user_id: str):
 
     async with AsyncSessionLocal() as db:
         try:
-            result = await db.execute(select(TaskDB).where(TaskDB.id == task_id))
+            # Lock the task row to prevent two concurrent _run_task invocations
+            # from both reading status="queued" and both proceeding to execute.
+            result = await db.execute(
+                select(TaskDB).where(TaskDB.id == task_id).with_for_update()
+            )
             task = result.scalar_one_or_none()
             if not task:
                 return
