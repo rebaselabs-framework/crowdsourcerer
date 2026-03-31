@@ -9,8 +9,8 @@ const API_URL = import.meta.env.PUBLIC_API_URL ?? "http://api:8100";
 export const GET: APIRoute = async ({ cookies }) => {
   const token = cookies.get("cs_token")?.value;
   if (!token) {
-    return new Response(JSON.stringify({ unread_count: 0 }), {
-      status: 200,
+    return new Response(JSON.stringify({ detail: "Not authenticated" }), {
+      status: 401,
       headers: { "Content-Type": "application/json" },
     });
   }

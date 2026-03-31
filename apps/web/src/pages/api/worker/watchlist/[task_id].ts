@@ -68,8 +68,8 @@ export const DELETE: APIRoute = async ({ params, cookies }) => {
 export const GET: APIRoute = async ({ params, cookies }) => {
   const headers = await authHeader(cookies);
   if (!headers) {
-    return new Response(JSON.stringify({ watching: false }), {
-      status: 200,
+    return new Response(JSON.stringify({ detail: "Not authenticated" }), {
+      status: 401,
       headers: { "Content-Type": "application/json" },
     });
   }
