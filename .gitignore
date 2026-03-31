@@ -32,6 +32,9 @@ out/
 .coverage
 htmlcov/
 *.xml
+test-results/
+playwright-report/
+blob-report/
 
 # IDEs
 .idea/

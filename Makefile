@@ -1,4 +1,4 @@
-.PHONY: dev test deploy build lint check api-dev web-dev install setup-hooks
+.PHONY: dev test deploy build lint check api-dev web-dev install setup-hooks e2e e2e-smoke e2e-local
 
 # Dev
 dev:
@@ -77,3 +77,16 @@ db-reset:
 	docker compose up -d db
 	sleep 2
 	$(MAKE) migrate
+
+# E2E tests (Playwright) — runs against live deployment by default
+# Override target with: E2E_BASE_URL=http://localhost:4321 make e2e
+e2e:
+	npx playwright test --reporter=list
+
+# Quick smoke test only
+e2e-smoke:
+	npx playwright test e2e/smoke.spec.ts --reporter=list
+
+# E2E against local docker-compose (must run `make dev` first)
+e2e-local:
+	E2E_BASE_URL=http://localhost:4321 npx playwright test --reporter=list
