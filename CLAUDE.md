@@ -181,6 +181,24 @@ Escape `{` and `}` inside Astro template expressions when they're literal charac
 <code>&lbrace; "key": "value" &rbrace;</code>
 ```
 
+## Auth Architecture
+
+- **Access tokens**: JWT, 30-minute expiry, embed `token_version` claim
+- **Refresh tokens**: `csrt_` prefix + 64 random chars, stored as SHA-256 hash, 30-day expiry
+- **Family-based replay detection**: reusing a revoked refresh token kills the entire family
+- **2FA**: TOTP with pyotp, 8 backup codes, rate-limited (5/min)
+- **Password change**: increments `token_version` + revokes all refresh tokens
+- **Frontend cookies**: `cs_token` (30min httpOnly) + `cs_refresh` (30 days httpOnly)
+- **Transparent refresh**: `requireAuth()` in auth.ts auto-refreshes on expired access token
+
+## Security Patterns
+
+- **SSRF protection**: `core/url_validation.py` blocks private/loopback/metadata IPs in webhook URLs
+- **Webhook signatures**: `t=TIMESTAMP,v1=HMAC-SHA256` format with `X-Crowdsourcerer-Timestamp` header
+- **DB constraints**: CHECK constraints on `credits >= 0` (users + orgs)
+- **Rate limiting**: slowapi on sensitive endpoints (auth, 2FA, webhook retry/replay)
+- **Template rendering**: Never return raw rendered templates in errors — safe error indicators only
+
 ## Conventions
 
 - All Python code: snake_case, type-annotated, async-first
@@ -188,4 +206,6 @@ Escape `{` and `}` inside Astro template expressions when they're literal charac
 - Pydantic models in `apps/api/models/`
 - RebaseKit worker clients in `apps/api/workers/`
 - Frontend pages in `apps/web/src/pages/`
+- Alembic migrations in `apps/api/alembic/versions/`
 - Follow RebaseKit patterns for auth, error handling, Dockerfiles
+- Always run `make check` before commit (astro check + build)
