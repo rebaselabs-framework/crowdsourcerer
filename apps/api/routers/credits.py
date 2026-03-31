@@ -6,6 +6,7 @@ import stripe
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
+from sqlalchemy.exc import IntegrityError
 
 from core.auth import get_current_user_id
 from core.config import get_settings
@@ -174,7 +175,8 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
     event_type = event.get("type", "")
 
     if event_type == "checkout.session.completed":
-        # Idempotency guard — reject duplicate deliveries
+        # Idempotency guard — reject duplicate deliveries.
+        # First, a fast check to avoid unnecessary work on obvious replays.
         if event_id:
             existing = await db.scalar(
                 select(func.count()).where(
@@ -184,6 +186,23 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
             )
             if existing:
                 logger.info("stripe_webhook.duplicate_event", event_id=event_id)
+                return {"status": "ok", "duplicate": True}
+
+        # Atomic idempotency: INSERT the event log row and flush.  If a
+        # concurrent request already inserted the same stripe_event_id the
+        # unique constraint fires an IntegrityError and we bail out cleanly
+        # instead of surfacing a 500 that would cause Stripe to retry.
+        if event_id:
+            db.add(StripeEventLogDB(
+                stripe_event_id=event_id,
+                event_type=event_type,
+                processed=False,
+            ))
+            try:
+                await db.flush()
+            except IntegrityError:
+                await db.rollback()
+                logger.info("stripe_webhook.concurrent_duplicate", event_id=event_id)
                 return {"status": "ok", "duplicate": True}
 
         session = event["data"]["object"]
@@ -196,7 +215,9 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
                 event_id=event_id,
                 raw=session.get("metadata", {}).get("credits"),
             )
-            return {"status": "ok"}
+            # Return 400 so Stripe retries (the metadata may be fixed on
+            # the Stripe dashboard and the event replayed).
+            raise HTTPException(status_code=400, detail="Invalid credits metadata")
 
         if not user_id or credits <= 0:
             logger.warning(
@@ -228,13 +249,17 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
             stripe_payment_intent=session.get("payment_intent"),
         )
         db.add(txn)
-        # Mark event as processed to prevent double-crediting on replay
+        # Mark the event log row (inserted earlier with processed=False) as
+        # processed so future deliveries are caught by the fast-path check.
         if event_id:
-            db.add(StripeEventLogDB(
-                stripe_event_id=event_id,
-                event_type=event_type,
-                processed=True,
-            ))
+            log_res = await db.execute(
+                select(StripeEventLogDB).where(
+                    StripeEventLogDB.stripe_event_id == event_id
+                ).with_for_update()
+            )
+            log_row = log_res.scalar_one_or_none()
+            if log_row:
+                log_row.processed = True
         # Reset low-credit alert if balance recovered
         from core.credit_alerts import reset_credit_alert_if_recovered
         await reset_credit_alert_if_recovered(db, user)

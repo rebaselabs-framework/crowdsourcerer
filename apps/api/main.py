@@ -92,6 +92,21 @@ async def lifespan(application: FastAPI):
     """Application startup and shutdown lifecycle manager."""
     # ── Startup ───────────────────────────────────────────────────────────
     logger.info("startup", version=settings.app_version)
+
+    # Reject insecure default secrets in non-debug mode
+    if not settings.debug:
+        _PLACEHOLDER = "change-me-in-production"
+        if settings.jwt_secret == _PLACEHOLDER:
+            raise RuntimeError(
+                "FATAL: JWT_SECRET is set to the insecure default. "
+                "Set a strong random value via the JWT_SECRET environment variable."
+            )
+        if settings.api_key_salt == _PLACEHOLDER:
+            raise RuntimeError(
+                "FATAL: API_KEY_SALT is set to the insecure default. "
+                "Set a strong random value via the API_KEY_SALT environment variable."
+            )
+
     # Create tables (dev only — use Alembic in prod)
     if settings.debug:
         async with engine.begin() as conn:
