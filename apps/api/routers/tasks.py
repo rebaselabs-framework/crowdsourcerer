@@ -97,6 +97,14 @@ async def create_task(
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(require_scope(SCOPE_TASKS_WRITE)),
 ):
+    # Validate webhook URL if provided (SSRF protection)
+    if req.webhook_url:
+        from core.url_validation import validate_webhook_url, UnsafeURLError
+        try:
+            validate_webhook_url(req.webhook_url)
+        except UnsafeURLError as e:
+            raise HTTPException(status_code=400, detail=f"Invalid webhook URL: {e}")
+
     is_human = req.type in HUMAN_TASK_TYPES
 
     if is_human:

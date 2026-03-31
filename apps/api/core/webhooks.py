@@ -326,7 +326,10 @@ async def _deliver_to_endpoint(
         payload = default_payload
 
     payload_bytes = json.dumps(payload).encode()
-    sig = hmac.new(endpoint.secret.encode(), payload_bytes, hashlib.sha256).hexdigest()
+    timestamp = str(int(_time.time()))
+    # Include timestamp in signature to prevent replay attacks
+    sig_input = f"{timestamp}.".encode() + payload_bytes
+    sig = hmac.new(endpoint.secret.encode(), sig_input, hashlib.sha256).hexdigest()
 
     endpoint_id = str(endpoint.id)
 
@@ -344,7 +347,8 @@ async def _deliver_to_endpoint(
                 headers={
                     "Content-Type": "application/json",
                     "X-Crowdsourcerer-Event": event_type,
-                    "X-Crowdsourcerer-Signature": sig,
+                    "X-Crowdsourcerer-Signature": f"t={timestamp},v1={sig}",
+                    "X-Crowdsourcerer-Timestamp": timestamp,
                 },
             )
             status_code = resp.status_code
@@ -696,7 +700,9 @@ async def replay_webhook_log(*, log_id: str, user_id: str) -> dict:
             continue
 
         payload_bytes = json.dumps(base_payload).encode()
-        sig = hmac.new(ep.secret.encode(), payload_bytes, hashlib.sha256).hexdigest()
+        replay_ts = str(int(_time.time()))
+        sig_input = f"{replay_ts}.".encode() + payload_bytes
+        sig = hmac.new(ep.secret.encode(), sig_input, hashlib.sha256).hexdigest()
 
         t0 = _time.perf_counter()
         status_code: Optional[int] = None
@@ -711,7 +717,8 @@ async def replay_webhook_log(*, log_id: str, user_id: str) -> dict:
                 headers={
                     "Content-Type": "application/json",
                     "X-Crowdsourcerer-Event": event_type,
-                    "X-Crowdsourcerer-Signature": sig,
+                    "X-Crowdsourcerer-Signature": f"t={replay_ts},v1={sig}",
+                    "X-Crowdsourcerer-Timestamp": replay_ts,
                     "X-Crowdsourcerer-Replay": "true",
                 },
             )

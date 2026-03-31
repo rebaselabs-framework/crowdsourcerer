@@ -25,6 +25,7 @@ from core.scopes import (
     SCOPE_WEBHOOKS_READ,
     SCOPE_WEBHOOKS_WRITE,
 )
+from core.url_validation import validate_webhook_url, UnsafeURLError
 from core.webhooks import ALL_EVENTS, DEFAULT_EVENTS, retry_webhook_log, replay_webhook_log
 from models.db import WebhookLogDB, WebhookEndpointDB, NotificationPreferencesDB
 from models.schemas import (
@@ -118,6 +119,12 @@ async def create_endpoint(
         sig = hmac.new(secret.encode(), payload_bytes, sha256).hexdigest()
         assert sig == request.headers["X-Crowdsourcerer-Signature"]
     """
+    # Validate URL (SSRF protection)
+    try:
+        validate_webhook_url(body.url)
+    except UnsafeURLError as e:
+        raise HTTPException(400, f"Invalid webhook URL: {e}")
+
     # Validate events
     if body.events:
         bad = [e for e in body.events if e not in ALL_EVENTS]
@@ -190,6 +197,10 @@ async def update_endpoint(
     ep = await _get_owned_endpoint(endpoint_id, user_id, db)
 
     if body.url is not None:
+        try:
+            validate_webhook_url(body.url)
+        except UnsafeURLError as e:
+            raise HTTPException(400, f"Invalid webhook URL: {e}")
         ep.url = body.url
     if body.description is not None:
         ep.description = body.description
@@ -275,7 +286,9 @@ async def test_endpoint(
         },
     }
     payload_bytes = json.dumps(payload).encode()
-    sig = hmac.new(ep.secret.encode(), payload_bytes, hashlib.sha256).hexdigest()
+    timestamp = str(int(time.time()))
+    sig_input = f"{timestamp}.".encode() + payload_bytes
+    sig = hmac.new(ep.secret.encode(), sig_input, hashlib.sha256).hexdigest()
 
     start = time.monotonic()
     try:
@@ -286,7 +299,8 @@ async def test_endpoint(
             headers={
                 "Content-Type": "application/json",
                 "X-Crowdsourcerer-Event": "test.ping",
-                "X-Crowdsourcerer-Signature": sig,
+                "X-Crowdsourcerer-Signature": f"t={timestamp},v1={sig}",
+                "X-Crowdsourcerer-Timestamp": timestamp,
             },
         )
         duration_ms = int((time.monotonic() - start) * 1000)
