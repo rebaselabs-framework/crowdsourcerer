@@ -23,7 +23,7 @@ router = APIRouter(prefix="/v1/leaderboard", tags=["leaderboard"])
 _PAGE_SIZE = 50
 
 
-def _entry(i: int, u: UserDB) -> LeaderboardEntryOut:
+def _entry(i: int, u: UserDB, *, total_earnings: int | None = None) -> LeaderboardEntryOut:
     return LeaderboardEntryOut(
         rank=i + 1,
         user_id=u.id,
@@ -34,6 +34,7 @@ def _entry(i: int, u: UserDB) -> LeaderboardEntryOut:
         worker_accuracy=u.worker_accuracy,
         worker_reliability=u.worker_reliability,
         worker_streak_days=u.worker_streak_days,
+        total_earnings=total_earnings,
         profile_public=getattr(u, "profile_public", True),
     )
 
@@ -81,7 +82,7 @@ async def get_leaderboard(
                 .order_by(desc(subq.c.total_earnings))
             )
             rows = result.all()
-            entries = [_entry(i, u) for i, (u, _) in enumerate(rows)]
+            entries = [_entry(i, u, total_earnings=int(te or 0)) for i, (u, te) in enumerate(rows)]
             return LeaderboardOut(
                 period=period, category=category, entries=entries,
                 generated_at=now, caller_id=caller_id,
@@ -115,11 +116,35 @@ async def get_leaderboard(
                 generated_at=now, caller_id=caller_id,
             )
 
-    # All-time / weekly XP
+    # All-time earnings: aggregate from task_assignments
+    if category == "earnings":
+        subq = (
+            select(
+                TaskAssignmentDB.worker_id,
+                func.coalesce(func.sum(TaskAssignmentDB.earnings_credits), 0).label("total_earnings"),
+            )
+            .where(TaskAssignmentDB.status.in_(["submitted", "approved"]))
+            .group_by(TaskAssignmentDB.worker_id)
+            .order_by(desc("total_earnings"))
+            .limit(_PAGE_SIZE)
+            .subquery()
+        )
+        result = await db.execute(
+            select(UserDB, subq.c.total_earnings)
+            .join(subq, UserDB.id == subq.c.worker_id)
+            .where(UserDB.role.in_(["worker", "both"]))
+            .order_by(desc(subq.c.total_earnings))
+        )
+        rows = result.all()
+        entries = [_entry(i, u, total_earnings=int(te or 0)) for i, (u, te) in enumerate(rows)]
+        return LeaderboardOut(
+            period=period, category=category, entries=entries,
+            generated_at=now, caller_id=caller_id,
+        )
+
+    # All-time XP or tasks
     if category == "xp":
         order_col = UserDB.worker_xp
-    elif category == "tasks":
-        order_col = UserDB.worker_tasks_completed
     else:
         order_col = UserDB.worker_tasks_completed
 

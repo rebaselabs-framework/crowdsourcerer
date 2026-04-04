@@ -6,7 +6,7 @@ Covers:
   3.  GET /v1/leaderboard — authenticated: caller_id is set in response
   4.  GET /v1/leaderboard — default (xp, all_time): entries sorted by XP
   5.  GET /v1/leaderboard?category=tasks — all-time tasks ordering
-  6.  GET /v1/leaderboard?category=earnings — all-time earnings falls back to tasks ordering
+  6.  GET /v1/leaderboard?category=earnings — all-time earnings uses subquery, returns total_earnings
   7.  GET /v1/leaderboard — empty DB → entries list is empty
   8.  GET /v1/leaderboard?period=weekly&category=tasks — weekly tasks path
   9.  GET /v1/leaderboard?period=weekly&category=earnings — weekly earnings path
@@ -110,6 +110,15 @@ def test_entry_rank_and_fields():
     assert entry.name == "Bob"
     assert entry.worker_xp == 500
     assert entry.worker_level == 7
+    assert entry.total_earnings is None  # not set by default
+
+
+def test_entry_with_total_earnings():
+    """_entry with total_earnings kwarg passes through to the output."""
+    from routers.leaderboard import _entry
+    u = _make_user(name="Alice")
+    entry = _entry(0, u, total_earnings=1500)
+    assert entry.total_earnings == 1500
 
 
 def test_entry_rank_sequential():
@@ -221,14 +230,15 @@ async def test_leaderboard_tasks_all_time():
 
 
 @pytest.mark.asyncio
-async def test_leaderboard_earnings_all_time_fallback():
-    """category=earnings, all_time falls through to tasks ordering — still returns 200."""
+async def test_leaderboard_earnings_all_time():
+    """category=earnings, all_time uses subquery and returns total_earnings field."""
     from main import app
     from core.database import get_db
 
-    users = [_make_user(name="Earner", worker_tasks_completed=50)]
+    user = _make_user(name="Earner", worker_tasks_completed=50)
     db = _make_db()
-    db.execute.return_value = _scalars_result(users)
+    # All-time earnings path returns (UserDB, total_earnings) tuples
+    db.execute.return_value = _rows_result([(user, 750)])
     app.dependency_overrides[get_db] = _db_override(db)
 
     try:
@@ -237,6 +247,9 @@ async def test_leaderboard_earnings_all_time_fallback():
         assert r.status_code == 200
         body = r.json()
         assert body["category"] == "earnings"
+        assert len(body["entries"]) == 1
+        assert body["entries"][0]["total_earnings"] == 750
+        assert body["entries"][0]["name"] == "Earner"
     finally:
         app.dependency_overrides.clear()
 
@@ -287,7 +300,7 @@ async def test_leaderboard_weekly_tasks():
 
 @pytest.mark.asyncio
 async def test_leaderboard_weekly_earnings():
-    """period=weekly, category=earnings uses earnings subquery path."""
+    """period=weekly, category=earnings uses earnings subquery path and returns total_earnings."""
     from main import app
     from core.database import get_db
 
@@ -304,6 +317,7 @@ async def test_leaderboard_weekly_earnings():
         assert body["period"] == "weekly"
         assert body["category"] == "earnings"
         assert body["entries"][0]["name"] == "TopEarner"
+        assert body["entries"][0]["total_earnings"] == 250
     finally:
         app.dependency_overrides.clear()
 

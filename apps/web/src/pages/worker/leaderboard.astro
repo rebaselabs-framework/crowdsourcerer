@@ -54,8 +54,9 @@ function rankMedal(rank: number): string {
 }
 
 function primaryStat(entry: any): string {
-  if (category === "xp") return `${entry.worker_xp.toLocaleString()} XP`;
-  if (category === "tasks") return `${entry.worker_tasks_completed.toLocaleString()} tasks`;
+  if (category === "xp")       return `${entry.worker_xp.toLocaleString()} XP`;
+  if (category === "tasks")    return `${entry.worker_tasks_completed.toLocaleString()} tasks`;
+  if (category === "earnings") return `${(entry.total_earnings ?? 0).toLocaleString()} credits`;
   return `${entry.worker_tasks_completed.toLocaleString()} tasks`;
 }
 ---
@@ -96,7 +97,7 @@ function primaryStat(entry: any): string {
 
       <!-- Category -->
       <div class="flex bg-gray-900 border border-gray-800 rounded-lg overflow-hidden">
-        {["xp", "tasks"].map((c) => (
+        {["xp", "tasks", "earnings"].map((c) => (
           <a
             href={`/worker/leaderboard?category=${c}&period=${period}`}
             class={`px-4 py-2 text-sm font-medium transition-colors ${

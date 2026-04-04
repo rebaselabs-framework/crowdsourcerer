@@ -34,6 +34,7 @@ SWEEP_INTERVAL_SECONDS = 300  # 5 minutes
 # Module-level state for digest tracking
 _last_digest_date: Optional[dt_module.date] = None
 _last_daily_digest_date: Optional[dt_module.date] = None
+_last_streak_reset_date: Optional[dt_module.date] = None
 
 # Track last sweep time for health dashboard
 _LAST_SWEEP_AT: Optional[datetime] = None
@@ -981,6 +982,62 @@ async def _sweep_watchlist_notifications(session_factory: async_sessionmaker) ->
     return notified
 
 
+async def _sweep_stale_streaks(session_factory: async_sessionmaker) -> int:
+    """Reset streak_days to 0 for workers who haven't been active since yesterday.
+
+    Runs once per day (tracked via _last_streak_reset_date). Without this,
+    a worker's streak count stays inflated indefinitely until they submit
+    another task, which is misleading on leaderboards and profiles.
+    """
+    global _last_streak_reset_date  # noqa: PLW0603
+
+    today = datetime.now(timezone.utc).date()
+    if _last_streak_reset_date == today:
+        return 0
+
+    yesterday = today - timedelta(days=1)
+    reset_count = 0
+
+    try:
+        async with session_factory() as db:
+            # Find workers with active streaks whose last activity was before yesterday
+            result = await db.execute(
+                select(UserDB).where(
+                    UserDB.worker_streak_days > 0,
+                    UserDB.worker_last_active_date != None,  # noqa: E711
+                    func.date(UserDB.worker_last_active_date) < yesterday,
+                )
+            )
+            stale_workers = result.scalars().all()
+
+            for worker in stale_workers:
+                freezes = getattr(worker, "streak_freezes", 0) or 0
+                if freezes > 0:
+                    # Consume a streak freeze — preserve the streak
+                    worker.streak_freezes = freezes - 1
+                    worker.streak_freezes_used = (getattr(worker, "streak_freezes_used", 0) or 0) + 1
+                    logger.info(
+                        "sweeper.streak_freeze_used",
+                        user_id=str(worker.id),
+                        streak=worker.worker_streak_days,
+                        remaining_freezes=worker.streak_freezes,
+                    )
+                else:
+                    worker.worker_streak_days = 0
+                    reset_count += 1
+
+            if stale_workers:
+                await db.commit()
+                logger.info("sweeper.stale_streaks_processed",
+                            total=len(stale_workers), reset=reset_count)
+
+        _last_streak_reset_date = today
+    except Exception:
+        logger.exception("sweeper.stale_streaks_error")
+
+    return reset_count
+
+
 async def run_sweeper(session_factory: async_sessionmaker, interval: int = SWEEP_INTERVAL_SECONDS):
     """Infinite loop: sweep, sleep, repeat. Designed to run as an asyncio background task."""
     global _LAST_SWEEP_AT  # noqa: PLW0603
@@ -1083,6 +1140,14 @@ async def run_sweeper(session_factory: async_sessionmaker, interval: int = SWEEP
             await check_and_fire_alerts(session_factory)
         except Exception:  # noqa: BLE001
             logger.exception("sweeper.alert_check_error")
+
+        # Reset stale streaks once per day
+        try:
+            reset = await _sweep_stale_streaks(session_factory)
+            if reset:
+                logger.info("sweeper.streaks_reset_done", count=reset)
+        except Exception:  # noqa: BLE001
+            logger.exception("sweeper.streak_reset_error")
 
         await asyncio.sleep(min(interval, trigger_check_interval))
 

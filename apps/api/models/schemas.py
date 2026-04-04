@@ -395,6 +395,8 @@ class WorkerStatsOut(BaseModel):
     xp_to_next_level: int
     streak_days: int
     streak_at_risk: bool = False        # True if no task completed today (streak could break)
+    streak_freezes: int = 0             # available streak freezes
+    streak_freezes_used: int = 0        # total freezes ever consumed
     last_active_date: Optional[str] = None  # ISO date string of last activity (YYYY-MM-DD)
 
 
@@ -438,6 +440,7 @@ class LeaderboardEntryOut(BaseModel):
     worker_accuracy: Optional[float]
     worker_reliability: Optional[float]
     worker_streak_days: int
+    total_earnings: Optional[int] = None  # credits earned (set for earnings queries)
     profile_public: bool = True  # if False, link to profile is hidden
 
 

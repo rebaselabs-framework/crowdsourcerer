@@ -194,12 +194,12 @@ const noSkills = Array.isArray(profileStatus?.missing) &&
 
     {/* Profile completion banner */}
     {showProfileBanner && (
-      <div class="bg-amber-950/40 border border-amber-700/60 rounded-xl px-5 py-4 mb-6 flex items-center justify-between gap-4">
-        <div class="flex items-start gap-3">
-          <span class="text-2xl mt-0.5">👤</span>
-          <div>
+      <div class="bg-amber-950/40 border border-amber-700/60 rounded-xl px-5 py-4 mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div class="flex items-start gap-3 min-w-0">
+          <span class="text-2xl mt-0.5 shrink-0">👤</span>
+          <div class="min-w-0">
             <div class="font-semibold text-amber-300 text-sm">Complete your profile — {profilePct}% done</div>
-            <div class="w-48 h-1.5 bg-amber-900/60 rounded-full mt-1.5 mb-1">
+            <div class="w-full max-w-[12rem] h-1.5 bg-amber-900/60 rounded-full mt-1.5 mb-1">
               <div
                 class="h-full bg-amber-400 rounded-full"
                 style={`width:${profilePct}%`}
@@ -312,9 +312,19 @@ const noSkills = Array.isArray(profileStatus?.missing) &&
               <span class="text-base ml-1">{stats?.streak_days > 0 ? "🔥" : "💤"}</span>
             </div>
             {stats?.streak_at_risk ? (
-              <div class="text-xs text-amber-400 mt-1 font-medium">⚠ Complete a task today!</div>
+              <div class="text-xs text-amber-400 mt-1 font-medium">
+                ⚠ Complete a task today!
+                {(stats?.streak_freezes ?? 0) > 0 && (
+                  <span class="text-emerald-400 ml-1">🧊 {stats.streak_freezes} freeze{stats.streak_freezes > 1 ? "s" : ""} ready</span>
+                )}
+              </div>
             ) : (
-              <div class="text-xs text-gray-500 mt-0.5">days</div>
+              <div class="text-xs text-gray-500 mt-0.5">
+                days
+                {(stats?.streak_freezes ?? 0) > 0 && (
+                  <span class="text-emerald-500 ml-2">🧊 {stats.streak_freezes}</span>
+                )}
+              </div>
             )}
           </div>
           <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">

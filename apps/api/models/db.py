@@ -64,6 +64,9 @@ class UserDB(Base):
     worker_tasks_completed = Column(Integer, default=0, nullable=False)
     worker_streak_days = Column(Integer, default=0, nullable=False)
     worker_last_active_date = Column(DateTime(timezone=True), nullable=True)
+    streak_freezes = Column(Integer, default=0, nullable=False)          # available freezes
+    streak_freeze_last_earned = Column(Date, nullable=True)              # last date a free freeze was earned
+    streak_freezes_used = Column(Integer, default=0, nullable=False)     # total freezes ever used
 
     # Worker reputation & moderation
     reputation_score = Column(Float, default=50.0, nullable=False)  # 0.0–100.0

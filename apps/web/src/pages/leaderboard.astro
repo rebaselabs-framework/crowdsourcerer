@@ -55,8 +55,9 @@ function rankMedal(rank: number): string {
 }
 
 function primaryStat(entry: any): string {
-  if (category === "xp")      return `${entry.worker_xp.toLocaleString()} XP`;
-  if (category === "tasks")   return `${entry.worker_tasks_completed.toLocaleString()} tasks`;
+  if (category === "xp")       return `${entry.worker_xp.toLocaleString()} XP`;
+  if (category === "tasks")    return `${entry.worker_tasks_completed.toLocaleString()} tasks`;
+  if (category === "earnings") return `${(entry.total_earnings ?? 0).toLocaleString()} credits`;
   return `${entry.worker_tasks_completed.toLocaleString()} tasks`;
 }
 

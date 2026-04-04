@@ -356,122 +356,37 @@ const ANN_ICON: Record<string, string> = {
         </a>
         {isLoggedIn ? (
           <>
+            {/* ── Requester ─────────────────────────── */}
             <div class="h-px bg-gray-800 my-2"></div>
+            <div class="px-3 py-1 text-[10px] uppercase tracking-widest text-gray-600 font-semibold">Requester</div>
             <a href="/dashboard" class="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
               🏠 Dashboard
-            </a>
-            <a href="/dashboard/requester" class="flex items-center gap-3 px-3 py-2.5 text-sm text-violet-300 hover:bg-violet-900/20 rounded-lg transition-colors">
-              🎛️ Requester Hub
-            </a>
-            <a href="/workers/browse" class="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
-              👷 Browse Workers
             </a>
             <a href="/dashboard/new-task" class="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
               ✨ New Task
             </a>
-            <a href="/dashboard/credits" class="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
-              💳 Credits
-            </a>
-            <a href="/dashboard/billing" class="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
-              🏦 Billing & Plan
-            </a>
-            <a href="/dashboard/quality" class="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
-              🎯 Quality
-            </a>
             <a href="/dashboard/review" class="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
               📬 Review Queue
             </a>
-            <a href="/dashboard/disputes" class="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
-              ⚖️ Disputes
+            <a href="/dashboard/credits" class="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
+              💳 Credits
             </a>
-            <a href="/dashboard/team" class="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
-              🏢 Teams
-            </a>
-            <a href="/dashboard/pipelines" class="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
-              ⛓️ Pipelines
-            </a>
-            <a href="/dashboard/analytics" class="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
-              📊 Analytics
-            </a>
-            <a href="/dashboard/revenue" class="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
-              💰 Revenue
-            </a>
-            <a href="/dashboard/marketplace" class="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
-              🏪 Marketplace
-            </a>
-            <a href="/dashboard/triggers" class="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
-              ⚡ Triggers
-            </a>
-            <a href="/dashboard/search" class="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
-              🔍 Search
-            </a>
-            <a href="/dashboard/saved-searches" class="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
-              🔔 Task Alerts
-            </a>
-            <a href="/dashboard/experiments" class="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
-              🧪 A/B Experiments
-            </a>
-            <a href="/dashboard/sla" class="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
-              ⏱ SLA
-            </a>
-            <a href="/dashboard/scheduled" class="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
-              ⏰ Scheduled Tasks
-            </a>
-            <a href="/dashboard/quota" class="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
-              📊 Plan & Quota
-            </a>
-            <a href="/dashboard/requester-onboarding" class="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
-              🎯 Get Started
-            </a>
+            {/* ── Worker ────────────────────────────── */}
             <div class="h-px bg-gray-800 my-2"></div>
+            <div class="px-3 py-1 text-[10px] uppercase tracking-widest text-gray-600 font-semibold">Worker</div>
             <a href="/worker" class="flex items-center gap-3 px-3 py-2.5 text-sm text-violet-300 hover:bg-violet-900/30 rounded-lg transition-colors font-medium">
               🔮 Worker Hub
             </a>
-            <a href="/worker/onboarding" class="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
-              🎉 Onboarding
-            </a>
             <a href="/worker/marketplace" class="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
-              🛒 Marketplace
-            </a>
-            <a href="/worker/invites" class="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
-              ✉️ My Invites
-            </a>
-            <a href="/worker/applications" class="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
-              📝 My Applications
-            </a>
-            <a href="/worker/watchlist" class="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
-              🔖 Watchlist
-            </a>
-            <a href="/worker/reputation" class="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
-              ⭐ Reputation
-            </a>
-            <a href="/worker/ratings" class="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
-              🌟 My Ratings
-            </a>
-            <a href="/worker/portfolio" class="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
-              🗂️ Portfolio
-            </a>
-            <a href="/worker/certifications" class="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
-              🎓 Certifications
-            </a>
-            <a href="/dashboard/worker/skill-quiz" class="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
-              🧠 Skill Assessment
-            </a>
-            <a href="/worker/recommendations" class="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
-              💡 Recommendations
+              🛒 Browse & Earn
             </a>
             <a href="/worker/earnings" class="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
               💰 Earnings
             </a>
-            <a href="/worker/referrals" class="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
-              🔗 Referrals
-            </a>
-            <a href="/worker/activity" class="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
-              📅 Activity
-            </a>
             <a href="/worker/leaderboard" class="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
               🏆 Leaderboard
             </a>
+            {/* ── Account ───────────────────────────── */}
             <div class="h-px bg-gray-800 my-2"></div>
             <a href="/dashboard/profile" class="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
               👤 My Profile

@@ -335,6 +335,8 @@ async def get_worker_stats(
         xp_to_next_level=xp_to_next,
         streak_days=user.worker_streak_days,
         streak_at_risk=streak_at_risk,
+        streak_freezes=getattr(user, "streak_freezes", 0) or 0,
+        streak_freezes_used=getattr(user, "streak_freezes_used", 0) or 0,
         last_active_date=last_active_date_str,
     )
 
@@ -1099,6 +1101,19 @@ async def submit_task(
         else:
             worker.worker_streak_days = 1
         worker.worker_last_active_date = now
+
+        # Award a free streak freeze every 7-day streak milestone (max 2 stored)
+        MAX_STREAK_FREEZES = 2
+        freezes = getattr(worker, "streak_freezes", 0) or 0
+        last_earned = getattr(worker, "streak_freeze_last_earned", None)
+        if (
+            worker.worker_streak_days >= 7
+            and worker.worker_streak_days % 7 == 0
+            and last_earned != today
+            and freezes < MAX_STREAK_FREEZES
+        ):
+            worker.streak_freezes = freezes + 1
+            worker.streak_freeze_last_earned = today
     else:
         xp = compute_xp_for_task(task_type_for_xp)
 
@@ -1917,5 +1932,58 @@ async def get_worker_recommendations(
         weekly_earnings_potential_usd=round(weekly_potential / CREDITS_PER_USD, 2),
         current_weekly_rate=current_weekly_rate,
         insights=insights[:5],  # cap at 5 insights
+    )
+
+
+# ─── Streak Freezes ──────────────────────────────────────────────────────
+
+STREAK_FREEZE_COST = 50  # credits to buy one freeze
+MAX_STREAK_FREEZES = 2   # max freezes a worker can hold
+
+
+class StreakFreezeOut(BaseModel):
+    streak_freezes: int
+    streak_freezes_used: int
+    credits_remaining: int
+    message: str
+
+
+@router.post("/streak-freeze", response_model=StreakFreezeOut)
+async def buy_streak_freeze(
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Buy a streak freeze for 50 credits. Max 2 freezes can be held at once.
+
+    Streak freezes automatically protect your streak when you miss a day.
+    Earn them free by reaching 7-day streak milestones, or buy with credits.
+    """
+    user = await db.get(UserDB, user_id)
+    if not user or user.role not in ("worker", "both"):
+        raise HTTPException(status_code=403, detail="Worker account required")
+
+    freezes = getattr(user, "streak_freezes", 0) or 0
+    if freezes >= MAX_STREAK_FREEZES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Already at maximum ({MAX_STREAK_FREEZES}) streak freezes",
+        )
+
+    if user.credits < STREAK_FREEZE_COST:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Not enough credits. Need {STREAK_FREEZE_COST}, have {user.credits}",
+        )
+
+    user.credits -= STREAK_FREEZE_COST
+    user.streak_freezes = freezes + 1
+    await db.commit()
+    await db.refresh(user)
+
+    return StreakFreezeOut(
+        streak_freezes=user.streak_freezes,
+        streak_freezes_used=getattr(user, "streak_freezes_used", 0) or 0,
+        credits_remaining=user.credits,
+        message=f"Streak freeze purchased! You now have {user.streak_freezes} freeze(s).",
     )
 
