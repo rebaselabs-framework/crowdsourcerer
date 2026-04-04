@@ -7,7 +7,7 @@ from typing import Optional
 import structlog
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 
 from core.auth import get_current_user_id
 from core.database import get_db
@@ -66,7 +66,11 @@ ALL_BADGES: list[BadgeDef] = [
 _BADGE_MAP: dict[str, BadgeDef] = {b.badge_id: b for b in ALL_BADGES}
 
 
-def _badge_to_out(badge_def: BadgeDef, earned_at: Optional[datetime] = None) -> BadgeOut:
+def _badge_to_out(
+    badge_def: BadgeDef,
+    earned_at: Optional[datetime] = None,
+    rarity: Optional[float] = None,
+) -> BadgeOut:
     return BadgeOut(
         badge_id=badge_def.badge_id,
         name=badge_def.name,
@@ -74,6 +78,7 @@ def _badge_to_out(badge_def: BadgeDef, earned_at: Optional[datetime] = None) -> 
         icon=badge_def.icon,
         earned_at=earned_at,
         earned=earned_at is not None,
+        rarity=rarity,
     )
 
 
@@ -176,7 +181,7 @@ async def get_my_badges(
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ):
-    """Get all earned and locked badges for the current worker."""
+    """Get all earned and locked badges for the current worker, with rarity stats."""
     result = await db.execute(select(UserDB).where(UserDB.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
@@ -184,7 +189,22 @@ async def get_my_badges(
     if user.role not in ("worker", "both"):
         raise HTTPException(status_code=403, detail="Not enrolled as a worker.")
 
-    # Fetch earned badges
+    # Total worker count for rarity calculation
+    total_workers = await db.scalar(
+        select(func.count()).select_from(UserDB).where(
+            UserDB.role.in_(["worker", "both"]),
+            UserDB.worker_tasks_completed > 0,
+        )
+    ) or 1  # avoid division by zero
+
+    # Count how many workers have each badge
+    rarity_result = await db.execute(
+        select(WorkerBadgeDB.badge_id, func.count(WorkerBadgeDB.badge_id))
+        .group_by(WorkerBadgeDB.badge_id)
+    )
+    badge_counts: dict[str, int] = {row[0]: row[1] for row in rarity_result.all()}
+
+    # Fetch earned badges for this user
     result = await db.execute(
         select(WorkerBadgeDB).where(WorkerBadgeDB.user_id == user_id)
     )
@@ -195,15 +215,18 @@ async def get_my_badges(
     locked_out: list[BadgeOut] = []
 
     for badge_def in ALL_BADGES:
+        count = badge_counts.get(badge_def.badge_id, 0)
+        rarity = round(count / total_workers * 100, 1) if total_workers > 0 else 0.0
         if badge_def.badge_id in earned_map:
-            earned_out.append(_badge_to_out(badge_def, earned_map[badge_def.badge_id]))
+            earned_out.append(_badge_to_out(badge_def, earned_map[badge_def.badge_id], rarity=rarity))
         else:
-            locked_out.append(_badge_to_out(badge_def, None))
+            locked_out.append(_badge_to_out(badge_def, None, rarity=rarity))
 
     return WorkerBadgesOut(
         earned=earned_out,
         locked=locked_out,
         total_earned=len(earned_out),
+        total_workers=total_workers,
     )
 
 
@@ -213,11 +236,24 @@ async def get_user_badges(
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ):
-    """Get badges for a specific worker (public view)."""
+    """Get badges for a specific worker (public view), with rarity stats."""
     result = await db.execute(select(UserDB).where(UserDB.id == target_user_id))
     user = result.scalar_one_or_none()
     if not user or user.role not in ("worker", "both"):
         raise HTTPException(status_code=404, detail="Worker not found")
+
+    # Total workers and rarity counts
+    total_workers = await db.scalar(
+        select(func.count()).select_from(UserDB).where(
+            UserDB.role.in_(["worker", "both"]),
+            UserDB.worker_tasks_completed > 0,
+        )
+    ) or 1
+    rarity_result = await db.execute(
+        select(WorkerBadgeDB.badge_id, func.count(WorkerBadgeDB.badge_id))
+        .group_by(WorkerBadgeDB.badge_id)
+    )
+    badge_counts: dict[str, int] = {row[0]: row[1] for row in rarity_result.all()}
 
     result = await db.execute(
         select(WorkerBadgeDB).where(WorkerBadgeDB.user_id == target_user_id)
@@ -225,18 +261,20 @@ async def get_user_badges(
     earned_rows = result.scalars().all()
     earned_map = {b.badge_id: b.earned_at for b in earned_rows}
 
-    earned_out = [
-        _badge_to_out(_BADGE_MAP[bid], earned_at)
-        for bid, earned_at in earned_map.items()
-        if bid in _BADGE_MAP
-    ]
-    locked_out = [
-        _badge_to_out(b, None) for b in ALL_BADGES
-        if b.badge_id not in earned_map
-    ]
+    earned_out: list[BadgeOut] = []
+    locked_out: list[BadgeOut] = []
+
+    for badge_def in ALL_BADGES:
+        count = badge_counts.get(badge_def.badge_id, 0)
+        rarity = round(count / total_workers * 100, 1) if total_workers > 0 else 0.0
+        if badge_def.badge_id in earned_map:
+            earned_out.append(_badge_to_out(badge_def, earned_map[badge_def.badge_id], rarity=rarity))
+        else:
+            locked_out.append(_badge_to_out(badge_def, None, rarity=rarity))
 
     return WorkerBadgesOut(
         earned=earned_out,
         locked=locked_out,
         total_earned=len(earned_out),
+        total_workers=total_workers,
     )

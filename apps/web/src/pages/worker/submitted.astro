@@ -25,6 +25,8 @@ const xp = parseInt(url.searchParams.get("xp") ?? "0");
 const streakMultiplier = parseFloat(url.searchParams.get("streak_multiplier") ?? "1");
 const streakDays = parseInt(url.searchParams.get("streak_days") ?? "0");
 const hasStreakBonus = streakMultiplier > 1.0;
+// Streak freeze earned at 7-day milestones
+const earnedFreeze = streakDays > 0 && streakDays >= 7 && streakDays % 7 === 0;
 
 // Human-readable multiplier label
 function streakLabel(days: number): string {
@@ -72,6 +74,17 @@ const multiplierDisplay = `${streakMultiplier}×`;
         </div>
       </div>
     </div>
+
+    <!-- Streak freeze earned banner -->
+    {earnedFreeze && (
+      <div class="mb-6 px-4 py-3 bg-cyan-900/30 border border-cyan-700/50 rounded-xl flex items-center justify-center gap-3 text-sm">
+        <span class="text-2xl">🧊</span>
+        <div class="text-left">
+          <span class="text-cyan-300 font-semibold">Streak Freeze earned!</span>
+          <span class="text-cyan-400 ml-1">Protects your streak if you miss a day</span>
+        </div>
+      </div>
+    )}
 
     <!-- Actions -->
     <div class="flex flex-col gap-3 max-w-sm mx-auto">

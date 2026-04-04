@@ -461,12 +461,14 @@ class BadgeOut(BaseModel):
     icon: str        # emoji
     earned_at: Optional[datetime] = None
     earned: bool = False
+    rarity: Optional[float] = None  # % of workers who earned this (0.0–100.0)
 
 
 class WorkerBadgesOut(BaseModel):
     earned: list[BadgeOut]
     locked: list[BadgeOut]
     total_earned: int
+    total_workers: int = 0  # total worker count (for rarity context)
 
 
 # ─── Daily Challenges ─────────────────────────────────────────────────────
