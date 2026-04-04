@@ -369,3 +369,98 @@ async def test_award_new_badges_no_eligible():
 
     assert new_badges == []
     db.add.assert_not_called()
+
+
+# ── League badge tests ──────────────────────────────────────────────────────
+
+def test_league_badge_definitions_exist():
+    """All 6 league badges exist in ALL_BADGES."""
+    from routers.badges import ALL_BADGES
+    ids = {b.badge_id for b in ALL_BADGES}
+    expected = {"league_silver", "league_gold", "league_platinum",
+                "league_diamond", "league_obsidian", "league_champion"}
+    assert expected.issubset(ids)
+
+
+def test_tier_badge_map_covers_promotable_tiers():
+    """_TIER_BADGE_MAP covers silver through obsidian (not bronze)."""
+    from routers.badges import _TIER_BADGE_MAP
+    assert "bronze" not in _TIER_BADGE_MAP
+    assert set(_TIER_BADGE_MAP.keys()) == {"silver", "gold", "platinum", "diamond", "obsidian"}
+
+
+@pytest.mark.asyncio
+async def test_award_league_badges_promotion():
+    """award_league_badges awards the tier badge for a promoted worker."""
+    from routers.badges import award_league_badges
+
+    user = _make_user()
+    db = MagicMock()
+    db.add = MagicMock()
+    db.execute = AsyncMock()
+
+    # No badges already earned
+    no_badges_result = MagicMock()
+    no_badges_result.all = MagicMock(return_value=[])
+    db.execute.return_value = no_badges_result
+
+    new_badges = await award_league_badges(user, db, new_tier="silver", final_rank=3)
+    assert "league_silver" in new_badges
+    assert "league_champion" not in new_badges  # rank 3 ≠ champion
+
+
+@pytest.mark.asyncio
+async def test_award_league_badges_champion():
+    """award_league_badges awards champion badge for #1 finisher."""
+    from routers.badges import award_league_badges
+
+    user = _make_user()
+    db = MagicMock()
+    db.add = MagicMock()
+    db.execute = AsyncMock()
+
+    no_badges_result = MagicMock()
+    no_badges_result.all = MagicMock(return_value=[])
+    db.execute.return_value = no_badges_result
+
+    new_badges = await award_league_badges(user, db, new_tier="gold", final_rank=1)
+    assert "league_gold" in new_badges
+    assert "league_champion" in new_badges
+
+
+@pytest.mark.asyncio
+async def test_award_league_badges_idempotent():
+    """award_league_badges skips badges already earned."""
+    from routers.badges import award_league_badges
+
+    user = _make_user()
+    db = MagicMock()
+    db.add = MagicMock()
+    db.execute = AsyncMock()
+
+    # Already has league_silver
+    already_result = MagicMock()
+    already_result.all = MagicMock(return_value=[("league_silver",)])
+    db.execute.return_value = already_result
+
+    new_badges = await award_league_badges(user, db, new_tier="silver", final_rank=5)
+    assert "league_silver" not in new_badges
+    db.add.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_award_league_badges_bronze_no_badge():
+    """Bronze tier has no badge — no tier badge awarded."""
+    from routers.badges import award_league_badges
+
+    user = _make_user()
+    db = MagicMock()
+    db.add = MagicMock()
+    db.execute = AsyncMock()
+
+    no_badges_result = MagicMock()
+    no_badges_result.all = MagicMock(return_value=[])
+    db.execute.return_value = no_badges_result
+
+    new_badges = await award_league_badges(user, db, new_tier="bronze", final_rank=5)
+    assert len(new_badges) == 0

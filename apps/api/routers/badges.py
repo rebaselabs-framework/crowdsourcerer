@@ -57,6 +57,14 @@ ALL_BADGES: list[BadgeDef] = [
     BadgeDef("reliability_90",   "Reliable",           "Achieve 90%+ reliability (rarely releases tasks)", "⚓"),
     BadgeDef("reliability_100",  "Ironclad",           "100% reliability — never released a claimed task", "🛡️"),
 
+    # ── League promotions ────────────────────────────────────────────────
+    BadgeDef("league_silver",    "Silver League",      "Promoted to the Silver league",                    "🥈"),
+    BadgeDef("league_gold",      "Gold League",        "Promoted to the Gold league",                      "🥇"),
+    BadgeDef("league_platinum",  "Platinum League",    "Promoted to the Platinum league",                  "💠"),
+    BadgeDef("league_diamond",   "Diamond League",     "Promoted to the Diamond league",                   "💎"),
+    BadgeDef("league_obsidian",  "Obsidian League",    "Reached the legendary Obsidian league",            "🖤"),
+    BadgeDef("league_champion",  "Season Champion",    "Finished #1 in your league group",                 "👑"),
+
     # ── Special ───────────────────────────────────────────────────────────
     BadgeDef("daily_challenge",  "Daily Challenger",   "Complete your first daily challenge",              "📅"),
     BadgeDef("challenge_7",      "Challenge Champion", "Complete daily challenges 7 days in a row",       "🏆"),
@@ -172,6 +180,55 @@ async def award_new_badges(
         logger.info("badges_awarded", user_id=str(user.id), badges=list(new_badges))
 
     return list(new_badges)
+
+
+# ─── League badge helpers (called from process_season_end) ───────────
+
+# Map tier names to badge IDs (bronze has no badge — it's the starting tier)
+_TIER_BADGE_MAP: dict[str, str] = {
+    "silver": "league_silver",
+    "gold": "league_gold",
+    "platinum": "league_platinum",
+    "diamond": "league_diamond",
+    "obsidian": "league_obsidian",
+}
+
+
+async def award_league_badges(
+    user: UserDB,
+    db: AsyncSession,
+    new_tier: str,
+    final_rank: int,
+) -> list[str]:
+    """Award league promotion badges after season end.
+
+    Called from ``process_season_end`` for promoted workers and #1 finishers.
+    Returns list of newly awarded badge IDs.
+    """
+    new_badge_ids: list[str] = []
+    now = datetime.now(timezone.utc)
+
+    # Fetch already-earned badge IDs for this user
+    result = await db.execute(
+        select(WorkerBadgeDB.badge_id).where(WorkerBadgeDB.user_id == user.id)
+    )
+    already_earned = {row[0] for row in result.all()}
+
+    # Award tier badge if applicable
+    tier_badge = _TIER_BADGE_MAP.get(new_tier)
+    if tier_badge and tier_badge not in already_earned:
+        db.add(WorkerBadgeDB(user_id=user.id, badge_id=tier_badge, earned_at=now))
+        new_badge_ids.append(tier_badge)
+
+    # Award champion badge for #1 finisher
+    if final_rank == 1 and "league_champion" not in already_earned:
+        db.add(WorkerBadgeDB(user_id=user.id, badge_id="league_champion", earned_at=now))
+        new_badge_ids.append("league_champion")
+
+    if new_badge_ids:
+        logger.info("league_badges_awarded", user_id=str(user.id), badges=new_badge_ids)
+
+    return new_badge_ids
 
 
 # ─── Routes ───────────────────────────────────────────────────────────────

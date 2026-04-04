@@ -448,17 +448,56 @@ async def process_season_end(session_factory) -> int:
                     else:
                         member.result = "stayed"
 
-                    # Update user's league tier
+                    # Update user's league tier and award badges
                     user_res = await db.execute(
                         select(UserDB).where(UserDB.id == member.user_id)
                     )
                     user = user_res.scalar_one_or_none()
                     if user:
                         if member.result == "promoted":
-                            user.league_tier = LEAGUE_TIERS[tier_idx + 1]
+                            new_tier = LEAGUE_TIERS[tier_idx + 1]
+                            user.league_tier = new_tier
+                            # Award league promotion badges
+                            try:
+                                from routers.badges import award_league_badges
+                                from core.notify import create_notification, NotifType
+                                new_badges = await award_league_badges(
+                                    user, db, new_tier=new_tier, final_rank=rank,
+                                )
+                                for bid in new_badges:
+                                    badge_label = bid.replace("_", " ").title()
+                                    await create_notification(
+                                        db, str(user.id),
+                                        NotifType.BADGE_EARNED,
+                                        f"Badge unlocked: {badge_label} 🏅",
+                                        f"You earned the '{badge_label}' badge from your league promotion!",
+                                        link="/worker/achievements",
+                                    )
+                            except Exception:
+                                logger.warning("league.badge_award_failed", user_id=str(user.id))
                         elif member.result == "demoted":
                             user.league_tier = LEAGUE_TIERS[tier_idx - 1]
                         # "stayed" = no change
+
+                        # Award champion badge for #1 in group (regardless of promotion)
+                        if rank == 1 and member.result != "promoted":
+                            try:
+                                from routers.badges import award_league_badges
+                                from core.notify import create_notification, NotifType
+                                new_badges = await award_league_badges(
+                                    user, db, new_tier=user.league_tier, final_rank=1,
+                                )
+                                for bid in new_badges:
+                                    badge_label = bid.replace("_", " ").title()
+                                    await create_notification(
+                                        db, str(user.id),
+                                        NotifType.BADGE_EARNED,
+                                        f"Badge unlocked: {badge_label} 🏅",
+                                        f"You earned the '{badge_label}' badge as season champion!",
+                                        link="/worker/achievements",
+                                    )
+                            except Exception:
+                                logger.warning("league.champion_badge_failed", user_id=str(user.id))
 
                     processed += 1
 
