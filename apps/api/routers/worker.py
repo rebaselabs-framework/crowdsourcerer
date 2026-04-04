@@ -1126,6 +1126,17 @@ async def submit_task(
     except Exception:
         logger.warning("league.xp_tracking_failed", user_id=str(user_id), exc_info=True)
 
+    # Update quest progress (volume, streak, variety)
+    try:
+        from routers.quests import update_quest_progress
+        await update_quest_progress(
+            db, str(user_id),
+            task_type=task_type_for_xp,
+            streak_days=worker.worker_streak_days if worker else 0,
+        )
+    except Exception:
+        logger.warning("quest.progress_update_failed", user_id=str(user_id), exc_info=True)
+
     if worker:
         # Compute reliability: ratio of submitted/(submitted+released+timed_out)
         completed = worker.worker_tasks_completed

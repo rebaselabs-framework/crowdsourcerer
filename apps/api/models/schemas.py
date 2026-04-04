@@ -569,6 +569,43 @@ class LeagueHistoryOut(BaseModel):
     current_tier: str
 
 
+# ─── Quests ──────────────────────────────────────────────────────────────
+
+class QuestOut(BaseModel):
+    """An active quest definition."""
+    id: UUID
+    quest_key: str
+    title: str
+    description: Optional[str]
+    icon: str
+    quest_type: str     # volume, streak, variety, accuracy, challenge
+    target_value: int
+    xp_reward: int
+    credits_reward: int
+    difficulty: str     # easy, medium, hard
+
+    model_config = {"from_attributes": True}
+
+
+class QuestProgressOut(BaseModel):
+    """A worker's progress on a quest."""
+    quest: QuestOut
+    current_value: int
+    target_value: int
+    is_complete: bool
+    is_claimed: bool
+    progress_pct: float    # 0.0–100.0
+
+
+class WeeklyQuestsOut(BaseModel):
+    """All quests for the current week with the worker's progress."""
+    quests: list[QuestProgressOut]
+    week_start: date
+    week_end: date
+    total_completed: int
+    total_claimed: int
+
+
 # ─── Submission Review ────────────────────────────────────────────────────
 
 class SubmissionWorkerOut(BaseModel):

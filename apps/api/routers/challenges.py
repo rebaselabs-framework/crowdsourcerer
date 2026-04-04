@@ -220,6 +220,15 @@ async def claim_daily_bonus(
         description=f"Daily challenge bonus: {challenge.title}",
     )
     db.add(txn)
+
+    # Update challenge-type quests
+    try:
+        from routers.quests import update_quest_on_challenge_complete
+        await update_quest_on_challenge_complete(db, str(user_id))
+    except Exception:
+        import structlog as _sl
+        _sl.get_logger().warning("quest.challenge_update_failed", user_id=str(user_id), exc_info=True)
+
     await db.commit()
 
     logger.info(

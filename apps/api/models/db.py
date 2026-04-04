@@ -1857,3 +1857,50 @@ class LeagueGroupMemberDB(Base):
 
     group = relationship("LeagueGroupDB", back_populates="members")
     user = relationship("UserDB")
+
+
+# ─── Quests ──────────────────────────────────────────────────────────────────
+
+class ActiveQuestDB(Base):
+    """A quest available during a specific week. Generated from templates."""
+    __tablename__ = "active_quests"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    quest_key = Column(String(64), nullable=False)       # e.g. "volume_10", "streak_5"
+    title = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    icon = Column(String(8), nullable=False)             # emoji
+    quest_type = Column(String(32), nullable=False)      # volume, streak, variety, accuracy, challenge
+    target_value = Column(Integer, nullable=False)
+    xp_reward = Column(Integer, nullable=False)
+    credits_reward = Column(Integer, nullable=False)
+    difficulty = Column(String(16), nullable=False)      # easy, medium, hard
+    week_start = Column(Date, nullable=False, index=True)
+    week_end = Column(Date, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    progress = relationship("QuestProgressDB", back_populates="quest", cascade="all, delete-orphan")
+
+
+class QuestProgressDB(Base):
+    """Per-user progress on an active quest."""
+    __tablename__ = "quest_progress"
+    __table_args__ = (
+        UniqueConstraint("quest_id", "user_id", name="uq_quest_progress"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    quest_id = Column(UUID(as_uuid=True), ForeignKey("active_quests.id", ondelete="CASCADE"),
+                      nullable=False, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    current_value = Column(Integer, default=0, nullable=False)
+    is_complete = Column(Boolean, default=False, nullable=False)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    is_claimed = Column(Boolean, default=False, nullable=False)
+    claimed_at = Column(DateTime(timezone=True), nullable=True)
+    extra_data = Column(JSON, nullable=True)  # e.g. {"task_types": ["label_image", "verify_fact"]}
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    quest = relationship("ActiveQuestDB", back_populates="progress")
+    user = relationship("UserDB")

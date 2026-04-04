@@ -1,0 +1,226 @@
+---
+/**
+ * Worker Quests — weekly multi-step challenges.
+ * Complete quests to earn bonus XP and credits.
+ */
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Astro.cookies);
+
+if (!token) {
+  return Astro.redirect("/login?next=/worker/quests");
+}
+
+let quests: any = null;
+let error: string | null = null;
+
+try {
+  quests = await apiFetch<any>("/v1/quests", { token });
+} catch (e: any) {
+  const msg = e.message ?? "Failed to load quests";
+  if (msg.includes("Only workers")) {
+    return Astro.redirect("/worker");
+  }
+  error = msg;
+}
+
+const difficultyColors: Record<string, string> = {
+  easy: "text-emerald-400 bg-emerald-900/20 border-emerald-800/40",
+  medium: "text-amber-400 bg-amber-900/20 border-amber-800/40",
+  hard: "text-red-400 bg-red-900/20 border-red-800/40",
+};
+
+function difficultyLabel(d: string): string {
+  return d.charAt(0).toUpperCase() + d.slice(1);
+}
+---
+
+<Layout title="Quests — CrowdSorcerer">
+  <div class="max-w-3xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-6">
+      <div>
+        <h1 class="text-2xl font-bold">🗺️ Quests</h1>
+        <p class="text-gray-400 text-sm mt-0.5">Weekly challenges. Complete them all for bonus rewards.</p>
+      </div>
+      <a href="/worker" class="text-sm text-gray-400 hover:text-white transition-colors">
+        &larr; Back to Earn
+      </a>
+    </div>
+
+    {error ? (
+      <div class="text-red-400 bg-red-900/20 border border-red-800/40 rounded-xl p-6 text-center">
+        {error}
+      </div>
+    ) : quests && (
+      <div>
+        <!-- Week summary -->
+        <div class="bg-gray-900 border border-gray-800 rounded-2xl p-5 mb-6">
+          <div class="flex items-center justify-between">
+            <div>
+              <div class="text-sm text-gray-400">This Week's Quests</div>
+              <div class="text-lg font-bold mt-0.5">
+                {quests.total_completed} / {quests.quests.length} completed
+              </div>
+              <div class="text-xs text-gray-500 mt-1">
+                {quests.week_start} &mdash; {quests.week_end}
+              </div>
+            </div>
+            <div class="text-right">
+              <div class="text-2xl font-bold text-purple-400">{quests.total_claimed}</div>
+              <div class="text-xs text-gray-400">claimed</div>
+            </div>
+          </div>
+          {/* Overall progress bar */}
+          <div class="mt-4 bg-gray-800 rounded-full h-2 overflow-hidden">
+            <div
+              class="bg-purple-500 h-full rounded-full transition-all duration-500"
+              style={`width: ${quests.quests.length > 0 ? Math.round((quests.total_completed / quests.quests.length) * 100) : 0}%`}
+            ></div>
+          </div>
+        </div>
+
+        <!-- Quest cards -->
+        <div class="space-y-4">
+          {quests.quests.map((q: any) => {
+            const progressPct = q.progress_pct;
+            const isComplete = q.is_complete;
+            const isClaimed = q.is_claimed;
+
+            let borderColor = "border-gray-800";
+            if (isClaimed) borderColor = "border-gray-700/50";
+            else if (isComplete) borderColor = "border-emerald-700/60";
+
+            let bgStyle = "bg-gray-900";
+            if (isClaimed) bgStyle = "bg-gray-900/60 opacity-75";
+            else if (isComplete) bgStyle = "bg-emerald-900/10";
+
+            return (
+              <div class={`${bgStyle} border ${borderColor} rounded-2xl p-5 transition-all`}>
+                <div class="flex items-start gap-4">
+                  {/* Icon */}
+                  <div class="text-3xl flex-shrink-0 mt-0.5">{q.quest.icon}</div>
+
+                  {/* Content */}
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2 mb-1">
+                      <h3 class={`font-semibold ${isClaimed ? "text-gray-500 line-through" : "text-white"}`}>
+                        {q.quest.title}
+                      </h3>
+                      <span class={`text-xs px-2 py-0.5 rounded-full border ${difficultyColors[q.quest.difficulty] || difficultyColors.easy}`}>
+                        {difficultyLabel(q.quest.difficulty)}
+                      </span>
+                    </div>
+                    <p class="text-sm text-gray-400 mb-3">{q.quest.description}</p>
+
+                    {/* Progress bar */}
+                    <div class="flex items-center gap-3 mb-2">
+                      <div class="flex-1 bg-gray-800 rounded-full h-2.5 overflow-hidden">
+                        <div
+                          class={`h-full rounded-full transition-all duration-500 ${
+                            isComplete ? "bg-emerald-500" : "bg-purple-500"
+                          }`}
+                          style={`width: ${Math.min(100, progressPct)}%`}
+                        ></div>
+                      </div>
+                      <div class={`text-xs font-mono ${isComplete ? "text-emerald-400" : "text-gray-400"}`}>
+                        {q.current_value}/{q.target_value}
+                      </div>
+                    </div>
+
+                    {/* Rewards */}
+                    <div class="flex items-center gap-4 text-xs text-gray-500">
+                      <span>+{q.quest.xp_reward} XP</span>
+                      <span>+{q.quest.credits_reward} credits</span>
+                    </div>
+                  </div>
+
+                  {/* Action button */}
+                  <div class="flex-shrink-0 ml-2">
+                    {isClaimed ? (
+                      <div class="text-sm text-gray-500 font-medium">Claimed &#10003;</div>
+                    ) : isComplete ? (
+                      <button
+                        class="quest-claim-btn px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold rounded-lg transition-colors"
+                        data-quest-id={String(q.quest.id)}
+                      >
+                        Claim
+                      </button>
+                    ) : (
+                      <div class="text-sm text-gray-600 font-medium">
+                        {Math.round(progressPct)}%
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* How quests work */}
+        <details class="bg-gray-900 border border-gray-800 rounded-2xl mt-6">
+          <summary class="px-5 py-4 cursor-pointer text-sm font-medium text-gray-300 hover:text-white transition-colors">
+            How Quests Work
+          </summary>
+          <div class="px-5 pb-5 text-sm text-gray-400 space-y-3">
+            <p>
+              Quests are weekly challenges that reward you for consistent work.
+              New quests appear every Monday and expire Sunday night (UTC).
+            </p>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div class="bg-gray-800/50 border border-gray-700/30 rounded-lg p-3">
+                <div class="font-semibold text-gray-300 mb-1">Quest Types</div>
+                <ul class="text-xs space-y-1">
+                  <li>📋 <strong>Volume</strong> — Complete N tasks</li>
+                  <li>🔥 <strong>Streak</strong> — Maintain a streak</li>
+                  <li>🎨 <strong>Variety</strong> — Try different task types</li>
+                  <li>🎯 <strong>Accuracy</strong> — Get tasks approved</li>
+                  <li>🏆 <strong>Challenge</strong> — Complete daily challenges</li>
+                </ul>
+              </div>
+              <div class="bg-gray-800/50 border border-gray-700/30 rounded-lg p-3">
+                <div class="font-semibold text-gray-300 mb-1">Difficulty Levels</div>
+                <ul class="text-xs space-y-1">
+                  <li><span class="text-emerald-400">Easy</span> — Quick wins to build momentum</li>
+                  <li><span class="text-amber-400">Medium</span> — Requires consistent effort</li>
+                  <li><span class="text-red-400">Hard</span> — For the most dedicated workers</li>
+                </ul>
+              </div>
+            </div>
+            <p class="text-xs text-gray-500">
+              Progress updates automatically as you complete tasks. Claim rewards when a quest is done!
+            </p>
+          </div>
+        </details>
+      </div>
+    )}
+  </div>
+</Layout>
+
+<script>
+  document.querySelectorAll(".quest-claim-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const questId = (btn as HTMLElement).dataset.questId;
+      if (!questId) return;
+      btn.textContent = "Claiming...";
+      (btn as HTMLButtonElement).disabled = true;
+      try {
+        const res = await fetch(`/api/quests/${questId}/claim`, { method: "POST" });
+        if (res.ok) {
+          window.location.reload();
+        } else {
+          const data = await res.json().catch(() => null);
+          alert(data?.detail || "Failed to claim");
+          btn.textContent = "Claim";
+          (btn as HTMLButtonElement).disabled = false;
+        }
+      } catch {
+        alert("Network error. Please try again.");
+        btn.textContent = "Claim";
+        (btn as HTMLButtonElement).disabled = false;
+      }
+    });
+  });
+</script>
