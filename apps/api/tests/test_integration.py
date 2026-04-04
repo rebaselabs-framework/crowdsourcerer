@@ -457,8 +457,13 @@ class TestJWTIntegrity:
         """A tampered JWT signature should decode to None."""
         from core.auth import create_access_token, decode_access_token
         token = create_access_token(str(uuid.uuid4()))
-        # Flip the last character of the signature
-        tampered = token[:-1] + ("A" if token[-1] != "A" else "B")
+        # Flip a character in the middle of the signature (not the last,
+        # which may only encode unused base64url padding bits for HS256).
+        parts = token.rsplit(".", 1)
+        sig = parts[1]
+        mid = len(sig) // 2
+        flipped = "A" if sig[mid] != "A" else "B"
+        tampered = parts[0] + "." + sig[:mid] + flipped + sig[mid + 1:]
         assert decode_access_token(tampered) is None
 
     def test_different_users_get_different_tokens(self):
