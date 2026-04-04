@@ -209,6 +209,16 @@ async def evaluate_submissions(
         if worker.id in accuracy_map:
             worker.worker_accuracy = accuracy_map[worker.id]
 
+    # Update quest progress for approved/rejected workers
+    try:
+        from routers.quests import update_quest_on_approval, reset_accuracy_quest_on_rejection
+        for wid in approved_workers:
+            await update_quest_on_approval(db, wid)
+        for wid in rejected_workers:
+            await reset_accuracy_quest_on_rejection(db, wid)
+    except Exception:
+        logger.warning("quest.quality_update_failed", exc_info=True)
+
     await db.commit()
 
     logger.info(

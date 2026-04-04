@@ -347,6 +347,31 @@ async def update_quest_on_approval(db: AsyncSession, user_id: str) -> None:
             progress.completed_at = now
 
 
+async def reset_accuracy_quest_on_rejection(db: AsyncSession, user_id: str) -> None:
+    """Reset accuracy quest progress when a task is rejected.
+
+    The accuracy quest requires N consecutive approvals without rejection,
+    so any rejection resets the counter to 0.
+    """
+    week_start = _current_week_start()
+
+    result = await db.execute(
+        select(ActiveQuestDB).where(
+            ActiveQuestDB.week_start == week_start,
+            ActiveQuestDB.quest_type == "accuracy",
+        )
+    )
+    quests = result.scalars().all()
+
+    for quest in quests:
+        progress = await _get_or_create_progress(db, quest.id, user_id)
+        if progress.is_complete:
+            continue  # already completed — don't reset
+        if progress.current_value > 0:
+            progress.current_value = 0
+            logger.info("quest.accuracy_reset", user_id=str(user_id), quest_key=quest.quest_key)
+
+
 async def update_quest_on_challenge_complete(db: AsyncSession, user_id: str) -> None:
     """Update challenge-type quests when a daily challenge is completed."""
     week_start = _current_week_start()
