@@ -562,6 +562,10 @@ async def skill_matched_task_feed(
     frontend can show a match indicator.
     """
     from core.matching import rank_tasks_for_worker
+    from core.demo_tasks import seed_demo_tasks
+
+    # Lazy-seed demo tasks on first worker feed access
+    await seed_demo_tasks(db)
 
     result = await db.execute(select(UserDB).where(UserDB.id == user_id))
     user = result.scalar_one_or_none()
@@ -616,8 +620,6 @@ async def skill_matched_task_feed(
         if t.id not in seen_ids:
             seen_ids.add(t.id)
             pool_tasks.append(t)
-
-    pool_tasks = list((await db.execute(q)).scalars().all())
 
     # Score and rank
     ranked = await rank_tasks_for_worker(db, worker=user, tasks=pool_tasks)
@@ -687,6 +689,8 @@ async def list_marketplace_tasks(
     user_id: str = Depends(get_current_user_id),
 ):
     """Browse open human tasks available for workers to claim."""
+    from core.demo_tasks import seed_demo_tasks
+
     result = await db.execute(select(UserDB).where(UserDB.id == user_id))
     user = result.scalar_one_or_none()
     if not user or user.role not in ("worker", "both"):
@@ -694,6 +698,9 @@ async def list_marketplace_tasks(
 
     if user.is_banned:
         raise HTTPException(status_code=403, detail="Your worker account has been suspended.")
+
+    # Lazy-seed demo tasks on first marketplace access
+    await seed_demo_tasks(db)
 
     worker_rep = user.reputation_score or 0.0
 
