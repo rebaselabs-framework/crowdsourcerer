@@ -412,6 +412,7 @@ class MarketplaceTaskOut(BaseModel):
     slots_available: int
     task_instructions: Optional[str] = None
     created_at: datetime
+    tags: Optional[list[str]] = None        # Task tags (e.g. ["demo", "tutorial"])
     # Skill-based matching fields (populated when using /v1/worker/tasks/feed)
     match_score: Optional[float] = None     # 0.0–1.0; None = not yet computed
     min_skill_level: Optional[int] = None   # Required proficiency (1–5) set by requester

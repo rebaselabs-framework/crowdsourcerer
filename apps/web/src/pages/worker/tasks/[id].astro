@@ -122,6 +122,17 @@ const timeoutIso = activeAssignment?.timeout_at ?? null;
 
     {task && (
       <div>
+        {/* Tutorial banner for demo tasks */}
+        {Array.isArray(task.tags) && task.tags.includes("tutorial") && (
+          <div class="mb-6 p-4 bg-violet-900/20 border border-violet-700/50 rounded-xl text-violet-200 text-sm flex items-start gap-3">
+            <span class="text-lg">🎓</span>
+            <div>
+              <p class="font-semibold text-violet-100 mb-1">Tutorial Task</p>
+              <p>This is a practice task to help you learn the platform. Complete it to earn XP and credits. Your answer will be compared against a known correct answer to track your accuracy.</p>
+            </div>
+          </div>
+        )}
+
         <!-- Task header card -->
         <div class="bg-gray-900 border border-gray-800 rounded-2xl p-6 mb-6">
           <div class="flex items-start gap-4">

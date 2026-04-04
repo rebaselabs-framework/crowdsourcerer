@@ -528,6 +528,11 @@ const noSkills = Array.isArray(profileStatus?.missing) &&
                             {matchPct}% match
                           </span>
                         )}
+                        {Array.isArray(t.tags) && t.tags.includes("tutorial") && (
+                          <span class="text-[10px] text-violet-300 bg-violet-900/40 px-1.5 py-0.5 rounded font-medium">
+                            Tutorial
+                          </span>
+                        )}
                       </div>
                       {instrSnippet && (
                         <p class="text-xs text-gray-500 truncate">{instrSnippet}</p>

@@ -257,6 +257,11 @@ const HUMAN_TASK_TYPES = Object.keys(TASK_TYPE_META);
                       <span class={`text-xs font-medium px-1.5 py-0.5 rounded capitalize ${priorityClass}`}>
                         {task.priority}
                       </span>
+                      {Array.isArray(task.tags) && task.tags.includes("tutorial") && (
+                        <span class="text-[10px] text-violet-300 bg-violet-900/40 px-1.5 py-0.5 rounded font-semibold tracking-wide uppercase">
+                          Tutorial
+                        </span>
+                      )}
                     </div>
                     <!-- Reward — always top right -->
                     <div class="shrink-0 text-right">
