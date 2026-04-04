@@ -1,9 +1,13 @@
 #!/bin/bash
 # CrowdSorcerer API entrypoint — run migrations then start server
-set -e
 
 echo "==> Running database migrations..."
-alembic upgrade head
+if alembic upgrade head; then
+    echo "==> Migrations complete."
+else
+    echo "!!! Migration failed (exit code $?). Starting server anyway for diagnostics."
+    echo "!!! Check DATABASE_URL and migration files."
+fi
 
 echo "==> Starting CrowdSorcerer API..."
 exec uvicorn main:app \
