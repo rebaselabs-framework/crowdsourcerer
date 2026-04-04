@@ -1,0 +1,311 @@
+---
+/**
+ * Worker Leagues — weekly competitive seasons with tier promotion/demotion.
+ * Duolingo-style leagues: compete with ~30 workers, top 5 promote, bottom 5 demote.
+ */
+import Layout from "@/layouts/Layout.astro";
+import { apiFetch, getToken } from "@/lib/api";
+
+const token = getToken(Astro.cookies);
+
+if (!token) {
+  return Astro.redirect("/login?next=/worker/leagues");
+}
+
+let current: any = null;
+let history: any = null;
+let tiers: any = null;
+let error: string | null = null;
+
+try {
+  [current, history, tiers] = await Promise.all([
+    apiFetch<any>("/v1/leagues/current", { token }),
+    apiFetch<any>("/v1/leagues/history", { token }),
+    apiFetch<any>("/v1/leagues/tiers", { token }),
+  ]);
+} catch (e: any) {
+  const msg = e.message ?? "Failed to load league data";
+  if (msg.includes("Only workers")) {
+    return Astro.redirect("/worker");
+  }
+  error = msg;
+}
+
+const tierColors: Record<string, string> = {
+  bronze: "amber",
+  silver: "gray",
+  gold: "yellow",
+  platinum: "cyan",
+  diamond: "blue",
+  obsidian: "slate",
+};
+
+const tierGradients: Record<string, string> = {
+  bronze: "from-amber-900/30 to-amber-800/10 border-amber-700/40",
+  silver: "from-gray-700/30 to-gray-600/10 border-gray-500/40",
+  gold: "from-yellow-900/30 to-yellow-700/10 border-yellow-600/40",
+  platinum: "from-cyan-900/30 to-cyan-700/10 border-cyan-500/40",
+  diamond: "from-blue-900/30 to-blue-700/10 border-blue-500/40",
+  obsidian: "from-slate-800/40 to-slate-700/10 border-slate-500/40",
+};
+
+function tierGradient(tier: string): string {
+  return tierGradients[tier] || tierGradients.bronze;
+}
+---
+
+<Layout title="Leagues — CrowdSorcerer">
+  <div class="max-w-3xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-6">
+      <div>
+        <h1 class="text-2xl font-bold">🏆 Leagues</h1>
+        <p class="text-gray-400 text-sm mt-0.5">Compete weekly. Climb the ranks.</p>
+      </div>
+      <a href="/worker" class="text-sm text-gray-400 hover:text-white transition-colors">
+        &larr; Back to Earn
+      </a>
+    </div>
+
+    {error ? (
+      <div class="text-red-400 bg-red-900/20 border border-red-800/40 rounded-xl p-6 text-center">
+        {error}
+      </div>
+    ) : current && (
+      <div>
+        <!-- Tier progression bar -->
+        {tiers && (
+          <div class="flex items-center gap-1 mb-6 overflow-x-auto pb-2">
+            {tiers.map((t: any) => {
+              const isActive = t.tier === (current.my_tier || "bronze");
+              return (
+                <div class={`flex-1 min-w-0 text-center px-2 py-2 rounded-lg transition-all ${
+                  isActive
+                    ? `bg-gradient-to-b ${tierGradient(t.tier)} border`
+                    : "bg-gray-900/40 border border-gray-800/30 opacity-50"
+                }`}>
+                  <div class="text-lg">{t.icon}</div>
+                  <div class={`text-xs mt-0.5 truncate ${isActive ? "text-white font-semibold" : "text-gray-500"}`}>
+                    {t.tier.charAt(0).toUpperCase() + t.tier.slice(1)}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        <!-- Season info card -->
+        <div class={`bg-gradient-to-br ${tierGradient(current.my_tier || "bronze")} border rounded-2xl p-5 mb-6`}>
+          <div class="flex items-center justify-between">
+            <div>
+              <div class="text-sm text-gray-400">This Week's Season</div>
+              <div class="text-lg font-bold mt-0.5">
+                {current.group?.tier_icon || "🥉"} {current.group?.tier_name || "Bronze League"}
+              </div>
+              <div class="text-xs text-gray-400 mt-1">
+                {current.season.week_start} &mdash; {current.season.week_end}
+              </div>
+            </div>
+            <div class="text-right">
+              {current.joined ? (
+                <div>
+                  <div class="text-2xl font-bold text-emerald-400">{current.my_xp}</div>
+                  <div class="text-xs text-gray-400">XP earned</div>
+                  {current.my_rank && (
+                    <div class="text-sm text-gray-300 mt-1">Rank #{current.my_rank}</div>
+                  )}
+                </div>
+              ) : (
+                <div class="text-sm text-gray-400">
+                  {current.days_remaining} days left
+                </div>
+              )}
+            </div>
+          </div>
+          {current.days_remaining > 0 && current.joined && (
+            <div class="text-xs text-gray-500 mt-3">
+              {current.days_remaining} {current.days_remaining === 1 ? "day" : "days"} remaining
+            </div>
+          )}
+        </div>
+
+        {/* Not joined yet — show CTA */}
+        {!current.joined && (
+          <div class="bg-gray-900 border border-gray-800 rounded-2xl p-8 text-center mb-6">
+            <div class="text-4xl mb-3">⚔️</div>
+            <h2 class="text-xl font-bold mb-2">Join This Week's League</h2>
+            <p class="text-gray-400 text-sm mb-6 max-w-md mx-auto">
+              Compete against ~30 workers at your tier. Earn XP by completing tasks.
+              Top 5 promote to the next league. Bottom 5 demote. Do you have what it takes?
+            </p>
+            <button
+              id="join-btn"
+              class="px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-xl transition-colors"
+            >
+              Join League
+            </button>
+            <p class="text-xs text-gray-500 mt-3">
+              {current.days_remaining} days left this season
+            </p>
+          </div>
+        )}
+
+        {/* Group standings */}
+        {current.joined && current.group && (
+          <div class="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden mb-6">
+            <div class="p-4 border-b border-gray-800">
+              <div class="flex items-center justify-between">
+                <h2 class="font-semibold text-sm text-gray-300">
+                  Group Standings
+                  <span class="text-gray-500 font-normal ml-1">({current.group.total_members} members)</span>
+                </h2>
+                <div class="flex gap-3 text-xs">
+                  <span class="text-emerald-400">▲ Top {current.group.promo_slots} promote</span>
+                  <span class="text-red-400">▼ Bottom {current.group.demo_slots} demote</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="divide-y divide-gray-800/60">
+              {current.group.standings.map((entry: any) => {
+                const isMe = entry.is_me;
+                const isPromo = entry.zone === "promo";
+                const isDemo = entry.zone === "demo";
+
+                let rowBg = "";
+                if (isMe) rowBg = "bg-emerald-900/20";
+                else if (isPromo) rowBg = "bg-emerald-900/5";
+                else if (isDemo) rowBg = "bg-red-900/5";
+
+                let rankColor = "text-gray-400";
+                if (entry.rank <= 3) rankColor = "text-yellow-400 font-bold";
+                else if (isPromo) rankColor = "text-emerald-400";
+                else if (isDemo) rankColor = "text-red-400";
+
+                return (
+                  <div class={`flex items-center px-4 py-3 ${rowBg} ${isMe ? "ring-1 ring-emerald-500/30" : ""}`}>
+                    {/* Rank */}
+                    <div class={`w-8 text-sm ${rankColor}`}>
+                      {entry.rank === 1 ? "🥇" : entry.rank === 2 ? "🥈" : entry.rank === 3 ? "🥉" : `#${entry.rank}`}
+                    </div>
+
+                    {/* Name + level */}
+                    <div class="flex-1 min-w-0 ml-3">
+                      <div class={`text-sm truncate ${isMe ? "text-emerald-300 font-semibold" : "text-white"}`}>
+                        {entry.name || "Anonymous"} {isMe ? "(You)" : ""}
+                      </div>
+                      <div class="text-xs text-gray-500">Level {entry.worker_level}</div>
+                    </div>
+
+                    {/* XP earned */}
+                    <div class="text-right ml-4">
+                      <div class={`text-sm font-semibold ${isMe ? "text-emerald-400" : "text-white"}`}>
+                        {entry.xp_earned.toLocaleString()} XP
+                      </div>
+                    </div>
+
+                    {/* Zone indicator */}
+                    <div class="w-6 ml-3 text-center text-xs">
+                      {isPromo && <span class="text-emerald-400" title="Promotion zone">▲</span>}
+                      {isDemo && <span class="text-red-400" title="Demotion zone">▼</span>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* How leagues work */}
+        <details class="bg-gray-900 border border-gray-800 rounded-2xl mb-6">
+          <summary class="px-5 py-4 cursor-pointer text-sm font-medium text-gray-300 hover:text-white transition-colors">
+            How Leagues Work
+          </summary>
+          <div class="px-5 pb-5 text-sm text-gray-400 space-y-3">
+            <p>
+              Every week, workers are grouped into leagues of ~30 people at the same tier.
+              Earn XP by completing tasks during the week.
+            </p>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div class="bg-emerald-900/10 border border-emerald-800/30 rounded-lg p-3">
+                <div class="text-emerald-400 font-semibold mb-1">▲ Promotion</div>
+                <p class="text-xs">Top 5 move up to the next league tier</p>
+              </div>
+              <div class="bg-gray-800/50 border border-gray-700/30 rounded-lg p-3">
+                <div class="text-gray-300 font-semibold mb-1">— Safe Zone</div>
+                <p class="text-xs">Middle workers stay in their current tier</p>
+              </div>
+              <div class="bg-red-900/10 border border-red-800/30 rounded-lg p-3">
+                <div class="text-red-400 font-semibold mb-1">▼ Demotion</div>
+                <p class="text-xs">Bottom 5 drop to the lower league tier</p>
+              </div>
+            </div>
+            <p class="text-xs text-gray-500">
+              Seasons reset every Monday at 00:00 UTC. Join a league to start competing!
+            </p>
+          </div>
+        </details>
+
+        {/* History */}
+        {history && history.seasons.length > 0 && (
+          <div class="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
+            <div class="p-4 border-b border-gray-800">
+              <h2 class="font-semibold text-sm text-gray-300">Past Seasons</h2>
+            </div>
+            <div class="divide-y divide-gray-800/60">
+              {history.seasons.map((s: any) => (
+                <div class="flex items-center px-4 py-3">
+                  <div class="text-lg mr-3">{s.tier_icon}</div>
+                  <div class="flex-1 min-w-0">
+                    <div class="text-sm text-white">
+                      {s.week_start} &mdash; {s.week_end}
+                    </div>
+                    <div class="text-xs text-gray-500">
+                      Rank #{s.final_rank} of {s.group_size}
+                      &middot; {s.xp_earned.toLocaleString()} XP
+                    </div>
+                  </div>
+                  <div class={`text-xs font-semibold px-2 py-1 rounded ${
+                    s.result === "promoted"
+                      ? "bg-emerald-900/30 text-emerald-400"
+                      : s.result === "demoted"
+                        ? "bg-red-900/30 text-red-400"
+                        : "bg-gray-800/50 text-gray-400"
+                  }`}>
+                    {s.result === "promoted" ? "▲ Promoted" : s.result === "demoted" ? "▼ Demoted" : "— Stayed"}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    )}
+  </div>
+</Layout>
+
+<script>
+  const joinBtn = document.getElementById("join-btn");
+  if (joinBtn) {
+    joinBtn.addEventListener("click", async () => {
+      joinBtn.textContent = "Joining...";
+      joinBtn.setAttribute("disabled", "true");
+      try {
+        const res = await fetch("/api/leagues/join", { method: "POST" });
+        if (res.ok) {
+          window.location.reload();
+        } else {
+          const data = await res.json().catch(() => null);
+          const msg = data?.detail || "Failed to join league";
+          alert(msg);
+          joinBtn.textContent = "Join League";
+          joinBtn.removeAttribute("disabled");
+        }
+      } catch {
+        alert("Network error. Please try again.");
+        joinBtn.textContent = "Join League";
+        joinBtn.removeAttribute("disabled");
+      }
+    });
+  }
+</script>

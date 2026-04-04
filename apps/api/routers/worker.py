@@ -1119,6 +1119,13 @@ async def submit_task(
 
     assignment.xp_earned = xp
 
+    # Track XP in the worker's league group (no-op if not in a league)
+    try:
+        from routers.leagues import add_league_xp
+        await add_league_xp(db, str(user_id), xp)
+    except Exception:
+        logger.warning("league.xp_tracking_failed", user_id=str(user_id), exc_info=True)
+
     if worker:
         # Compute reliability: ratio of submitted/(submitted+released+timed_out)
         completed = worker.worker_tasks_completed

@@ -1149,6 +1149,15 @@ async def run_sweeper(session_factory: async_sessionmaker, interval: int = SWEEP
         except Exception:  # noqa: BLE001
             logger.exception("sweeper.streak_reset_error")
 
+        # Process league season transitions (Monday mornings)
+        try:
+            from routers.leagues import process_season_end
+            league_processed = await process_season_end(session_factory)
+            if league_processed:
+                logger.info("sweeper.league_season_processed", count=league_processed)
+        except Exception:  # noqa: BLE001
+            logger.exception("sweeper.league_season_error")
+
         await asyncio.sleep(min(interval, trigger_check_interval))
 
 

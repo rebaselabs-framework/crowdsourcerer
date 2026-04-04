@@ -494,6 +494,81 @@ class DailyChallengeProgressOut(BaseModel):
     tasks_remaining: int
 
 
+# ─── Leagues / Seasons ───────────────────────────────────────────────────
+
+class LeagueTierInfo(BaseModel):
+    """Static description of a league tier."""
+    tier: str           # bronze, silver, gold, platinum, diamond, obsidian
+    name: str           # display name
+    icon: str           # emoji
+    color: str          # tailwind-style color hint
+    order: int          # 0=bronze (lowest), 5=obsidian (highest)
+    promo_slots: int    # top N promote
+    demo_slots: int     # bottom N demote
+
+
+class LeagueStandingEntry(BaseModel):
+    """One member's standing in a league group."""
+    rank: int
+    user_id: UUID
+    name: Optional[str]
+    worker_level: int
+    xp_earned: int          # XP earned this season
+    is_me: bool = False
+    zone: str = "safe"      # "promo" | "safe" | "demo"
+    result: Optional[str] = None  # promoted | stayed | demoted (only for completed seasons)
+
+
+class LeagueGroupOut(BaseModel):
+    """A league group with standings."""
+    group_id: UUID
+    tier: str
+    tier_name: str
+    tier_icon: str
+    standings: list[LeagueStandingEntry]
+    total_members: int
+    promo_slots: int
+    demo_slots: int
+
+
+class LeagueSeasonOut(BaseModel):
+    """A season summary."""
+    season_id: UUID
+    week_start: date
+    week_end: date
+    status: str  # active | processing | completed
+
+
+class LeagueCurrentOut(BaseModel):
+    """Current league state for the authenticated worker."""
+    season: LeagueSeasonOut
+    group: Optional[LeagueGroupOut] = None   # None if not yet placed
+    my_rank: Optional[int] = None
+    my_xp: int = 0
+    my_tier: str = "bronze"
+    joined: bool = False
+    days_remaining: int = 0
+
+
+class LeagueHistoryEntry(BaseModel):
+    """Summary of a past season result."""
+    season_id: UUID
+    week_start: date
+    week_end: date
+    tier: str
+    tier_icon: str
+    final_rank: int
+    xp_earned: int
+    result: str              # promoted | stayed | demoted
+    group_size: int
+
+
+class LeagueHistoryOut(BaseModel):
+    """Past season results."""
+    seasons: list[LeagueHistoryEntry]
+    current_tier: str
+
+
 # ─── Submission Review ────────────────────────────────────────────────────
 
 class SubmissionWorkerOut(BaseModel):

@@ -110,6 +110,9 @@ class UserDB(Base):
     # OAuth / social login
     google_id = Column(String(128), nullable=True, unique=True, index=True)  # Google sub claim
 
+    # League tier (current competitive league)
+    league_tier = Column(String(16), default="bronze", nullable=False)
+
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
@@ -1791,3 +1794,66 @@ class RefreshTokenDB(Base):
     revoked_at = Column(DateTime(timezone=True), nullable=True)
     replaced_by = Column(UUID(as_uuid=True), ForeignKey("refresh_tokens.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+# ─── Leagues / Seasons ──────────────────────────────────────────────────────
+
+# League tier names: bronze → silver → gold → platinum → diamond → obsidian
+LEAGUE_TIERS = ["bronze", "silver", "gold", "platinum", "diamond", "obsidian"]
+
+
+class LeagueSeasonDB(Base):
+    """A weekly competitive season. Runs Monday 00:00 UTC → Sunday 23:59 UTC."""
+    __tablename__ = "league_seasons"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    week_start = Column(Date, nullable=False, unique=True, index=True)  # Monday
+    week_end = Column(Date, nullable=False)                             # Sunday
+    status = Column(
+        SAEnum("active", "processing", "completed", name="league_season_status_enum"),
+        default="active",
+        nullable=False,
+    )
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    groups = relationship("LeagueGroupDB", back_populates="season", cascade="all, delete-orphan")
+
+
+class LeagueGroupDB(Base):
+    """A cohort of ~30 workers competing in the same tier during one season."""
+    __tablename__ = "league_groups"
+    __table_args__ = (
+        UniqueConstraint("season_id", "tier", "group_number", name="uq_league_group"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    season_id = Column(UUID(as_uuid=True), ForeignKey("league_seasons.id", ondelete="CASCADE"),
+                       nullable=False, index=True)
+    tier = Column(String(16), nullable=False)   # bronze, silver, gold, platinum, diamond, obsidian
+    group_number = Column(Integer, default=1, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    season = relationship("LeagueSeasonDB", back_populates="groups")
+    members = relationship("LeagueGroupMemberDB", back_populates="group",
+                           cascade="all, delete-orphan")
+
+
+class LeagueGroupMemberDB(Base):
+    """One worker's membership in a league group for a season."""
+    __tablename__ = "league_group_members"
+    __table_args__ = (
+        UniqueConstraint("group_id", "user_id", name="uq_league_group_member"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    group_id = Column(UUID(as_uuid=True), ForeignKey("league_groups.id", ondelete="CASCADE"),
+                      nullable=False, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    xp_earned = Column(Integer, default=0, nullable=False)    # XP earned this week
+    final_rank = Column(Integer, nullable=True)               # filled when season ends
+    result = Column(String(16), nullable=True)                # promoted | stayed | demoted
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    group = relationship("LeagueGroupDB", back_populates="members")
+    user = relationship("UserDB")
