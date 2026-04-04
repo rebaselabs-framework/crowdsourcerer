@@ -14,8 +14,8 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Enum for season status
-    op.execute("CREATE TYPE league_season_status_enum AS ENUM ('active', 'processing', 'completed')")
+    # Enum for season status (IF NOT EXISTS for idempotent re-runs)
+    op.execute("DO $$ BEGIN CREATE TYPE league_season_status_enum AS ENUM ('active', 'processing', 'completed'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;")
 
     # League seasons table
     op.create_table(
