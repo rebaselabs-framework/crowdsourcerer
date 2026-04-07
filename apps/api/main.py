@@ -293,6 +293,85 @@ async def health_ready():
     return JSONResponse(content=body, status_code=status_code)
 
 
+@app.get("/v1/debug/diagnose", tags=["health"])
+async def debug_diagnose():
+    """Temporary diagnostic endpoint — tests UserDB query. REMOVE AFTER DEBUGGING."""
+    import traceback as tb
+    from sqlalchemy import text
+    results: dict = {"checks": {}}
+
+    # Check 1: Basic DB connectivity
+    try:
+        async with AsyncSessionLocal() as session:
+            await session.execute(text("SELECT 1"))
+        results["checks"]["db_ping"] = {"ok": True}
+    except Exception as exc:
+        results["checks"]["db_ping"] = {"ok": False, "error": str(exc)}
+
+    # Check 2: Users table exists
+    try:
+        async with AsyncSessionLocal() as session:
+            row = await session.execute(text("SELECT COUNT(*) FROM users"))
+            count = row.scalar_one()
+        results["checks"]["users_table"] = {"ok": True, "count": count}
+    except Exception as exc:
+        results["checks"]["users_table"] = {"ok": False, "error": str(exc)}
+
+    # Check 3: Users table columns
+    try:
+        async with AsyncSessionLocal() as session:
+            row = await session.execute(text(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name = 'users' ORDER BY ordinal_position"
+            ))
+            cols = [r[0] for r in row.fetchall()]
+        results["checks"]["users_columns"] = {"ok": True, "columns": cols}
+    except Exception as exc:
+        results["checks"]["users_columns"] = {"ok": False, "error": str(exc)}
+
+    # Check 4: ORM query on UserDB
+    try:
+        from models.db import UserDB
+        from sqlalchemy import select
+        async with AsyncSessionLocal() as session:
+            row = await session.execute(select(UserDB).limit(1))
+            user = row.scalar_one_or_none()
+        results["checks"]["orm_query"] = {"ok": True, "found_user": user is not None}
+    except Exception as exc:
+        results["checks"]["orm_query"] = {"ok": False, "error": str(exc), "traceback": tb.format_exc()}
+
+    # Check 5: Alembic version
+    try:
+        async with AsyncSessionLocal() as session:
+            row = await session.execute(text("SELECT version_num FROM alembic_version"))
+            ver = row.scalar_one_or_none()
+        results["checks"]["alembic_version"] = {"ok": True, "version": ver}
+    except Exception as exc:
+        results["checks"]["alembic_version"] = {"ok": False, "error": str(exc)}
+
+    # Check 6: Test bcrypt (in case it's a native extension issue)
+    try:
+        import bcrypt
+        hashed = bcrypt.hashpw(b"test", bcrypt.gensalt())
+        ok = bcrypt.checkpw(b"test", hashed)
+        results["checks"]["bcrypt"] = {"ok": ok}
+    except Exception as exc:
+        results["checks"]["bcrypt"] = {"ok": False, "error": str(exc), "traceback": tb.format_exc()}
+
+    # Check 7: Simulate register flow
+    try:
+        from models.db import UserDB
+        from sqlalchemy import select
+        async with AsyncSessionLocal() as session:
+            existing = await session.execute(select(UserDB).where(UserDB.email == "nonexistent@test.local"))
+            user = existing.scalar_one_or_none()
+        results["checks"]["register_query"] = {"ok": True, "user_found": user is not None}
+    except Exception as exc:
+        results["checks"]["register_query"] = {"ok": False, "error": str(exc), "traceback": tb.format_exc()}
+
+    return results
+
+
 @app.get("/", tags=["health"])
 async def root():
     return {
