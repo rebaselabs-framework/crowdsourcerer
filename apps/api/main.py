@@ -293,6 +293,32 @@ async def health_ready():
     return JSONResponse(content=body, status_code=status_code)
 
 
+@app.get("/v1/health", tags=["health"])
+async def health_v1():
+    """Public health + config diagnostic — no auth required."""
+    from sqlalchemy import text
+    db_ok = False
+    try:
+        async with AsyncSessionLocal() as session:
+            await session.execute(text("SELECT 1"))
+        db_ok = True
+    except Exception:
+        pass
+    return {
+        "status": "ok",
+        "version": settings.app_version,
+        "database": db_ok,
+        "config": {
+            "rebasekit_api_key": bool(settings.rebasekit_api_key),
+            "rebasekit_base_url": settings.rebasekit_base_url,
+            "jwt_secret": settings.jwt_secret != "change-me-in-production",
+            "stripe": bool(settings.stripe_secret_key),
+            "email_enabled": settings.email_enabled,
+            "google_oauth": bool(settings.google_client_id),
+        },
+    }
+
+
 @app.get("/", tags=["health"])
 async def root():
     return {
