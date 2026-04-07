@@ -344,18 +344,14 @@ async def get_openapi_spec():
 # ─── Admin bootstrap (one-time setup) ────────────────────────────────────
 
 @app.post("/v1/admin/bootstrap", include_in_schema=False)
-async def bootstrap_admin(
-    email: str = Body(...),
-    secret: str = Body(...),
-):
-    """Promote a user to admin if no admins exist yet.
+async def bootstrap_admin(request: Request):
+    """Promote the authenticated user to admin if no admins exist yet.
 
-    Protected by the JWT secret — only callable if you know it.
-    Once any admin exists, this endpoint is permanently disabled.
+    Requires a valid Bearer token.  Once any admin exists, this endpoint
+    is permanently disabled — safe for production.
     """
     from sqlalchemy import select, func
-    if secret != settings.jwt_secret:
-        raise HTTPException(status_code=403, detail="Invalid secret")
+    from core.auth import get_current_user
 
     async with AsyncSessionLocal() as db:
         # Check if any admin already exists
@@ -368,17 +364,19 @@ async def bootstrap_admin(
                 detail="Admin already exists. Use the admin panel to manage users.",
             )
 
-        result = await db.execute(
-            select(UserDB).where(UserDB.email == email)
-        )
-        user = result.scalar_one_or_none()
+        # Authenticate the caller
+        auth_header = request.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
+            raise HTTPException(status_code=401, detail="Bearer token required")
+        token = auth_header.split(" ", 1)[1]
+        user = await get_current_user(token, db)
         if not user:
-            raise HTTPException(status_code=404, detail="User not found")
+            raise HTTPException(status_code=401, detail="Invalid token")
 
         user.is_admin = True
         user.credits = max(user.credits, 100_000)  # Generous for seeding
         await db.commit()
-        return {"ok": True, "email": email, "credits": user.credits}
+        return {"ok": True, "email": user.email, "credits": user.credits}
 
 # ─── Global error handler ─────────────────────────────────────────────────
 
