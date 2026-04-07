@@ -350,8 +350,24 @@ async def bootstrap_admin(request: Request):
     Requires a valid Bearer token.  Once any admin exists, this endpoint
     is permanently disabled — safe for production.
     """
+    from jose import jwt as jose_jwt, JWTError
     from sqlalchemy import select, func
-    from core.auth import get_current_user
+
+    # Authenticate the caller manually (can't use Depends outside DI)
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Bearer token required")
+    token = auth_header.split(" ", 1)[1]
+    try:
+        payload = jose_jwt.decode(
+            token, settings.jwt_secret,
+            algorithms=[settings.jwt_algorithm],
+        )
+        user_id = payload.get("sub")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Invalid token")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
 
     async with AsyncSessionLocal() as db:
         # Check if any admin already exists
@@ -364,14 +380,12 @@ async def bootstrap_admin(request: Request):
                 detail="Admin already exists. Use the admin panel to manage users.",
             )
 
-        # Authenticate the caller
-        auth_header = request.headers.get("Authorization", "")
-        if not auth_header.startswith("Bearer "):
-            raise HTTPException(status_code=401, detail="Bearer token required")
-        token = auth_header.split(" ", 1)[1]
-        user = await get_current_user(token, db)
+        result = await db.execute(
+            select(UserDB).where(UserDB.id == user_id)
+        )
+        user = result.scalar_one_or_none()
         if not user:
-            raise HTTPException(status_code=401, detail="Invalid token")
+            raise HTTPException(status_code=401, detail="User not found")
 
         user.is_admin = True
         user.credits = max(user.credits, 100_000)  # Generous for seeding
