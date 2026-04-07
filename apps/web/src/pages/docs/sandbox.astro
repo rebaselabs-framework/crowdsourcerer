@@ -5,7 +5,10 @@
  */
 import Layout from "@/layouts/Layout.astro";
 
-const PUBLIC_API = import.meta.env.PUBLIC_API_URL ?? "https://crowdsourcerer.rebaselabs.online";
+// PUBLIC_API_URL may be an internal Docker URL (http://api:8100) for SSR calls.
+// For the sandbox, we ALWAYS want the public URL so code examples and browser
+// fetch() calls work correctly for the end user.
+const PUBLIC_API = "https://crowdsourcerer.rebaselabs.online";
 
 const TASKS = [
   {

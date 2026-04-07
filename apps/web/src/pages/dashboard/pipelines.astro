@@ -517,7 +517,8 @@ function statusBadge(status: string) {
     </div>
   )}
 
-  <div id="pipeline-config" data-api-url={import.meta.env.PUBLIC_API_URL ?? ""} hidden></div>
+  <!-- Client-side fetch uses the page origin (not the internal Docker URL) -->
+  <div id="pipeline-config" data-api-url="" hidden></div>
   <!-- Script is in public/scripts/pipelines.js to avoid @astrojs/compiler bug
        that corrupts brace chars inside inline script tags in complex Astro pages. -->
   <script src="/scripts/pipelines.js" is:inline></script>
