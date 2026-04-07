@@ -209,3 +209,21 @@ Escape `{` and `}` inside Astro template expressions when they're literal charac
 - Alembic migrations in `apps/api/alembic/versions/`
 - Follow RebaseKit patterns for auth, error handling, Dockerfiles
 - Always run `make check` before commit (astro check + build)
+
+## Current Status (2026-04-04)
+
+- **Tests**: 1262 backend (0 failures) + 121 E2E Playwright
+- **Endpoints**: 335 | **Pages**: 117 | **Migrations**: 62
+- **Revenue**: $0 | **Users**: 0
+- **Deployment**: Live at crowdsourcerer.rebaselabs.online (fixed 2026-04-04)
+- **Phase**: LAUNCH PREP — no new features. Fix deployment, then get users.
+
+## Deployment Troubleshooting
+
+The app is docker-compose based (API + Web + PostgreSQL). Common issues:
+
+1. **Container restart loop, no logs**: Build probably failed. Try `agent deploy redeploy <id>`.
+2. **503 on domain**: App not running. Check `agent deploy status <id>`.
+3. **Migration failure**: API container depends on PostgreSQL health check. If DB isn't ready, migrations fail and container exits.
+4. **Web build failure**: Astro build requires all packages built first (types → sdk → web). If pnpm-lock.yaml is stale, frozen-lockfile fails.
+5. **ARM architecture**: Hetzner VPS is ARM. All base images must support arm64.

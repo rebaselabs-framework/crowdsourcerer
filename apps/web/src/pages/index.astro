@@ -2,93 +2,11 @@
 import Layout from "@/layouts/Layout.astro";
 import { TASK_CREDITS } from "@crowdsourcerer/types";
 
-// ── SSR: Load platform stats for initial render ──────────────────────────
-const API_URL = import.meta.env.PUBLIC_API_URL ?? "http://api:8100";
-
-interface TaskTypeStats {
-  task_type: string;
-  completed: number;
-  avg_completion_ms: number | null;
-}
-
-interface PlatformStats {
-  tasks_completed_total: number;
-  tasks_completed_today: number;
-  tasks_completed_this_week: number;
-  active_workers_30d: number;
-  total_requesters: number;
-  avg_completion_ms_overall: number | null;
-  top_task_types: TaskTypeStats[];
-  tasks_running_now: number;
-  platform_uptime_note: string;
-}
-
-let platformStats: PlatformStats | null = null;
-try {
-  const statsRes = await fetch(`${API_URL}/v1/platform/stats`);
-  if (statsRes.ok) platformStats = await statsRes.json();
-} catch {
-  // Stats are optional — page works fine without them
-}
-
-// Precompute top task type rows to avoid template-scoping issues in .map()
-const TASK_TYPE_ICONS: Record<string, string> = {
-  web_research: "🌐", entity_lookup: "🏢", document_parse: "📄",
-  data_transform: "🔄", llm_generate: "🤖", screenshot: "📸",
-  audio_transcribe: "🎙️", pii_detect: "🔒", code_execute: "⚡",
-  web_intel: "🕵️", label_image: "🖼️", label_text: "📝",
-  rate_quality: "⭐", verify_fact: "✅", moderate_content: "🛡️",
-  compare_rank: "🏆", answer_question: "💬", transcription_review: "🎧",
-};
-
-function fmtAvgMs(ms: number): string {
-  if (ms < 1000)  return `${ms}ms`;
-  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
-  return `${Math.round(ms / 60000)}m`;
-}
-
-function fmtCount(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000)     return `${(n / 1000).toFixed(1)}K`;
-  return String(n);
-}
-
-interface TopTypeRow {
-  icon: string;
-  label: string;
-  count: number;
-  countFmt: string;
-  pct: number;
-  avgMsFmt: string | null;
-  delay: string;
-}
-
-const topTypeRows: TopTypeRow[] = platformStats
-  ? platformStats.top_task_types.map((t, idx) => {
-      const maxCount = platformStats!.top_task_types[0]?.completed ?? 1;
-      return {
-        icon: TASK_TYPE_ICONS[t.task_type] ?? "🔮",
-        label: t.task_type.replace(/_/g, " "),
-        count: t.completed,
-        countFmt: fmtCount(t.completed),
-        pct: maxCount > 0 ? Math.round((t.completed / maxCount) * 100) : 0,
-        avgMsFmt: t.avg_completion_ms ? fmtAvgMs(t.avg_completion_ms) : null,
-        delay: `${idx * 0.1}s`,
-      };
-    })
-  : [];
-
 function taskIcon(type: string): string {
   const icons: Record<string, string> = {
-    web_research: "🌐",
-    entity_lookup: "🏢",
-    document_parse: "📄",
-    data_transform: "🔄",
-    llm_generate: "🤖",
-    screenshot: "📸",
-    audio_transcribe: "🎙️",
-    pii_detect: "🔒",
-    code_execute: "⚡",
+    web_research: "🌐", entity_lookup: "🏢", document_parse: "📄",
+    data_transform: "🔄", llm_generate: "🤖", screenshot: "📸",
+    audio_transcribe: "🎙️", pii_detect: "🔒", code_execute: "⚡",
     web_intel: "🕵️",
   };
   return icons[type] ?? "🔮";
@@ -96,38 +14,36 @@ function taskIcon(type: string): string {
 
 function taskLabel(type: string): string {
   const labels: Record<string, string> = {
-    web_research: "Web Research",
-    entity_lookup: "Entity Lookup",
-    document_parse: "Doc Parse",
-    data_transform: "Data Transform",
-    llm_generate: "LLM Generate",
-    screenshot: "Screenshot",
-    audio_transcribe: "Transcribe",
-    pii_detect: "PII Detect",
-    code_execute: "Code Execute",
-    web_intel: "Web Intel",
+    web_research: "Web Research", entity_lookup: "Entity Lookup",
+    document_parse: "Doc Parse", data_transform: "Data Transform",
+    llm_generate: "LLM Generate", screenshot: "Screenshot",
+    audio_transcribe: "Transcribe", pii_detect: "PII Detect",
+    code_execute: "Code Execute", web_intel: "Web Intel",
   };
   return labels[type] ?? type;
 }
 ---
 
-<Layout title="CrowdSorcerer — AI Task Platform">
+<Layout title="CrowdSorcerer — AI-Powered Task API" description="One API for web research, entity lookup, document parsing, code execution, and 6 more task types. Plus a gamified human workforce for labeling and QA. Start free.">
   <!-- Hero -->
-  <section class="max-w-5xl mx-auto px-6 py-24 text-center">
+  <section class="max-w-5xl mx-auto px-6 pt-20 pb-24 text-center">
     <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-violet-800 bg-violet-950/50 text-violet-300 text-sm mb-8">
-      <span class="w-2 h-2 rounded-full bg-violet-400 animate-pulse"></span>
-      Powered by RebaseKit · 10 AI worker types
+      <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+      Open beta — free to use
     </div>
 
     <h1 class="text-5xl sm:text-6xl font-bold tracking-tight mb-6">
-      Submit any task.<br />
-      <span class="text-violet-400">We conjure the result.</span>
+      One API for<br />
+      <span class="text-violet-400">10 AI task types.</span>
     </h1>
 
-    <p class="text-xl text-gray-400 max-w-2xl mx-auto mb-10">
-      CrowdSorcerer routes your tasks to the right AI workers — web research,
-      entity lookups, document parsing, code execution, and more.
-      No API juggling. Just results.
+    <p class="text-xl text-gray-400 max-w-2xl mx-auto mb-4">
+      Web research, entity enrichment, document parsing, code execution,
+      LLM generation, and more — all through a single REST API.
+      No provider juggling. No infra to manage.
+    </p>
+    <p class="text-sm text-gray-500 max-w-xl mx-auto mb-10">
+      Plus a gamified human workforce for data labeling, content moderation, and QA.
     </p>
 
     <div class="flex flex-wrap items-center justify-center gap-4">
@@ -138,17 +54,33 @@ function taskLabel(type: string): string {
         Start free — 100 credits
       </a>
       <a
-        href="/tasks"
-        class="px-6 py-3 rounded-xl border border-violet-700 hover:border-violet-500 text-violet-300 font-semibold transition-colors"
-      >
-        Browse open tasks →
-      </a>
-      <a
         href="/docs"
         class="px-6 py-3 rounded-xl border border-gray-700 hover:border-gray-500 text-gray-300 font-semibold transition-colors"
       >
-        View docs
+        Read the docs
       </a>
+    </div>
+  </section>
+
+  <!-- How it works -->
+  <section class="max-w-5xl mx-auto px-6 pb-20">
+    <h2 class="text-2xl font-bold text-center mb-12 text-gray-300">How it works</h2>
+    <div class="grid md:grid-cols-3 gap-8">
+      <div class="text-center">
+        <div class="w-14 h-14 rounded-2xl bg-violet-950/60 border border-violet-800/50 flex items-center justify-center text-2xl mx-auto mb-4">1</div>
+        <h3 class="text-lg font-semibold text-gray-200 mb-2">Submit a task</h3>
+        <p class="text-gray-400 text-sm">POST to <code class="text-violet-400 text-xs">/v1/tasks</code> with the task type and input. Or use the TypeScript / Python SDK.</p>
+      </div>
+      <div class="text-center">
+        <div class="w-14 h-14 rounded-2xl bg-violet-950/60 border border-violet-800/50 flex items-center justify-center text-2xl mx-auto mb-4">2</div>
+        <h3 class="text-lg font-semibold text-gray-200 mb-2">We route it</h3>
+        <p class="text-gray-400 text-sm">CrowdSorcerer picks the right worker — AI for automation tasks, humans for labeling and QA.</p>
+      </div>
+      <div class="text-center">
+        <div class="w-14 h-14 rounded-2xl bg-violet-950/60 border border-violet-800/50 flex items-center justify-center text-2xl mx-auto mb-4">3</div>
+        <h3 class="text-lg font-semibold text-gray-200 mb-2">Get structured results</h3>
+        <p class="text-gray-400 text-sm">Poll for completion, or receive a webhook. Every response is typed JSON — ready for your pipeline.</p>
+      </div>
     </div>
   </section>
 
@@ -156,7 +88,7 @@ function taskLabel(type: string): string {
   <section class="max-w-5xl mx-auto px-6 pb-20">
     <div class="text-center mb-8">
       <h2 class="text-2xl font-bold text-gray-200 mb-2">See it in action</h2>
-      <p class="text-gray-400 text-sm">Submit a task. Get results. Pick your scenario:</p>
+      <p class="text-gray-400 text-sm">Pick a scenario and watch the API respond.</p>
     </div>
 
     <!-- Demo terminal window -->
@@ -210,7 +142,8 @@ function taskLabel(type: string): string {
 
   <!-- Task types grid -->
   <section class="max-w-5xl mx-auto px-6 pb-20">
-    <h2 class="text-2xl font-bold text-center mb-10 text-gray-300">10 task types. One API.</h2>
+    <h2 class="text-2xl font-bold text-center mb-3 text-gray-300">10 AI task types. One endpoint.</h2>
+    <p class="text-gray-500 text-sm text-center mb-10">Each task type has its own schema, workers, and quality checks.</p>
     <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
       {Object.entries(TASK_CREDITS).map(([type, credits]) => (
         <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 hover:border-violet-800 transition-colors">
@@ -226,11 +159,17 @@ function taskLabel(type: string): string {
   <section class="max-w-5xl mx-auto px-6 pb-20">
     <div class="grid md:grid-cols-2 gap-8 items-center">
       <div>
-        <h2 class="text-3xl font-bold mb-4">Simple API. Powerful results.</h2>
-        <p class="text-gray-400 mb-6">
-          Submit a task with a single POST request. Poll for the result, or use webhooks.
-          Our TypeScript SDK makes it even easier.
+        <h2 class="text-3xl font-bold mb-4">Five lines to your first task.</h2>
+        <p class="text-gray-400 mb-4">
+          Install the SDK. Create a client. Call a method.
+          Every task type has a typed helper — autocomplete included.
         </p>
+        <ul class="text-gray-400 text-sm space-y-2 mb-6">
+          <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">✓</span> TypeScript + Python SDKs</li>
+          <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">✓</span> Webhook delivery with HMAC signatures</li>
+          <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">✓</span> Task pipelines — chain AI + human steps</li>
+          <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">✓</span> Org-level billing, API keys, and RBAC</li>
+        </ul>
         <a href="/docs" class="text-violet-400 hover:text-violet-300 font-medium">
           Read the full docs →
         </a>
@@ -252,20 +191,63 @@ console.<span class="text-yellow-400">log</span>(task.output.summary);
     </div>
   </section>
 
+  <!-- For Workers — gamification differentiator -->
+  <section class="max-w-5xl mx-auto px-6 pb-20">
+    <div class="bg-gradient-to-br from-emerald-950/30 to-gray-950 border border-emerald-800/30 rounded-2xl p-8 md:p-10">
+      <div class="grid md:grid-cols-2 gap-8 items-center">
+        <div>
+          <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-emerald-800 bg-emerald-950/50 text-emerald-300 text-xs mb-4">
+            For workers
+          </div>
+          <h2 class="text-3xl font-bold mb-4">Earn credits.<br /><span class="text-emerald-400">Level up.</span></h2>
+          <p class="text-gray-400 mb-4">
+            CrowdSorcerer isn't just an API — it's a marketplace.
+            Complete labeling, moderation, and QA tasks to earn credits and climb the leaderboard.
+          </p>
+          <p class="text-gray-400 text-sm mb-6">
+            Think Duolingo for data work: daily streaks, weekly leagues, quests, and badges
+            keep you engaged while you build real skills.
+          </p>
+          <div class="flex flex-wrap gap-3">
+            <a href="/register" class="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-sm transition-colors">
+              Start earning →
+            </a>
+            <a href="/worker" class="px-5 py-2.5 rounded-xl border border-emerald-700 hover:border-emerald-500 text-emerald-300 font-semibold text-sm transition-colors">
+              Learn more
+            </a>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          {[
+            { icon: "🔥", label: "Daily Streaks", desc: "Keep your streak alive" },
+            { icon: "🏆", label: "Weekly Leagues", desc: "Compete for promotion" },
+            { icon: "🎯", label: "Quests", desc: "Complete weekly challenges" },
+            { icon: "🏅", label: "Badges", desc: "Unlock achievements" },
+          ].map(({ icon, label, desc }) => (
+            <div class="bg-gray-900/60 border border-gray-800 rounded-xl p-4">
+              <div class="text-2xl mb-2">{icon}</div>
+              <div class="text-sm font-medium text-gray-200">{label}</div>
+              <div class="text-xs text-gray-500 mt-1">{desc}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- Pricing preview -->
   <section class="max-w-5xl mx-auto px-6 pb-20 text-center">
-    <h2 class="text-3xl font-bold mb-3">Pay as you go</h2>
-    <p class="text-gray-400 mb-10">100 credits free on signup. $1 = 100 credits.</p>
+    <h2 class="text-3xl font-bold mb-3">Pay per task</h2>
+    <p class="text-gray-400 mb-10">100 credits free on signup. No credit card required. $1 = 100 credits.</p>
     <div class="grid md:grid-cols-3 gap-6">
-      {/* Free tier — prominently highlighted */}
       <div class="bg-gradient-to-br from-violet-950/60 to-gray-900 border-2 border-violet-600 rounded-xl p-6 text-left relative overflow-hidden">
         <div class="absolute top-3 right-3">
-          <span class="text-[10px] font-bold uppercase tracking-widest bg-violet-600 text-white px-2 py-0.5 rounded-full">Most popular</span>
+          <span class="text-[10px] font-bold uppercase tracking-widest bg-violet-600 text-white px-2 py-0.5 rounded-full">Start here</span>
         </div>
         <div class="text-sm text-violet-400 font-semibold mb-1">Free</div>
         <div class="text-3xl font-bold mb-1">$0</div>
         <div class="text-violet-300 font-medium mb-3">100 credits</div>
-        <div class="text-sm text-gray-400 mb-4">Start free — 100 credits, no credit card required</div>
+        <div class="text-sm text-gray-400 mb-4">Try every task type. No commitment.</div>
         <a
           href="/register"
           class="inline-block w-full text-center py-2.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-sm font-semibold transition-colors"
@@ -277,13 +259,13 @@ console.<span class="text-yellow-400">log</span>(task.output.summary);
         <div class="text-sm text-gray-500 mb-1">Starter</div>
         <div class="text-3xl font-bold mb-1">$10</div>
         <div class="text-violet-300 font-medium mb-3">1,000 credits</div>
-        <div class="text-sm text-gray-500">Best for prototypes</div>
+        <div class="text-sm text-gray-500">Best for prototypes and small projects</div>
       </div>
       <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 text-left">
         <div class="text-sm text-gray-500 mb-1">Pro</div>
         <div class="text-3xl font-bold mb-1">$90</div>
         <div class="text-violet-300 font-medium mb-3">10,000 credits</div>
-        <div class="text-sm text-gray-500">10% volume discount</div>
+        <div class="text-sm text-gray-500">10% volume discount. Production-ready.</div>
       </div>
     </div>
   </section>
@@ -291,11 +273,10 @@ console.<span class="text-yellow-400">log</span>(task.output.summary);
   <!-- Pricing Calculator -->
   <section class="max-w-5xl mx-auto px-6 pb-20">
     <div class="bg-gradient-to-br from-gray-900 to-gray-950 border border-gray-800 rounded-2xl p-8 md:p-10">
-      <h2 class="text-2xl font-bold mb-2">Calculate your cost</h2>
-      <p class="text-gray-400 text-sm mb-8">Estimate credits for your typical workflow. $1 = 100 credits.</p>
+      <h2 class="text-2xl font-bold mb-2">Estimate your cost</h2>
+      <p class="text-gray-400 text-sm mb-8">$1 = 100 credits. Most tasks cost 1–10 credits.</p>
 
       <div class="grid md:grid-cols-2 gap-8">
-        <!-- Inputs -->
         <div class="space-y-5">
           <div>
             <label class="block text-sm text-gray-400 mb-2">Task type</label>
@@ -313,7 +294,7 @@ console.<span class="text-yellow-400">log</span>(task.output.summary);
             </select>
           </div>
           <div>
-            <label class="block text-sm text-gray-400 mb-2">Number of tasks per month</label>
+            <label class="block text-sm text-gray-400 mb-2">Tasks per month</label>
             <input
               type="range"
               id="calc-tasks"
@@ -331,7 +312,6 @@ console.<span class="text-yellow-400">log</span>(task.output.summary);
           </div>
         </div>
 
-        <!-- Result -->
         <div class="flex flex-col justify-center bg-gray-800/50 rounded-xl p-6 border border-gray-700">
           <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Estimated monthly cost</div>
           <div class="text-5xl font-bold text-violet-300 mb-1" id="calc-result">$5.00</div>
@@ -345,192 +325,62 @@ console.<span class="text-yellow-400">log</span>(task.output.summary);
     </div>
   </section>
 
-  <!-- Feature Comparison -->
+  <!-- Why CrowdSorcerer — honest comparison -->
   <section class="max-w-5xl mx-auto px-6 pb-20">
-    <h2 class="text-2xl font-bold text-center mb-10 text-gray-300">Why CrowdSorcerer?</h2>
-    <div class="overflow-x-auto">
-      <table class="w-full text-sm">
-        <thead>
-          <tr class="border-b border-gray-800">
-            <th class="text-left px-4 py-3 text-gray-400 font-medium w-1/3">Feature</th>
-            <th class="text-center px-4 py-3 font-semibold text-violet-300">CrowdSorcerer</th>
-            <th class="text-center px-4 py-3 text-gray-500">DIY Integration</th>
-            <th class="text-center px-4 py-3 text-gray-500">Zapier/n8n</th>
-          </tr>
-        </thead>
-        <tbody>
-          {[
-            ["10+ AI task types, one API", "✅", "❌ Build each", "⚠️ Limited"],
-            ["Human-in-the-loop workforce", "✅", "❌", "❌"],
-            ["Task pipelines & chaining", "✅", "❌ Custom code", "⚠️ Basic"],
-            ["Real-time webhooks", "✅", "⚠️ DIY", "✅"],
-            ["Credits system (pay per task)", "✅", "❌ Per-provider billing", "⚠️ Subscription"],
-            ["Worker reputation + quality control", "✅", "❌", "❌"],
-            ["Python + TypeScript SDKs", "✅", "❌", "⚠️ Limited"],
-            ["Setup time", "⚡ Minutes", "🕒 Weeks", "🕐 Hours"],
-          ].map(([feature, us, diy, zap], i) => (
-            <tr class:list={["border-b border-gray-800/50", i % 2 === 0 ? "" : "bg-gray-900/30"]}>
-              <td class="px-4 py-3 text-gray-300">{feature}</td>
-              <td class="px-4 py-3 text-center font-medium text-green-400">{us}</td>
-              <td class="px-4 py-3 text-center text-gray-500">{diy}</td>
-              <td class="px-4 py-3 text-center text-gray-500">{zap}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  </section>
-
-  <!-- Live Platform Stats -->
-  {platformStats && platformStats.tasks_completed_total > 0 && (
-  <section class="max-w-5xl mx-auto px-6 pb-20">
-    <div class="text-center mb-10">
-      <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-emerald-800 bg-emerald-950/40 text-emerald-300 text-sm mb-4">
-        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-        Platform operational
-      </div>
-      <h2 class="text-2xl font-bold text-gray-200">Platform activity</h2>
-      <p class="text-gray-500 text-sm mt-1">Live stats — updated every minute</p>
-    </div>
-
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-      <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 text-center hover:border-violet-800 transition-colors">
-        <div
-          class="text-3xl font-bold text-violet-300 mb-1 tabular-nums stat-counter"
-          data-target={platformStats.tasks_completed_total}
-          data-fmt="count"
-        >{platformStats.tasks_completed_total.toLocaleString()}</div>
-        <div class="text-sm text-gray-400">Tasks completed</div>
-      </div>
-      <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 text-center hover:border-emerald-800 transition-colors">
-        <div
-          class="text-3xl font-bold text-emerald-300 mb-1 tabular-nums stat-counter"
-          data-target={platformStats.tasks_completed_this_week}
-          data-fmt="count"
-        >{platformStats.tasks_completed_this_week.toLocaleString()}</div>
-        <div class="text-sm text-gray-400">This week</div>
-      </div>
-      <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 text-center hover:border-blue-800 transition-colors">
-        <div
-          class="text-3xl font-bold text-blue-300 mb-1 tabular-nums stat-counter"
-          data-target={platformStats.active_workers_30d}
-          data-fmt="count"
-        >{platformStats.active_workers_30d.toLocaleString()}</div>
-        <div class="text-sm text-gray-400">Active workers</div>
-      </div>
-      <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 text-center hover:border-amber-800 transition-colors">
-        {platformStats.avg_completion_ms_overall ? (
-          <div
-            class="text-3xl font-bold text-amber-300 mb-1 tabular-nums stat-counter"
-            data-target={platformStats.avg_completion_ms_overall}
-            data-fmt="duration"
-          >{
-            platformStats.avg_completion_ms_overall < 1000
-              ? `${platformStats.avg_completion_ms_overall}ms`
-              : platformStats.avg_completion_ms_overall < 60000
-                ? `${(platformStats.avg_completion_ms_overall / 1000).toFixed(1)}s`
-                : `${Math.round(platformStats.avg_completion_ms_overall / 60000)}m`
-          }</div>
-        ) : (
-          <div class="text-3xl font-bold text-amber-300 mb-1">&lt;5s</div>
-        )}
-        <div class="text-sm text-gray-400">Avg completion</div>
-      </div>
-    </div>
-
-    {platformStats.top_task_types.length > 0 && (
-    <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
-      <div class="flex items-center justify-between mb-5">
-        <h3 class="text-sm font-semibold text-gray-300">Most popular task types</h3>
-        {platformStats.tasks_running_now > 0 && (
-          <span class="text-xs px-2 py-0.5 rounded-full bg-violet-900/60 text-violet-300 border border-violet-700/50">
-            {platformStats.tasks_running_now} running now
-          </span>
-        )}
-      </div>
-      <div class="space-y-3">
-        {topTypeRows.map((row) => (
-          <div class="flex items-center gap-3 text-sm">
-            <span class="w-5 text-center flex-shrink-0">{row.icon}</span>
-            <span class="w-36 text-gray-400 capitalize flex-shrink-0 truncate">{row.label}</span>
-            <div class="flex-1 bg-gray-800 rounded-full h-2 overflow-hidden">
-              <div
-                class="h-full bg-violet-600 rounded-full type-bar"
-                style={`width: 0%; transition: width 0.8s ease-out ${row.delay}`}
-                data-width={row.pct}
-              ></div>
-            </div>
-            <span class="text-gray-400 w-12 text-right tabular-nums">{row.countFmt}</span>
-            {row.avgMsFmt && (
-              <span class="text-gray-600 text-xs w-14 text-right tabular-nums">{row.avgMsFmt}</span>
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
-    )}
-  </section>
-  )}
-
-  <!-- Testimonials -->
-  <section class="max-w-5xl mx-auto px-6 pb-20">
-    <h2 class="text-2xl font-bold text-center mb-3 text-gray-200">What people are saying</h2>
-    <p class="text-center text-gray-500 text-sm mb-10">Trusted by ML teams and freelancers alike</p>
-    <div class="grid md:grid-cols-3 gap-6">
+    <h2 class="text-2xl font-bold text-center mb-3 text-gray-300">Why not just use the APIs directly?</h2>
+    <p class="text-gray-500 text-sm text-center mb-10 max-w-2xl mx-auto">You could wire up each provider yourself. Here's what you'd need to build.</p>
+    <div class="grid md:grid-cols-2 gap-6">
       {[
         {
-          quote: "CrowdSorcerer cut our data labeling costs by 60%. The quality control system is incredible.",
-          name: "Sarah K.",
-          role: "ML Engineer at TechCorp",
-          avatar: "SK",
-          color: "violet",
+          title: "Unified task schema",
+          desc: "One input/output format across 10 task types. No learning 10 different API schemas.",
+          icon: "📐",
         },
         {
-          quote: "I've earned over $800 in my first month completing tasks in my spare time. Highly recommend!",
-          name: "Marcus T.",
-          role: "Freelance Worker",
-          avatar: "MT",
-          color: "emerald",
+          title: "Automatic routing",
+          desc: "Submit a task — we pick the best worker. Swap providers without changing your code.",
+          icon: "🔀",
         },
         {
-          quote: "The pipeline feature lets us chain AI and human tasks seamlessly. Game changer for our workflow.",
-          name: "David L.",
-          role: "Product Manager",
-          avatar: "DL",
-          color: "blue",
+          title: "Human + AI in one API",
+          desc: "Chain AI automation with human QA. Same endpoint, same billing, same webhooks.",
+          icon: "🤝",
         },
-      ].map(({ quote, name, role, avatar, color }) => (
-        <div class="bg-gray-900 border border-gray-800 rounded-2xl p-6 flex flex-col gap-4">
-          <div class="text-2xl text-gray-600 leading-none">&ldquo;</div>
-          <p class="text-gray-300 text-sm leading-relaxed flex-1">{quote}</p>
-          <div class="flex items-center gap-3 pt-2 border-t border-gray-800">
-            <div class:list={[
-              "w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0",
-              color === "violet" ? "bg-violet-900/60 text-violet-300" :
-              color === "emerald" ? "bg-emerald-900/60 text-emerald-300" :
-              "bg-blue-900/60 text-blue-300"
-            ]}>
-              {avatar}
-            </div>
-            <div>
-              <div class="text-sm font-semibold text-gray-200">{name}</div>
-              <div class="text-xs text-gray-500">{role}</div>
-            </div>
+        {
+          title: "Built-in quality control",
+          desc: "Worker reputation scores, consensus checks, and automatic re-routing on failures.",
+          icon: "✅",
+        },
+        {
+          title: "Credits, not subscriptions",
+          desc: "Pay per task, not per seat or per month. Scale to zero when you're not using it.",
+          icon: "💰",
+        },
+        {
+          title: "Typed SDKs + webhooks",
+          desc: "TypeScript and Python SDKs with full autocomplete. HMAC-signed webhook delivery.",
+          icon: "🔧",
+        },
+      ].map(({ title, desc, icon }) => (
+        <div class="flex gap-4 p-4 rounded-xl bg-gray-900/50 border border-gray-800/50">
+          <div class="text-2xl flex-shrink-0">{icon}</div>
+          <div>
+            <h3 class="text-sm font-semibold text-gray-200 mb-1">{title}</h3>
+            <p class="text-sm text-gray-500">{desc}</p>
           </div>
         </div>
       ))}
     </div>
   </section>
 
-  <!-- Social Proof -->
-  <section class="max-w-5xl mx-auto px-6 pb-24">
-    <!-- Stats bar -->
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-16">
+  <!-- Open source + transparency -->
+  <section class="max-w-5xl mx-auto px-6 pb-20">
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
       {[
-        { value: "10+", label: "Task types" },
-        { value: "18", label: "AI & human worker types" },
-        { value: "1¢", label: "Per LLM task" },
-        { value: "100%", label: "API-first" },
+        { value: "10", label: "AI task types" },
+        { value: "8", label: "Human task types" },
+        { value: "1¢", label: "Cheapest task" },
+        { value: "2", label: "SDKs (TS + Python)" },
       ].map(({ value, label }) => (
         <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 text-center">
           <div class="text-3xl font-bold text-violet-300 mb-1">{value}</div>
@@ -538,21 +388,21 @@ console.<span class="text-yellow-400">log</span>(task.output.summary);
         </div>
       ))}
     </div>
+  </section>
 
-    <!-- CTA -->
+  <!-- Final CTA -->
+  <section class="max-w-5xl mx-auto px-6 pb-24">
     <div class="text-center bg-gradient-to-br from-violet-950/50 to-gray-950 border border-violet-800/40 rounded-2xl p-12">
-      <div class="text-4xl mb-4">🔮</div>
-      <h2 class="text-3xl font-bold mb-4">Ready to conjure results?</h2>
+      <h2 class="text-3xl font-bold mb-4">Try it in 30 seconds.</h2>
       <p class="text-gray-400 mb-8 max-w-lg mx-auto">
-        Start with 100 free credits. No credit card required.
-        Scale from prototype to production with one API.
+        Sign up, grab your API key, submit a task. 100 free credits, no credit card.
       </p>
       <div class="flex flex-wrap justify-center gap-4">
         <a
           href="/register"
           class="px-8 py-3 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-semibold transition-colors"
         >
-          Start free — 100 credits, no credit card required
+          Create free account
         </a>
         <a
           href="/docs/api-reference"
@@ -790,69 +640,6 @@ for internet businesses.",
 
     // Auto-run once after 1.5s to grab attention
     setTimeout(() => { if (!running) runDemo(); }, 1500);
-  </script>
-
-  <script>
-    // ── Platform Stats: animate counters + bar chart from SSR-rendered values ──
-    function animateCounter(el: HTMLElement) {
-      const target = parseInt(el.dataset.target ?? "0", 10);
-      const fmt = el.dataset.fmt ?? "count";
-      if (!target) return;
-
-      function format(n: number): string {
-        if (fmt === "duration") {
-          if (n < 1000)  return n + "ms";
-          if (n < 60000) return (n / 1000).toFixed(1) + "s";
-          return Math.round(n / 60000) + "m";
-        }
-        // count
-        if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
-        if (n >= 10_000)    return Math.round(n / 1000) + "K";
-        if (n >= 1_000)     return (n / 1000).toFixed(1) + "K";
-        return String(n);
-      }
-
-      const duration = 1400;
-      const startTime = performance.now();
-      function tick(now: number) {
-        const progress = Math.min((now - startTime) / duration, 1);
-        const ease = 1 - Math.pow(1 - progress, 3);
-        el.textContent = format(Math.round(target * ease));
-        if (progress < 1) requestAnimationFrame(tick);
-      }
-      el.textContent = format(0);
-      requestAnimationFrame(tick);
-    }
-
-    // Animate counters when they scroll into view
-    const observer = new IntersectionObserver((entries) => {
-      entries.forEach(entry => {
-        if (entry.isIntersecting) {
-          animateCounter(entry.target as HTMLElement);
-          observer.unobserve(entry.target);
-        }
-      });
-    }, { threshold: 0.2 });
-
-    document.querySelectorAll(".stat-counter[data-target]").forEach(el => observer.observe(el));
-
-    // Animate bar chart widths when section scrolls into view
-    const barObserver = new IntersectionObserver((entries) => {
-      entries.forEach(entry => {
-        if (entry.isIntersecting) {
-          (entry.target as HTMLElement).querySelectorAll(".type-bar[data-width]").forEach(bar => {
-            const b = bar as HTMLElement;
-            b.style.width = (b.dataset.width ?? "0") + "%";
-          });
-          barObserver.unobserve(entry.target);
-        }
-      });
-    }, { threshold: 0.1 });
-
-    document.querySelectorAll(".type-bar[data-width]").forEach(bar => {
-      const section = bar.closest("section");
-      if (section) barObserver.observe(section);
-    });
   </script>
 
   <style is:global>
