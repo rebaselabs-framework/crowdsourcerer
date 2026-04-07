@@ -5,7 +5,7 @@ import uuid
 from contextlib import asynccontextmanager
 
 import structlog
-from fastapi import FastAPI, Request, Response
+from fastapi import Body, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.openapi.utils import get_openapi
@@ -15,6 +15,7 @@ from slowapi.util import get_remote_address
 
 from core.config import get_settings
 from core.database import Base, engine, AsyncSessionLocal
+from models.db import UserDB
 from core.sweeper import start_sweeper, stop_sweeper
 from core.webhook_retry import start_retry_worker, stop_retry_worker
 from routers import auth, credits, tasks, users, worker, leaderboard, badges, challenges, quality, admin, webhooks, payouts, referrals, notifications, skills, disputes, export, orgs, pipelines, certifications, analytics, marketplace, reputation, triggers, search, experiments, onboarding, sla, comments, stripe_webhooks, profiles, two_factor, saved_searches, api_key_usage, skill_quiz, requester_onboarding, webhook_templates, task_dependencies, endorsements, worker_marketplace, ratings, portfolio, requester_templates, worker_teams, applications, availability, task_messages, notification_digest, global_search, oauth, platform_stats, announcements, leagues, quests
@@ -338,6 +339,46 @@ async def root():
 async def get_openapi_spec():
     """Download the raw OpenAPI 3.x spec as JSON."""
     return app.openapi()
+
+
+# ─── Admin bootstrap (one-time setup) ────────────────────────────────────
+
+@app.post("/v1/admin/bootstrap", include_in_schema=False)
+async def bootstrap_admin(
+    email: str = Body(...),
+    secret: str = Body(...),
+):
+    """Promote a user to admin if no admins exist yet.
+
+    Protected by the JWT secret — only callable if you know it.
+    Once any admin exists, this endpoint is permanently disabled.
+    """
+    from sqlalchemy import select, func
+    if secret != settings.jwt_secret:
+        raise HTTPException(status_code=403, detail="Invalid secret")
+
+    async with AsyncSessionLocal() as db:
+        # Check if any admin already exists
+        admin_count = await db.scalar(
+            select(func.count()).select_from(UserDB).where(UserDB.is_admin == True)
+        )
+        if admin_count and admin_count > 0:
+            raise HTTPException(
+                status_code=409,
+                detail="Admin already exists. Use the admin panel to manage users.",
+            )
+
+        result = await db.execute(
+            select(UserDB).where(UserDB.email == email)
+        )
+        user = result.scalar_one_or_none()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        user.is_admin = True
+        user.credits = max(user.credits, 100_000)  # Generous for seeding
+        await db.commit()
+        return {"ok": True, "email": email, "credits": user.credits}
 
 # ─── Global error handler ─────────────────────────────────────────────────
 

@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     stripe_price_id_pro: str = ""
 
     # Credits
-    free_tier_credits: int = 100   # credits given on signup
+    free_tier_credits: int = 1000  # credits given on signup (beta — generous for onboarding)
     credits_per_usd: int = 100     # 1 USD = 100 credits
 
     # Crypto payment addresses (owner-controlled)
