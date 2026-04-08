@@ -129,14 +129,12 @@ async def _requester_overview_impl(days, org_id, db, user_id):
     tasks_by_status = {row.status: row.cnt for row in status_result}
 
     # Tasks per day (last N days)
+    day_col = func.date_trunc("day", TaskDB.created_at).label("day")
     daily_result = await db.execute(
-        select(
-            func.date_trunc("day", TaskDB.created_at).label("day"),
-            func.count().label("cnt"),
-        )
+        select(day_col, func.count().label("cnt"))
         .where(*filters, TaskDB.created_at >= since)
-        .group_by(func.date_trunc("day", TaskDB.created_at))
-        .order_by(func.date_trunc("day", TaskDB.created_at))
+        .group_by(day_col)
+        .order_by(day_col)
     )
     tasks_last_n_days = [
         {"date": row.day.strftime("%Y-%m-%d"), "count": row.cnt}
@@ -286,14 +284,12 @@ async def org_analytics(
     tasks_by_type = {row.type: row.cnt for row in type_result}
 
     # Daily tasks
+    day_col = func.date_trunc("day", TaskDB.created_at).label("day")
     daily_result = await db.execute(
-        select(
-            func.date_trunc("day", TaskDB.created_at).label("day"),
-            func.count().label("cnt"),
-        )
+        select(day_col, func.count().label("cnt"))
         .where(TaskDB.org_id == org_id, TaskDB.created_at >= since)
-        .group_by(func.date_trunc("day", TaskDB.created_at))
-        .order_by(func.date_trunc("day", TaskDB.created_at))
+        .group_by(day_col)
+        .order_by(day_col)
     )
     tasks_last_n_days = [
         {"date": row.day.strftime("%Y-%m-%d"), "count": row.cnt}
@@ -368,14 +364,12 @@ async def _cost_breakdown_impl(months, org_id, db, user_id):
     by_execution_mode = {row.execution_mode: row.total for row in mode_result}
 
     # By month
+    month_col = func.date_trunc("month", TaskDB.created_at).label("month")
     monthly_result = await db.execute(
-        select(
-            func.date_trunc("month", TaskDB.created_at).label("month"),
-            func.sum(TaskDB.credits_used).label("credits"),
-        )
+        select(month_col, func.sum(TaskDB.credits_used).label("credits"))
         .where(*task_filters, TaskDB.created_at >= since)
-        .group_by(func.date_trunc("month", TaskDB.created_at))
-        .order_by(func.date_trunc("month", TaskDB.created_at))
+        .group_by(month_col)
+        .order_by(month_col)
     )
     by_month = [
         {"month": row.month.strftime("%Y-%m"), "credits": row.credits or 0}
@@ -701,16 +695,17 @@ async def revenue_analytics(
     )) or 0
 
     # ─── Monthly spend + purchases series ─────────────────────────────────
+    spend_month_col = func.date_trunc("month", TaskDB.created_at).label("month")
     monthly_spend_result = await db.execute(
         select(
-            func.date_trunc("month", TaskDB.created_at).label("month"),
+            spend_month_col,
             func.coalesce(func.sum(TaskDB.credits_used), 0).label("credits_spent"),
             func.count(TaskDB.id).label("task_count"),
             func.count(case((TaskDB.status == "completed", TaskDB.id))).label("completed_count"),
         )
         .where(*task_filters, TaskDB.credits_used.isnot(None))
-        .group_by(func.date_trunc("month", TaskDB.created_at))
-        .order_by(func.date_trunc("month", TaskDB.created_at))
+        .group_by(spend_month_col)
+        .order_by(spend_month_col)
     )
     spend_by_month: dict = {}
     for row in monthly_spend_result:
@@ -722,9 +717,10 @@ async def revenue_analytics(
         }
 
     # Monthly credit purchases (positive transactions = top-ups)
+    purchase_month_col = func.date_trunc("month", CreditTransactionDB.created_at).label("month")
     monthly_purchase_result = await db.execute(
         select(
-            func.date_trunc("month", CreditTransactionDB.created_at).label("month"),
+            purchase_month_col,
             func.coalesce(func.sum(CreditTransactionDB.amount), 0).label("purchased"),
         )
         .where(
@@ -733,7 +729,7 @@ async def revenue_analytics(
             CreditTransactionDB.type == "credit",
             CreditTransactionDB.created_at >= since,
         )
-        .group_by(func.date_trunc("month", CreditTransactionDB.created_at))
+        .group_by(purchase_month_col)
     )
     purchases_by_month: dict = {}
     for row in monthly_purchase_result:
@@ -761,9 +757,10 @@ async def revenue_analytics(
 
     # ─── Weekly spend series (last 12 weeks) ──────────────────────────────
     twelve_weeks_ago = now - timedelta(weeks=12)
+    week_col = func.date_trunc("week", TaskDB.created_at).label("week")
     weekly_result = await db.execute(
         select(
-            func.date_trunc("week", TaskDB.created_at).label("week"),
+            week_col,
             func.coalesce(func.sum(TaskDB.credits_used), 0).label("credits_spent"),
             func.count(TaskDB.id).label("task_count"),
         )
@@ -772,8 +769,8 @@ async def revenue_analytics(
             TaskDB.created_at >= twelve_weeks_ago,
             TaskDB.credits_used.isnot(None),
         )
-        .group_by(func.date_trunc("week", TaskDB.created_at))
-        .order_by(func.date_trunc("week", TaskDB.created_at))
+        .group_by(week_col)
+        .order_by(week_col)
     )
     weekly_series = [
         WeeklySpendItem(
