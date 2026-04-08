@@ -18,7 +18,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 import structlog
-from sqlalchemy import select, and_, func, tuple_
+from sqlalchemy import case, select, and_, func, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from models.db import TaskDB, TaskAssignmentDB, UserDB, SLABreachDB, TaskDependencyDB, NotificationDB, TaskWatchlistDB, NotificationPreferencesDB
@@ -352,78 +352,90 @@ async def send_weekly_digests(session_factory) -> int:
                 for r in top_workers_res
             ]
 
-            # Get all active users (safety cap — batching for very large deployments is future work)
+            # ── Batch-load all per-user stats in ~5 queries (was N+1: 4-6 per user) ──
+
+            # 1. Get all active users
             users_res = await db.execute(
                 select(UserDB).where(UserDB.is_active == True, UserDB.is_banned == False).limit(10_000)
             )
             users = users_res.scalars().all()
+            if not users:
+                _last_digest_date = today
+                return 0
 
+            user_ids = [u.id for u in users]
+
+            # 2. Batch-load notification preferences (skip users who opted out)
+            prefs_res = await db.execute(
+                select(NotificationPreferencesDB).where(
+                    NotificationPreferencesDB.user_id.in_(user_ids)
+                )
+            )
+            prefs_by_user = {p.user_id: p for p in prefs_res.scalars().all()}
+
+            # 3. Batch-aggregate tasks created/completed per user this week
+            from models.db import CreditTransactionDB
+            task_stats_res = await db.execute(
+                select(
+                    TaskDB.user_id,
+                    sqlfunc.count(TaskDB.id).label("created"),
+                    sqlfunc.sum(
+                        case((TaskDB.status == "completed", 1), else_=0)
+                    ).label("completed"),
+                )
+                .where(TaskDB.user_id.in_(user_ids), TaskDB.created_at >= week_start)
+                .group_by(TaskDB.user_id)
+            )
+            task_stats = {row.user_id: (row.created, int(row.completed or 0)) for row in task_stats_res}
+
+            # 4. Batch-aggregate credits spent per user this week
+            credit_stats_res = await db.execute(
+                select(
+                    CreditTransactionDB.user_id,
+                    sqlfunc.abs(sqlfunc.sum(CreditTransactionDB.amount)).label("spent"),
+                )
+                .where(
+                    CreditTransactionDB.user_id.in_(user_ids),
+                    CreditTransactionDB.amount < 0,
+                    CreditTransactionDB.created_at >= week_start,
+                )
+                .group_by(CreditTransactionDB.user_id)
+            )
+            credit_stats = {row.user_id: int(row.spent or 0) for row in credit_stats_res}
+
+            # 5. Batch-aggregate worker stats (tasks approved + earnings) this week
+            worker_stats_res = await db.execute(
+                select(
+                    TaskAssignmentDB.worker_id,
+                    sqlfunc.count(TaskAssignmentDB.id).label("tasks_done"),
+                    sqlfunc.sum(TaskAssignmentDB.earnings_credits).label("earnings"),
+                )
+                .where(
+                    TaskAssignmentDB.worker_id.in_(user_ids),
+                    TaskAssignmentDB.status == "approved",
+                    TaskAssignmentDB.submitted_at >= week_start,
+                )
+                .group_by(TaskAssignmentDB.worker_id)
+            )
+            worker_stats = {
+                row.worker_id: (row.tasks_done, int(row.earnings or 0))
+                for row in worker_stats_res
+            }
+
+            # ── Now iterate users and send (no per-user queries) ──
             for user in users:
                 try:
-                    # Check if user has opted out of weekly digest
-                    prefs_res = await db.execute(
-                        select(NotificationPreferencesDB).where(
-                            NotificationPreferencesDB.user_id == user.id
-                        )
-                    )
-                    prefs = prefs_res.scalar_one_or_none()
-                    # Skip if digest is disabled or set to daily (daily users get their own digest)
-                    if prefs:
-                        if prefs.digest_frequency in ("none", "daily"):
-                            continue
-                    else:
-                        # No prefs row means default (weekly) — proceed
-                        pass
+                    # Check digest preference
+                    prefs = prefs_by_user.get(user.id)
+                    if prefs and prefs.digest_frequency in ("none", "daily"):
+                        continue
 
-                    # User's tasks this week
-                    tasks_created = await db.scalar(
-                        select(sqlfunc.count(TaskDB.id)).where(
-                            TaskDB.user_id == user.id,
-                            TaskDB.created_at >= week_start,
-                        )
-                    ) or 0
-                    tasks_completed = await db.scalar(
-                        select(sqlfunc.count(TaskDB.id)).where(
-                            TaskDB.user_id == user.id,
-                            TaskDB.status == "completed",
-                            TaskDB.updated_at >= week_start,
-                        )
-                    ) or 0
+                    tasks_created, tasks_completed = task_stats.get(user.id, (0, 0))
+                    credits_spent = credit_stats.get(user.id, 0)
 
-                    # Credits spent (negative transactions)
-                    from models.db import CreditTransactionDB
-                    credits_spent = await db.scalar(
-                        select(sqlfunc.abs(sqlfunc.sum(CreditTransactionDB.amount))).where(
-                            CreditTransactionDB.user_id == user.id,
-                            CreditTransactionDB.amount < 0,
-                            CreditTransactionDB.created_at >= week_start,
-                        )
-                    ) or 0
-
-                    # Worker stats
-                    worker_tasks = 0
-                    worker_earnings = 0
-                    worker_xp_gained = 0
                     is_worker = user.role in ("worker", "both")
-
-                    if is_worker:
-                        worker_tasks = await db.scalar(
-                            select(sqlfunc.count(TaskAssignmentDB.id)).where(
-                                TaskAssignmentDB.worker_id == user.id,
-                                TaskAssignmentDB.status == "approved",
-                                TaskAssignmentDB.submitted_at >= week_start,
-                            )
-                        ) or 0
-                        worker_earnings_res = await db.scalar(
-                            select(sqlfunc.sum(TaskAssignmentDB.earnings_credits)).where(
-                                TaskAssignmentDB.worker_id == user.id,
-                                TaskAssignmentDB.status == "approved",
-                                TaskAssignmentDB.submitted_at >= week_start,
-                            )
-                        )
-                        worker_earnings = int(worker_earnings_res or 0)
-                        # XP gained this week (approximate from tasks * 10)
-                        worker_xp_gained = worker_tasks * 10
+                    worker_tasks, worker_earnings = worker_stats.get(user.id, (0, 0)) if is_worker else (0, 0)
+                    worker_xp_gained = worker_tasks * 10
 
                     user_name = user.name or user.email.split("@")[0]
                     await send_weekly_digest(
@@ -478,44 +490,57 @@ async def send_daily_digests(session_factory) -> int:
         try:
             from sqlalchemy import func as sqlfunc
 
-            # Get users with digest_frequency='daily' who have unread notifs (safety cap)
+            # ── Batch-optimized: load users + unread counts in 3 queries (was N+1) ──
+
+            # 1. Get daily-digest user IDs
             prefs_res = await db.execute(
-                select(NotificationPreferencesDB).where(
+                select(NotificationPreferencesDB.user_id).where(
                     NotificationPreferencesDB.digest_frequency == "daily"
                 ).limit(10_000)
             )
-            all_daily_prefs = prefs_res.scalars().all()
+            daily_user_ids = [row[0] for row in prefs_res.all()]
+            if not daily_user_ids:
+                _last_daily_digest_date = today
+                return 0
 
-            for prefs in all_daily_prefs:
+            # 2. Batch-load active users
+            users_res = await db.execute(
+                select(UserDB).where(
+                    UserDB.id.in_(daily_user_ids),
+                    UserDB.is_active == True,
+                    UserDB.is_banned == False,
+                )
+            )
+            users_by_id = {u.id: u for u in users_res.scalars().all()}
+
+            # 3. Batch-count unread notifications per user in last 24h
+            unread_counts_res = await db.execute(
+                select(
+                    NotificationDB.user_id,
+                    sqlfunc.count(NotificationDB.id).label("cnt"),
+                )
+                .where(
+                    NotificationDB.user_id.in_(list(users_by_id.keys())),
+                    NotificationDB.is_read == False,
+                    NotificationDB.created_at >= since,
+                )
+                .group_by(NotificationDB.user_id)
+            )
+            unread_counts = {row.user_id: row.cnt for row in unread_counts_res}
+
+            from sqlalchemy import update as sa_update
+
+            for uid, user in users_by_id.items():
                 try:
-                    user_res = await db.execute(
-                        select(UserDB).where(
-                            UserDB.id == prefs.user_id,
-                            UserDB.is_active == True,
-                            UserDB.is_banned == False,
-                        )
-                    )
-                    user = user_res.scalar_one_or_none()
-                    if not user:
-                        continue
-
-                    # Check unread notifications in last 24h
-                    unread_count = await db.scalar(
-                        select(sqlfunc.count(NotificationDB.id)).where(
-                            NotificationDB.user_id == user.id,
-                            NotificationDB.is_read == False,
-                            NotificationDB.created_at >= since,
-                        )
-                    ) or 0
-
+                    unread_count = unread_counts.get(uid, 0)
                     if unread_count == 0:
                         continue  # Nothing to report
 
-                    # Get top 8 unread notifications as highlights
+                    # Per-user: load top 8 highlights (can't batch easily due to LIMIT per user)
                     notifs_res = await db.execute(
                         select(NotificationDB)
                         .where(
-                            NotificationDB.user_id == user.id,
+                            NotificationDB.user_id == uid,
                             NotificationDB.is_read == False,
                             NotificationDB.created_at >= since,
                         )
@@ -534,10 +559,9 @@ async def send_daily_digests(session_factory) -> int:
 
                     user_name = user.name or user.email.split("@")[0]
 
-                    # Update last_digest_sent_at on user
                     await db.execute(
-                        __import__("sqlalchemy").update(UserDB)
-                        .where(UserDB.id == user.id)
+                        sa_update(UserDB)
+                        .where(UserDB.id == uid)
                         .values(last_digest_sent_at=now)
                     )
 
@@ -551,7 +575,7 @@ async def send_daily_digests(session_factory) -> int:
                     )
                     sent += 1
                 except Exception:
-                    logger.exception("daily_digest.user_error", user_id=str(prefs.user_id))
+                    logger.exception("daily_digest.user_error", user_id=str(uid))
 
             await db.commit()
             _last_daily_digest_date = today
