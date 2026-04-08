@@ -6,7 +6,6 @@ materials can show live platform activity without leaking per-user data.
 All queries are fast (indexed columns only) and results are cached for
 60 seconds to avoid hammering the DB from high-traffic pages.
 """
-from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone, timedelta

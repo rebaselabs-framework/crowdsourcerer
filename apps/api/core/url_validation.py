@@ -6,7 +6,6 @@ Validates that webhook destination URLs:
 3. Don't target cloud metadata services
 4. Don't use non-standard ports commonly used for internal services
 """
-from __future__ import annotations
 
 import ipaddress
 import socket

@@ -13,7 +13,6 @@ GET    /v1/tasks/{id}/dependencies          — list all upstream deps for a tas
 GET    /v1/tasks/{id}/dependents            — list downstream tasks waiting on this one
 DELETE /v1/tasks/{id}/dependencies/{dep_id} — remove a dependency edge
 """
-from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone

@@ -11,7 +11,6 @@ Also enforces hard constraints:
   - task.min_skill_level: worker proficiency must be >= this (if set)
   - task.min_reputation_score: worker reputation must be >= this (if set)
 """
-from __future__ import annotations
 
 import math
 from datetime import datetime, timezone

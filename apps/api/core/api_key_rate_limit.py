@@ -12,7 +12,6 @@ Defaults (when no per-key override is set):
 Enforcement is done via the `api_key_rate_buckets` table, which stores
 sliding 1-minute and rolling-daily counters per key.
 """
-from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone, timedelta

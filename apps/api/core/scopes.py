@@ -8,7 +8,6 @@ scopes are allowed.
 JWT-authenticated requests (browser sessions) bypass scope checks entirely —
 all routes are accessible.
 """
-from __future__ import annotations
 
 from typing import Optional
 

@@ -11,7 +11,6 @@ Quest types:
   - accuracy: get N tasks approved without rejection
   - challenge: complete N daily challenges
 """
-from __future__ import annotations
 import random
 from datetime import datetime, timezone, timedelta, date
 from typing import Optional

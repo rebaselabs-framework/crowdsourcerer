@@ -8,7 +8,6 @@ Allows workers to:
 - View and respond to pending invites
 - Bookmark (watchlist) open tasks to receive alerts when re-opened
 """
-from __future__ import annotations
 
 import uuid as _uuid
 from datetime import datetime, timezone, timedelta

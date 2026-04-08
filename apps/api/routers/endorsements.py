@@ -3,7 +3,6 @@
 Requesters can endorse workers after task completion.  Endorsements are
 shown on the worker's public profile.
 """
-from __future__ import annotations
 
 from typing import Optional
 from uuid import UUID

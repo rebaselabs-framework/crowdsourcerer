@@ -1,5 +1,4 @@
 """Referral / invite system endpoints."""
-from __future__ import annotations
 
 import secrets
 import string

@@ -25,7 +25,6 @@ live URL) so their cache entries expire sooner.  TTLs are configurable via
 The ``task_result_cache_enabled`` config flag lets you disable caching globally
 without redeploying (useful when debugging RebaseKit issues).
 """
-from __future__ import annotations
 
 import hashlib
 import json

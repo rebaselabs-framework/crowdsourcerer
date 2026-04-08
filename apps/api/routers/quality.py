@@ -1,5 +1,4 @@
 """Quality control — gold standard tasks and worker accuracy evaluation."""
-from __future__ import annotations
 from typing import Any
 from uuid import UUID
 

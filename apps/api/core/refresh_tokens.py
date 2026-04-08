@@ -9,7 +9,6 @@ hashed (SHA-256) in the ``refresh_tokens`` table.  Each token belongs to a
 is revoked.  This catches the case where an attacker stole an older token
 and tries to use it after the legitimate user already rotated.
 """
-from __future__ import annotations
 
 import hashlib
 import secrets

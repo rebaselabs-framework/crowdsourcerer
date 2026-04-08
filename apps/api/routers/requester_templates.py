@@ -4,7 +4,6 @@ Personal templates allow requesters to quickly recreate tasks with the same
 configuration.  Templates can optionally be published to the public marketplace
 so other requesters can discover and import them.
 """
-from __future__ import annotations
 import uuid as _uuid
 from datetime import datetime, timezone
 from typing import Optional

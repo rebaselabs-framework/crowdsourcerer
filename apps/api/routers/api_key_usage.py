@@ -1,5 +1,4 @@
 """API Key usage analytics endpoints."""
-from __future__ import annotations
 
 from datetime import datetime, timezone, timedelta
 from uuid import UUID

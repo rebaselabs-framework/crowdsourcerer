@@ -4,7 +4,6 @@ Workers can pin up to 10 completed tasks to their public profile as a
 portfolio of their best work.  Visitors to the worker's public profile see
 the pinned items with task type, result summary, and worker caption.
 """
-from __future__ import annotations
 
 from typing import Optional
 from uuid import UUID

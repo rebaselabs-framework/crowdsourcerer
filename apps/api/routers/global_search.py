@@ -4,7 +4,6 @@ Uses PostgreSQL ILIKE for simple text search across fields.
 Results are scoped: tasks/workers owned by or accessible to the user;
 orgs only if the user is a member.
 """
-from __future__ import annotations
 
 from typing import Optional
 from uuid import UUID

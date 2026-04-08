@@ -27,7 +27,6 @@ Retry strategy:
   - Previous sessions used in-memory asyncio.sleep() retries which were lost
     on server restart.  The queue survives restarts.
 """
-from __future__ import annotations
 
 import asyncio
 import hashlib

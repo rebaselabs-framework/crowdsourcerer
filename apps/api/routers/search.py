@@ -5,7 +5,6 @@ JSON/JSONB columns are cast to text before matching so input/output blobs
 are fully searchable.
 Returns a ranked result set with entity type labels.
 """
-from __future__ import annotations
 import json as _json
 from typing import Optional
 from uuid import UUID

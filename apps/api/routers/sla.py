@@ -1,5 +1,4 @@
 """SLA management — task SLA status, breach tracking, priority queues."""
-from __future__ import annotations
 import uuid as _uuid
 from datetime import datetime, timezone, timedelta
 from typing import Optional

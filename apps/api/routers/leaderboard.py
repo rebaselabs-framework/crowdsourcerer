@@ -3,7 +3,6 @@
 Public endpoint: no authentication required.  If a valid token is supplied
 the response marks the caller's own entry so the UI can highlight "you".
 """
-from __future__ import annotations
 from datetime import datetime, timezone, timedelta
 from typing import Literal, Optional
 

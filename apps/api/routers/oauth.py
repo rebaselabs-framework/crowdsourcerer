@@ -20,7 +20,6 @@ Flow:
   6. Issues JWT and redirects to the web UI with ?token=<jwt> in fragment or
      returns JSON (for API callers that pass ?format=json)
 """
-from __future__ import annotations
 
 import base64
 import hashlib

@@ -2,7 +2,6 @@
 
 Only accessible by users with is_admin=True.
 """
-from __future__ import annotations
 from datetime import datetime, timezone, timedelta, date
 from typing import Optional, Literal
 from uuid import UUID

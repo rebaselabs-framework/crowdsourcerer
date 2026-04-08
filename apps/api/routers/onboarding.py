@@ -1,5 +1,4 @@
 """Worker onboarding flow — 5-step guided tutorial."""
-from __future__ import annotations
 import uuid as _uuid
 from datetime import datetime, timezone
 from typing import Optional

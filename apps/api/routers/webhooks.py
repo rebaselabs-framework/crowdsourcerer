@@ -1,5 +1,4 @@
 """Webhook endpoint management + delivery logs + event type catalogue."""
-from __future__ import annotations
 
 import hashlib
 import hmac

@@ -6,7 +6,6 @@ Plans and their daily limits:
     pro        → 500 tasks/day, unlimited pipelines, 100 pipeline runs/day
     enterprise → unlimited
 """
-from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone, timedelta

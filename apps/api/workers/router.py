@@ -1,5 +1,4 @@
 """Task router — maps task types to RebaseKit API workers."""
-from __future__ import annotations
 import json
 from typing import Any
 

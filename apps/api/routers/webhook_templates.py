@@ -3,7 +3,6 @@
 Users can define {{field}} placeholder templates that are rendered at webhook
 delivery time with task context, allowing fully custom payloads per event.
 """
-from __future__ import annotations
 
 import re
 from datetime import datetime, timezone

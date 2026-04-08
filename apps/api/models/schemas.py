@@ -1,5 +1,4 @@
 """Pydantic request/response schemas."""
-from __future__ import annotations
 import re
 from datetime import datetime, date
 from typing import Any, Literal, Optional, Union

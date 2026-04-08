@@ -12,7 +12,6 @@ Modifiers:
   - Strikes subtract from the score (warning: -2, minor: -5, major: -15, critical: -30)
   - Banned workers have reputation 0 (enforced at query time)
 """
-from __future__ import annotations
 
 import math
 from typing import Optional, Sequence

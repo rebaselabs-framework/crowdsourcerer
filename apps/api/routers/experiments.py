@@ -1,5 +1,4 @@
 """A/B Testing Framework — create experiments, assign tasks, view results."""
-from __future__ import annotations
 import math
 import random
 import uuid as _uuid

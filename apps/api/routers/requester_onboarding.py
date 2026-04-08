@@ -9,7 +9,6 @@ Steps (in order):
 
 +200 credits awarded on full completion (once per user).
 """
-from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone

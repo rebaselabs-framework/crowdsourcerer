@@ -4,7 +4,6 @@ Workers can apply to tasks that have application_mode=True.
 Requesters can review, accept, or reject applications.
 Accepting an application auto-assigns the task to that worker.
 """
-from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Optional

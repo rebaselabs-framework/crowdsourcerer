@@ -19,7 +19,6 @@ Usage:
   record_sweep_success()      # call after a successful sweep
   record_sweep_error()        # call after a sweep that raised
 """
-from __future__ import annotations
 
 import asyncio
 import uuid

@@ -1,5 +1,4 @@
 """Daily challenges — rotating bonus tasks for workers."""
-from __future__ import annotations
 import random
 from datetime import datetime, timezone, date, timedelta
 from typing import Optional

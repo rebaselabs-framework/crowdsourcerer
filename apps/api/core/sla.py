@@ -3,7 +3,6 @@
 SLA hours per plan + priority combination.
 AI tasks complete immediately; SLA applies to human tasks in the marketplace.
 """
-from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 

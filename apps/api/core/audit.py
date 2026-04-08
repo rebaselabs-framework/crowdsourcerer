@@ -13,7 +13,6 @@ Usage:
         ip_address=request.client.host,
     )
 """
-from __future__ import annotations
 
 import uuid
 from typing import Optional, Any

@@ -6,7 +6,6 @@ Two trigger types:
 
 Background polling is integrated with the sweeper (runs every 60s, checks due schedule triggers).
 """
-from __future__ import annotations
 
 import asyncio
 import secrets

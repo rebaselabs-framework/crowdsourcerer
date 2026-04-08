@@ -12,7 +12,6 @@ Configuration (via env vars / Settings):
 
 If EMAIL_ENABLED is false, emails are logged but not sent (safe default).
 """
-from __future__ import annotations
 
 import asyncio
 import email.mime.multipart

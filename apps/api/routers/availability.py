@@ -1,5 +1,4 @@
 """Worker availability calendar and blackout management."""
-from __future__ import annotations
 import datetime
 from typing import List, Optional
 from uuid import UUID

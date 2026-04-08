@@ -8,7 +8,6 @@ the notification is not repeated until they top up again.
 When credits are topped up (credits router), call `reset_credit_alert(db, user)`
 to clear the fired flag so the alert can fire again next time.
 """
-from __future__ import annotations
 
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession

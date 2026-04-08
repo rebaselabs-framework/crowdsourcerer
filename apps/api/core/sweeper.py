@@ -11,7 +11,6 @@ What it does:
      has open assignment slots, set it back to 'open'.
   4. Log a summary per sweep run.
 """
-from __future__ import annotations
 
 import asyncio
 import datetime as dt_module

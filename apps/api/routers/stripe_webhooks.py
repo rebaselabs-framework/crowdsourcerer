@@ -8,7 +8,6 @@ Handles incoming Stripe events to:
 
 Signature verification uses HMAC-SHA256 (no stripe Python SDK needed).
 """
-from __future__ import annotations
 
 import hashlib
 import hmac

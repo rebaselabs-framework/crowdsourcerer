@@ -6,7 +6,6 @@ which increase engagement by 25%.
 
 League tiers: Bronze → Silver → Gold → Platinum → Diamond → Obsidian
 """
-from __future__ import annotations
 from datetime import datetime, timezone, timedelta, date
 from typing import Optional
 from uuid import UUID

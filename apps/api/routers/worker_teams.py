@@ -8,7 +8,6 @@ Workers (anyone with role 'worker' or 'both') can:
 
 These are distinct from requester orgs — purely worker-to-worker associations.
 """
-from __future__ import annotations
 
 from datetime import datetime, timezone, timedelta
 from typing import Optional

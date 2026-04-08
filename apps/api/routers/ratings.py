@@ -4,7 +4,6 @@ After a requester approves a worker's submission they can leave a 1–5 star
 rating with an optional comment.  Ratings are public on worker profiles and
 drive the ``avg_feedback_score`` field on UserDB.
 """
-from __future__ import annotations
 
 import structlog
 from typing import Optional

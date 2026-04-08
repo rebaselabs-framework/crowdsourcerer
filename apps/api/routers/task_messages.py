@@ -1,5 +1,4 @@
 """Direct messages between requester and worker about a task."""
-from __future__ import annotations
 import datetime
 from typing import List, Optional
 from uuid import UUID

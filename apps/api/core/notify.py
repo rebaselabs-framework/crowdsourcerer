@@ -4,7 +4,6 @@ Call `create_notification(db, user_id, ...)` from any router/service to
 persist a notification for a user. The notification router exposes read/mark
 endpoints so the frontend can poll or SSE for updates.
 """
-from __future__ import annotations
 
 import uuid as _uuid
 from typing import Optional

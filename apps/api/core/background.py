@@ -15,7 +15,6 @@ Usage:
     # Use:
     safe_create_task(send_notification(...), name="notify.task_completed")
 """
-from __future__ import annotations
 
 import asyncio
 from typing import Coroutine, Any, Optional

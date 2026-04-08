@@ -1,5 +1,4 @@
 """Worker marketplace API — browse tasks, claim, submit, release."""
-from __future__ import annotations
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Literal
 import uuid as uuid_mod

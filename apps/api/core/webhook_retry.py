@@ -13,7 +13,6 @@ Backoff schedule (seconds after each failed attempt):
 
 This replaces the previous in-memory retry loop that was lost on server restart.
 """
-from __future__ import annotations
 
 import asyncio
 import time as _time

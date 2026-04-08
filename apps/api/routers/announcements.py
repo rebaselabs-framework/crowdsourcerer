@@ -10,7 +10,6 @@ Admin endpoints (require is_admin):
   DELETE /v1/admin/announcements/{id}     — hard delete
   GET    /v1/admin/announcements          — list all (including inactive/expired)
 """
-from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Optional
