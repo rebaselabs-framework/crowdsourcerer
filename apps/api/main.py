@@ -329,6 +329,7 @@ async def health_v1():
         body["config"] = {
             "email_enabled": settings.email_enabled,
             "google_oauth": bool(settings.google_client_id),
+            "payments_enabled": bool(settings.stripe_secret_key),
         }
     return body
 

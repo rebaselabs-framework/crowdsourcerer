@@ -33,6 +33,18 @@ const PACKS = [
   { credits: 5000, price: 45, label: "Team", note: "10% discount" },
   { credits: 10000, price: 80, label: "Pro", note: "20% discount" },
 ];
+
+// Check if Stripe is configured (hides buy buttons if not)
+let paymentsEnabled = false;
+try {
+  const healthRes = await fetch(`${import.meta.env.PUBLIC_API_URL ?? "http://api:8100"}/v1/health`).catch(() => null);
+  if (healthRes?.ok) {
+    const health = await healthRes.json();
+    paymentsEnabled = !!health.config?.payments_enabled;
+  }
+} catch {
+  paymentsEnabled = false;
+}
 ---
 
 <Layout title="Credits — CrowdSorcerer">
@@ -71,21 +83,28 @@ const PACKS = [
 
     <!-- Buy credits -->
     <h2 class="text-xl font-bold mb-4">Buy credits</h2>
+    {!paymentsEnabled && (
+      <div class="mb-6 p-4 bg-gray-900 border border-gray-700 rounded-xl text-sm text-gray-400">
+        💳 Credit purchases are not yet available. Contact <a href="mailto:crowdsource@rebaselabs.online" class="text-violet-400">crowdsource@rebaselabs.online</a> for bulk credit purchases.
+      </div>
+    )}
     <div id="checkout-error" class="hidden text-sm text-red-400 bg-red-950/20 border border-red-800 rounded-lg px-4 py-3 mb-4"></div>
-    <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-10" id="packs">
-      {PACKS.map(({ credits: cr, price, label, note }) => (
-        <button
-          class="buy-pack bg-gray-900 border border-gray-800 hover:border-violet-600 rounded-xl p-5 text-left transition-colors cursor-pointer"
-          data-credits={cr}
-          data-price={price}
-        >
-          <div class="buy-pack-label text-sm text-gray-400 mb-1">{label}</div>
-          <div class="buy-pack-price text-2xl font-bold mb-1">${price}</div>
-          <div class="buy-pack-credits text-violet-300 font-medium text-sm mb-2">{cr.toLocaleString()} credits</div>
-          <div class="buy-pack-note text-xs text-gray-500">{note}</div>
-        </button>
-      ))}
-    </div>
+    {paymentsEnabled && (
+      <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-10" id="packs">
+        {PACKS.map(({ credits: cr, price, label, note }) => (
+          <button
+            class="buy-pack bg-gray-900 border border-gray-800 hover:border-violet-600 rounded-xl p-5 text-left transition-colors cursor-pointer"
+            data-credits={cr}
+            data-price={price}
+          >
+            <div class="buy-pack-label text-sm text-gray-400 mb-1">{label}</div>
+            <div class="buy-pack-price text-2xl font-bold mb-1">${price}</div>
+            <div class="buy-pack-credits text-violet-300 font-medium text-sm mb-2">{cr.toLocaleString()} credits</div>
+            <div class="buy-pack-note text-xs text-gray-500">{note}</div>
+          </button>
+        ))}
+      </div>
+    )}
 
     <!-- Crypto option -->
     <div class="bg-gray-900/50 border border-gray-800 rounded-xl p-5 mb-10">

@@ -31,7 +31,7 @@ def utcnow() -> datetime:
 
 # ── Overview ───────────────────────────────────────────────────────────────────
 
-@router.get("/overview", response_model=RequesterOverviewOut)
+@router.get("/overview")
 async def requester_overview(
     days: int = Query(30, ge=1, le=365),
     org_id: Optional[UUID] = None,
@@ -39,6 +39,16 @@ async def requester_overview(
     user_id: str = Depends(require_scope(SCOPE_ANALYTICS_READ)),
 ):
     """Overview of your tasks and credit usage."""
+    try:
+        return await _requester_overview_impl(days, org_id, db, user_id)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("analytics_overview_error")
+        raise HTTPException(status_code=500, detail=f"Analytics query failed: {type(exc).__name__}: {exc}")
+
+
+async def _requester_overview_impl(days, org_id, db, user_id):
     uid = UUID(user_id)
     since = utcnow() - timedelta(days=days)
 
@@ -304,7 +314,7 @@ async def org_analytics(
 
 # ── Cost Breakdown ─────────────────────────────────────────────────────────────
 
-@router.get("/costs", response_model=CostBreakdownOut)
+@router.get("/costs")
 async def cost_breakdown(
     months: int = Query(6, ge=1, le=24),
     org_id: Optional[UUID] = None,
@@ -312,6 +322,16 @@ async def cost_breakdown(
     user_id: str = Depends(require_scope(SCOPE_ANALYTICS_READ)),
 ):
     """Detailed credit cost breakdown by task type, execution mode, and time."""
+    try:
+        return await _cost_breakdown_impl(months, org_id, db, user_id)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("analytics_costs_error")
+        raise HTTPException(status_code=500, detail=f"Costs query failed: {type(exc).__name__}: {exc}")
+
+
+async def _cost_breakdown_impl(months, org_id, db, user_id):
     uid = UUID(user_id)
     since = utcnow() - timedelta(days=months * 30)
 
@@ -629,7 +649,7 @@ class RevenueAnalyticsOut(BaseModel):
     months: int
 
 
-@router.get("/revenue", response_model=RevenueAnalyticsOut)
+@router.get("/revenue")
 async def revenue_analytics(
     months: int = Query(6, ge=1, le=24),
     org_id: Optional[UUID] = None,
