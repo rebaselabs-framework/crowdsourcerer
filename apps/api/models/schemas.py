@@ -135,6 +135,13 @@ CONSENSUS_STRATEGIES = Literal["any_first", "majority_vote", "unanimous", "reque
 
 
 class TaskCreateRequest(BaseModel):
+    """Create a new task.
+
+    Extra fields are rejected to catch typos — e.g. ``title`` (not a field),
+    ``instructions`` (use ``task_instructions``), ``labels`` (put in ``input``).
+    """
+    model_config = ConfigDict(extra="forbid")
+
     type: ALL_TASK_TYPES
     input: dict[str, Any]
     priority: Literal["low", "normal", "high", "urgent"] = "normal"
