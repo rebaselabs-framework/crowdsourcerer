@@ -122,16 +122,13 @@ def require_scope(scope: str):
                 )
 
             # Rate limiting + account status check
+            from core.auth import verify_account_active
             user_result = await db.execute(
                 select(UserDB).where(UserDB.id == api_key.user_id)
             )
             owner = user_result.scalar_one_or_none()
-            if not owner or not owner.is_active:
-                raise HTTPException(status_code=403, detail="Account disabled")
-            if getattr(owner, "is_banned", False):
-                raise HTTPException(status_code=403, detail="Account banned")
-            user_plan = owner.plan if owner else "free"
-            await check_and_record_api_key_rate_limit(db, api_key, user_plan)
+            verify_account_active(owner)
+            await check_and_record_api_key_rate_limit(db, api_key, owner.plan)
 
             # Stamp last_used_at
             api_key.last_used_at = datetime.now(timezone.utc)

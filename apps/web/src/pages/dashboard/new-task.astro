@@ -11,15 +11,15 @@ let templates: any[] = [];
 let savedTemplates: any[] = [];
 let aiAvailable = true;
 
-// Check if AI services are available
+// Check if AI services are available (lightweight — no DB query)
 try {
-  const healthRes = await fetch(`${import.meta.env.PUBLIC_API_URL ?? "http://api:8100"}/v1/health`).catch(() => null);
-  if (healthRes?.ok) {
-    const health = await healthRes.json();
-    aiAvailable = !!health.ai_available;
+  const cfgRes = await fetch(`${import.meta.env.PUBLIC_API_URL ?? "http://api:8100"}/v1/config`).catch(() => null);
+  if (cfgRes?.ok) {
+    const cfg = await cfgRes.json();
+    aiAvailable = !!cfg.ai_available;
   }
 } catch {
-  // assume available if health check fails
+  // assume available if config check fails
 }
 
 try {

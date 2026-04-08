@@ -530,13 +530,15 @@ async def send_daily_digests(session_factory) -> int:
 
             from sqlalchemy import update as sa_update
 
+            digest_sent_uids: list = []
+
             for uid, user in users_by_id.items():
                 try:
                     unread_count = unread_counts.get(uid, 0)
                     if unread_count == 0:
                         continue  # Nothing to report
 
-                    # Per-user: load top 8 highlights (can't batch easily due to LIMIT per user)
+                    # Per-user: load top 8 highlights (can't batch LIMIT-per-user)
                     notifs_res = await db.execute(
                         select(NotificationDB)
                         .where(
@@ -558,13 +560,6 @@ async def send_daily_digests(session_factory) -> int:
                     ]
 
                     user_name = user.name or user.email.split("@")[0]
-
-                    await db.execute(
-                        sa_update(UserDB)
-                        .where(UserDB.id == uid)
-                        .values(last_digest_sent_at=now)
-                    )
-
                     await send_daily_digest(
                         to_email=user.email,
                         user_name=user_name,
@@ -573,9 +568,18 @@ async def send_daily_digests(session_factory) -> int:
                         highlights=highlights,
                         credits_balance=user.credits,
                     )
+                    digest_sent_uids.append(uid)
                     sent += 1
                 except Exception:
                     logger.exception("daily_digest.user_error", user_id=str(uid))
+
+            # Batch-update last_digest_sent_at (1 query instead of N)
+            if digest_sent_uids:
+                await db.execute(
+                    sa_update(UserDB)
+                    .where(UserDB.id.in_(digest_sent_uids))
+                    .values(last_digest_sent_at=now)
+                )
 
             await db.commit()
             _last_daily_digest_date = today

@@ -20,6 +20,14 @@ bearer_scheme = HTTPBearer(auto_error=False)
 _ALPHABET = string.ascii_letters + string.digits
 
 
+def verify_account_active(user) -> None:
+    """Raise 403 if user is None, inactive, or banned. Used by API key auth paths."""
+    if not user or not user.is_active:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account disabled")
+    if getattr(user, "is_banned", False):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account banned")
+
+
 def generate_api_key() -> tuple[str, str]:
     """Returns (plaintext_key, hashed_key). Store only the hash."""
     raw = "csk_" + "".join(secrets.choice(_ALPHABET) for _ in range(48))
@@ -80,20 +88,11 @@ async def get_current_user_id(
                 status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key"
             )
 
-        # Fetch owning user to resolve plan for rate-limit defaults
+        # Verify the owning user is active (shared check)
         user_result = await db.execute(select(UserDB).where(UserDB.id == api_key.user_id))
         owner = user_result.scalar_one_or_none()
-        if not owner or not owner.is_active:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Account disabled",
-            )
-        if getattr(owner, "is_banned", False):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Account banned",
-            )
-        user_plan = owner.plan if owner else "free"
+        verify_account_active(owner)
+        user_plan = owner.plan
 
         # Enforce per-key rate limits (RPM + daily)
         from core.api_key_rate_limit import check_and_record_api_key_rate_limit

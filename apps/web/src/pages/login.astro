@@ -6,10 +6,10 @@ import { setAuthCookies } from "@/lib/auth";
 let googleOAuthEnabled = false;
 try {
   const API_URL = import.meta.env.PUBLIC_API_URL ?? "http://api:8100";
-  const healthRes = await fetch(`${API_URL}/v1/health`);
-  if (healthRes.ok) {
-    const health = await healthRes.json();
-    googleOAuthEnabled = !!health.config?.google_oauth;
+  const cfgRes = await fetch(`${API_URL}/v1/config`);
+  if (cfgRes.ok) {
+    const cfg = await cfgRes.json();
+    googleOAuthEnabled = !!cfg.google_oauth;
   }
 } catch { /* silently ignore — default to hidden */ }
 

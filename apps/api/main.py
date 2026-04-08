@@ -336,6 +336,20 @@ async def health_v1():
     return body
 
 
+@app.get("/v1/config", tags=["health"])
+async def config_v1():
+    """Static config flags for frontend UI toggling — no DB query, no auth.
+
+    Use this instead of /v1/health when you only need feature flags.
+    """
+    return {
+        "email_enabled": settings.email_enabled,
+        "google_oauth": bool(settings.google_client_id),
+        "payments_enabled": bool(settings.stripe_secret_key),
+        "ai_available": bool(settings.rebasekit_api_key),
+    }
+
+
 @app.get("/", tags=["health"])
 async def root():
     return {

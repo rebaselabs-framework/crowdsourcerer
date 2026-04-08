@@ -41,11 +41,11 @@ try {
     ? { Authorization: `Bearer ${token}` }
     : {};
 
-  // Check platform config (public, no auth needed)
-  const healthRes = await fetch(`${API_URL}/v1/health`).catch(() => null);
-  if (healthRes?.ok) {
-    const health = await healthRes.json();
-    emailEnabled = !!health.config?.email_enabled;
+  // Check platform config (lightweight — no DB query, no auth)
+  const configRes = await fetch(`${API_URL}/v1/config`).catch(() => null);
+  if (configRes?.ok) {
+    const cfg = await configRes.json();
+    emailEnabled = !!cfg.email_enabled;
   }
 
   if (isLoggedIn) {

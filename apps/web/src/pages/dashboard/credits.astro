@@ -37,10 +37,10 @@ const PACKS = [
 // Check if Stripe is configured (hides buy buttons if not)
 let paymentsEnabled = false;
 try {
-  const healthRes = await fetch(`${import.meta.env.PUBLIC_API_URL ?? "http://api:8100"}/v1/health`).catch(() => null);
-  if (healthRes?.ok) {
-    const health = await healthRes.json();
-    paymentsEnabled = !!health.config?.payments_enabled;
+  const cfgRes = await fetch(`${import.meta.env.PUBLIC_API_URL ?? "http://api:8100"}/v1/config`).catch(() => null);
+  if (cfgRes?.ok) {
+    const cfg = await cfgRes.json();
+    paymentsEnabled = !!cfg.payments_enabled;
   }
 } catch {
   paymentsEnabled = false;
