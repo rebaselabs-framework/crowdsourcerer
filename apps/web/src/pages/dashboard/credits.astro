@@ -79,10 +79,10 @@ const PACKS = [
           data-credits={cr}
           data-price={price}
         >
-          <div class="text-sm text-gray-400 mb-1">{label}</div>
-          <div class="text-2xl font-bold mb-1">${price}</div>
-          <div class="text-violet-300 font-medium text-sm mb-2">{cr.toLocaleString()} credits</div>
-          <div class="text-xs text-gray-500">{note}</div>
+          <div class="buy-pack-label text-sm text-gray-400 mb-1">{label}</div>
+          <div class="buy-pack-price text-2xl font-bold mb-1">${price}</div>
+          <div class="buy-pack-credits text-violet-300 font-medium text-sm mb-2">{cr.toLocaleString()} credits</div>
+          <div class="buy-pack-note text-xs text-gray-500">{note}</div>
         </button>
       ))}
     </div>
@@ -195,11 +195,14 @@ const PACKS = [
     const button = btn as HTMLButtonElement;
     button.addEventListener("click", async () => {
       const credits = Number(button.dataset.credits);
-      const origLabel = button.querySelector(".buy-pack-label")?.textContent ?? "Buy";
       // Clear any previous checkout error
       const errEl = document.getElementById("checkout-error");
       if (errEl) errEl.classList.add("hidden");
-      button.textContent = "Redirecting…";
+      // Show loading without destroying child elements
+      button.classList.add("opacity-50", "pointer-events-none");
+      const noteEl = button.querySelector(".buy-pack-note");
+      const origNote = noteEl?.textContent ?? "";
+      if (noteEl) noteEl.textContent = "Redirecting…";
       button.disabled = true;
 
       try {
@@ -220,7 +223,8 @@ const PACKS = [
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));
           showCheckoutError(err.detail ?? "Checkout failed. Please try again.");
-          button.textContent = origLabel;
+          button.classList.remove("opacity-50", "pointer-events-none");
+          if (noteEl) noteEl.textContent = origNote;
           button.disabled = false;
           return;
         }
@@ -229,7 +233,8 @@ const PACKS = [
         window.location.href = checkout_url;
       } catch {
         showCheckoutError("Failed to create checkout session. Please try again.");
-        button.textContent = origLabel;
+        button.classList.remove("opacity-50", "pointer-events-none");
+        if (noteEl) noteEl.textContent = origNote;
         button.disabled = false;
       }
     });

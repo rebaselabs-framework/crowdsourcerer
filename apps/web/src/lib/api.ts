@@ -22,7 +22,17 @@ export async function apiFetch<T>(
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.detail ?? body.message ?? `HTTP ${res.status}`);
+    // body.detail can be a string ("Not found") or an array of Pydantic
+    // validation errors ([{type, loc, msg}]).  Normalise to a readable string.
+    let msg: string;
+    if (typeof body.detail === "string") {
+      msg = body.detail;
+    } else if (Array.isArray(body.detail) && body.detail.length > 0) {
+      msg = body.detail.map((e: any) => e.msg ?? String(e)).join("; ");
+    } else {
+      msg = body.message ?? `HTTP ${res.status}`;
+    }
+    throw new Error(msg);
   }
 
   if (res.status === 204) return undefined as unknown as T;

@@ -242,6 +242,7 @@ async def google_callback(
     try:
         from core.refresh_tokens import create_refresh_token
         raw_refresh, _refresh_expires = await create_refresh_token(str(user.id), db)
+        await db.commit()  # persist the refresh token
     except Exception:
         pass
 

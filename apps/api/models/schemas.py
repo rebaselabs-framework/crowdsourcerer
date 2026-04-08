@@ -1,10 +1,21 @@
 """Pydantic request/response schemas."""
 from __future__ import annotations
+import re
 from datetime import datetime, date
 from typing import Any, Literal, Optional, Union
 from uuid import UUID
 
 from pydantic import AliasChoices, AnyHttpUrl, BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
+
+
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _strip_html(v: str | None) -> str | None:
+    """Strip HTML tags from user-supplied text fields (XSS defence-in-depth)."""
+    if v is None:
+        return v
+    return _HTML_TAG_RE.sub("", v).strip() or None
 
 
 # ─── Auth ─────────────────────────────────────────────────────────────────
@@ -13,6 +24,11 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8)
     name: Optional[str] = None
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def sanitize_name(cls, v: Any) -> Any:
+        return _strip_html(v) if isinstance(v, str) else v
     role: Literal["requester", "worker"] = "requester"
 
 
@@ -1306,6 +1322,11 @@ class ProfileUpdateRequest(BaseModel):
     avatar_url: Optional[str] = Field(None, max_length=512)
     profile_public: Optional[bool] = None
     location: Optional[str] = Field(None, max_length=128)
+
+    @field_validator("name", "bio", "location", mode="before")
+    @classmethod
+    def sanitize_text(cls, v: Any) -> Any:
+        return _strip_html(v) if isinstance(v, str) else v
     website_url: Optional[str] = Field(None, max_length=512)
 
 

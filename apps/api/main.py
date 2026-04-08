@@ -338,7 +338,15 @@ async def root():
 @app.get("/openapi.json", include_in_schema=False)
 async def get_openapi_spec():
     """Download the raw OpenAPI 3.x spec as JSON."""
-    return app.openapi()
+    try:
+        spec = app.openapi()
+        return JSONResponse(content=spec, media_type="application/json")
+    except Exception as exc:
+        logger.error("openapi_spec_generation_failed", error=str(exc))
+        return JSONResponse(
+            content={"error": "openapi_generation_failed", "detail": str(exc)},
+            status_code=500,
+        )
 
 
 # ─── Admin bootstrap (one-time setup) ────────────────────────────────────

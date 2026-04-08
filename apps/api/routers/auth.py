@@ -106,6 +106,7 @@ async def register(
     try:
         from core.refresh_tokens import create_refresh_token
         raw_refresh, refresh_expires = await create_refresh_token(str(user.id), db)
+        await db.commit()  # persist the refresh token (flush alone is rolled back)
         refresh_expires_in = int((refresh_expires - datetime.now(timezone.utc)).total_seconds())
     except Exception:
         pass  # access token alone is enough to proceed
@@ -158,6 +159,7 @@ async def login(
     try:
         from core.refresh_tokens import create_refresh_token
         raw_refresh, refresh_expires = await create_refresh_token(str(user.id), db)
+        await db.commit()  # persist the refresh token (flush alone is rolled back)
         refresh_expires_in = int((refresh_expires - datetime.now(timezone.utc)).total_seconds())
     except Exception:
         pass  # access token alone is enough to proceed

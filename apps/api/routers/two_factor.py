@@ -267,6 +267,7 @@ async def verify_2fa(
         from datetime import datetime, timezone
         from core.refresh_tokens import create_refresh_token
         raw_refresh, refresh_expires = await create_refresh_token(str(user.id), db)
+        await db.commit()  # persist the refresh token
         refresh_expires_in = int((refresh_expires - datetime.now(timezone.utc)).total_seconds())
     except Exception:
         pass
