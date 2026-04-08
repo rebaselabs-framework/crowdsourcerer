@@ -210,13 +210,14 @@ Escape `{` and `}` inside Astro template expressions when they're literal charac
 - Follow RebaseKit patterns for auth, error handling, Dockerfiles
 - Always run `make check` before commit (astro check + build)
 
-## Current Status (2026-04-04)
+## Current Status (2026-04-09)
 
-- **Tests**: 1262 backend (0 failures) + 121 E2E Playwright
-- **Endpoints**: 335 | **Pages**: 117 | **Migrations**: 62
+- **Tests**: 1274 backend (0 failures) + 121 E2E Playwright
+- **Endpoints**: 335 | **Pages**: 117 | **Migrations**: 63
 - **Revenue**: $0 | **Users**: 0
-- **Deployment**: Live at crowdsourcerer.rebaselabs.online (fixed 2026-04-04)
-- **Phase**: LAUNCH PREP — no new features. Fix deployment, then get users.
+- **Deployment**: Live at crowdsourcerer.rebaselabs.online
+- **Phase**: IMPROVE & TEST — quality first, owner decides launch timing
+- **Quick health check**: `bash scripts/healthcheck.sh` (12 checks in <15s)
 
 ## Deployment Troubleshooting
 

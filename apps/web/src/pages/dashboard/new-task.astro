@@ -9,6 +9,18 @@ if (!token) return Astro.redirect("/login");
 let error = "";
 let templates: any[] = [];
 let savedTemplates: any[] = [];
+let aiAvailable = true;
+
+// Check if AI services are available
+try {
+  const healthRes = await fetch(`${import.meta.env.PUBLIC_API_URL ?? "http://api:8100"}/v1/health`).catch(() => null);
+  if (healthRes?.ok) {
+    const health = await healthRes.json();
+    aiAvailable = !!health.ai_available;
+  }
+} catch {
+  // assume available if health check fails
+}
 
 try {
   const tplRes = await apiFetch<any>("/v1/tasks/templates", { token });
@@ -157,6 +169,17 @@ if (Astro.request.method === "POST") {
       </a>
     </div>
     <p class="text-gray-400 text-sm mb-6">Select a task type, provide JSON input, and get results.</p>
+
+    {!aiAvailable && (
+      <div class="mb-4 p-3 bg-amber-950/30 border border-amber-700/50 rounded-lg text-sm text-amber-300 flex items-start gap-2">
+        <span class="mt-0.5">⚠️</span>
+        <div>
+          <strong>AI tasks temporarily unavailable.</strong> The AI backend services are currently down.
+          Human tasks (labeling, moderation, fact-checking, etc.) work normally.
+          AI tasks will be queued and processed when services are restored.
+        </div>
+      </div>
+    )}
 
     {/* Duplication banner */}
     {duplicateParams && (

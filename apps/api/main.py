@@ -331,6 +331,8 @@ async def health_v1():
             "google_oauth": bool(settings.google_client_id),
             "payments_enabled": bool(settings.stripe_secret_key),
         }
+    # Always include AI service availability (helps frontend warn users)
+    body["ai_available"] = bool(settings.rebasekit_api_key)
     return body
 
 
