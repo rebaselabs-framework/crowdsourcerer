@@ -1,5 +1,8 @@
 """CrowdSorcerer API — main entrypoint."""
-from __future__ import annotations
+# NOTE: Do NOT use `from __future__ import annotations` here.
+# It makes all type annotations lazy (string forward references),
+# which breaks Pydantic's OpenAPI schema generation for FastAPI
+# endpoint parameters (Path, Query, Body types become unresolvable).
 import time
 import uuid
 from contextlib import asynccontextmanager
