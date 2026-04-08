@@ -56,9 +56,16 @@ const totalCreditsSpent = overview?.total_credits_spent ?? 0;
 const workersUsed = overview?.workers_used ?? 0;
 const pendingReviews = reviewSummary?.pending_count ?? 0;
 
-// Task type breakdown from costs
+// Task type breakdown from costs — by_type can be an object {type: credits} or an array
+const _rawByType = costs?.by_type ?? {};
 const byType: Array<{ type: string; count: number; credits: number }> =
-  costs?.by_type?.slice(0, 6) ?? [];
+  Array.isArray(_rawByType)
+    ? _rawByType.slice(0, 6)
+    : Object.entries(_rawByType).slice(0, 6).map(([type, credits]) => ({
+        type,
+        count: 0,
+        credits: Number(credits) || 0,
+      }));
 
 // Daily tasks sparkline data (last 7 days)
 // API returns tasks_last_30_days as [{date, count}] — normalize to {date, tasks}
