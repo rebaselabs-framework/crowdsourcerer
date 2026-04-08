@@ -62,6 +62,7 @@ def _compute_task_cost(task: TaskDB) -> int:
 
 async def _refund_task_credits(
     db: AsyncSession, task: TaskDB, amount: int, user_id: str,
+    reason: str = "cancelled",
 ) -> None:
     """Refund *amount* credits to the task's billing target (org or user)."""
     if task.org_id:
@@ -85,7 +86,7 @@ async def _refund_task_credits(
         task_id=task.id,
         amount=amount,
         type="refund",
-        description=f"Task cancelled: {task.type}",
+        description=f"Task {reason}: {task.type}",
     )
     db.add(txn)
 
@@ -2126,12 +2127,17 @@ async def _run_task(task_id: str, user_id: str):
                     task.error = str(e)
                     task.completed_at = datetime.now(timezone.utc)
 
-                    # In-app notification: task failed
+                    # Refund credits for failed task
+                    refund_amount = _compute_task_cost(task)
+                    await _refund_task_credits(db, task, refund_amount, str(task.user_id), reason="failed")
+                    logger.info("task_credits_refunded", task_id=task_id, amount=refund_amount)
+
+                    # In-app notification: task failed (with refund info)
                     await create_notification(
                         db, user_id,
                         NotifType.TASK_FAILED,
-                        "Task failed ❌",
-                        f"Your {task.type.replace('_', ' ')} task failed: {str(e)[:120]}",
+                        "Task failed — credits refunded ❌",
+                        f"Your {task.type.replace('_', ' ')} task failed: {str(e)[:100]}. {refund_amount} credits refunded.",
                         link=f"/dashboard/tasks/{task_id}",
                     )
                     await db.commit()
@@ -2173,12 +2179,17 @@ async def _run_task(task_id: str, user_id: str):
                     task.error = f"Unexpected error: {type(e).__name__}"
                     task.completed_at = datetime.now(timezone.utc)
 
-                    # In-app notification
+                    # Refund credits for failed task
+                    refund_amount = _compute_task_cost(task)
+                    await _refund_task_credits(db, task, refund_amount, str(task.user_id), reason="failed")
+                    logger.info("task_credits_refunded", task_id=task_id, amount=refund_amount)
+
+                    # In-app notification (with refund info)
                     await create_notification(
                         db, user_id,
                         NotifType.TASK_FAILED,
-                        "Task failed ❌",
-                        f"Your {task.type.replace('_', ' ')} task encountered an unexpected error.",
+                        "Task failed — credits refunded ❌",
+                        f"Your {task.type.replace('_', ' ')} task encountered an unexpected error. {refund_amount} credits refunded.",
                         link=f"/dashboard/tasks/{task_id}",
                     )
                     await db.commit()

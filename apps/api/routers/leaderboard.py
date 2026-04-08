@@ -10,7 +10,7 @@ from typing import Literal, Optional
 import structlog
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, desc
+from sqlalchemy import select, func, desc, and_, not_, or_
 
 from core.auth import get_optional_user_id
 from core.database import get_db
@@ -21,6 +21,16 @@ logger = structlog.get_logger()
 router = APIRouter(prefix="/v1/leaderboard", tags=["leaderboard"])
 
 _PAGE_SIZE = 50
+
+# Exclude test/seed accounts from public leaderboard
+_EXCLUDED_EMAIL_PATTERNS = ["%@example.com", "%e2e-test%", "%seed-%"]
+
+
+def _real_user_filter():
+    """SQLAlchemy filter clause that excludes test accounts from leaderboard."""
+    return and_(
+        *[not_(UserDB.email.ilike(p)) for p in _EXCLUDED_EMAIL_PATTERNS]
+    )
 
 
 def _entry(i: int, u: UserDB, *, total_earnings: int | None = None) -> LeaderboardEntryOut:
@@ -78,7 +88,7 @@ async def get_leaderboard(
             result = await db.execute(
                 select(UserDB, subq.c.total_earnings)
                 .join(subq, UserDB.id == subq.c.worker_id)
-                .where(UserDB.role.in_(["worker", "both"]))
+                .where(UserDB.role.in_(["worker", "both"]), _real_user_filter())
                 .order_by(desc(subq.c.total_earnings))
             )
             rows = result.all()
@@ -106,7 +116,7 @@ async def get_leaderboard(
             result = await db.execute(
                 select(UserDB, subq.c.task_count)
                 .join(subq, UserDB.id == subq.c.worker_id)
-                .where(UserDB.role.in_(["worker", "both"]))
+                .where(UserDB.role.in_(["worker", "both"]), _real_user_filter())
                 .order_by(desc(subq.c.task_count))
             )
             rows = result.all()
@@ -132,7 +142,7 @@ async def get_leaderboard(
         result = await db.execute(
             select(UserDB, subq.c.total_earnings)
             .join(subq, UserDB.id == subq.c.worker_id)
-            .where(UserDB.role.in_(["worker", "both"]))
+            .where(UserDB.role.in_(["worker", "both"]), _real_user_filter())
             .order_by(desc(subq.c.total_earnings))
         )
         rows = result.all()
@@ -150,7 +160,7 @@ async def get_leaderboard(
 
     result = await db.execute(
         select(UserDB)
-        .where(UserDB.role.in_(["worker", "both"]))
+        .where(UserDB.role.in_(["worker", "both"]), _real_user_filter())
         .order_by(desc(order_col))
         .limit(_PAGE_SIZE)
     )

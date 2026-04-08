@@ -32,6 +32,7 @@ const isLoggedIn = !!token;
 let unreadCount = 0;
 let unreadMsgCount = 0;
 let emailVerified = true; // default true to avoid false-positive banners on fetch failure
+let emailEnabled = false; // whether the platform has email configured
 let activeAnnouncements: Array<{id: string; title: string; message: string; type: string}> = [];
 try {
   const API_URL = import.meta.env.PUBLIC_API_URL ?? "http://api:8100";
@@ -39,6 +40,13 @@ try {
   const authHeader: Record<string, string> = token
     ? { Authorization: `Bearer ${token}` }
     : {};
+
+  // Check platform config (public, no auth needed)
+  const healthRes = await fetch(`${API_URL}/v1/health`).catch(() => null);
+  if (healthRes?.ok) {
+    const health = await healthRes.json();
+    emailEnabled = !!health.config?.email_enabled;
+  }
 
   if (isLoggedIn) {
     const [notifRes, msgRes, meRes, annRes] = await Promise.allSettled([
@@ -73,8 +81,9 @@ try {
   // silently ignore — non-critical
 }
 
-// Show email verification banner only when logged in, unverified, and not on the verify page
+// Show email verification banner only when: email is enabled, logged in, unverified, not on verify page
 const showVerifyBanner =
+  emailEnabled &&
   isLoggedIn &&
   !emailVerified &&
   !Astro.url.pathname.startsWith("/verify-email");
