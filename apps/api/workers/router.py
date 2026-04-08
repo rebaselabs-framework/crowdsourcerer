@@ -56,12 +56,26 @@ async def execute_task(
             raise WorkerError(f"Unknown task type: {task_type}", status_code=422)
 
 
+# ─── Helpers ──────────────────────────────────────────────────────────────
+
+def _require(inp: dict, key: str, task_type: str) -> Any:
+    """Get a required key from input, raising a clear error if missing."""
+    if key not in inp:
+        raise WorkerError(
+            f"Missing required field '{key}' in input for {task_type}. "
+            f"Expected: input.{key}",
+            status_code=422,
+        )
+    return inp[key]
+
+
 # ─── Worker implementations ────────────────────────────────────────────────
 
 async def _web_research(client: RebaseKitClient, inp: dict) -> dict:
     # POST /webtask/api/task — AI agent up to 20 steps; requires `url` + `task`
+    url = _require(inp, "url", "web_research")
     result = await client.post("/webtask/api/task", {
-        "url": inp["url"],
+        "url": url,
         "task": inp.get("instruction") or inp.get("task", "Extract the main content from this page"),
     })
     return {"raw": result, "summary": result.get("summary") or result.get("result", "")[:500]}
@@ -107,7 +121,7 @@ async def _document_parse(client: RebaseKitClient, inp: dict) -> dict:
 
 async def _data_transform(client: RebaseKitClient, inp: dict) -> dict:
     # POST /transform/api/transform — requires input_format, output_format, data (as string)
-    data = inp["data"]
+    data = _require(inp, "data", "data_transform")
     if not isinstance(data, str):
         data = json.dumps(data)
     result = await client.post("/transform/api/transform", {
@@ -137,21 +151,23 @@ async def _llm_generate(client: RebaseKitClient, inp: dict) -> dict:
 
 async def _screenshot(client: RebaseKitClient, inp: dict) -> dict:
     # POST /screenshot/api/screenshot — Playwright Chromium screenshot
+    url = _require(inp, "url", "screenshot")
     result = await client.post("/screenshot/api/screenshot", {
-        "url": inp["url"],
+        "url": url,
         "width": inp.get("width", 1280),
         "height": inp.get("height", 800),
         "full_page": inp.get("full_page", False),
         "format": inp.get("format", "png"),
     })
-    return {"raw": result, "summary": f"Screenshot of {inp['url']}"}
+    return {"raw": result, "summary": f"Screenshot of {url}"}
 
 
 async def _audio_transcribe(client: RebaseKitClient, inp: dict) -> dict:
     # POST /audio/transcribe — URL-based transcription via OpenAI Whisper
     # Note: only URL-based audio is supported; base64_audio is not supported by this service.
+    url = _require(inp, "url", "audio_transcribe")
     payload: dict[str, Any] = {
-        "url": inp["url"],  # required: URL of the audio file
+        "url": url,  # required: URL of the audio file
         "export_format": "json",
     }
     if inp.get("language"):
@@ -162,8 +178,9 @@ async def _audio_transcribe(client: RebaseKitClient, inp: dict) -> dict:
 
 async def _pii_detect(client: RebaseKitClient, inp: dict) -> dict:
     # POST /pii/api/detect — find all PII in text
+    text = _require(inp, "text", "pii_detect")
     result = await client.post("/pii/api/detect", {
-        "text": inp["text"],
+        "text": text,
         "entities": inp.get("entities"),
     })
     count = len(result.get("entities", []))
@@ -172,8 +189,9 @@ async def _pii_detect(client: RebaseKitClient, inp: dict) -> dict:
 
 async def _code_execute(client: RebaseKitClient, inp: dict) -> dict:
     # POST /code/api/execute — run Python or JavaScript code in a sandbox
+    code = _require(inp, "code", "code_execute")
     result = await client.post("/code/api/execute", {
-        "code": inp["code"],
+        "code": code,
         "language": inp.get("language", "python"),
         "timeout": inp.get("timeout_seconds", 30),
     })
@@ -182,8 +200,9 @@ async def _code_execute(client: RebaseKitClient, inp: dict) -> dict:
 
 async def _web_intel(client: RebaseKitClient, inp: dict) -> dict:
     # POST /webtask/api/research/auto — self-directed research: search→fetch→synthesize
+    query = _require(inp, "query", "web_intel")
     result = await client.post("/webtask/api/research/auto", {
-        "query": inp["query"],
+        "query": query,
         "num_sources": min(inp.get("max_results", 5), 10),
     })
     return {"raw": result, "summary": (result.get("summary") or result.get("answer") or "")[:500]}
