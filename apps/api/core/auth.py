@@ -83,6 +83,16 @@ async def get_current_user_id(
         # Fetch owning user to resolve plan for rate-limit defaults
         user_result = await db.execute(select(UserDB).where(UserDB.id == api_key.user_id))
         owner = user_result.scalar_one_or_none()
+        if not owner or not owner.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Account disabled",
+            )
+        if getattr(owner, "is_banned", False):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Account banned",
+            )
         user_plan = owner.plan if owner else "free"
 
         # Enforce per-key rate limits (RPM + daily)

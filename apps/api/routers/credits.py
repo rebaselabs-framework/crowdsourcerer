@@ -154,12 +154,20 @@ async def create_checkout(
 
 @router.post("/webhook")
 async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
-    """Stripe webhook — credit user after successful payment.
+    """DEPRECATED: Use POST /v1/webhooks/stripe instead.
 
-    Note: the canonical webhook handler is at POST /v1/webhooks/stripe which
-    handles the full event lifecycle with idempotency. This endpoint handles
-    checkout.session.completed only, with its own idempotency guard.
+    This duplicate handler is disabled to prevent double-crediting.
+    The canonical handler at /v1/webhooks/stripe handles the full event
+    lifecycle with robust idempotency.
     """
+    raise HTTPException(
+        status_code=410,
+        detail="This endpoint is deprecated. Use POST /v1/webhooks/stripe instead.",
+    )
+    # -- Original code preserved below for reference (unreachable) --
+    if not settings.stripe_webhook_secret:
+        raise HTTPException(status_code=503, detail="Stripe webhook secret not configured")
+
     payload = await request.body()
     sig = request.headers.get("stripe-signature", "")
 

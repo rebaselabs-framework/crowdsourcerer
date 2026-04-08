@@ -317,7 +317,9 @@ async def change_password(
 # ─── Email verification ───────────────────────────────────────────────────────
 
 @router.get("/verify-email", status_code=200)
+@limiter.limit("10/minute")
 async def verify_email(
+    request: Request,
     token: str = Query(..., description="Email verification token from link"),
     db: AsyncSession = Depends(get_db),
 ):

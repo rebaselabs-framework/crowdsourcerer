@@ -281,7 +281,7 @@ async def health_ready():
             await session.execute(text("SELECT 1"))
         db_ok = True
     except Exception as exc:
-        db_error = str(exc)
+        db_error = str(exc) if settings.debug else "Database connection failed"
 
     status_code = 200 if db_ok else 503
     body = {
@@ -305,19 +305,28 @@ async def health_v1():
         db_ok = True
     except Exception:
         pass
-    return {
+    body: dict = {
         "status": "ok",
         "version": settings.app_version,
         "database": db_ok,
-        "config": {
+    }
+    # Only expose config details in debug mode — the admin panel has full config status
+    if settings.debug:
+        body["config"] = {
             "rebasekit_api_key": bool(settings.rebasekit_api_key),
             "rebasekit_base_url": settings.rebasekit_base_url,
             "jwt_secret": settings.jwt_secret != "change-me-in-production",
             "stripe": bool(settings.stripe_secret_key),
             "email_enabled": settings.email_enabled,
             "google_oauth": bool(settings.google_client_id),
-        },
-    }
+        }
+    else:
+        # Minimal config: only what the frontend needs to toggle UI
+        body["config"] = {
+            "email_enabled": settings.email_enabled,
+            "google_oauth": bool(settings.google_client_id),
+        }
+    return body
 
 
 @app.get("/", tags=["health"])
@@ -338,11 +347,15 @@ async def root():
 @app.get("/openapi.json", include_in_schema=False)
 async def get_openapi_spec():
     """Download the raw OpenAPI 3.x spec as JSON."""
+    import json as _json
     try:
         spec = app.openapi()
-        return JSONResponse(content=spec, media_type="application/json")
+        # Serialize manually to catch and surface any serialization errors
+        # (JSONResponse uses json.dumps internally, which can fail on edge cases)
+        body = _json.dumps(spec, default=str).encode("utf-8")
+        return Response(content=body, media_type="application/json")
     except Exception as exc:
-        logger.error("openapi_spec_generation_failed", error=str(exc))
+        logger.error("openapi_spec_generation_failed", error=str(exc), exc_type=type(exc).__name__)
         return JSONResponse(
             content={"error": "openapi_generation_failed", "detail": str(exc)},
             status_code=500,
@@ -395,6 +408,7 @@ async def bootstrap_admin(request: Request):
         if not user:
             raise HTTPException(status_code=401, detail="User not found")
 
+        logger.warning("admin_bootstrap_used", email=user.email, user_id=str(user.id))
         user.is_admin = True
         user.credits = max(user.credits, 100_000)  # Generous for seeding
         await db.commit()

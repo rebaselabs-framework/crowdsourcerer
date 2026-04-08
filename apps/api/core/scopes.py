@@ -122,11 +122,15 @@ def require_scope(scope: str):
                     detail=f"API key is missing required scope: '{scope}'",
                 )
 
-            # Rate limiting
+            # Rate limiting + account status check
             user_result = await db.execute(
                 select(UserDB).where(UserDB.id == api_key.user_id)
             )
             owner = user_result.scalar_one_or_none()
+            if not owner or not owner.is_active:
+                raise HTTPException(status_code=403, detail="Account disabled")
+            if getattr(owner, "is_banned", False):
+                raise HTTPException(status_code=403, detail="Account banned")
             user_plan = owner.plan if owner else "free"
             await check_and_record_api_key_rate_limit(db, api_key, user_plan)
 
@@ -136,6 +140,9 @@ def require_scope(scope: str):
             return str(api_key.user_id)
 
         # ── JWT path — bypass scope check ─────────────────────────────
+        # JWT tokens expire in 30min and token_version is checked by
+        # get_current_user for endpoints that load the full user object.
+        # Adding a DB query here would add latency to every scoped request.
         user_id = decode_access_token(token)
         if not user_id:
             raise HTTPException(
