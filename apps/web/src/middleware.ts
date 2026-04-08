@@ -22,11 +22,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
     return next();
   }
 
-  // Special case: FastAPI's built-in OpenAPI spec lives at /openapi.json (no /v1 prefix).
-  // Requests to /v1/openapi.json must be forwarded to http://api:8100/openapi.json.
-  const backendPath =
-    url.pathname === "/v1/openapi.json" ? "/openapi.json" : url.pathname;
-  const apiUrl = `${API_URL}${backendPath}${url.search}`;
+  const apiUrl = `${API_URL}${url.pathname}${url.search}`;
 
   // Forward all headers from the original request, except host
   const forwardHeaders = new Headers();

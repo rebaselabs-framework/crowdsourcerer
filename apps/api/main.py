@@ -134,6 +134,7 @@ app = FastAPI(
     title="CrowdSorcerer API",
     description=_DESCRIPTION,
     version=settings.app_version,
+    openapi_url="/openapi.json",
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_tags=_TAGS_METADATA,
@@ -345,13 +346,16 @@ async def root():
 
 
 @app.get("/openapi.json", include_in_schema=False)
+@app.get("/v1/openapi-spec", include_in_schema=False)
 async def get_openapi_spec():
-    """Download the raw OpenAPI 3.x spec as JSON."""
+    """Download the raw OpenAPI 3.x spec as JSON.
+
+    Dual-mounted: /openapi.json for local access (FastAPI docs),
+    /v1/openapi-spec for access through the Astro middleware proxy.
+    """
     import json as _json
     try:
         spec = app.openapi()
-        # Serialize manually to catch and surface any serialization errors
-        # (JSONResponse uses json.dumps internally, which can fail on edge cases)
         body = _json.dumps(spec, default=str).encode("utf-8")
         return Response(content=body, media_type="application/json")
     except Exception as exc:

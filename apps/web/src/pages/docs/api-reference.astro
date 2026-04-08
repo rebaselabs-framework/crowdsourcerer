@@ -1,8 +1,8 @@
 ---
 // Full-page API reference using Scalar — no Layout wrapper needed (scalar handles its own UI)
 // Always use the public-facing URL so Scalar can fetch the spec from the browser.
-// /v1/openapi.json is handled by the Astro middleware which proxies to http://api:8100/openapi.json.
-const specUrl = "/v1/openapi.json";
+// Use the direct /v1/ route that the middleware proxies to the API backend.
+const specUrl = "/v1/openapi-spec";
 ---
 <!DOCTYPE html>
 <html lang="en">
