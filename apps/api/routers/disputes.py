@@ -7,6 +7,7 @@ from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Body, Request
+from pydantic import BaseModel, Field
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -416,19 +417,26 @@ async def list_dispute_evidence(
     ]
 
 
+class _DisputeEvidenceRequest(BaseModel):
+    evidence_type: str = Field("text", description="Type: text, url, or image_url")
+    content: str = Field(..., min_length=1, description="Evidence content")
+    assignment_id: Optional[UUID] = None
+
+
 @router.post("/tasks/{task_id}/evidence", status_code=201)
 @limiter.limit("10/minute")
 async def submit_dispute_evidence(
     request: Request,
     task_id: UUID,
-    evidence_type: str = Body("text", embed=True),
-    content: str = Body(..., embed=True),
-    assignment_id: Optional[UUID] = Body(None, embed=True),
+    body: _DisputeEvidenceRequest,
     user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Submit evidence in support of a disputed task."""
     uid = UUID(user_id)
+    evidence_type = body.evidence_type
+    content = body.content
+    assignment_id = body.assignment_id
 
     if evidence_type not in ("text", "url", "image_url"):
         raise HTTPException(400, "evidence_type must be text, url, or image_url")
