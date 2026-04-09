@@ -269,7 +269,7 @@ async def verify_2fa(
         await db.commit()  # persist the refresh token
         refresh_expires_in = int((refresh_expires - datetime.now(timezone.utc)).total_seconds())
     except Exception:
-        pass
+        logger.exception("2fa_refresh_token_error", user_id=str(user.id))
 
     return TokenResponse(
         access_token=access_token,

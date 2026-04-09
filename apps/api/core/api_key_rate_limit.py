@@ -19,7 +19,8 @@ from typing import Optional
 
 import structlog
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.db import ApiKeyDB, ApiKeyRateBucketDB
@@ -63,36 +64,44 @@ async def _get_or_increment_bucket(
     window_key: str,
     reset_at: datetime,
 ) -> int:
-    """Atomically increment and return the new count in a rate bucket."""
-    result = await db.execute(
-        select(ApiKeyRateBucketDB).where(
-            ApiKeyRateBucketDB.api_key_id == api_key_id,
-            ApiKeyRateBucketDB.window_key == window_key,
-        )
-    )
-    bucket = result.scalar_one_or_none()
+    """Atomically increment and return the new count in a rate bucket.
 
-    now = _utcnow()
-    if bucket is None:
-        bucket = ApiKeyRateBucketDB(
-            id=uuid.uuid4(),
+    Uses PostgreSQL INSERT ... ON CONFLICT DO UPDATE to avoid race
+    conditions on concurrent requests with the same key + window.
+    The CASE expression also handles expired windows: if ``reset_at``
+    has passed, the counter resets to 1 instead of incrementing.
+    """
+    table = ApiKeyRateBucketDB.__table__
+    new_id = uuid.uuid4()
+
+    stmt = (
+        pg_insert(table)
+        .values(
+            id=new_id,
             api_key_id=api_key_id,
             window_key=window_key,
             count=1,
             reset_at=reset_at,
         )
-        db.add(bucket)
-        await db.flush()
-        return 1
-    else:
-        if now > bucket.reset_at:
-            # Window expired — reset
-            bucket.count = 1
-            bucket.reset_at = reset_at
-        else:
-            bucket.count += 1
-        await db.flush()
-        return bucket.count
+        .on_conflict_do_update(
+            constraint="uq_api_key_rate_bucket",
+            set_={
+                # If the window expired, reset to 1; otherwise increment.
+                "count": text(
+                    "CASE WHEN api_key_rate_buckets.reset_at < NOW() "
+                    "THEN 1 "
+                    "ELSE api_key_rate_buckets.count + 1 END"
+                ),
+                # Always refresh reset_at to the new window boundary.
+                "reset_at": reset_at,
+            },
+        )
+        .returning(table.c.count)
+    )
+
+    result = await db.execute(stmt)
+    count = result.scalar_one()
+    return count
 
 
 async def check_and_record_api_key_rate_limit(
@@ -203,9 +212,6 @@ async def get_api_key_rate_status(
         if api_key.rate_limit_daily is not None
         else _PLAN_DAILY_DEFAULTS.get(user_plan)
     )
-
-    def _bucket_count(window_key: str) -> int:
-        return 0  # will be filled async below
 
     async def _read_bucket(window_key: str) -> int:
         r = await db.execute(
