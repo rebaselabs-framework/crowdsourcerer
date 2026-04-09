@@ -4,7 +4,7 @@ import json
 import time
 from datetime import datetime, timezone
 from typing import AsyncIterator, Optional
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, Response
@@ -198,7 +198,6 @@ async def create_task(
             consensus_strategy = "any_first"
 
         task = TaskDB(
-            id=uuid4(),
             user_id=user_id,
             type=req.type,
             status="pending" if is_scheduled else "open",
@@ -221,7 +220,6 @@ async def create_task(
     else:
         # AI tasks go straight to the processing queue (or deferred)
         task = TaskDB(
-            id=uuid4(),
             user_id=user_id,
             type=req.type,
             status="pending" if is_scheduled else "queued",
@@ -248,9 +246,12 @@ async def create_task(
     db.add(txn)
 
     await db.commit()
+    await db.refresh(task)
 
-    # Record quota usage in background (not needed for response)
-    safe_create_task(_record_quota_usage(user_id))
+    # Record quota usage (daily + burst)
+    from core.quotas import record_task_creation, record_task_burst
+    await record_task_creation(db, user_id)
+    await record_task_burst(db, user_id)
 
     # Hook requester onboarding: create_task step
     safe_create_task(_mark_requester_onboarding(user_id, "create_task"))
@@ -288,19 +289,6 @@ async def create_task(
         status=task.status,
         estimated_credits=estimated_credits,
     )
-
-
-async def _record_quota_usage(user_id: str) -> None:
-    """Background task: record quota usage after task creation."""
-    from core.database import AsyncSessionLocal
-    from core.quotas import record_task_creation, record_task_burst
-    async with AsyncSessionLocal() as db:
-        try:
-            await record_task_creation(db, user_id)
-            await record_task_burst(db, user_id)
-        except Exception:
-            logger.warning("background_task.quota_recording_failed",
-                           user_id=user_id, exc_info=True)
 
 
 async def _trigger_saved_search_alerts(
