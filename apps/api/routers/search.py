@@ -187,7 +187,7 @@ async def search_tasks(
     query = select(TaskDB).where(TaskDB.user_id == user_id)
 
     if q:
-        search_term = f"%{q}%"
+        search_term = f"%{esc_like(q)}%"
         query = query.where(
             or_(
                 TaskDB.type.ilike(search_term, escape=LIKE_ESC),

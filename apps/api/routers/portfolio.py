@@ -5,6 +5,7 @@ portfolio of their best work.  Visitors to the worker's public profile see
 the pinned items with task type, result summary, and worker caption.
 """
 
+from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 
@@ -165,6 +166,7 @@ async def pin_task(
         task_id=body.task_id,
         caption=body.caption,
         display_order=body.display_order,
+        pinned_at=datetime.now(timezone.utc),
     )
     db.add(pin)
     await db.commit()

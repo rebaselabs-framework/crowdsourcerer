@@ -105,6 +105,7 @@ async def create_org(
         owner_id=user_id,
         description=req.description,
         credits=0,
+        plan="free",
     )
     db.add(org)
     await db.flush()  # Get org.id

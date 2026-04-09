@@ -69,7 +69,9 @@ async def _refresh_worker_avg(worker_id: UUID, db: AsyncSession) -> None:
     if not row or not row.cnt:
         return
     avg = round(float(row.avg), 2)
-    worker_res = await db.execute(select(UserDB).where(UserDB.id == worker_id))
+    worker_res = await db.execute(
+        select(UserDB).where(UserDB.id == worker_id).with_for_update()
+    )
     worker = worker_res.scalar_one_or_none()
     if worker:
         worker.avg_feedback_score = avg

@@ -31,6 +31,7 @@ import urllib.parse
 from typing import Optional
 
 import httpx
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
@@ -41,6 +42,7 @@ from core.config import get_settings
 from core.database import get_db
 from models.db import UserDB
 
+logger = structlog.get_logger()
 router = APIRouter(prefix="/v1/auth", tags=["auth"])
 
 _GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -243,7 +245,7 @@ async def google_callback(
         raw_refresh, _refresh_expires = await create_refresh_token(str(user.id), db)
         await db.commit()  # persist the refresh token
     except Exception:
-        pass
+        logger.exception("oauth_refresh_token_error", user_id=str(user.id))
 
     next_path = state_payload.get("next", "/dashboard")
     # Redirect to web's /auth/google-success which picks up the tokens from the query string
