@@ -1759,10 +1759,8 @@ class PlatformAnnouncementDB(Base):
     id            = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     title         = Column(String(200), nullable=False)
     message       = Column(Text, nullable=False)
-    type          = Column(SAEnum("info", "warning", "maintenance", "feature",
-                                  name="announcement_type_enum"), default="info", nullable=False)
-    target_role   = Column(SAEnum("all", "requester", "worker",
-                                  name="announcement_role_enum"), default="all", nullable=False)
+    type          = Column(String(20), default="info", nullable=False)
+    target_role   = Column(String(20), default="all", nullable=False)
     is_active     = Column(Boolean, default=True, nullable=False)
     starts_at     = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     expires_at    = Column(DateTime(timezone=True), nullable=True)

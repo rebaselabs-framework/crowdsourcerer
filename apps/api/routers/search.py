@@ -76,7 +76,7 @@ async def unified_search(
         task_q = select(TaskDB).where(
             TaskDB.user_id == user_id,
             or_(
-                TaskDB.type.ilike(search_term, escape=LIKE_ESC),
+                cast(TaskDB.type, String).ilike(search_term, escape=LIKE_ESC),
                 TaskDB.task_instructions.ilike(search_term, escape=LIKE_ESC),
                 cast(TaskDB.input, String).ilike(search_term, escape=LIKE_ESC),
                 cast(TaskDB.output, String).ilike(search_term, escape=LIKE_ESC),
@@ -190,7 +190,7 @@ async def search_tasks(
         search_term = f"%{esc_like(q)}%"
         query = query.where(
             or_(
-                TaskDB.type.ilike(search_term, escape=LIKE_ESC),
+                cast(TaskDB.type, String).ilike(search_term, escape=LIKE_ESC),
                 TaskDB.task_instructions.ilike(search_term, escape=LIKE_ESC),
                 cast(TaskDB.input, String).ilike(search_term, escape=LIKE_ESC),
                 cast(TaskDB.output, String).ilike(search_term, escape=LIKE_ESC),

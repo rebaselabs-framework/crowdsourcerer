@@ -303,19 +303,27 @@ async def get_recommended_tasks(
             MarketplaceTaskOut(
                 id=t.id,
                 type=t.type,
-                title=t.input.get("title", t.type.replace("_", " ").title()) if isinstance(t.input, dict) else t.type,
-                description=t.task_instructions or "",
+                task_instructions=t.task_instructions,
                 reward_credits=t.worker_reward_credits or 0,
-                slots_remaining=t.assignments_required - t.assignments_completed,
+                slots_available=t.assignments_required - t.assignments_completed,
+                assignments_required=t.assignments_required,
+                assignments_completed=t.assignments_completed,
                 priority=t.priority,
-                claim_timeout_minutes=t.claim_timeout_minutes,
+                estimated_minutes=t.claim_timeout_minutes or 30,
                 created_at=t.created_at,
+                tags=t.tags,
                 application_mode=bool(t.application_mode),
                 user_applied=t.id in applied_ids,
             )
         )
 
-    return PaginatedMarketplaceTasks(items=items, total=total)
+    return PaginatedMarketplaceTasks(
+        items=items,
+        total=total,
+        page=(offset // limit) + 1 if limit else 1,
+        page_size=limit,
+        has_next=(offset + limit) < total,
+    )
 
 
 @router.get("/{worker_id}/verified-skills", response_model=list[WorkerSkillOut])

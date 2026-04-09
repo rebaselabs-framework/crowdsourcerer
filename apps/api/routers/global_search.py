@@ -42,7 +42,7 @@ async def global_search(
         select(TaskDB).where(
             TaskDB.user_id == user_id,
             or_(
-                TaskDB.type.ilike(search_term, escape=LIKE_ESC),
+                cast(TaskDB.type, String).ilike(search_term, escape=LIKE_ESC),
                 TaskDB.task_instructions.ilike(search_term, escape=LIKE_ESC),
                 cast(TaskDB.input, String).ilike(search_term, escape=LIKE_ESC),
             ),

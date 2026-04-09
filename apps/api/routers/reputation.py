@@ -92,7 +92,7 @@ async def _get_worker_or_404(worker_id: UUID, db: AsyncSession) -> UserDB:
 
 @router.get("/v1/reputation/me", response_model=ReputationOut)
 async def get_my_reputation(
-    user_id: UUID = Depends(get_current_user_id),
+    user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
     """Get the current worker's reputation details."""

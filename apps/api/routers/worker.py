@@ -382,7 +382,6 @@ async def get_worker_performance(
                 func.count().label("total"),
                 func.sum(sa_case((TaskAssignmentDB.status == "approved", 1), else_=0)).label("approved"),
             )
-            .join(TaskDB, TaskAssignmentDB.task_id == TaskDB.id)
             .where(
                 TaskAssignmentDB.worker_id == user_id,
                 TaskAssignmentDB.status.in_(["approved", "rejected"]),
@@ -460,9 +459,10 @@ async def get_worker_performance(
 
     # ── Weekly trend (last 8 weeks) ───────────────────────────────────────────
     eight_weeks_ago = now_utc - timedelta(weeks=8)
+    week_col = func.date_trunc("week", TaskAssignmentDB.submitted_at).label("week_start")
     weekly_res = await db.execute(
         select(
-            func.date_trunc("week", TaskAssignmentDB.submitted_at).label("week_start"),
+            week_col,
             func.count().label("total"),
             func.sum(sa_case((TaskAssignmentDB.status == "approved", 1), else_=0)).label("approved"),
         )
@@ -470,9 +470,10 @@ async def get_worker_performance(
             TaskAssignmentDB.worker_id == user_id,
             TaskAssignmentDB.status.in_(["approved", "rejected"]),
             TaskAssignmentDB.submitted_at >= eight_weeks_ago,
+            TaskAssignmentDB.submitted_at.isnot(None),
         )
-        .group_by(func.date_trunc("week", TaskAssignmentDB.submitted_at))
-        .order_by(func.date_trunc("week", TaskAssignmentDB.submitted_at).asc())
+        .group_by(week_col)
+        .order_by(week_col.asc())
     )
     weekly_trend = [
         {
