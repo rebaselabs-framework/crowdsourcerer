@@ -1555,7 +1555,7 @@ REQUESTER_STEP_META = {
         "title": "Create your first task",
         "description": "Submit an AI-powered or human task to see CrowdSorcerer in action.",
         "cta": "Create a task",
-        "cta_url": "/dashboard/tasks/new",
+        "cta_url": "/dashboard/new-task",
         "icon": "🚀",
     },
     "view_results": {
