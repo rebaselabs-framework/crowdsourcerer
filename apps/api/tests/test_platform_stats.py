@@ -39,6 +39,18 @@ def _scalar_result(value) -> MagicMock:
     return r
 
 
+def _combined_row_result(total, today, week, avg_ms):
+    """Mock result for the combined completion stats query (.one() row)."""
+    row = MagicMock()
+    row.total = total
+    row.today = today
+    row.this_week = week
+    row.avg_ms = avg_ms
+    r = MagicMock()
+    r.one = MagicMock(return_value=row)
+    return r
+
+
 def _build_stats_db(
     total: int       = 0,
     today: int       = 0,
@@ -49,7 +61,15 @@ def _build_stats_db(
     top_types: list  = None,
     running: int     = 0,
 ) -> MagicMock:
-    """Returns a mock DB that answers the 7 sequential execute() calls in get_platform_stats."""
+    """Returns a mock DB that answers the 5 sequential execute() calls in get_platform_stats.
+
+    Query order after optimization:
+      1. Combined task stats (total, today, this_week, avg_ms) → .one()
+      2. Active workers (30d) → .scalar_one()
+      3. Total requesters → .scalar_one()
+      4. Top task types → .all()
+      5. Tasks running now → .scalar_one()
+    """
     db         = _make_db()
     call_num   = [0]
     top_rows   = top_types or []
@@ -57,23 +77,17 @@ def _build_stats_db(
     def _side_effect(stmt):
         call_num[0] += 1
         n = call_num[0]
-        if n == 1:  # tasks_completed_total
-            return _scalar_result(total)
-        if n == 2:  # tasks_completed_today
-            return _scalar_result(today)
-        if n == 3:  # tasks_completed_this_week
-            return _scalar_result(week)
-        if n == 4:  # active_workers_30d
+        if n == 1:  # combined completion stats
+            return _combined_row_result(total, today, week, avg_ms)
+        if n == 2:  # active_workers_30d
             return _scalar_result(active_w)
-        if n == 5:  # total_requesters
+        if n == 3:  # total_requesters
             return _scalar_result(requesters)
-        if n == 6:  # avg_completion_ms
-            return _scalar_result(avg_ms)
-        if n == 7:  # top_task_types
+        if n == 4:  # top_task_types
             r = MagicMock()
             r.all = MagicMock(return_value=top_rows)
             return r
-        if n == 8:  # tasks_running_now
+        if n == 5:  # tasks_running_now
             return _scalar_result(running)
         return _scalar_result(None)
 
