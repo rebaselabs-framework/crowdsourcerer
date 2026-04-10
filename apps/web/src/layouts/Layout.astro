@@ -13,16 +13,19 @@ export interface Props {
   user?: any;
 }
 
+// Site URL is configured in astro.config.mjs (reads PUBLIC_SITE_URL env var
+// with a safe default). Strip trailing slash so path concatenation works.
+const siteUrl = (Astro.site?.toString() ?? "https://crowdsourcerer.rebaselabs.online").replace(/\/$/, "");
+
 const {
   title = "CrowdSorcerer — AI Task Platform",
   description = "Submit any task. CrowdSorcerer routes it to the right AI worker and delivers results. Web research, entity lookup, document parsing, code execution — at 1¢ per task.",
-  ogImage = "https://crowdsorcerer.dev/og-default.png",
+  ogImage = `${siteUrl}/og-default.png`,
   ogType = "website",
   canonicalUrl,
   noIndex = false,
 } = Astro.props;
 
-const siteUrl = "https://crowdsorcerer.dev";
 const canonical = canonicalUrl ?? `${siteUrl}${Astro.url.pathname}`;
 
 const token = getToken(Astro.cookies);

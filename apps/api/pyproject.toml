@@ -1,0 +1,12 @@
+[project]
+name = "crowdsourcerer-api"
+version = "0.1.0"
+description = "CrowdSorcerer task broker API — FastAPI + asyncpg."
+# match-statement routing (workers/router.py) and PEP 604 union syntax are
+# used throughout, so Python 3.10 is the absolute minimum. Production runs
+# on 3.12 (see Dockerfile); 3.10 is the floor for local dev tooling.
+requires-python = ">=3.10"
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
