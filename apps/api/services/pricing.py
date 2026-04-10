@@ -5,7 +5,7 @@ instance to override pricing per deployment, or use
 :data:`default_pricing` for the common path.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Mapping, Protocol
 
@@ -57,9 +57,15 @@ class _TaskLike(Protocol):
 class TaskPricing:
     """Value object holding the rules for computing task credit costs."""
 
-    ai_credits: Mapping[str, int] = AI_TASK_CREDITS
-    human_base_credits: Mapping[str, int] = HUMAN_TASK_BASE_CREDITS
-    human_task_types: frozenset[str] = HUMAN_TASK_TYPES
+    # MappingProxyType / frozenset are immutable, but Python 3.11's
+    # dataclass decorator still refuses them as inline defaults. Using
+    # default_factory lambdas that return the same singleton is the
+    # supported workaround — no per-instance allocation.
+    ai_credits: Mapping[str, int] = field(default_factory=lambda: AI_TASK_CREDITS)
+    human_base_credits: Mapping[str, int] = field(
+        default_factory=lambda: HUMAN_TASK_BASE_CREDITS,
+    )
+    human_task_types: frozenset[str] = field(default_factory=lambda: HUMAN_TASK_TYPES)
     human_platform_fee_fraction: float = 0.20
     ai_fallback_credits: int = _AI_FALLBACK_CREDITS
     min_platform_fee: int = 1
