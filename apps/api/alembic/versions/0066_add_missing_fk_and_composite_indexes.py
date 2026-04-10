@@ -30,83 +30,34 @@ branch_labels = None
 depends_on = None
 
 
+# Earlier migrations accidentally created some of these same indexes under
+# the same name. Use CREATE INDEX IF NOT EXISTS so a cold database running
+# the whole history from scratch converges to the same end state as a
+# previously-migrated DB — without per-index idempotent guards.
+_INDEXES: list[tuple[str, str, str]] = [
+    # ── Missing FK indexes (prevent full scans on JOINs and CASCADE deletes)
+    ("ix_worker_endorsements_task_id", "worker_endorsements", "(task_id)"),
+    ("ix_worker_invites_requester_id", "worker_invites", "(requester_id)"),
+    ("ix_org_activity_log_user_id", "org_activity_log", "(user_id)"),
+    ("ix_task_templates_marketplace_creator_id", "task_templates_marketplace", "(creator_id)"),
+    ("ix_ab_participants_user_id", "ab_participants", "(user_id)"),
+    ("ix_sla_breaches_user_id", "sla_breaches", "(user_id)"),
+    ("ix_stripe_event_log_user_id", "stripe_event_log", "(user_id)"),
+    ("ix_task_pipeline_step_runs_step_id", "task_pipeline_step_runs", "(step_id)"),
+    ("ix_task_pipeline_step_runs_task_id", "task_pipeline_step_runs", "(task_id)"),
+    # ── Composite indexes for hot query paths
+    # notification inbox: WHERE user_id=? AND is_read=false ORDER BY created_at DESC
+    ("ix_notifications_user_read_created", "notifications", "(user_id, is_read, created_at)"),
+    # worker leaderboard: WHERE worker_id=? ORDER BY submitted_at DESC
+    ("ix_task_assignments_worker_submitted", "task_assignments", "(worker_id, submitted_at)"),
+]
+
+
 def upgrade() -> None:
-    # ── Missing FK indexes (prevent full scans on JOINs and CASCADE deletes) ──
-
-    op.create_index(
-        "ix_worker_endorsements_task_id",
-        "worker_endorsements",
-        ["task_id"],
-    )
-    op.create_index(
-        "ix_worker_invites_requester_id",
-        "worker_invites",
-        ["requester_id"],
-    )
-    op.create_index(
-        "ix_org_activity_log_user_id",
-        "org_activity_log",
-        ["user_id"],
-    )
-    op.create_index(
-        "ix_task_templates_marketplace_creator_id",
-        "task_templates_marketplace",
-        ["creator_id"],
-    )
-    op.create_index(
-        "ix_ab_participants_user_id",
-        "ab_participants",
-        ["user_id"],
-    )
-    op.create_index(
-        "ix_sla_breaches_user_id",
-        "sla_breaches",
-        ["user_id"],
-    )
-    op.create_index(
-        "ix_stripe_event_log_user_id",
-        "stripe_event_log",
-        ["user_id"],
-    )
-    op.create_index(
-        "ix_task_pipeline_step_runs_step_id",
-        "task_pipeline_step_runs",
-        ["step_id"],
-    )
-    op.create_index(
-        "ix_task_pipeline_step_runs_task_id",
-        "task_pipeline_step_runs",
-        ["task_id"],
-    )
-
-    # ── Composite indexes for hot query paths ──
-
-    # Notification inbox: WHERE user_id=? AND is_read=false ORDER BY created_at DESC
-    # Replaces two separate single-column indexes with one covering index.
-    op.create_index(
-        "ix_notifications_user_read_created",
-        "notifications",
-        ["user_id", "is_read", "created_at"],
-    )
-
-    # Worker performance / leaderboard: WHERE worker_id=? ORDER BY submitted_at DESC
-    # Covers worker stats, earnings timeline, admin analytics
-    op.create_index(
-        "ix_task_assignments_worker_submitted",
-        "task_assignments",
-        ["worker_id", "submitted_at"],
-    )
+    for name, table, cols in _INDEXES:
+        op.execute(f"CREATE INDEX IF NOT EXISTS {name} ON {table} {cols}")
 
 
 def downgrade() -> None:
-    op.drop_index("ix_task_assignments_worker_submitted", "task_assignments")
-    op.drop_index("ix_notifications_user_read_created", "notifications")
-    op.drop_index("ix_task_pipeline_step_runs_task_id", "task_pipeline_step_runs")
-    op.drop_index("ix_task_pipeline_step_runs_step_id", "task_pipeline_step_runs")
-    op.drop_index("ix_stripe_event_log_user_id", "stripe_event_log")
-    op.drop_index("ix_sla_breaches_user_id", "sla_breaches")
-    op.drop_index("ix_ab_participants_user_id", "ab_participants")
-    op.drop_index("ix_task_templates_marketplace_creator_id", "task_templates_marketplace")
-    op.drop_index("ix_org_activity_log_user_id", "org_activity_log")
-    op.drop_index("ix_worker_invites_requester_id", "worker_invites")
-    op.drop_index("ix_worker_endorsements_task_id", "worker_endorsements")
+    for name, _table, _cols in reversed(_INDEXES):
+        op.execute(f"DROP INDEX IF EXISTS {name}")
