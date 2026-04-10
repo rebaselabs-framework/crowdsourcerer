@@ -212,11 +212,12 @@ Escape `{` and `}` inside Astro template expressions when they're literal charac
 
 ## Current Status (2026-04-09)
 
-- **Tests**: 2173 backend (0 failures) + 189 E2E Playwright
+- **Tests**: 2195 backend (0 failures) + 200 E2E Playwright
 - **Endpoints**: 335 | **Pages**: 118 | **Migrations**: 67
 - **Revenue**: $0 | **Users**: 0
 - **Deployment**: Live at crowdsourcerer.rebaselabs.online
 - **Phase**: IMPROVE & TEST — quality first, owner decides launch timing
+- **RebaseKit health**: Live probing via `core/rebasekit_health.py` — 60s TTL cache, exposed via `/v1/config`
 - **Quick health check**: `bash scripts/healthcheck.sh` (12 checks in <15s)
 
 ## Deployment Troubleshooting
