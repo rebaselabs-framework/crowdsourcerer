@@ -17,18 +17,18 @@ const { token: _token, user } = await requireAuth(Astro);
         <h2 class="font-semibold text-gray-200">Basic Info</h2>
 
         <div>
-          <label class="label">Template Name *</label>
+          <label for="name" class="label">Template Name *</label>
           <input id="name" type="text" required class="input w-full" placeholder="e.g. Image Spam Classifier" />
         </div>
 
         <div>
-          <label class="label">Description</label>
+          <label for="description" class="label">Description</label>
           <textarea id="description" class="input w-full h-24 resize-none" placeholder="Describe what this template does and when to use it…"></textarea>
         </div>
 
         <div class="grid grid-cols-2 gap-4">
           <div>
-            <label class="label">Task Type *</label>
+            <label for="taskType" class="label">Task Type *</label>
             <select id="taskType" required class="input w-full">
               <option value="">Select type…</option>
               <optgroup label="AI Tasks">
@@ -53,7 +53,7 @@ const { token: _token, user } = await requireAuth(Astro);
             </select>
           </div>
           <div>
-            <label class="label">Execution Mode *</label>
+            <label for="executionMode" class="label">Execution Mode *</label>
             <select id="executionMode" class="input w-full">
               <option value="ai">🤖 AI</option>
               <option value="human">👷 Human</option>
@@ -63,7 +63,7 @@ const { token: _token, user } = await requireAuth(Astro);
 
         <div class="grid grid-cols-2 gap-4">
           <div>
-            <label class="label">Category</label>
+            <label for="category" class="label">Category</label>
             <select id="category" class="input w-full">
               <option value="">None</option>
               <option value="data_labeling">Data Labeling</option>
@@ -77,7 +77,7 @@ const { token: _token, user } = await requireAuth(Astro);
             </select>
           </div>
           <div>
-            <label class="label">Tags (comma-separated)</label>
+            <label for="tags" class="label">Tags (comma-separated)</label>
             <input id="tags" type="text" class="input w-full" placeholder="nlp, classification, text" />
           </div>
         </div>

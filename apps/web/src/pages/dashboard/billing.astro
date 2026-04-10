@@ -195,18 +195,18 @@ const currentPlan = user?.plan ?? "free";
       <form method="POST" class="flex gap-3 items-end">
         <input type="hidden" name="action" value="set_credit_alert" />
         <div class="flex-1">
-          <label class="block text-xs text-gray-400 mb-1.5">Alert threshold (credits)</label>
+          <label for="threshold" class="block text-xs text-gray-400 mb-1.5">Alert threshold (credits)</label>
           <input
             type="number"
-            name="threshold"
+            id="threshold" name="threshold"
             min="0"
             max="1000000"
             step="100"
             placeholder="e.g. 500 — leave blank to disable"
             value={creditAlert?.threshold ?? ""}
-            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-violet-500 placeholder-gray-600"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500 placeholder-gray-500"
           />
-          <p class="text-xs text-gray-600 mt-1">
+          <p class="text-xs text-gray-500 mt-1">
             Current balance: <span class="text-white">{user?.credits?.toLocaleString() ?? 0}</span> credits
             {creditAlert?.threshold && (
               <> · Alert at <span class="text-orange-400">{creditAlert.threshold.toLocaleString()}</span></>
@@ -255,10 +255,10 @@ const currentPlan = user?.plan ?? "free";
             </a>
           )}
           {plan === currentPlan && (
-            <div class="text-center text-xs text-gray-600 py-2">Current plan</div>
+            <div class="text-center text-xs text-gray-500 py-2">Current plan</div>
           )}
           {plan === "free" && plan !== currentPlan && (
-            <div class="text-center text-xs text-gray-600 py-2">Downgrade on cancellation</div>
+            <div class="text-center text-xs text-gray-500 py-2">Downgrade on cancellation</div>
           )}
         </div>
       ))}

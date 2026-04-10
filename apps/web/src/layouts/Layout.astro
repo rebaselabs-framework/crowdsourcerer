@@ -200,8 +200,15 @@ const ANN_ICON: Record<string, string> = {
     })} />
   </head>
   <body class="h-full bg-gray-950 text-gray-100 font-sans antialiased">
+    <!-- Skip to main content (a11y) -->
+    <a
+      href="#main-content"
+      class="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[999] focus:px-4 focus:py-2 focus:bg-violet-600 focus:text-white focus:rounded-lg focus:text-sm focus:font-semibold focus:outline-none focus:ring-2 focus:ring-white"
+    >
+      Skip to main content
+    </a>
     <!-- Nav -->
-    <nav class="sticky top-0 z-50 border-b border-gray-800 bg-gray-950/95 backdrop-blur-sm px-4 sm:px-6 py-3">
+    <nav class="sticky top-0 z-50 border-b border-gray-800 bg-gray-950/95 backdrop-blur-sm px-4 sm:px-6 py-3" aria-label="Main navigation">
       <div class="flex items-center justify-between">
         <!-- Logo -->
         <a href="/" class="flex items-center gap-2 font-bold text-lg text-violet-400 shrink-0">
@@ -349,7 +356,6 @@ const ANN_ICON: Record<string, string> = {
       <div
         id="mobile-menu"
         class="hidden lg:hidden border-t border-gray-800 mt-3 pt-3 pb-2 space-y-1"
-        role="menu"
       >
         <a href="/use-cases" class="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
           🚀 Use Cases
@@ -373,7 +379,7 @@ const ANN_ICON: Record<string, string> = {
           <>
             {/* ── Requester ─────────────────────────── */}
             <div class="h-px bg-gray-800 my-2"></div>
-            <div class="px-3 py-1 text-[10px] uppercase tracking-widest text-gray-600 font-semibold">Requester</div>
+            <div class="px-3 py-1 text-[10px] uppercase tracking-widest text-gray-500 font-semibold">Requester</div>
             <a href="/dashboard" class="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
               🏠 Dashboard
             </a>
@@ -388,7 +394,7 @@ const ANN_ICON: Record<string, string> = {
             </a>
             {/* ── Worker ────────────────────────────── */}
             <div class="h-px bg-gray-800 my-2"></div>
-            <div class="px-3 py-1 text-[10px] uppercase tracking-widest text-gray-600 font-semibold">Worker</div>
+            <div class="px-3 py-1 text-[10px] uppercase tracking-widest text-gray-500 font-semibold">Worker</div>
             <a href="/worker" class="flex items-center gap-3 px-3 py-2.5 text-sm text-violet-300 hover:bg-violet-900/30 rounded-lg transition-colors font-medium">
               🔮 Worker Hub
             </a>
@@ -488,9 +494,9 @@ const ANN_ICON: Record<string, string> = {
 
     <!-- Content -->
     <!-- Extra bottom padding on mobile to account for the bottom nav bar -->
-    <div class:list={["pb-0", isLoggedIn ? "lg:pb-0 pb-20" : ""]}>
+    <main id="main-content" class:list={["pb-0", isLoggedIn ? "lg:pb-0 pb-20" : ""]}>
       <slot />
-    </div>
+    </main>
 
     <!-- Footer (hidden on mobile when logged in to not compete with bottom nav) -->
     <footer class:list={["border-t border-gray-800 px-4 sm:px-6 py-8 mt-16 sm:mt-20", isLoggedIn ? "hidden sm:block" : ""]}>
@@ -511,7 +517,7 @@ const ANN_ICON: Record<string, string> = {
 
     <!-- Mobile bottom navigation (logged-in only, hidden on lg+) -->
     {isLoggedIn && (
-      <nav class="fixed bottom-0 left-0 right-0 z-50 lg:hidden bg-gray-950/98 backdrop-blur-sm border-t border-gray-800 px-1 py-2 safe-area-bottom">
+      <nav class="fixed bottom-0 left-0 right-0 z-50 lg:hidden bg-gray-950/98 backdrop-blur-sm border-t border-gray-800 px-1 py-2 safe-area-bottom" aria-label="Mobile navigation">
         <div class="flex items-center justify-around max-w-md mx-auto">
           <!-- Home -->
           <a href="/dashboard" class:list={["flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl transition-colors min-w-0", currentPath === "/dashboard" ? "text-violet-400" : "text-gray-500 hover:text-gray-300"]}>

@@ -170,21 +170,21 @@ try {
 
       <div class="space-y-4 max-w-sm">
         <div>
-          <label class="block text-sm text-gray-400 mb-1">Current password</label>
-          <input id="pw-current" type="password"
-            class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-gray-100 placeholder-gray-600 focus:outline-none focus:border-violet-500 transition-colors"
+          <label for="pw-current" class="block text-sm text-gray-400 mb-1">Current password</label>
+          <input id="pw-current" type="password" autocomplete="current-password"
+            class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500 transition-colors"
             placeholder="Your current password" />
         </div>
         <div>
-          <label class="block text-sm text-gray-400 mb-1">New password</label>
-          <input id="pw-new" type="password"
-            class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-gray-100 placeholder-gray-600 focus:outline-none focus:border-violet-500 transition-colors"
+          <label for="pw-new" class="block text-sm text-gray-400 mb-1">New password</label>
+          <input id="pw-new" type="password" autocomplete="new-password"
+            class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500 transition-colors"
             placeholder="8+ characters" />
         </div>
         <div>
-          <label class="block text-sm text-gray-400 mb-1">Confirm new password</label>
-          <input id="pw-confirm" type="password"
-            class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-gray-100 placeholder-gray-600 focus:outline-none focus:border-violet-500 transition-colors"
+          <label for="pw-confirm" class="block text-sm text-gray-400 mb-1">Confirm new password</label>
+          <input id="pw-confirm" type="password" autocomplete="new-password"
+            class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500 transition-colors"
             placeholder="Same as above" />
         </div>
         <p id="pw-match" class="text-xs hidden"></p>

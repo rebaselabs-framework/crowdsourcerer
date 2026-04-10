@@ -134,9 +134,9 @@ const TASKS = [
             id="api-key"
             type="password"
             placeholder="sk-cs-..."
-            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-violet-500 transition-colors"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500 transition-colors"
           />
-          <p class="text-xs text-gray-600 mt-1.5">
+          <p class="text-xs text-gray-500 mt-1.5">
             Get your key from <a href="/dashboard/api-keys" class="text-violet-400 hover:text-violet-300">Dashboard → API Keys</a>
           </p>
         </div>
@@ -166,7 +166,7 @@ const TASKS = [
           </label>
           <div class="space-y-2">
             <div>
-              <label class="text-xs text-gray-400 block mb-1">Polling interval (ms)</label>
+              <label for="poll-interval" class="text-xs text-gray-400 block mb-1">Polling interval (ms)</label>
               <input
                 id="poll-interval"
                 type="number"
@@ -174,18 +174,18 @@ const TASKS = [
                 min="500"
                 max="10000"
                 step="500"
-                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-violet-500"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500"
               />
             </div>
             <div>
-              <label class="text-xs text-gray-400 block mb-1">Max wait (s)</label>
+              <label for="max-wait" class="text-xs text-gray-400 block mb-1">Max wait (s)</label>
               <input
                 id="max-wait"
                 type="number"
                 value="60"
                 min="10"
                 max="300"
-                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-violet-500"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500"
               />
             </div>
           </div>
@@ -221,7 +221,7 @@ const TASKS = [
             <textarea
               id="raw-json"
               rows="12"
-              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-3 text-sm text-gray-200 font-mono placeholder-gray-600 focus:outline-none focus:border-violet-500 transition-colors"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-3 text-sm text-gray-200 font-mono placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500 transition-colors"
               placeholder="{}"
             ></textarea>
           </div>
@@ -277,7 +277,7 @@ const TASKS = [
               </button>
             </div>
           </div>
-          <div id="response-placeholder" class="py-12 text-center text-gray-600 text-sm">
+          <div id="response-placeholder" class="py-12 text-center text-gray-500 text-sm">
             Press <strong class="text-gray-500">Run Request</strong> to see the response here
           </div>
           <div id="response-loading" class="hidden py-8 text-center">
@@ -332,11 +332,11 @@ const TASKS = [
         if (f.type === "textarea") {
           inputEl = document.createElement("textarea");
           inputEl.rows = 3;
-          inputEl.className = "w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-violet-500 transition-colors font-mono resize-y";
+          inputEl.className = "w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500 transition-colors font-mono resize-y";
           inputEl.placeholder = f.placeholder ?? "";
         } else if (f.type === "select") {
           inputEl = document.createElement("select");
-          inputEl.className = "w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-violet-500 transition-colors";
+          inputEl.className = "w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500 transition-colors";
           (f.options ?? []).forEach((opt) => {
             const o = document.createElement("option");
             o.value = opt;
@@ -350,12 +350,12 @@ const TASKS = [
         } else if (f.type === "number") {
           inputEl = document.createElement("input");
           inputEl.type = "number";
-          inputEl.className = "w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-violet-500 transition-colors";
+          inputEl.className = "w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500 transition-colors";
           inputEl.placeholder = f.placeholder ?? "";
         } else {
           inputEl = document.createElement("input");
           inputEl.type = "text";
-          inputEl.className = "w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-violet-500 transition-colors";
+          inputEl.className = "w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500 transition-colors";
           inputEl.placeholder = f.placeholder ?? "";
         }
 
@@ -364,7 +364,7 @@ const TASKS = [
 
         const label = document.createElement("label");
         label.className = "text-xs text-gray-400 mb-1 flex items-center gap-1";
-        label.innerHTML = `<span>${f.name}</span>${f.required ? '<span class="text-red-400">*</span>' : '<span class="text-gray-600">(optional)</span>'}`;
+        label.innerHTML = `<span>${f.name}</span>${f.required ? '<span class="text-red-400">*</span>' : '<span class="text-gray-500">(optional)</span>'}`;
 
         if (f.type === "boolean") {
           const row = document.createElement("div");

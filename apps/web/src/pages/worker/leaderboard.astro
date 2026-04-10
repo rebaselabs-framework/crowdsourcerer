@@ -180,7 +180,7 @@ function primaryStat(entry: any): string {
                 </div>
                 <div class="text-right text-sm text-gray-400">
                   Lv.{entry.worker_level}
-                  <div class="text-xs text-gray-600">{LEVEL_NAMES[entry.worker_level] ?? ""}</div>
+                  <div class="text-xs text-gray-500">{LEVEL_NAMES[entry.worker_level] ?? ""}</div>
                 </div>
                 <div class="text-right font-bold tabular-nums">
                   {primaryStat(entry)}
@@ -190,7 +190,7 @@ function primaryStat(entry: any): string {
           })}
         </div>
 
-        <p class="text-xs text-gray-600 text-center mt-4">
+        <p class="text-xs text-gray-500 text-center mt-4">
           Updated · {new Date(leaderboard.generated_at).toLocaleString()}
         </p>
       </div>

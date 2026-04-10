@@ -75,7 +75,7 @@ function pct(count: number): number {
             <div class="text-2xl font-bold">
               {funnel.funnel.find((s: any) => s.stage === "started_onboarding")?.count?.toLocaleString() ?? "—"}
             </div>
-            <div class="text-xs text-gray-600 mt-0.5">
+            <div class="text-xs text-gray-500 mt-0.5">
               {pct(funnel.funnel.find((s: any) => s.stage === "started_onboarding")?.count ?? 0)}% of workers
             </div>
           </div>
@@ -115,7 +115,7 @@ function pct(count: number): number {
                 <div>
                   <div class="flex items-center justify-between mb-1.5">
                     <div class="flex items-center gap-2">
-                      <span class={`text-xs font-mono w-5 text-center ${isCompleted ? "text-emerald-400" : "text-gray-600"}`}>
+                      <span class={`text-xs font-mono w-5 text-center ${isCompleted ? "text-emerald-400" : "text-gray-500"}`}>
                         {idx + 1}
                       </span>
                       <span class={`text-sm font-medium ${isCompleted ? "text-emerald-300" : "text-gray-300"}`}>
@@ -175,12 +175,12 @@ function pct(count: number): number {
           </table>
         </div>
 
-        <p class="text-xs text-gray-600 mt-4 text-right">
+        <p class="text-xs text-gray-500 mt-4 text-right">
           Generated {new Date(funnel.generated_at).toLocaleString()}
         </p>
       </>
     ) : (
-      <div class="text-center py-20 text-gray-600">Loading…</div>
+      <div class="text-center py-20 text-gray-500">Loading…</div>
     )}
   </div>
 </Layout>

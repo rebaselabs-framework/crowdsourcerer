@@ -145,14 +145,14 @@ const totalUnread = threads.reduce((s, t) => s + t.unread_count, 0);
               <p class:list={["text-sm truncate", thread.unread_count > 0 ? "text-gray-200" : "text-gray-400"]}>
                 {thread.last_message_body}
               </p>
-              <p class="text-xs text-gray-600 mt-0.5">
+              <p class="text-xs text-gray-500 mt-0.5">
                 {thread.total_messages} message{thread.total_messages !== 1 ? "s" : ""}
                 · Task {thread.task_id.slice(0, 8)}…
               </p>
             </div>
 
             <!-- Arrow -->
-            <span class="flex-shrink-0 text-gray-600 group-hover:text-gray-300 transition-colors self-center">→</span>
+            <span class="flex-shrink-0 text-gray-500 group-hover:text-gray-300 transition-colors self-center">→</span>
           </a>
         ))}
       </div>

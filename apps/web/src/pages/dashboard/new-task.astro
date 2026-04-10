@@ -260,7 +260,7 @@ if (Astro.request.method === "POST") {
       <div class="mb-8">
         <div class="flex items-center justify-between mb-3">
           <h2 class="text-sm font-medium text-gray-400">🚀 Quick start with a template</h2>
-          <span class="text-xs text-gray-600">Click to pre-fill the form</span>
+          <span class="text-xs text-gray-500">Click to pre-fill the form</span>
         </div>
         <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
           {templates.slice(0, 6).map((tpl: any) => (
@@ -278,7 +278,7 @@ if (Astro.request.method === "POST") {
                 <span class:list={["text-[10px] px-1.5 py-0.5 rounded font-medium", tpl.category === "ai" ? "bg-cyan-900/40 text-cyan-400" : "bg-violet-900/40 text-violet-400"]}>
                   {tpl.category === "ai" ? "AI" : "Human"}
                 </span>
-                <span class="text-[10px] text-gray-600">~{tpl.estimated_credits} cr</span>
+                <span class="text-[10px] text-gray-500">~{tpl.estimated_credits} cr</span>
               </div>
             </button>
           ))}
@@ -375,10 +375,10 @@ if (Astro.request.method === "POST") {
             id="input"
             rows="6"
             class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-3 font-mono text-sm text-gray-100
-              focus:outline-none focus:border-violet-500 transition-colors resize-y"
+              focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500 transition-colors resize-y"
             placeholder='{"query": "latest AI research 2025"}'
           ></textarea>
-          <p class="text-xs text-gray-600 mt-1">Must be valid JSON.</p>
+          <p class="text-xs text-gray-500 mt-1">Must be valid JSON.</p>
           <p id="json-input-error" class="text-xs text-red-400 mt-1 hidden"></p>
         </div>
 
@@ -394,21 +394,21 @@ if (Astro.request.method === "POST") {
       <!-- Priority + webhook -->
       <div class="grid grid-cols-2 gap-4">
         <div>
-          <label class="block text-sm font-medium text-gray-300 mb-2">Priority</label>
-          <select name="priority" class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-gray-100 focus:outline-none focus:border-violet-500">
+          <label for="priority" class="block text-sm font-medium text-gray-300 mb-2">Priority</label>
+          <select id="priority" name="priority" class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500">
             <option value="low">Low</option>
             <option value="normal" selected>Normal</option>
             <option value="high">High (+20%)</option>
           </select>
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-300 mb-2">
+          <label for="webhook-url-input" class="block text-sm font-medium text-gray-300 mb-2">
             Webhook URL <span class="text-gray-500">(optional)</span>
           </label>
           <input
             type="url"
             name="webhook_url"
-            class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-gray-100 focus:outline-none focus:border-violet-500 transition-colors"
+            class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500 transition-colors"
             placeholder="https://your-app.com/webhook"
             id="webhook-url-input"
           />
@@ -445,48 +445,49 @@ if (Astro.request.method === "POST") {
         </h3>
         <div class="grid grid-cols-3 gap-4">
           <div>
-            <label class="block text-xs font-medium text-gray-400 mb-1.5">Worker Reward (credits)</label>
+            <label for="worker_reward_credits" class="block text-xs font-medium text-gray-400 mb-1.5">Worker Reward (credits)</label>
             <input
               type="number"
-              name="worker_reward_credits"
+              id="worker_reward_credits" name="worker_reward_credits"
               min="1"
               max="10000"
               placeholder="auto"
-              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-violet-500"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500"
             />
           </div>
           <div>
-            <label class="block text-xs font-medium text-gray-400 mb-1.5">Workers Required</label>
+            <label for="assignments_required" class="block text-xs font-medium text-gray-400 mb-1.5">Workers Required</label>
             <input
               type="number"
-              name="assignments_required"
+              id="assignments_required" name="assignments_required"
               min="1"
               max="10"
               value="1"
-              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-violet-500"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500"
             />
           </div>
           <div>
-            <label class="block text-xs font-medium text-gray-400 mb-1.5">Timeout (minutes)</label>
+            <label for="claim_timeout_minutes" class="block text-xs font-medium text-gray-400 mb-1.5">Timeout (minutes)</label>
             <input
               type="number"
-              name="claim_timeout_minutes"
+              id="claim_timeout_minutes" name="claim_timeout_minutes"
               min="5"
               max="480"
               value="30"
-              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-violet-500"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500"
             />
           </div>
         </div>
 
         <div id="consensus-section">
-          <label class="block text-xs font-medium text-gray-400 mb-1.5">
+          <label for="consensus_strategy" class="block text-xs font-medium text-gray-400 mb-1.5">
             Consensus Strategy
-            <span class="text-gray-600">(for multiple workers)</span>
+            <span class="text-gray-500">(for multiple workers)</span>
           </label>
           <select
+            id="consensus_strategy"
             name="consensus_strategy"
-            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-violet-500"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500"
           >
             <option value="any_first">First Wins — first submission completes the task</option>
             <option value="majority_vote">Majority Vote — &gt;50% must agree (for 3+ workers)</option>
@@ -499,13 +500,14 @@ if (Astro.request.method === "POST") {
         </div>
 
         <div>
-          <label class="block text-xs font-medium text-gray-400 mb-1.5">
+          <label for="min_skill_level" class="block text-xs font-medium text-gray-400 mb-1.5">
             Minimum Skill Level
-            <span class="text-gray-600">(optional, 1–5)</span>
+            <span class="text-gray-500">(optional, 1–5)</span>
           </label>
           <select
+            id="min_skill_level"
             name="min_skill_level"
-            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-violet-500"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500"
           >
             <option value="">Any skill level</option>
             <option value="1">1 — Novice (default)</option>
@@ -520,12 +522,12 @@ if (Astro.request.method === "POST") {
         </div>
 
         <div>
-          <label class="block text-xs font-medium text-gray-400 mb-1.5">Task Instructions</label>
+          <label for="task_instructions" class="block text-xs font-medium text-gray-400 mb-1.5">Task Instructions</label>
           <textarea
-            name="task_instructions"
+            id="task_instructions" name="task_instructions"
             rows={3}
             placeholder="Optional guidance for workers: what to look for, format of answer, etc."
-            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-violet-500 resize-y"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500 resize-y"
           />
         </div>
       </div>
@@ -536,31 +538,32 @@ if (Astro.request.method === "POST") {
 
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <label class="block text-xs font-medium text-gray-400 mb-1.5">
+            <label for="tags" class="block text-xs font-medium text-gray-400 mb-1.5">
               Tags
-              <span class="text-gray-600">(comma-separated, optional)</span>
+              <span class="text-gray-500">(comma-separated, optional)</span>
             </label>
             <input
               type="text"
+              id="tags"
               name="tags"
               placeholder="e.g. billing, v2, prod"
-              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-violet-500"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500"
             />
-            <p class="text-xs text-gray-600 mt-1">Up to 20 tags to organise and filter your tasks.</p>
+            <p class="text-xs text-gray-500 mt-1">Up to 20 tags to organise and filter your tasks.</p>
           </div>
 
           <div>
-            <label class="block text-xs font-medium text-gray-400 mb-1.5">
+            <label for="scheduled-at-input" class="block text-xs font-medium text-gray-400 mb-1.5">
               Schedule for later
-              <span class="text-gray-600">(optional)</span>
+              <span class="text-gray-500">(optional)</span>
             </label>
             <input
               type="datetime-local"
               name="scheduled_at"
               id="scheduled-at-input"
-              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-violet-500"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500"
             />
-            <p class="text-xs text-gray-600 mt-1">Leave blank to run immediately.</p>
+            <p class="text-xs text-gray-500 mt-1">Leave blank to run immediately.</p>
             <!-- Scheduled badge — shown when a future date is selected -->
             <div
               id="scheduled-badge"
@@ -730,14 +733,14 @@ function renderField(f: FieldDef): string {
   const labelHtml = `<label for="${idAttr}" class="block text-xs font-medium text-gray-400 mb-1">
     ${f.label}${(f as any).required ? ' <span class="text-violet-400">*</span>' : ""}
   </label>`;
-  const inputBase = `class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-violet-500 transition-colors"`;
+  const inputBase = `class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500 transition-colors"`;
 
   let inputHtml = "";
   if (f.type === "textarea") {
     const mono = (f as any).monospace ? " font-mono" : "";
     inputHtml = `<textarea id="${idAttr}" data-field="${f.name}" rows="${(f as any).rows ?? 3}"
       placeholder="${(f as any).placeholder ?? ""}"
-      class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-violet-500 transition-colors resize-y${mono}"
+      class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500 transition-colors resize-y${mono}"
     >${f.type === "textarea" && (f as any).default ? (f as any).default : ""}</textarea>`;
   } else if (f.type === "select") {
     const opts = (f as any).options as string[];
@@ -756,7 +759,7 @@ function renderField(f: FieldDef): string {
     inputHtml = `<input type="text" id="${idAttr}" data-field="${f.name}" data-type="tags"
       placeholder="${(f as any).placeholder ?? ""}"
       ${inputBase} />
-    <p class="text-xs text-gray-600 mt-1">Comma-separated list → stored as array</p>`;
+    <p class="text-xs text-gray-500 mt-1">Comma-separated list → stored as array</p>`;
   } else {
     // text, url, number
     const extra = f.type === "number"

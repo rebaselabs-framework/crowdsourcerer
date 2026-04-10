@@ -439,20 +439,20 @@ function statusBadge(status: string) {
     <div class="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
       <div class="p-6 border-b border-gray-800 flex items-center justify-between">
         <h2 class="text-lg font-bold text-white">Create New Pipeline</h2>
-        <button onclick={"document.getElementById('create-modal').classList.add('hidden')"} class="text-gray-400 hover:text-gray-600 text-2xl">×</button>
+        <button onclick={"document.getElementById('create-modal').classList.add('hidden')"} class="text-gray-400 hover:text-gray-500 text-2xl">×</button>
       </div>
       <form method="POST" class="p-6 space-y-5">
         <input type="hidden" name="action" value="create" />
         <input type="hidden" name="steps_json" id="steps-json-input" value="[]" />
 
         <div>
-          <label class="block text-sm font-medium text-gray-300 mb-1">Pipeline Name *</label>
-          <input type="text" name="name" required placeholder="e.g. Research → Verify → Summarize"
+          <label for="name" class="block text-sm font-medium text-gray-300 mb-1">Pipeline Name *</label>
+          <input type="text" id="name" name="name" required placeholder="e.g. Research → Verify → Summarize"
             class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-violet-500 focus:border-violet-500 outline-none" />
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-300 mb-1">Description</label>
-          <textarea name="description" rows="2" placeholder="What does this pipeline do?"
+          <label for="description" class="block text-sm font-medium text-gray-300 mb-1">Description</label>
+          <textarea id="description" name="description" rows="2" placeholder="What does this pipeline do?"
             class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-violet-500 focus:border-violet-500 outline-none resize-none"></textarea>
         </div>
 
@@ -491,13 +491,13 @@ function statusBadge(status: string) {
       <div class="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-lg">
         <div class="p-6 border-b border-gray-800 flex items-center justify-between">
           <h2 class="text-lg font-bold text-white">Run Pipeline: {pipelineDetail.name}</h2>
-          <button onclick={"document.getElementById('run-modal').classList.add('hidden')"} class="text-gray-400 hover:text-gray-600 text-2xl">×</button>
+          <button onclick={"document.getElementById('run-modal').classList.add('hidden')"} class="text-gray-400 hover:text-gray-500 text-2xl">×</button>
         </div>
         <form method="POST" class="p-6 space-y-4">
           <input type="hidden" name="action" value="run" />
           <input type="hidden" name="pipeline_id" value={pipelineDetail.id} />
           <div>
-            <label class="block text-sm font-medium text-gray-300 mb-1">Input (JSON)</label>
+            <label for="run-input-json" class="block text-sm font-medium text-gray-300 mb-1">Input (JSON)</label>
             <textarea id="run-input-json" name="input_json" rows="6" placeholder='{"text": "Hello world", "url": "https://example.com"}'
               class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-violet-500 focus:border-violet-500 outline-none resize-none"></textarea>
             <p class="text-xs text-gray-400 mt-1">This input will be passed to the first step and available to all subsequent steps.</p>

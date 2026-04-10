@@ -268,20 +268,20 @@ const dailyPct = daily && !daily.unlimited ? Math.min(100, Math.round((daily.use
             <input type="hidden" name="action" value="set_rate_limits" />
             <input type="hidden" name="key_id" value={selectedKeyId} />
             <div>
-              <label class="block text-xs text-gray-400 mb-1.5">Requests / minute (RPM)</label>
-              <input type="number" name="rate_limit_rpm" min="1" max="10000"
+              <label for="rate_limit_rpm" class="block text-xs text-gray-400 mb-1.5">Requests / minute (RPM)</label>
+              <input type="number" id="rate_limit_rpm" name="rate_limit_rpm" min="1" max="10000"
                 placeholder={`Plan default (${selectedKeyRateStatus?.rpm?.limit ?? "—"})`}
                 value={selectedKey.rate_limit_rpm ?? ""}
-                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-violet-500 placeholder-gray-600" />
-              <p class="text-xs text-gray-600 mt-1">Leave blank to use plan default</p>
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500 placeholder-gray-500" />
+              <p class="text-xs text-gray-500 mt-1">Leave blank to use plan default</p>
             </div>
             <div>
-              <label class="block text-xs text-gray-400 mb-1.5">Requests / day</label>
-              <input type="number" name="rate_limit_daily" min="1" max="1000000"
+              <label for="rate_limit_daily" class="block text-xs text-gray-400 mb-1.5">Requests / day</label>
+              <input type="number" id="rate_limit_daily" name="rate_limit_daily" min="1" max="1000000"
                 placeholder={`Plan default (${selectedKeyRateStatus?.daily?.limit ?? "—"})`}
                 value={selectedKey.rate_limit_daily ?? ""}
-                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-violet-500 placeholder-gray-600" />
-              <p class="text-xs text-gray-600 mt-1">Leave blank to use plan default</p>
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500 placeholder-gray-500" />
+              <p class="text-xs text-gray-500 mt-1">Leave blank to use plan default</p>
             </div>
             <div>
               <button type="submit" class="w-full px-4 py-2 bg-violet-700 hover:bg-violet-600 text-white text-sm font-medium rounded-lg transition-colors">
@@ -406,7 +406,7 @@ const dailyPct = daily && !daily.unlimited ? Math.min(100, Math.round((daily.use
                       ))}
                     </div>
                   ) : (
-                    <div class="text-xs text-gray-600 mt-1">Full access</div>
+                    <div class="text-xs text-gray-500 mt-1">Full access</div>
                   )}
                 </div>
                 <div class="flex items-center gap-2 ml-4">
@@ -448,7 +448,7 @@ const dailyPct = daily && !daily.unlimited ? Math.min(100, Math.round((daily.use
             placeholder="Key name (e.g. Production, Testing)"
             required
             maxlength="80"
-            class="flex-1 bg-gray-800 border border-gray-700 focus:border-violet-600 rounded-lg px-4 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none transition-colors"
+            class="flex-1 bg-gray-800 border border-gray-700 focus:border-violet-600 rounded-lg px-4 py-2 text-sm text-gray-200 placeholder-gray-500 focus:outline-none transition-colors"
           />
           <button type="submit"
             class="px-5 py-2 bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium rounded-lg transition-colors whitespace-nowrap">
@@ -459,7 +459,7 @@ const dailyPct = daily && !daily.unlimited ? Math.min(100, Math.round((daily.use
         <!-- Scope selection -->
         <div>
           <div class="flex items-center justify-between mb-2">
-            <label class="text-xs font-medium text-gray-400">Scopes <span class="text-gray-600">(leave all unchecked = full access)</span></label>
+            <label class="text-xs font-medium text-gray-400">Scopes <span class="text-gray-500">(leave all unchecked = full access)</span></label>
             <button type="button" id="toggle-scopes" class="text-xs text-violet-400 hover:text-violet-300">
               Show scopes ▾
             </button>
@@ -477,13 +477,13 @@ const dailyPct = daily && !daily.unlimited ? Math.min(100, Math.round((daily.use
                 </label>
               ))}
             </div>
-            <p class="text-xs text-gray-600 mt-2">
+            <p class="text-xs text-gray-500 mt-2">
               Tip: Use scoped keys for third-party integrations to limit their access.
             </p>
           </div>
         </div>
 
-        <p class="text-xs text-gray-600">Store the key securely — it won't be shown again.</p>
+        <p class="text-xs text-gray-500">Store the key securely — it won't be shown again.</p>
       </form>
     </div>
 

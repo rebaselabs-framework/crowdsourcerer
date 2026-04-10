@@ -138,12 +138,12 @@ if (Astro.request.method === "POST") {
         {refCode && <input type="hidden" name="ref" value={refCode} />}
 
         <!-- Role selection -->
-        <div>
-          <label class="block text-sm text-gray-400 mb-2">I want to…</label>
+        <fieldset>
+          <legend class="block text-sm text-gray-400 mb-2">I want to…</legend>
           <div class="grid grid-cols-2 gap-3" id="role-cards">
             <label class="relative cursor-pointer">
               <input type="radio" name="role" value="requester" class="sr-only peer" checked />
-              <div class="peer-checked:border-violet-500 peer-checked:bg-violet-950/30 border border-gray-700 rounded-xl p-4 text-center hover:border-gray-500 transition-colors">
+              <div class="peer-checked:border-violet-500 peer-checked:bg-violet-950/30 peer-focus-visible:ring-2 peer-focus-visible:ring-violet-500/40 border border-gray-700 rounded-xl p-4 text-center hover:border-gray-500 transition-colors">
                 <div class="text-2xl mb-1">📋</div>
                 <div class="text-sm font-semibold text-gray-200">Hire Workers</div>
                 <div class="text-xs text-gray-500 mt-0.5">Post tasks, get results</div>
@@ -151,42 +151,48 @@ if (Astro.request.method === "POST") {
             </label>
             <label class="relative cursor-pointer">
               <input type="radio" name="role" value="worker" class="sr-only peer" />
-              <div class="peer-checked:border-violet-500 peer-checked:bg-violet-950/30 border border-gray-700 rounded-xl p-4 text-center hover:border-gray-500 transition-colors">
+              <div class="peer-checked:border-violet-500 peer-checked:bg-violet-950/30 peer-focus-visible:ring-2 peer-focus-visible:ring-violet-500/40 border border-gray-700 rounded-xl p-4 text-center hover:border-gray-500 transition-colors">
                 <div class="text-2xl mb-1">💼</div>
                 <div class="text-sm font-semibold text-gray-200">Earn Credits</div>
                 <div class="text-xs text-gray-500 mt-0.5">Complete tasks, get paid</div>
               </div>
             </label>
           </div>
-        </div>
+        </fieldset>
 
         <div>
-          <label class="block text-sm text-gray-400 mb-1">Name <span class="text-gray-600">(optional)</span></label>
+          <label for="register-name" class="block text-sm text-gray-400 mb-1">Name <span class="text-gray-500">(optional)</span></label>
           <input
+            id="register-name"
             name="name"
             type="text"
-            class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-gray-100 placeholder-gray-600 focus:outline-none focus:border-violet-500 transition-colors"
+            autocomplete="name"
+            class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500 transition-colors"
             placeholder="Your name"
           />
         </div>
         <div>
-          <label class="block text-sm text-gray-400 mb-1">Email</label>
+          <label for="register-email" class="block text-sm text-gray-400 mb-1">Email</label>
           <input
+            id="register-email"
             name="email"
             type="email"
             required
-            class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-gray-100 placeholder-gray-600 focus:outline-none focus:border-violet-500 transition-colors"
+            autocomplete="email"
+            class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500 transition-colors"
             placeholder="you@example.com"
           />
         </div>
         <div>
-          <label class="block text-sm text-gray-400 mb-1">Password</label>
+          <label for="register-password" class="block text-sm text-gray-400 mb-1">Password</label>
           <input
+            id="register-password"
             name="password"
             type="password"
             required
             minlength="8"
-            class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-gray-100 placeholder-gray-600 focus:outline-none focus:border-violet-500 transition-colors"
+            autocomplete="new-password"
+            class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500 transition-colors"
             placeholder="8+ characters"
           />
         </div>

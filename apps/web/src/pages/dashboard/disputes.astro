@@ -244,7 +244,7 @@ const EVENT_ICONS: Record<string, string> = {
                     <h3 class="text-sm font-semibold text-violet-300 mb-2">⚖️ Assign Mediator (Admin)</h3>
                     <div class="flex gap-3">
                       <input id={`mediator-input-${task.id}`} type="text" placeholder="Mediator user ID (UUID)"
-                        class="flex-1 bg-gray-800 border border-violet-700/50 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-violet-500"/>
+                        class="flex-1 bg-gray-800 border border-violet-700/50 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500"/>
                       <button onclick={`assignMediator('${task.id}', this)`}
                         class="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg transition">
                         Assign
@@ -262,7 +262,7 @@ const EVENT_ICONS: Record<string, string> = {
                       <div>
                         <label class="block text-xs text-gray-500 mb-1">Evidence type</label>
                         <select id={`ev-type-${task.id}`}
-                          class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-violet-500">
+                          class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500">
                           <option value="text">Text / Explanation</option>
                           <option value="url">URL / Link</option>
                           <option value="image_url">Image URL</option>
@@ -271,7 +271,7 @@ const EVENT_ICONS: Record<string, string> = {
                       <div>
                         <label class="block text-xs text-gray-500 mb-1">Supporting submission (optional)</label>
                         <select id={`ev-asgn-${task.id}`}
-                          class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-violet-500">
+                          class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500">
                           <option value="">None</option>
                           {submissions.map((s: any) => (
                             <option value={s.id}>Submission #{s.id.slice(0,8)}</option>
@@ -280,7 +280,7 @@ const EVENT_ICONS: Record<string, string> = {
                       </div>
                     </div>
                     <textarea id={`ev-content-${task.id}`} rows="3" placeholder="Describe your evidence..."
-                      class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-violet-500 resize-none mb-3"></textarea>
+                      class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500 resize-none mb-3"></textarea>
                     <div class="flex justify-between items-center">
                       <div id={`ev-msg-${task.id}`} class="text-xs hidden"></div>
                       <button onclick={`submitEvidence('${task.id}', this)`}

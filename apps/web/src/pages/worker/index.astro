@@ -364,7 +364,7 @@ const noSkills = Array.isArray(profileStatus?.missing) &&
                 ></div>
               ))}
             </div>
-            <div class="flex items-center gap-3 mt-2 text-xs text-gray-600">
+            <div class="flex items-center gap-3 mt-2 text-xs text-gray-500">
               <div class="flex items-center gap-1"><div class="w-3 h-3 rounded-sm bg-emerald-600"></div> Active</div>
               <div class="flex items-center gap-1"><div class="w-3 h-3 rounded-sm bg-gray-800 border border-gray-700/50"></div> Inactive</div>
               <div class="flex items-center gap-1"><div class="w-3 h-3 rounded-sm bg-violet-600/70"></div> Today</div>
@@ -545,10 +545,10 @@ const noSkills = Array.isArray(profileStatus?.missing) &&
                       <div class="text-base font-bold text-emerald-400">+{t.reward_credits}</div>
                       <div class="text-xs text-gray-500">credits</div>
                       {t.estimated_minutes > 0 && (
-                        <div class="text-[11px] text-gray-600 mt-0.5">~{t.estimated_minutes}m</div>
+                        <div class="text-[11px] text-gray-500 mt-0.5">~{t.estimated_minutes}m</div>
                       )}
                     </div>
-                    <div class="text-gray-600 group-hover:text-emerald-400 transition-colors text-sm flex-shrink-0">→</div>
+                    <div class="text-gray-500 group-hover:text-emerald-400 transition-colors text-sm flex-shrink-0">→</div>
                   </a>
                 );
               })}
@@ -670,7 +670,7 @@ const noSkills = Array.isArray(profileStatus?.missing) &&
 
         <!-- Quick links — 8 essentials -->
         <div class="border-t border-gray-800/60 pt-6">
-          <h2 class="text-xs text-gray-600 uppercase tracking-wider font-semibold mb-4">More</h2>
+          <h2 class="text-xs text-gray-500 uppercase tracking-wider font-semibold mb-4">More</h2>
           <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <a
               href="/worker/marketplace"

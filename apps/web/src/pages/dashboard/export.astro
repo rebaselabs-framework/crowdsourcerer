@@ -66,7 +66,7 @@ try {
       <div class="grid grid-cols-2 gap-4">
         <!-- Status -->
         <div>
-          <label class="block text-sm font-medium text-gray-300 mb-1">Status</label>
+          <label for="filter-status" class="block text-sm font-medium text-gray-300 mb-1">Status</label>
           <select
             id="filter-status"
             class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
@@ -84,7 +84,7 @@ try {
 
         <!-- Execution mode -->
         <div>
-          <label class="block text-sm font-medium text-gray-300 mb-1">Execution mode</label>
+          <label for="filter-mode" class="block text-sm font-medium text-gray-300 mb-1">Execution mode</label>
           <select
             id="filter-mode"
             class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
@@ -97,7 +97,7 @@ try {
 
         <!-- From date -->
         <div>
-          <label class="block text-sm font-medium text-gray-300 mb-1">From date</label>
+          <label for="filter-from" class="block text-sm font-medium text-gray-300 mb-1">From date</label>
           <input
             type="date"
             id="filter-from"
@@ -107,7 +107,7 @@ try {
 
         <!-- To date -->
         <div>
-          <label class="block text-sm font-medium text-gray-300 mb-1">To date</label>
+          <label for="filter-to" class="block text-sm font-medium text-gray-300 mb-1">To date</label>
           <input
             type="date"
             id="filter-to"
@@ -119,7 +119,7 @@ try {
       <!-- Org filter (if user has orgs) -->
       {orgs.length > 0 && (
         <div>
-          <label class="block text-sm font-medium text-gray-300 mb-1">Organization</label>
+          <label for="filter-org" class="block text-sm font-medium text-gray-300 mb-1">Organization</label>
           <select
             id="filter-org"
             class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"

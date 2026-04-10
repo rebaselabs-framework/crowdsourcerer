@@ -64,12 +64,12 @@ const multiplierDisplay = `${streakMultiplier}×`;
       <div class="bg-gray-900 border border-emerald-800/50 rounded-2xl p-6">
         <div class="text-4xl font-bold text-emerald-400 mb-1">+{credits}</div>
         <div class="text-sm text-gray-400">Credits earned</div>
-        <div class="text-xs text-gray-600 mt-1">≈ ${(credits / 100).toFixed(2)}</div>
+        <div class="text-xs text-gray-500 mt-1">≈ ${(credits / 100).toFixed(2)}</div>
       </div>
       <div class="bg-gray-900 border border-violet-800/50 rounded-2xl p-6">
         <div class="text-4xl font-bold text-violet-400 mb-1">+{xp}</div>
         <div class="text-sm text-gray-400">XP gained</div>
-        <div class="text-xs text-gray-600 mt-1">
+        <div class="text-xs text-gray-500 mt-1">
           {hasStreakBonus ? `${multiplierDisplay} streak bonus` : "Progress to next level"}
         </div>
       </div>
@@ -103,7 +103,7 @@ const multiplierDisplay = `${streakMultiplier}×`;
     </div>
 
     <!-- Streak tip / progress -->
-    <div class="mt-12 text-sm text-gray-600">
+    <div class="mt-12 text-sm text-gray-500">
       {hasStreakBonus ? (
         streakDays >= 30
           ? <span><span class="text-orange-400">🔥</span> Amazing! {streakDays}-day streak — you're at max XP multiplier!</span>

@@ -174,7 +174,7 @@ const distData: number[] = a?.response_distribution ? Object.values(a.response_d
                       <td class="px-4 py-3 text-amber-400 font-medium">{row.earnings_credits}</td>
                       <td class="px-4 py-3">
                         {row.is_accurate == null ? (
-                          <span class="text-gray-600">—</span>
+                          <span class="text-gray-500">—</span>
                         ) : row.is_accurate ? (
                           <span class="text-green-400 font-medium">✓ Yes</span>
                         ) : (

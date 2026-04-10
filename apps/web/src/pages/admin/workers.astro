@@ -57,9 +57,9 @@ const totalPages = Math.ceil(workers.total / workers.per_page);
             name="search"
             value={search}
             placeholder="Search by name or email…"
-            class="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-violet-600 w-64"
+            class="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-violet-600/40 focus:border-violet-600 w-64"
           />
-          <select name="status" class="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-violet-600">
+          <select name="status" class="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-violet-600/40 focus:border-violet-600">
             <option value="" selected={status === ""}>All workers</option>
             <option value="active" selected={status === "active"}>Active only</option>
             <option value="banned" selected={status === "banned"}>Banned only</option>
@@ -102,7 +102,7 @@ const totalPages = Math.ceil(workers.total / workers.per_page);
                   <td class="px-4 py-3">
                     <div class="font-medium text-gray-200">{w.name ?? "—"}</div>
                     <div class="text-xs text-gray-500">{w.email}</div>
-                    <div class="text-xs text-gray-600 mt-0.5">{w.plan} plan</div>
+                    <div class="text-xs text-gray-500 mt-0.5">{w.plan} plan</div>
                   </td>
                   <td class="px-4 py-3 text-center">
                     <span class="text-violet-400 font-semibold">{w.worker_level}</span>
@@ -119,7 +119,7 @@ const totalPages = Math.ceil(workers.total / workers.per_page);
                     {w.active_strikes > 0 ? (
                       <span class="text-orange-400 font-semibold">{w.active_strikes}</span>
                     ) : (
-                      <span class="text-gray-600">0</span>
+                      <span class="text-gray-500">0</span>
                     )}
                   </td>
                   <td class="px-4 py-3 text-center">
@@ -215,21 +215,21 @@ const totalPages = Math.ceil(workers.total / workers.per_page);
       <p id="ban-modal-name" class="text-gray-400 text-sm mb-4"></p>
       <div class="space-y-4">
         <div>
-          <label class="block text-xs text-gray-400 mb-1">Reason <span class="text-red-400">*</span></label>
+          <label for="ban-reason" class="block text-xs text-gray-400 mb-1">Reason <span class="text-red-400">*</span></label>
           <textarea
             id="ban-reason"
             rows="3"
             maxlength="500"
             placeholder="Explain why this worker is being banned…"
-            class="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-red-600 resize-none"
+            class="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-red-600/40 focus:border-red-600 resize-none"
           ></textarea>
         </div>
         <div>
-          <label class="block text-xs text-gray-400 mb-1">Expires (leave blank for permanent)</label>
+          <label for="ban-expires" class="block text-xs text-gray-400 mb-1">Expires (leave blank for permanent)</label>
           <input
             type="datetime-local"
             id="ban-expires"
-            class="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-violet-600"
+            class="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-violet-600/40 focus:border-violet-600"
           />
         </div>
         <div id="ban-error" class="hidden text-xs text-red-400"></div>
@@ -258,10 +258,10 @@ const totalPages = Math.ceil(workers.total / workers.per_page);
       <p id="strike-modal-name" class="text-gray-400 text-sm mb-4"></p>
       <div class="space-y-4">
         <div>
-          <label class="block text-xs text-gray-400 mb-1">Severity</label>
+          <label for="strike-severity" class="block text-xs text-gray-400 mb-1">Severity</label>
           <select
             id="strike-severity"
-            class="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-violet-600"
+            class="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-violet-600/40 focus:border-violet-600"
           >
             <option value="warning">⚠️ Warning</option>
             <option value="minor" selected>🟠 Minor</option>
@@ -270,13 +270,13 @@ const totalPages = Math.ceil(workers.total / workers.per_page);
           </select>
         </div>
         <div>
-          <label class="block text-xs text-gray-400 mb-1">Reason <span class="text-red-400">*</span></label>
+          <label for="strike-reason" class="block text-xs text-gray-400 mb-1">Reason <span class="text-red-400">*</span></label>
           <textarea
             id="strike-reason"
             rows="3"
             maxlength="500"
             placeholder="Describe the violation…"
-            class="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-orange-600 resize-none"
+            class="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-600/40 focus:border-orange-600 resize-none"
           ></textarea>
         </div>
         <div id="strike-error" class="hidden text-xs text-red-400"></div>

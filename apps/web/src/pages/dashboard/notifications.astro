@@ -180,7 +180,7 @@ const totalNotifications = grouped.reduce((s, g) => s + g.items.length, 0);
             id="notif-search"
             type="search"
             placeholder="Search notifications…"
-            class="w-full bg-gray-900 border border-gray-700 rounded-xl px-4 py-2.5 pl-9 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-violet-500 transition-colors"
+            class="w-full bg-gray-900 border border-gray-700 rounded-xl px-4 py-2.5 pl-9 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500 transition-colors"
           />
           <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none text-sm">🔍</span>
         </div>
@@ -194,7 +194,7 @@ const totalNotifications = grouped.reduce((s, g) => s + g.items.length, 0);
                 <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide flex items-center gap-2">
                   <span>{GROUP_ICONS[g.type] ?? "🔔"}</span>
                   <span>{g.label}</span>
-                  <span class="text-gray-600 font-normal normal-case tracking-normal">
+                  <span class="text-gray-500 font-normal normal-case tracking-normal">
                     ({g.items.length})
                   </span>
                 </h2>
@@ -277,7 +277,7 @@ const totalNotifications = grouped.reduce((s, g) => s + g.items.length, 0);
                           </button>
                         )}
                         <button
-                          class="delete-btn p-1.5 rounded-lg text-xs text-gray-600 hover:text-red-400 hover:bg-red-900/20 transition-colors"
+                          class="delete-btn p-1.5 rounded-lg text-xs text-gray-500 hover:text-red-400 hover:bg-red-900/20 transition-colors"
                           data-id={n.id}
                           title="Delete"
                         >

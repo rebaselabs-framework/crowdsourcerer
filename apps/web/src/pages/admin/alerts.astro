@@ -102,24 +102,24 @@ function relTime(iso: string): string {
     <!-- Filters -->
     <form method="get" class="bg-gray-900 border border-gray-800 rounded-xl p-4 mb-6 flex flex-wrap gap-3 items-end">
       <div>
-        <label class="block text-xs text-gray-500 mb-1">Status</label>
-        <select name="status" class="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm">
+        <label for="status" class="block text-xs text-gray-500 mb-1">Status</label>
+        <select id="status" name="status" class="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm">
           {["active","resolved","all"].map(s => (
             <option value={s} selected={status === s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>
           ))}
         </select>
       </div>
       <div>
-        <label class="block text-xs text-gray-500 mb-1">Severity</label>
-        <select name="severity" class="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm">
+        <label for="severity" class="block text-xs text-gray-500 mb-1">Severity</label>
+        <select id="severity" name="severity" class="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm">
           <option value="">All</option>
           <option value="critical" selected={severity === "critical"}>Critical</option>
           <option value="warning"  selected={severity === "warning"}>Warning</option>
         </select>
       </div>
       <div>
-        <label class="block text-xs text-gray-500 mb-1">Alert Type</label>
-        <select name="alert_type" class="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm">
+        <label for="alert_type" class="block text-xs text-gray-500 mb-1">Alert Type</label>
+        <select id="alert_type" name="alert_type" class="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm">
           <option value="">All types</option>
           {Object.entries(ALERT_TYPE_LABELS).map(([val, label]) => (
             <option value={val} selected={alertType === val}>{label}</option>

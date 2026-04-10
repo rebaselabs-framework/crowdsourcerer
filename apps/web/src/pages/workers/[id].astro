@@ -430,7 +430,7 @@ const title = profile ? `${profile.name ?? "Worker"} — CrowdSorcerer` : "Worke
                             {e.skill_tag}
                           </span>
                         )}
-                        <span class="text-xs text-gray-600">
+                        <span class="text-xs text-gray-500">
                           {new Date(e.created_at).toLocaleDateString()}
                         </span>
                       </div>
@@ -493,7 +493,7 @@ const title = profile ? `${profile.name ?? "Worker"} — CrowdSorcerer` : "Worke
                   {item.result_snippet && (
                     <p class="text-xs text-gray-500 line-clamp-2">{item.result_snippet}</p>
                   )}
-                  <div class="text-xs text-gray-600 mt-2">
+                  <div class="text-xs text-gray-500 mt-2">
                     Pinned {new Date(item.pinned_at).toLocaleDateString()}
                   </div>
                 </div>

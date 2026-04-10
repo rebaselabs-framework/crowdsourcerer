@@ -108,7 +108,7 @@ function filtersToLabel(filters: Record<string, any>): string {
                     {s.name}
                   </h3>
                   <button
-                    class="text-gray-600 hover:text-gray-400 transition-colors"
+                    class="text-gray-500 hover:text-gray-400 transition-colors"
                     onclick="window.__startRenameSearch(this)"
                     data-id={s.id}
                     data-name={s.name}
@@ -147,7 +147,7 @@ function filtersToLabel(filters: Record<string, any>): string {
                     <div class="flex items-center gap-1.5">
                       <span class="text-xs text-gray-500">Frequency:</span>
                       <select
-                        class="text-xs bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-gray-300 focus:outline-none focus:border-violet-500"
+                        class="text-xs bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-gray-300 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500"
                         onchange={`window.__updateFrequency('${s.id}', this.value)`}
                       >
                         {(["instant", "daily", "weekly"] as const).map(f => (
@@ -160,7 +160,7 @@ function filtersToLabel(filters: Record<string, any>): string {
                   )}
 
                   <!-- Match stats -->
-                  <span class="text-xs text-gray-600">
+                  <span class="text-xs text-gray-500">
                     {s.match_count} match{s.match_count !== 1 ? "es" : ""} total
                     {s.last_notified_at && (
                       ` · last: ${new Date(s.last_notified_at).toLocaleDateString()}`
@@ -171,7 +171,7 @@ function filtersToLabel(filters: Record<string, any>): string {
 
               <!-- Delete button -->
               <button
-                class="shrink-0 text-gray-600 hover:text-red-400 transition-colors p-1"
+                class="shrink-0 text-gray-500 hover:text-red-400 transition-colors p-1"
                 onclick={`window.__deleteSearch(this, '${s.id}')`}
                 title="Delete saved search"
               >

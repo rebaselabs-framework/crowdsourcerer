@@ -96,7 +96,7 @@ const weeklyMax = Math.max(...weekly.map((w: any) => w.total || 0), 1);
             <div class={`text-3xl font-bold ${rateColor(allTime.approval_rate_pct)}`}>
               {allTime.approval_rate_pct != null ? `${allTime.approval_rate_pct}%` : "—"}
             </div>
-            <div class="text-xs text-gray-600 mt-1">{allTime.total_reviewed} tasks reviewed</div>
+            <div class="text-xs text-gray-500 mt-1">{allTime.total_reviewed} tasks reviewed</div>
           </div>
           <!-- Last 30d approval rate -->
           <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
@@ -104,7 +104,7 @@ const weeklyMax = Math.max(...weekly.map((w: any) => w.total || 0), 1);
             <div class={`text-3xl font-bold ${rateColor(last30d.approval_rate_pct)}`}>
               {last30d.approval_rate_pct != null ? `${last30d.approval_rate_pct}%` : "—"}
             </div>
-            <div class="text-xs text-gray-600 mt-1">{last30d.total_reviewed || 0} tasks reviewed</div>
+            <div class="text-xs text-gray-500 mt-1">{last30d.total_reviewed || 0} tasks reviewed</div>
           </div>
           <!-- Platform average -->
           <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
@@ -112,7 +112,7 @@ const weeklyMax = Math.max(...weekly.map((w: any) => w.total || 0), 1);
             <div class="text-3xl font-bold text-gray-300">
               {platformAvgPct > 0 ? `${platformAvgPct}%` : "—"}
             </div>
-            <div class="text-xs text-gray-600 mt-1">across all workers</div>
+            <div class="text-xs text-gray-500 mt-1">across all workers</div>
           </div>
           <!-- Rank percentile -->
           <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
@@ -120,7 +120,7 @@ const weeklyMax = Math.max(...weekly.map((w: any) => w.total || 0), 1);
             <div class={`text-3xl font-bold ${rankPct != null && rankPct >= 75 ? "text-emerald-400" : rankPct != null && rankPct >= 50 ? "text-yellow-400" : "text-gray-300"}`}>
               {rankPct != null ? `${rankPct}th` : "—"}
             </div>
-            <div class="text-xs text-gray-600 mt-1">
+            <div class="text-xs text-gray-500 mt-1">
               {rankPct != null ? "better than " + rankPct + "% of workers" : "need 5+ reviews"}
             </div>
           </div>
@@ -183,7 +183,7 @@ const weeklyMax = Math.max(...weekly.map((w: any) => w.total || 0), 1);
                   </div>
                   <div class="w-28 shrink-0">
                     <div class="flex justify-between text-xs mb-1">
-                      <span class="text-gray-600">{t.approved}/{t.total}</span>
+                      <span class="text-gray-500">{t.approved}/{t.total}</span>
                       <span class={rateColor(t.approval_rate_pct)}>{t.approval_rate_pct != null ? `${t.approval_rate_pct}%` : "—"}</span>
                     </div>
                     <div class="w-full bg-gray-700 rounded-full h-1.5">
@@ -209,13 +209,13 @@ const weeklyMax = Math.max(...weekly.map((w: any) => w.total || 0), 1);
                   : "";
                 return (
                   <div class="flex-1 flex flex-col items-center gap-1">
-                    <div class="text-xs text-gray-600">{w.approval_rate_pct != null ? `${w.approval_rate_pct}%` : "—"}</div>
+                    <div class="text-xs text-gray-500">{w.approval_rate_pct != null ? `${w.approval_rate_pct}%` : "—"}</div>
                     <div
                       title={`${weekLabel}: ${w.total} tasks, ${w.approval_rate_pct ?? "—"}% approval`}
                       class={`w-full rounded-t transition-all ${rateBg(w.approval_rate_pct)}`}
                       style={`height: ${Math.max(heightPct, 4)}%`}
                     ></div>
-                    <div class="text-xs text-gray-600 truncate w-full text-center">{weekLabel}</div>
+                    <div class="text-xs text-gray-500 truncate w-full text-center">{weekLabel}</div>
                   </div>
                 );
               })}

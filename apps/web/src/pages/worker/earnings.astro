@@ -501,9 +501,9 @@ const analyticsJson = JSON.stringify(analytics);
             <form id="payout-form" class="space-y-4">
               <div class="grid sm:grid-cols-2 gap-4">
                 <div>
-                  <label class="block text-xs text-gray-400 mb-1.5">Credits to withdraw</label>
+                  <label for="payout-credits" class="block text-xs text-gray-400 mb-1.5">Credits to withdraw</label>
                   <input id="payout-credits" type="number" min="1000" max={totalCredits} step="100" value="1000"
-                    class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500"/>
+                    class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500"/>
                   <p class="text-xs text-gray-500 mt-1">Available: {totalCredits.toLocaleString()}</p>
                 </div>
                 <div>
@@ -512,32 +512,32 @@ const analyticsJson = JSON.stringify(analytics);
                 </div>
               </div>
               <div>
-                <label class="block text-xs text-gray-400 mb-1.5">Payout method</label>
-                <select id="payout-method" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500">
+                <label for="payout-method" class="block text-xs text-gray-400 mb-1.5">Payout method</label>
+                <select id="payout-method" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500">
                   <option value="paypal">PayPal</option>
                   <option value="bank_transfer">Bank transfer (SEPA/SWIFT)</option>
                   <option value="crypto">Crypto (USDC/USDT)</option>
                 </select>
               </div>
               <div id="fields-paypal">
-                <label class="block text-xs text-gray-400 mb-1.5">PayPal email</label>
+                <label for="paypal-email" class="block text-xs text-gray-400 mb-1.5">PayPal email</label>
                 <input id="paypal-email" type="email" placeholder="you@example.com"
-                  class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500"/>
+                  class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500"/>
               </div>
               <div id="fields-bank" class="space-y-3 hidden">
                 <div>
-                  <label class="block text-xs text-gray-400 mb-1.5">Account holder name</label>
-                  <input id="bank-name" type="text" placeholder="Full name" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500"/>
+                  <label for="bank-name" class="block text-xs text-gray-400 mb-1.5">Account holder name</label>
+                  <input id="bank-name" type="text" placeholder="Full name" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500"/>
                 </div>
                 <div>
-                  <label class="block text-xs text-gray-400 mb-1.5">IBAN / Account number</label>
-                  <input id="bank-iban" type="text" placeholder="IBAN or SWIFT" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500"/>
+                  <label for="bank-iban" class="block text-xs text-gray-400 mb-1.5">IBAN / Account number</label>
+                  <input id="bank-iban" type="text" placeholder="IBAN or SWIFT" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500"/>
                 </div>
               </div>
               <div id="fields-crypto" class="space-y-3 hidden">
                 <div>
-                  <label class="block text-xs text-gray-400 mb-1.5">Network</label>
-                  <select id="crypto-network" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500">
+                  <label for="crypto-network" class="block text-xs text-gray-400 mb-1.5">Network</label>
+                  <select id="crypto-network" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500">
                     <option value="ethereum">Ethereum (USDC ERC-20)</option>
                     <option value="solana">Solana (USDC SPL)</option>
                     <option value="polygon">Polygon (USDC)</option>
@@ -545,8 +545,8 @@ const analyticsJson = JSON.stringify(analytics);
                   </select>
                 </div>
                 <div>
-                  <label class="block text-xs text-gray-400 mb-1.5">Wallet address</label>
-                  <input id="crypto-address" type="text" placeholder="0x... or Solana address" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500"/>
+                  <label for="crypto-address" class="block text-xs text-gray-400 mb-1.5">Wallet address</label>
+                  <input id="crypto-address" type="text" placeholder="0x... or Solana address" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500"/>
                 </div>
               </div>
               <div id="payout-error" class="text-red-400 text-sm hidden"></div>

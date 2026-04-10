@@ -111,7 +111,7 @@ try {
       <h2 class="font-semibold text-gray-200 mb-4">📌 Pin a Completed Task</h2>
       <form id="pin-form" class="space-y-4">
         <div>
-          <label class="block text-sm font-medium text-gray-300 mb-1">Task</label>
+          <label for="pin-task-id" class="block text-sm font-medium text-gray-300 mb-1">Task</label>
           <select id="pin-task-id" class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-violet-500" required>
             <option value="">Select a completed task…</option>
             {completedTasks.map((t: any) => (
@@ -120,17 +120,17 @@ try {
           </select>
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-300 mb-1">Caption <span class="text-gray-400 font-normal">(optional)</span></label>
+          <label for="pin-caption" class="block text-sm font-medium text-gray-300 mb-1">Caption <span class="text-gray-400 font-normal">(optional)</span></label>
           <textarea
             id="pin-caption"
             rows="3"
             maxlength="500"
             placeholder="Describe what made this task interesting or showcase-worthy…"
-            class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-violet-500 resize-none placeholder-gray-600"
+            class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-violet-500 resize-none placeholder-gray-500"
           ></textarea>
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-300 mb-1">Display Order</label>
+          <label for="pin-order" class="block text-sm font-medium text-gray-300 mb-1">Display Order</label>
           <input type="number" id="pin-order" value="0" min="0" max="9"
             class="w-24 bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-violet-500" />
         </div>
@@ -154,12 +154,12 @@ try {
       <form id="edit-form" class="space-y-4">
         <input type="hidden" id="edit-pin-id" />
         <div>
-          <label class="block text-sm font-medium text-gray-300 mb-1">Caption</label>
+          <label for="edit-caption" class="block text-sm font-medium text-gray-300 mb-1">Caption</label>
           <textarea id="edit-caption" rows="3" maxlength="500"
             class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-violet-500 resize-none"></textarea>
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-300 mb-1">Display Order</label>
+          <label for="edit-order" class="block text-sm font-medium text-gray-300 mb-1">Display Order</label>
           <input type="number" id="edit-order" value="0" min="0" max="9"
             class="w-24 bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-violet-500" />
         </div>

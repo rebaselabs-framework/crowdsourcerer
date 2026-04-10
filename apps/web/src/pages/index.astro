@@ -279,8 +279,8 @@ console.<span class="text-yellow-400">log</span>(task.output.summary);
       <div class="grid md:grid-cols-2 gap-8">
         <div class="space-y-5">
           <div>
-            <label class="block text-sm text-gray-400 mb-2">Task type</label>
-            <select id="calc-type" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-200 text-sm focus:outline-none focus:border-violet-500">
+            <label for="calc-type" class="block text-sm text-gray-400 mb-2">Task type</label>
+            <select id="calc-type" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500">
               <option value="1">LLM Generate (1 cr)</option>
               <option value="2">Data Transform (2 cr)</option>
               <option value="2">PII Detect (2 cr)</option>
@@ -294,7 +294,7 @@ console.<span class="text-yellow-400">log</span>(task.output.summary);
             </select>
           </div>
           <div>
-            <label class="block text-sm text-gray-400 mb-2">Tasks per month</label>
+            <label for="calc-tasks" class="block text-sm text-gray-400 mb-2">Tasks per month</label>
             <input
               type="range"
               id="calc-tasks"

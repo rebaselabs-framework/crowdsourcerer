@@ -273,7 +273,7 @@ const TYPE_LABELS: Record<string, string> = {
                               </div>
                             ) : task.type === "answer_question" ? (
                               <p class="text-sm text-gray-300 leading-relaxed bg-gray-950/50 rounded-lg p-3 border border-gray-800">
-                                {sub.response.answer ?? <span class="text-gray-600 italic">No answer provided</span>}
+                                {sub.response.answer ?? <span class="text-gray-500 italic">No answer provided</span>}
                               </p>
                             ) : task.type === "transcription_review" ? (
                               <div class="bg-gray-950 border border-gray-800 rounded-lg p-3 max-h-32 overflow-y-auto">
@@ -341,7 +341,7 @@ const TYPE_LABELS: Record<string, string> = {
             "px-4 py-2 border border-gray-700 rounded-lg text-sm transition-colors",
             page > 1
               ? "text-gray-300 hover:border-gray-600 hover:text-white"
-              : "text-gray-600 cursor-not-allowed pointer-events-none",
+              : "text-gray-500 cursor-not-allowed pointer-events-none",
           ]}
         >
           ← Previous
@@ -353,7 +353,7 @@ const TYPE_LABELS: Record<string, string> = {
             "px-4 py-2 border border-gray-700 rounded-lg text-sm transition-colors",
             tasksData.has_next
               ? "text-gray-300 hover:border-gray-600 hover:text-white"
-              : "text-gray-600 cursor-not-allowed pointer-events-none",
+              : "text-gray-500 cursor-not-allowed pointer-events-none",
           ]}
         >
           Next →
@@ -432,7 +432,7 @@ document.querySelectorAll<HTMLElement>(".review-actions").forEach(container => {
       wrap.className = "reject-reason-wrap mt-2 w-48 text-left";
       wrap.innerHTML = `
         <textarea
-          class="reject-reason-input w-full text-xs bg-gray-900 border border-red-800/60 rounded-lg p-2 text-gray-300 placeholder-gray-600 focus:outline-none focus:border-red-600 resize-none"
+          class="reject-reason-input w-full text-xs bg-gray-900 border border-red-800/60 rounded-lg p-2 text-gray-300 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-red-600/40 focus:border-red-600 resize-none"
           rows="2"
           placeholder="Reason (optional)…"
         ></textarea>

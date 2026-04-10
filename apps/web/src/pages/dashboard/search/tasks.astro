@@ -101,7 +101,7 @@ function filterQs(extra: Record<string, string> = {}): string {
           value={q}
           autofocus
           placeholder="Search inside tasks… (e.g. Paris, sentiment, true)"
-          class="flex-1 bg-gray-900 border border-gray-700 rounded-xl px-5 py-3 text-base focus:outline-none focus:border-violet-600 transition-colors"
+          class="flex-1 bg-gray-900 border border-gray-700 rounded-xl px-5 py-3 text-base focus:outline-none focus:ring-2 focus:ring-violet-600/40 focus:border-violet-600 transition-colors"
         />
         <button
           type="submit"
@@ -115,7 +115,7 @@ function filterQs(extra: Record<string, string> = {}): string {
       <div class="flex flex-wrap gap-3">
         <select
           name="status"
-          class="bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-violet-600"
+          class="bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-600/40 focus:border-violet-600"
         >
           <option value="">Any status</option>
           {["pending","running","completed","failed","cancelled","open","assigned","submitted","approved","rejected"].map((s) => (
@@ -125,7 +125,7 @@ function filterQs(extra: Record<string, string> = {}): string {
 
         <select
           name="task_type"
-          class="bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-violet-600"
+          class="bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-600/40 focus:border-violet-600"
         >
           <option value="">Any type</option>
           {[
@@ -141,7 +141,7 @@ function filterQs(extra: Record<string, string> = {}): string {
 
         <select
           name="execution_mode"
-          class="bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-violet-600"
+          class="bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-600/40 focus:border-violet-600"
         >
           <option value="">Any mode</option>
           <option value="ai" selected={execMode === "ai"}>AI</option>
@@ -153,14 +153,14 @@ function filterQs(extra: Record<string, string> = {}): string {
           name="from_date"
           value={fromDate}
           title="From date"
-          class="bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-violet-600 text-gray-400"
+          class="bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-600/40 focus:border-violet-600 text-gray-400"
         />
         <input
           type="date"
           name="to_date"
           value={toDate}
           title="To date"
-          class="bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-violet-600 text-gray-400"
+          class="bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-600/40 focus:border-violet-600 text-gray-400"
         />
 
         {(q || status || taskType || execMode || fromDate || toDate || tagsParam) && (
@@ -205,7 +205,7 @@ function filterQs(extra: Record<string, string> = {}): string {
         ))}
 
         {userTags.length === 0 && activeTags.length === 0 && (
-          <span class="text-xs text-gray-600 italic">No tags used yet</span>
+          <span class="text-xs text-gray-500 italic">No tags used yet</span>
         )}
       </div>
     </form>
@@ -242,7 +242,7 @@ function filterQs(extra: Record<string, string> = {}): string {
             )}
           </p>
           {results.total > 0 && (
-            <p class="text-xs text-gray-600">
+            <p class="text-xs text-gray-500">
               Page {page} of {Math.ceil(results.total / pageSize)}
             </p>
           )}
@@ -310,7 +310,7 @@ function filterQs(extra: Record<string, string> = {}): string {
                     )}
 
                     <!-- Meta -->
-                    <div class="flex items-center gap-3 mt-2 text-xs text-gray-600">
+                    <div class="flex items-center gap-3 mt-2 text-xs text-gray-500">
                       <span>{new Date(task.created_at).toLocaleDateString()}</span>
                       {task.completed_at && (
                         <span>Completed {new Date(task.completed_at).toLocaleDateString()}</span>
@@ -369,7 +369,7 @@ function filterQs(extra: Record<string, string> = {}): string {
             <div class="p-3 bg-gray-900 border border-gray-800 rounded-xl">
               <div class="text-lg mb-1">{icon}</div>
               <div class="text-xs font-medium text-gray-300">{label}</div>
-              <div class="text-xs text-gray-600 mt-0.5">{desc}</div>
+              <div class="text-xs text-gray-500 mt-0.5">{desc}</div>
             </div>
           ))}
         </div>
@@ -439,7 +439,7 @@ function filterQs(extra: Record<string, string> = {}): string {
             class="text-xs px-2.5 py-1 bg-gray-800 border border-gray-700 text-gray-300 hover:text-white hover:border-gray-500 rounded-l-lg transition-colors">
             ${f.name}
           </a>
-          <button data-idx="${i}" class="saved-del text-xs px-1.5 py-1 bg-gray-800 border border-gray-700 border-l-0 text-gray-600 hover:text-red-400 hover:border-red-800 rounded-r-lg transition-colors" title="Delete saved filter">✕</button>
+          <button data-idx="${i}" class="saved-del text-xs px-1.5 py-1 bg-gray-800 border border-gray-700 border-l-0 text-gray-500 hover:text-red-400 hover:border-red-800 rounded-r-lg transition-colors" title="Delete saved filter">✕</button>
         </span>`
       ).join("");
 
@@ -473,7 +473,7 @@ function filterQs(extra: Record<string, string> = {}): string {
       input.value = "My filters";
       input.maxLength = 30;
       input.placeholder = "Filter name…";
-      input.className = "text-xs px-2 py-1 bg-gray-800 border border-violet-600 rounded text-white focus:outline-none focus:border-violet-400 w-28";
+      input.className = "text-xs px-2 py-1 bg-gray-800 border border-violet-600 rounded text-white focus:outline-none focus:ring-2 focus:ring-violet-400/40 focus:border-violet-400 w-28";
       const confirmBtn = document.createElement("button");
       confirmBtn.type = "button";
       confirmBtn.textContent = "Save";

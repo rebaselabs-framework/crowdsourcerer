@@ -56,7 +56,7 @@ const STATUS_COLORS: Record<string, string> = {
   pending:   "bg-gray-800 text-gray-400",
   cancelled: "bg-gray-800 text-gray-500",
   open:      "bg-emerald-950 text-emerald-400",
-  archived:  "bg-gray-900 text-gray-600",
+  archived:  "bg-gray-900 text-gray-500",
 };
 ---
 
@@ -115,23 +115,23 @@ const STATUS_COLORS: Record<string, string> = {
           type="text"
           value={search}
           placeholder="Search task instructions or input…"
-          class="w-full bg-gray-900 border border-gray-700 rounded-lg pl-8 pr-4 py-2 text-sm text-gray-300 placeholder-gray-600 focus:outline-none focus:border-violet-500 transition-colors"
+          class="w-full bg-gray-900 border border-gray-700 rounded-lg pl-8 pr-4 py-2 text-sm text-gray-300 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500 transition-colors"
         />
       </div>
-      <select name="status" class="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-violet-500">
+      <select name="status" class="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500">
         <option value="" selected={!status}>All statuses</option>
         {["pending","queued","running","completed","failed","cancelled","open","archived"].map(s => (
           <option value={s} selected={status === s}>{s}</option>
         ))}
       </select>
-      <select name="type" class="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-violet-500">
+      <select name="type" class="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500">
         <option value="" selected={!type}>All types</option>
         {["web_research","entity_lookup","document_parse","data_transform","llm_generate","screenshot","audio_transcribe","pii_detect","code_execute","web_intel","label_image","label_text","rate_quality","verify_fact","moderate_content","compare_rank","answer_question","transcription_review"].map(t => (
           <option value={t} selected={type === t}>{t}</option>
         ))}
       </select>
       {userTags.length > 0 && (
-        <select name="tag" class="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-violet-500">
+        <select name="tag" class="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500">
           <option value="" selected={!tag}>All tags</option>
           {userTags.map((tg: any) => (
             <option value={tg.tag} selected={tag === tg.tag}>{tg.tag} ({tg.count})</option>
@@ -308,7 +308,7 @@ const STATUS_COLORS: Record<string, string> = {
                       {t.assignments_required > 1 && t.status !== "completed" && t.status !== "failed" && (
                         <div
                           id={`progress-${t.id}`}
-                          class="text-xs text-gray-600 mt-0.5"
+                          class="text-xs text-gray-500 mt-0.5"
                         >
                           {t.assignments_completed}/{t.assignments_required} workers
                         </div>
@@ -600,7 +600,7 @@ const STATUS_COLORS: Record<string, string> = {
     pending:   "bg-gray-800 text-gray-400",
     cancelled: "bg-gray-800 text-gray-500",
     open:      "bg-emerald-950 text-emerald-400",
-    archived:  "bg-gray-900 text-gray-600",
+    archived:  "bg-gray-900 text-gray-500",
   };
   const ALL_STATUS_CLASSES = Object.values(STATUS_CLASSES).join(" ").split(" ");
 

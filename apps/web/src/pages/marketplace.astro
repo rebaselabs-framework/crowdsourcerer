@@ -228,7 +228,7 @@ const saveSearchLoginUrl = `/register?role=worker${savedSearchQs ? "&next=/worke
             name="q"
             value={searchQuery}
             placeholder="Search tasks by keyword…"
-            class="w-full pl-9 pr-4 py-2.5 bg-gray-900 border border-gray-700 rounded-xl text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-violet-500 transition-colors"
+            class="w-full pl-9 pr-4 py-2.5 bg-gray-900 border border-gray-700 rounded-xl text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500 transition-colors"
           />
           {searchQuery && (
             <a href={buildUrl({ q: "", page: 1 })} class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 text-xs transition-colors" title="Clear search">✕</a>
@@ -242,7 +242,7 @@ const saveSearchLoginUrl = `/register?role=worker${savedSearchQs ? "&next=/worke
             id="sort-select"
             name="sort"
             onchange="this.form.submit()"
-            class="bg-gray-900 border border-gray-700 rounded-xl text-sm text-gray-300 px-3 py-2.5 focus:outline-none focus:border-violet-500 cursor-pointer"
+            class="bg-gray-900 border border-gray-700 rounded-xl text-sm text-gray-300 px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500 cursor-pointer"
           >
             {SORT_OPTIONS.map(o => (
               <option value={o.value} selected={sort === o.value}>{o.label}</option>
@@ -265,16 +265,16 @@ const saveSearchLoginUrl = `/register?role=worker${savedSearchQs ? "&next=/worke
             value={minReward}
             min="0"
             placeholder="Min"
-            class="w-20 px-3 py-1.5 bg-gray-900 border border-gray-700 rounded-lg text-sm text-gray-300 placeholder-gray-600 focus:outline-none focus:border-violet-500"
+            class="w-20 px-3 py-1.5 bg-gray-900 border border-gray-700 rounded-lg text-sm text-gray-300 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500"
           />
-          <span class="text-gray-600 text-xs">–</span>
+          <span class="text-gray-500 text-xs">–</span>
           <input
             type="number"
             name="max_reward"
             value={maxReward}
             min="0"
             placeholder="Max"
-            class="w-20 px-3 py-1.5 bg-gray-900 border border-gray-700 rounded-lg text-sm text-gray-300 placeholder-gray-600 focus:outline-none focus:border-violet-500"
+            class="w-20 px-3 py-1.5 bg-gray-900 border border-gray-700 rounded-lg text-sm text-gray-300 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500"
           />
           <span class="text-xs text-gray-500">credits</span>
           {(minReward || maxReward) && (
@@ -410,7 +410,7 @@ const saveSearchLoginUrl = `/register?role=worker${savedSearchQs ? "&next=/worke
                 <div>
                   <div class="flex items-center justify-between text-xs text-gray-500 mb-1.5">
                     <span>{task.assignments_completed} / {task.assignments_required} workers</span>
-                    <span class={spotsLeft > 0 ? "text-emerald-400" : "text-gray-600"}>
+                    <span class={spotsLeft > 0 ? "text-emerald-400" : "text-gray-500"}>
                       {spotsLeft > 0 ? `${spotsLeft} spot${spotsLeft !== 1 ? "s" : ""} left` : "Full"}
                     </span>
                   </div>
@@ -426,7 +426,7 @@ const saveSearchLoginUrl = `/register?role=worker${savedSearchQs ? "&next=/worke
                     <span class="text-xs text-gray-500">credits</span>
                   </div>
                   <div class="flex items-center gap-3">
-                    <span class="text-xs text-gray-600">{timeAgo(task.created_at)}</span>
+                    <span class="text-xs text-gray-500">{timeAgo(task.created_at)}</span>
                     {spotsLeft > 0 ? (
                       <a
                         href={token ? `/worker/tasks/${task.id}` : `/register?role=worker`}
@@ -454,7 +454,7 @@ const saveSearchLoginUrl = `/register?role=worker${savedSearchQs ? "&next=/worke
                 ← Prev
               </a>
             ) : (
-              <span class="px-4 py-2 bg-gray-900 border border-gray-800 rounded-lg text-sm text-gray-600 cursor-not-allowed">← Prev</span>
+              <span class="px-4 py-2 bg-gray-900 border border-gray-800 rounded-lg text-sm text-gray-500 cursor-not-allowed">← Prev</span>
             )}
             <span class="text-sm text-gray-400">Page <span class="text-white font-medium">{page}</span> of {totalPages}</span>
             {page < totalPages ? (
@@ -462,7 +462,7 @@ const saveSearchLoginUrl = `/register?role=worker${savedSearchQs ? "&next=/worke
                 Next →
               </a>
             ) : (
-              <span class="px-4 py-2 bg-gray-900 border border-gray-800 rounded-lg text-sm text-gray-600 cursor-not-allowed">Next →</span>
+              <span class="px-4 py-2 bg-gray-900 border border-gray-800 rounded-lg text-sm text-gray-500 cursor-not-allowed">Next →</span>
             )}
           </div>
         )}
@@ -485,7 +485,7 @@ const saveSearchLoginUrl = `/register?role=worker${savedSearchQs ? "&next=/worke
           View leaderboard
         </a>
       </div>
-      <p class="text-xs text-gray-600 mt-4">No credit card required · Instant approval</p>
+      <p class="text-xs text-gray-500 mt-4">No credit card required · Instant approval</p>
     </div>
 
     <!-- ── How it works ───────────────────────────────────────────────────── -->
@@ -555,7 +555,7 @@ const saveSearchLoginUrl = `/register?role=worker${savedSearchQs ? "&next=/worke
       input.value = defaultName;
       input.maxLength = 50;
       input.placeholder = "Search name…";
-      input.className = "text-xs px-2 py-1 bg-gray-900 border border-emerald-700 rounded text-white focus:outline-none focus:border-emerald-500 w-28";
+      input.className = "text-xs px-2 py-1 bg-gray-900 border border-emerald-700 rounded text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500 w-28";
 
       var saveConfirm = document.createElement("button");
       saveConfirm.type = "button";

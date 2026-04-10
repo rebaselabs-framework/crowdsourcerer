@@ -144,7 +144,7 @@ const skippable = new Set(["set_webhook", "invite_team"]);
                       <span class="text-xs text-green-500">Done!</span>
                     )}
                     {skippable.has(step.key) && !step.completed && (
-                      <span class="text-xs text-gray-600 italic">optional</span>
+                      <span class="text-xs text-gray-500 italic">optional</span>
                     )}
                   </div>
                   <p class="text-xs text-gray-400 mt-0.5">{step.description}</p>

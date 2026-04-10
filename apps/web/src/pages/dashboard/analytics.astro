@@ -75,7 +75,7 @@ function pct(a: number, total: number) {
       <div class="flex flex-wrap items-center gap-3">
         <select
           onchange="applyFilter('days', this.value)"
-          class="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-violet-500"
+          class="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500"
         >
           {[7, 14, 30, 60, 90].map(d => (
             <option value={d} selected={days === d}>{d} days</option>
@@ -84,7 +84,7 @@ function pct(a: number, total: number) {
         {orgs.length > 0 && (
           <select
             onchange="applyFilter('org_id', this.value)"
-            class="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-violet-500"
+            class="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500"
           >
             <option value="">Personal</option>
             {orgs.map((o: any) => (

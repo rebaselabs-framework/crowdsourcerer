@@ -81,11 +81,11 @@ const CRON_EXAMPLES = [
           <!-- Pipeline selector -->
           <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-6">
             <form method="GET">
-              <label class="block text-sm font-medium mb-2">Select pipeline</label>
+              <label for="pipeline_id" class="block text-sm font-medium mb-2">Select pipeline</label>
               <div class="flex gap-3">
                 <select
-                  name="pipeline_id"
-                  class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-violet-600"
+                  id="pipeline_id" name="pipeline_id"
+                  class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-600/40 focus:border-violet-600"
                 >
                   <option value="">Choose a pipeline…</option>
                   {pipelines.map((p: any) => (
@@ -219,15 +219,15 @@ const CRON_EXAMPLES = [
                 </div>
 
                 <div class="mb-3">
-                  <label class="block text-xs text-gray-400 mb-1">Name (optional)</label>
+                  <label for="triggerName" class="block text-xs text-gray-400 mb-1">Name (optional)</label>
                   <input id="triggerName" type="text" placeholder="My daily run"
-                    class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-violet-600" />
+                    class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-600/40 focus:border-violet-600" />
                 </div>
 
                 <div id="cronFields" class="mb-3">
-                  <label class="block text-xs text-gray-400 mb-1">Cron expression</label>
+                  <label for="cronExpr" class="block text-xs text-gray-400 mb-1">Cron expression</label>
                   <input id="cronExpr" type="text" placeholder="0 9 * * *"
-                    class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:border-violet-600" />
+                    class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-violet-600/40 focus:border-violet-600" />
                   <div class="mt-2 space-y-1">
                     {CRON_EXAMPLES.map((ex) => (
                       <button
@@ -242,9 +242,9 @@ const CRON_EXAMPLES = [
                 </div>
 
                 <div class="mb-3">
-                  <label class="block text-xs text-gray-400 mb-1">Default input (JSON, optional)</label>
+                  <label for="defaultInput" class="block text-xs text-gray-400 mb-1">Default input (JSON, optional)</label>
                   <textarea id="defaultInput" rows="3"
-                    class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:border-violet-600"
+                    class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-violet-600/40 focus:border-violet-600"
                     placeholder='{"key": "value"}'></textarea>
                 </div>
 

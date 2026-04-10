@@ -47,7 +47,7 @@ const chartData = analytics ? {
       <div>
         <div class="flex items-center gap-2 mb-1">
           <a href="/admin" class="text-gray-500 hover:text-gray-300 text-sm transition-colors">Admin</a>
-          <span class="text-gray-600">/</span>
+          <span class="text-gray-500">/</span>
           <span class="text-sm text-gray-300">Analytics</span>
         </div>
         <h1 class="text-2xl font-bold">Platform Analytics</h1>
@@ -257,14 +257,14 @@ const chartData = analytics ? {
                             {w.accuracy}%
                           </span>
                         ) : (
-                          <span class="text-gray-600">—</span>
+                          <span class="text-gray-500">—</span>
                         )}
                       </td>
                       <td class="px-5 py-3 text-right">
                         {w.streak_days > 0 ? (
                           <span class="text-orange-400">🔥 {w.streak_days}d</span>
                         ) : (
-                          <span class="text-gray-600">—</span>
+                          <span class="text-gray-500">—</span>
                         )}
                       </td>
                     </tr>

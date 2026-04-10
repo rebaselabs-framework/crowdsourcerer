@@ -118,7 +118,7 @@ const HUMAN_TASK_TYPES = Object.keys(TASK_TYPE_META);
       <input type="hidden" name="mode" value="browse" />
       <select
         name="type"
-        class="bg-gray-900 border border-gray-700 text-sm rounded-lg px-3 py-2 text-gray-200 focus:outline-none focus:border-violet-500"
+        class="bg-gray-900 border border-gray-700 text-sm rounded-lg px-3 py-2 text-gray-200 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500"
       >
         <option value="" selected={!filterType}>All types</option>
         {HUMAN_TASK_TYPES.map((t) => (
@@ -130,7 +130,7 @@ const HUMAN_TASK_TYPES = Object.keys(TASK_TYPE_META);
 
       <select
         name="priority"
-        class="bg-gray-900 border border-gray-700 text-sm rounded-lg px-3 py-2 text-gray-200 focus:outline-none focus:border-violet-500"
+        class="bg-gray-900 border border-gray-700 text-sm rounded-lg px-3 py-2 text-gray-200 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500"
       >
         <option value="" selected={!filterPriority}>All priorities</option>
         <option value="urgent" selected={filterPriority === "urgent"}>🔴 Urgent</option>
@@ -146,12 +146,12 @@ const HUMAN_TASK_TYPES = Object.keys(TASK_TYPE_META);
         min="1"
         max="9999"
         value={filterMinReward || undefined}
-        class="w-28 bg-gray-900 border border-gray-700 text-sm rounded-lg px-3 py-2 text-gray-200 placeholder-gray-600 focus:outline-none focus:border-violet-500"
+        class="w-28 bg-gray-900 border border-gray-700 text-sm rounded-lg px-3 py-2 text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500"
       />
 
       <select
         name="sort_by"
-        class="bg-gray-900 border border-gray-700 text-sm rounded-lg px-3 py-2 text-gray-200 focus:outline-none focus:border-violet-500"
+        class="bg-gray-900 border border-gray-700 text-sm rounded-lg px-3 py-2 text-gray-200 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500"
       >
         <option value="" selected={!filterSortBy}>Sort: Priority</option>
         <option value="reward_desc" selected={filterSortBy === "reward_desc"}>Sort: Highest reward</option>

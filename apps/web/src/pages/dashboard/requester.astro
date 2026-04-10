@@ -194,7 +194,7 @@ function fmt(d: string) {
                   <div class="w-full bg-violet-600/80 hover:bg-violet-500 rounded-t transition-all"
                     style={`height: ${Math.max(4, pct)}%`}
                     title={`${fmt(d.date)}: ${d.tasks} tasks`}></div>
-                  <div class="text-xs text-gray-600 rotate-0 leading-none">
+                  <div class="text-xs text-gray-500 rotate-0 leading-none">
                     {new Date(d.date).toLocaleDateString("en-US", { weekday: "short" })}
                   </div>
                 </div>
@@ -202,7 +202,7 @@ function fmt(d: string) {
             })}
           </div>
         ) : (
-          <div class="flex items-center justify-center h-20 text-gray-600 text-sm">
+          <div class="flex items-center justify-center h-20 text-gray-500 text-sm">
             No task data yet
           </div>
         )}
@@ -260,7 +260,7 @@ function fmt(d: string) {
             </div>
           </div>
         ) : (
-          <div class="text-gray-600 text-sm text-center py-4">Unable to load quota</div>
+          <div class="text-gray-500 text-sm text-center py-4">Unable to load quota</div>
         )}
       </div>
     </div>
@@ -292,7 +292,7 @@ function fmt(d: string) {
             })}
           </div>
         ) : (
-          <div class="text-gray-600 text-sm text-center py-6">No cost data yet</div>
+          <div class="text-gray-500 text-sm text-center py-6">No cost data yet</div>
         )}
       </div>
 
@@ -309,10 +309,10 @@ function fmt(d: string) {
                 <div class="min-w-0">
                   <div class="flex items-center gap-2">
                     <span class="font-mono text-xs text-red-300">{t.type}</span>
-                    <span class="text-xs text-gray-600">#{t.id.slice(0, 8)}</span>
+                    <span class="text-xs text-gray-500">#{t.id.slice(0, 8)}</span>
                   </div>
                   {t.error && (
-                    <p class="text-xs text-gray-600 mt-0.5 truncate max-w-xs">{t.error}</p>
+                    <p class="text-xs text-gray-500 mt-0.5 truncate max-w-xs">{t.error}</p>
                   )}
                 </div>
                 <div class="flex items-center gap-2 ml-3 shrink-0">
@@ -348,9 +348,9 @@ function fmt(d: string) {
 
       <div class="grid sm:grid-cols-4 gap-4 mb-4">
         <div>
-          <label class="block text-xs text-gray-400 mb-1.5">Task type</label>
+          <label for="est-type" class="block text-xs text-gray-400 mb-1.5">Task type</label>
           <select id="est-type"
-            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-violet-500">
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500">
             <option value="llm_generate" data-cost="1">llm_generate (1 cr)</option>
             <option value="data_transform" data-cost="2">data_transform (2 cr)</option>
             <option value="document_parse" data-cost="3">document_parse (3 cr)</option>
@@ -366,21 +366,21 @@ function fmt(d: string) {
         </div>
 
         <div id="est-volume-col">
-          <label class="block text-xs text-gray-400 mb-1.5">Volume (tasks)</label>
+          <label for="est-volume" class="block text-xs text-gray-400 mb-1.5">Volume (tasks)</label>
           <input type="number" id="est-volume" value="10" min="1" max="10000"
-            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-violet-500" />
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500" />
         </div>
 
         <div id="est-human-col" class="hidden">
-          <label class="block text-xs text-gray-400 mb-1.5">Worker reward (credits)</label>
+          <label for="est-reward" class="block text-xs text-gray-400 mb-1.5">Worker reward (credits)</label>
           <input type="number" id="est-reward" value="5" min="1" max="10000"
-            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-violet-500" />
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500" />
         </div>
 
         <div id="est-workers-col" class="hidden">
-          <label class="block text-xs text-gray-400 mb-1.5">Workers per task</label>
+          <label for="est-workers" class="block text-xs text-gray-400 mb-1.5">Workers per task</label>
           <input type="number" id="est-workers" value="1" min="1" max="10"
-            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-violet-500" />
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500" />
         </div>
 
         <div class="flex items-end">
@@ -439,7 +439,7 @@ function fmt(d: string) {
           class="bg-gray-900 border border-gray-800 hover:border-gray-600 rounded-xl p-3 transition-colors flex flex-col items-center text-center gap-1">
           <span class="text-xl">{icon}</span>
           <div class="text-xs font-medium">{label}</div>
-          <div class="text-xs text-gray-600">{sub}</div>
+          <div class="text-xs text-gray-500">{sub}</div>
         </a>
       ))}
     </div>

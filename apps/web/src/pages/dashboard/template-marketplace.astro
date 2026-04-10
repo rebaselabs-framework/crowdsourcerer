@@ -82,11 +82,11 @@ const myPublishedIds = new Set<string>(
         name="search"
         value={search}
         placeholder="Search templates…"
-        class="flex-1 min-w-48 bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500"
+        class="flex-1 min-w-48 bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500"
       />
       <select
         name="type"
-        class="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-indigo-500"
+        class="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500"
       >
         <option value="" selected={!taskType}>All types</option>
         {TASK_TYPES.map(t => (
@@ -95,7 +95,7 @@ const myPublishedIds = new Set<string>(
       </select>
       <select
         name="sort"
-        class="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-indigo-500"
+        class="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500"
       >
         <option value="popular" selected={sort === "popular"}>🔥 Most popular</option>
         <option value="newest" selected={sort === "newest"}>🆕 Newest</option>
@@ -128,7 +128,7 @@ const myPublishedIds = new Set<string>(
       <div class="bg-gray-900 border border-gray-800 rounded-xl px-6 py-16 text-center">
         <div class="text-4xl mb-3">🏪</div>
         <div class="text-gray-400 font-medium">No templates found</div>
-        <p class="text-gray-600 text-sm mt-1">
+        <p class="text-gray-500 text-sm mt-1">
           {search || taskType
             ? "Try adjusting your filters."
             : "Be the first to share a template! Go to My Templates → publish one."}

@@ -179,10 +179,10 @@ function modeLabel(mode: string): string {
                           <span class:list={[
                             "text-xs font-medium",
                             task.eta_label === "Overdue" ? "text-red-400" :
-                            task.has_eta_sample ? "text-gray-300" : "text-gray-600"
+                            task.has_eta_sample ? "text-gray-300" : "text-gray-500"
                           ]}>
                             {task.eta_label}
-                            {!task.has_eta_sample && <span class="text-gray-600 ml-1">est.</span>}
+                            {!task.has_eta_sample && <span class="text-gray-500 ml-1">est.</span>}
                           </span>
                         </td>
                       </tr>
@@ -232,7 +232,7 @@ function modeLabel(mode: string): string {
             </div>
           </div>
         </div>
-        <p class="text-xs text-gray-600 mt-3">
+        <p class="text-xs text-gray-500 mt-3">
           ETAs are estimated from average completion times for matching task types over the past {queue.eta_model.lookback_days} days.
           Tasks without historical data show fallback estimates (30s for AI, 4h for human).
         </p>

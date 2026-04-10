@@ -73,7 +73,7 @@ function tierColor(score: number) {
             name="search"
             value={search}
             placeholder="Search by email or name…"
-            class="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-violet-600"
+            class="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-600/40 focus:border-violet-600"
           />
           <select
             name="is_banned"
@@ -168,7 +168,7 @@ function tierColor(score: number) {
                         {(w.worker_accuracy * 100).toFixed(0)}%
                       </span>
                     ) : (
-                      <span class="text-gray-600 text-xs">—</span>
+                      <span class="text-gray-500 text-xs">—</span>
                     )}
                   </td>
                   <td class="px-4 py-3 text-center">
@@ -238,7 +238,7 @@ function tierColor(score: number) {
       <form id="strikeForm">
         <input type="hidden" id="strikeWorkerId" />
         <div class="mb-4">
-          <label class="block text-xs text-gray-400 mb-1">Severity</label>
+          <label for="strikeSeverity" class="block text-xs text-gray-400 mb-1">Severity</label>
           <select id="strikeSeverity" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm">
             <option value="warning">⚠️ Warning (−2 pts)</option>
             <option value="minor">Minor (−5 pts)</option>
@@ -247,8 +247,8 @@ function tierColor(score: number) {
           </select>
         </div>
         <div class="mb-4">
-          <label class="block text-xs text-gray-400 mb-1">Reason <span class="text-red-400">*</span></label>
-          <textarea id="strikeReason" rows="3" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-violet-600" placeholder="Describe the issue…"></textarea>
+          <label for="strikeReason" class="block text-xs text-gray-400 mb-1">Reason <span class="text-red-400">*</span></label>
+          <textarea id="strikeReason" rows="3" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-600/40 focus:border-violet-600" placeholder="Describe the issue…"></textarea>
         </div>
         <div class="flex gap-3">
           <button type="submit" class="flex-1 py-2 bg-orange-700 hover:bg-orange-600 text-white text-sm rounded-lg font-medium">Issue Strike</button>
@@ -267,8 +267,8 @@ function tierColor(score: number) {
       <form id="banForm">
         <input type="hidden" id="banWorkerId" />
         <div class="mb-4">
-          <label class="block text-xs text-gray-400 mb-1">Reason <span class="text-red-400">*</span></label>
-          <textarea id="banReason" rows="3" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-violet-600" placeholder="Reason for ban…"></textarea>
+          <label for="banReason" class="block text-xs text-gray-400 mb-1">Reason <span class="text-red-400">*</span></label>
+          <textarea id="banReason" rows="3" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-600/40 focus:border-violet-600" placeholder="Reason for ban…"></textarea>
         </div>
         <div class="flex gap-3">
           <button type="submit" class="flex-1 py-2 bg-red-700 hover:bg-red-600 text-white text-sm rounded-lg font-medium">Ban Worker</button>

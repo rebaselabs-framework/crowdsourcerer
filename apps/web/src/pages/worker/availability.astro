@@ -158,14 +158,14 @@ const blackoutDates: any[] = availabilityData?.blackouts ?? [];
         <input
           type="date"
           id="blackout-date-input"
-          class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-violet-500"
+          class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500"
         />
         <input
           type="text"
           id="blackout-reason-input"
           placeholder="Reason (optional)"
           maxlength="200"
-          class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-violet-500"
+          class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500"
         />
         <button
           id="add-blackout-btn"
@@ -179,7 +179,7 @@ const blackoutDates: any[] = availabilityData?.blackouts ?? [];
       <!-- Existing blackout dates -->
       <div id="blackout-list" class="space-y-2">
         {blackoutDates.length === 0 ? (
-          <p class="text-gray-600 text-sm">No blackout dates set.</p>
+          <p class="text-gray-500 text-sm">No blackout dates set.</p>
         ) : (
           blackoutDates.map((bd: any) => (
             <div class="flex items-center justify-between bg-gray-800/60 border border-gray-700/60 rounded-lg px-4 py-3" data-blackout-id={bd.id}>
@@ -190,7 +190,7 @@ const blackoutDates: any[] = availabilityData?.blackouts ?? [];
                 )}
               </div>
               <button
-                class="remove-blackout-btn text-xs text-gray-600 hover:text-red-400 transition-colors"
+                class="remove-blackout-btn text-xs text-gray-500 hover:text-red-400 transition-colors"
                 data-id={bd.id}
                 data-date={bd.blackout_date}
               >
@@ -330,7 +330,7 @@ const blackoutDates: any[] = availabilityData?.blackouts ?? [];
             '<span class="text-red-400 font-mono text-sm">' + date + '</span>' +
             (reasonInput.value.trim() ? '<span class="text-gray-400 text-xs">' + reasonInput.value.trim() + '</span>' : '') +
           '</div>' +
-          '<button class="remove-blackout-btn text-xs text-gray-600 hover:text-red-400 transition-colors" data-id="' + (bd.id || date) + '" data-date="' + date + '">Remove</button>';
+          '<button class="remove-blackout-btn text-xs text-gray-500 hover:text-red-400 transition-colors" data-id="' + (bd.id || date) + '" data-date="' + date + '">Remove</button>';
         blackoutList.appendChild(row);
         row.querySelector(".remove-blackout-btn").addEventListener("click", handleRemove);
         dateInput.value = "";
@@ -357,14 +357,14 @@ const blackoutDates: any[] = availabilityData?.blackouts ?? [];
       btn.dataset.pending = "true";
       var orig = btn.textContent;
       btn.textContent = "Remove?";
-      btn.classList.remove("text-gray-600");
+      btn.classList.remove("text-gray-500");
       btn.classList.add("text-red-400");
       setTimeout(function() {
         if (btn.dataset.pending === "true") {
           btn.dataset.pending = "";
           btn.textContent = orig;
           btn.classList.remove("text-red-400");
-          btn.classList.add("text-gray-600");
+          btn.classList.add("text-gray-500");
         }
       }, 3000);
       return;
@@ -379,7 +379,7 @@ const blackoutDates: any[] = availabilityData?.blackouts ?? [];
         btn.closest("[data-blackout-id]").remove();
         if (blackoutList.children.length === 0) {
           var p = document.createElement("p");
-          p.className = "text-gray-600 text-sm";
+          p.className = "text-gray-500 text-sm";
           p.textContent = "No blackout dates set.";
           blackoutList.appendChild(p);
         }

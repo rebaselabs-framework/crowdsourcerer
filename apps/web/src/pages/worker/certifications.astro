@@ -150,7 +150,7 @@ for (const c of myCerts) {
             <h2 class="text-xl font-bold">{certDetail.badge_icon} {certDetail.name}</h2>
             <p class="text-gray-500 text-sm mt-1">{certDetail.question_count} questions • Pass with {certDetail.passing_score}%+</p>
           </div>
-          <a href="/worker/certifications" class="text-gray-400 hover:text-gray-600 text-2xl">×</a>
+          <a href="/worker/certifications" class="text-gray-400 hover:text-gray-500 text-2xl">×</a>
         </div>
         <form method="POST" id="cert-form" class="p-6">
           <input type="hidden" name="task_type" value={certDetail.task_type} />

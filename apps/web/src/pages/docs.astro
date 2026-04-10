@@ -390,13 +390,13 @@ const humanTaskTypes = [
         <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mt-4 mb-2">AI task types</div>
         {taskTypes.map((t) => (
           <a href={`#${t.id}`} class="block py-1 text-gray-400 hover:text-gray-200 transition-colors">
-            {t.name} <span class="text-gray-600 text-xs">{t.credits}cr</span>
+            {t.name} <span class="text-gray-500 text-xs">{t.credits}cr</span>
           </a>
         ))}
         <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mt-4 mb-2">Human task types</div>
         {humanTaskTypes.map((t) => (
           <a href={`#${t.id}`} class="block py-1 text-gray-400 hover:text-gray-200 transition-colors">
-            {t.name} <span class="text-gray-600 text-xs">{t.credits}cr</span>
+            {t.name} <span class="text-gray-500 text-xs">{t.credits}cr</span>
           </a>
         ))}
         <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mt-4 mb-2">Reference</div>
@@ -473,7 +473,7 @@ const humanTaskTypes = [
                   s === "running" ? "bg-yellow-950 text-yellow-400" :
                   "bg-gray-800 text-gray-300"
                 ]}>{s}</span>
-                {i < arr.length - 1 && <span class="text-gray-600">→</span>}
+                {i < arr.length - 1 && <span class="text-gray-500">→</span>}
               </>
             ))}
           </div>

@@ -72,8 +72,8 @@ function relTime(iso: string): string {
     <!-- Filters -->
     <form method="get" class="bg-gray-900 border border-gray-800 rounded-xl p-4 mb-6 flex flex-wrap gap-3 items-end">
       <div>
-        <label class="block text-xs text-gray-500 mb-1">Action</label>
-        <select name="action" class="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm">
+        <label for="action" class="block text-xs text-gray-500 mb-1">Action</label>
+        <select id="action" name="action" class="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm">
           <option value="">All actions</option>
           {["ban_worker","unban_worker","issue_strike","pardon_strike","payout_paid","payout_rejected","payout_processing"].map(a => (
             <option value={a} selected={action === a}>{a.replace(/_/g," ")}</option>
@@ -81,8 +81,8 @@ function relTime(iso: string): string {
         </select>
       </div>
       <div>
-        <label class="block text-xs text-gray-500 mb-1">Target type</label>
-        <select name="target_type" class="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm">
+        <label for="target_type" class="block text-xs text-gray-500 mb-1">Target type</label>
+        <select id="target_type" name="target_type" class="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm">
           <option value="">All types</option>
           {["user","payout","task"].map(t => (
             <option value={t} selected={targetType === t}>{t}</option>
@@ -90,8 +90,8 @@ function relTime(iso: string): string {
         </select>
       </div>
       <div>
-        <label class="block text-xs text-gray-500 mb-1">Target ID</label>
-        <input type="text" name="target_id" value={targetId} placeholder="UUID…"
+        <label for="target_id" class="block text-xs text-gray-500 mb-1">Target ID</label>
+        <input type="text" id="target_id" name="target_id" value={targetId} placeholder="UUID…"
           class="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm w-48" />
       </div>
       <button type="submit" class="bg-violet-600 hover:bg-violet-500 text-white px-4 py-2 rounded-lg text-sm font-medium">

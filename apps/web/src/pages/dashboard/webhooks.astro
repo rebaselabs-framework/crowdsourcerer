@@ -142,21 +142,21 @@ const ALL_EVENTS = (eventTypes?.events ?? []).map((e: any) => e.type);
           <h2 class="text-base font-semibold mb-5">Register a new endpoint</h2>
           <div class="grid gap-4">
             <div>
-              <label class="block text-xs font-medium text-gray-400 mb-1.5">URL <span class="text-red-400">*</span></label>
+              <label for="ep-url" class="block text-xs font-medium text-gray-400 mb-1.5">URL <span class="text-red-400">*</span></label>
               <input
                 id="ep-url"
                 type="url"
                 placeholder="https://your-server.example.com/webhook"
-                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-gray-200 font-mono focus:outline-none focus:border-violet-500"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-gray-200 font-mono focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500"
               />
             </div>
             <div>
-              <label class="block text-xs font-medium text-gray-400 mb-1.5">Description (optional)</label>
+              <label for="ep-description" class="block text-xs font-medium text-gray-400 mb-1.5">Description (optional)</label>
               <input
                 id="ep-description"
                 type="text"
                 placeholder="e.g. Production notification receiver"
-                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-gray-200 focus:outline-none focus:border-violet-500"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500"
               />
             </div>
             <div>
@@ -408,7 +408,7 @@ if not verify_webhook(request.get_data(), YOUR_SECRET, sig):
             name="task_id"
             value={taskId}
             placeholder="Filter by task ID…"
-            class="flex-1 min-w-40 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 font-mono focus:outline-none focus:border-violet-500"
+            class="flex-1 min-w-40 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 font-mono focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500"
           />
           <select name="event_type" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none">
             <option value="">All events</option>
@@ -583,7 +583,7 @@ if not verify_webhook(request.get_data(), YOUR_SECRET, sig):
                       {evt.is_default ? (
                         <span class="text-green-400">✓ default</span>
                       ) : (
-                        <span class="text-gray-600">opt-in</span>
+                        <span class="text-gray-500">opt-in</span>
                       )}
                     </td>
                   </tr>
@@ -619,29 +619,29 @@ if not verify_webhook(request.get_data(), YOUR_SECRET, sig):
           <h3 class="text-sm font-semibold mb-4">Add / Edit Payload Template</h3>
           <div class="grid gap-4">
             <div>
-              <label class="block text-xs font-medium text-gray-400 mb-1.5">Event Type <span class="text-red-400">*</span></label>
-              <select id="tpl-event-type" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-gray-200 focus:outline-none focus:border-violet-500">
+              <label for="tpl-event-type" class="block text-xs font-medium text-gray-400 mb-1.5">Event Type <span class="text-red-400">*</span></label>
+              <select id="tpl-event-type" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500">
                 {(eventTypes?.events ?? []).map((evt: any) => (
                   <option value={evt.type}>{evt.type}</option>
                 ))}
               </select>
             </div>
             <div>
-              <label class="block text-xs font-medium text-gray-400 mb-1.5">Description (optional)</label>
+              <label for="tpl-description" class="block text-xs font-medium text-gray-400 mb-1.5">Description (optional)</label>
               <input
                 id="tpl-description"
                 type="text"
                 placeholder="e.g. Slack-compatible payload for task completion"
-                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-gray-200 focus:outline-none focus:border-violet-500"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500"
               />
             </div>
             <div>
-              <label class="block text-xs font-medium text-gray-400 mb-1.5">Template JSON <span class="text-red-400">*</span></label>
+              <label for="tpl-template" class="block text-xs font-medium text-gray-400 mb-1.5">Template JSON <span class="text-red-400">*</span></label>
               <textarea
                 id="tpl-template"
                 rows={10}
                 placeholder={'{\n  "text": "Task {{task_id}} ({{event_type}}) completed at {{occurred_at}}",\n  "task_id": "{{task_id}}",\n  "user_id": "{{user_id}}"\n}'}
-                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-gray-200 font-mono focus:outline-none focus:border-violet-500"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-gray-200 font-mono focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500"
               ></textarea>
             </div>
             <!-- Available variables reference -->
@@ -697,7 +697,7 @@ if not verify_webhook(request.get_data(), YOUR_SECRET, sig):
                       )}
                     </div>
                     <pre class="text-xs font-mono text-gray-400 bg-gray-950 rounded p-3 overflow-x-auto max-h-32 mt-2">{tpl.template.length > 400 ? tpl.template.slice(0, 400) + "\n…" : tpl.template}</pre>
-                    <p class="text-xs text-gray-600 mt-2">Updated {new Date(tpl.updated_at).toLocaleString()}</p>
+                    <p class="text-xs text-gray-500 mt-2">Updated {new Date(tpl.updated_at).toLocaleString()}</p>
                   </div>
                   <div class="flex items-center gap-2 flex-shrink-0">
                     <button

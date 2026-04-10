@@ -90,7 +90,7 @@ const progress = badges ? Math.round((badges.earned.length / totalBadges) * 100)
                     </div>
                   )}
                   {badge.earned_at && (
-                    <div class="mt-1 text-xs text-gray-600">
+                    <div class="mt-1 text-xs text-gray-500">
                       {new Date(badge.earned_at).toLocaleDateString()}
                     </div>
                   )}
@@ -104,7 +104,7 @@ const progress = badges ? Math.round((badges.earned.length / totalBadges) * 100)
         {badges.locked.length > 0 && (
           <div>
             <h2 class="text-lg font-semibold mb-4 flex items-center gap-2">
-              <span class="text-gray-600">🔒</span>
+              <span class="text-gray-500">🔒</span>
               Locked ({badges.locked.length})
             </h2>
             <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
@@ -112,9 +112,9 @@ const progress = badges ? Math.round((badges.earned.length / totalBadges) * 100)
                 <div class="bg-gray-900/60 border border-gray-800 rounded-2xl p-5 text-center opacity-60 hover:opacity-80 transition-opacity">
                   <div class="text-4xl mb-3 grayscale">{badge.icon}</div>
                   <div class="font-semibold text-gray-400 text-sm mb-1">{badge.name}</div>
-                  <div class="text-xs text-gray-600 leading-relaxed">{badge.description}</div>
+                  <div class="text-xs text-gray-500 leading-relaxed">{badge.description}</div>
                   {badge.rarity != null && badge.rarity > 0 && (
-                    <div class="mt-2 text-xs text-gray-600">
+                    <div class="mt-2 text-xs text-gray-500">
                       {badge.rarity <= 5 ? "💎 " : badge.rarity <= 20 ? "✦ " : ""}{badge.rarity}% of workers
                     </div>
                   )}

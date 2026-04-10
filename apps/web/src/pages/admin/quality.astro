@@ -59,10 +59,10 @@ function accuracyColor(pct: number): string {
       <!-- Threshold filter -->
       <form method="GET" class="flex items-end gap-3">
         <div>
-          <label class="block text-xs text-gray-500 mb-1">Threshold (% approval)</label>
+          <label for="threshold" class="block text-xs text-gray-500 mb-1">Threshold (% approval)</label>
           <select
-            name="threshold"
-            class="bg-gray-800 border border-gray-700 text-gray-200 text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-violet-500"
+            id="threshold" name="threshold"
+            class="bg-gray-800 border border-gray-700 text-gray-200 text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500"
           >
             {[0.4, 0.5, 0.6, 0.7, 0.8].map(t => (
               <option value={t} selected={Math.abs(validThreshold - t) < 0.01}>
@@ -72,10 +72,10 @@ function accuracyColor(pct: number): string {
           </select>
         </div>
         <div>
-          <label class="block text-xs text-gray-500 mb-1">Min reviews</label>
+          <label for="min_evaluated" class="block text-xs text-gray-500 mb-1">Min reviews</label>
           <select
-            name="min_evaluated"
-            class="bg-gray-800 border border-gray-700 text-gray-200 text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-violet-500"
+            id="min_evaluated" name="min_evaluated"
+            class="bg-gray-800 border border-gray-700 text-gray-200 text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500"
           >
             {[3, 5, 10, 20].map(n => (
               <option value={n} selected={validMin === n}>{n}+</option>
@@ -101,7 +101,7 @@ function accuracyColor(pct: number): string {
         <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
           <div class="text-2xl font-bold text-gray-100">{stats.total_workers_evaluated}</div>
           <div class="text-xs text-gray-500 mt-1">Workers evaluated</div>
-          <div class="text-xs text-gray-600 mt-0.5">{stats.min_evaluated}+ reviews each</div>
+          <div class="text-xs text-gray-500 mt-0.5">{stats.min_evaluated}+ reviews each</div>
         </div>
         <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
           <div class="text-2xl font-bold text-emerald-400">{stats.avg_accuracy_pct}%</div>
@@ -112,7 +112,7 @@ function accuracyColor(pct: number): string {
             {stats.workers_at_risk}
           </div>
           <div class="text-xs text-gray-500 mt-1">Workers at risk</div>
-          <div class="text-xs text-gray-600 mt-0.5">Below {Math.round((stats.threshold ?? validThreshold) * 100)}% approval</div>
+          <div class="text-xs text-gray-500 mt-0.5">Below {Math.round((stats.threshold ?? validThreshold) * 100)}% approval</div>
         </div>
         <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
           <div class="text-2xl font-bold text-amber-400">{stats.pct_at_risk}%</div>
@@ -180,7 +180,7 @@ function accuracyColor(pct: number): string {
                   {w.strike_count > 0 ? (
                     <span class="text-amber-400 font-semibold">{w.strike_count}</span>
                   ) : (
-                    <span class="text-gray-600">0</span>
+                    <span class="text-gray-500">0</span>
                   )}
                 </td>
                 <td class="px-5 py-3 text-right">
@@ -215,17 +215,17 @@ function accuracyColor(pct: number): string {
       <p id="warn-worker-name" class="text-sm text-gray-400 mb-4"></p>
       <div class="space-y-3">
         <div>
-          <label class="block text-xs font-medium text-gray-400 mb-1">Reason <span class="text-red-400">*</span></label>
+          <label for="warn-reason" class="block text-xs font-medium text-gray-400 mb-1">Reason <span class="text-red-400">*</span></label>
           <textarea
             id="warn-reason"
             rows="3"
             placeholder="e.g. Approval rate consistently below platform average across 10+ tasks"
-            class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-violet-500 resize-none"
+            class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500 resize-none"
           ></textarea>
         </div>
         <div>
-          <label class="block text-xs font-medium text-gray-400 mb-1">Severity</label>
-          <select id="warn-severity" class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-200 focus:outline-none focus:border-violet-500">
+          <label for="warn-severity" class="block text-xs font-medium text-gray-400 mb-1">Severity</label>
+          <select id="warn-severity" class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500">
             <option value="warning">⚠️ Warning (informational)</option>
             <option value="minor">🔴 Minor (affects reputation)</option>
             <option value="major">🔴🔴 Major (significant penalty)</option>

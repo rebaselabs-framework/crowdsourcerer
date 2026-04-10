@@ -71,8 +71,8 @@ const SORT_OPTIONS = [
     <form method="GET" class="bg-gray-800 rounded-xl border border-gray-700 p-4 mb-6 flex flex-wrap gap-3 items-end">
       <!-- Skill -->
       <div>
-        <label class="block text-xs font-medium text-gray-500 mb-1">Skill</label>
-        <select name="skill" class="border border-gray-600 bg-gray-700 rounded px-2 py-1.5 text-sm">
+        <label for="skill" class="block text-xs font-medium text-gray-500 mb-1">Skill</label>
+        <select id="skill" name="skill" class="border border-gray-600 bg-gray-700 rounded px-2 py-1.5 text-sm">
           <option value="">All skills</option>
           {TASK_TYPES.map(t => (
             <option value={t} selected={skill === t}>{t.replace(/_/g, " ")}</option>
@@ -82,8 +82,8 @@ const SORT_OPTIONS = [
 
       <!-- Sort -->
       <div>
-        <label class="block text-xs font-medium text-gray-500 mb-1">Sort by</label>
-        <select name="sort" class="border border-gray-600 bg-gray-700 rounded px-2 py-1.5 text-sm">
+        <label for="sort" class="block text-xs font-medium text-gray-500 mb-1">Sort by</label>
+        <select id="sort" name="sort" class="border border-gray-600 bg-gray-700 rounded px-2 py-1.5 text-sm">
           {SORT_OPTIONS.map(s => (
             <option value={s.value} selected={sort === s.value}>{s.label}</option>
           ))}
@@ -92,15 +92,15 @@ const SORT_OPTIONS = [
 
       <!-- Min reputation -->
       <div>
-        <label class="block text-xs font-medium text-gray-500 mb-1">Min reputation</label>
-        <input type="number" name="min_rep" min="0" max="100" value={minRep}
+        <label for="min_rep" class="block text-xs font-medium text-gray-500 mb-1">Min reputation</label>
+        <input type="number" id="min_rep" name="min_rep" min="0" max="100" value={minRep}
                class="border border-gray-600 bg-gray-700 rounded px-2 py-1.5 text-sm w-20" />
       </div>
 
       <!-- Min tasks -->
       <div>
-        <label class="block text-xs font-medium text-gray-500 mb-1">Min tasks done</label>
-        <input type="number" name="min_tasks" min="0" value={minTasks}
+        <label for="min_tasks" class="block text-xs font-medium text-gray-500 mb-1">Min tasks done</label>
+        <input type="number" id="min_tasks" name="min_tasks" min="0" value={minTasks}
                class="border border-gray-600 bg-gray-700 rounded px-2 py-1.5 text-sm w-20" />
       </div>
 
@@ -319,7 +319,7 @@ const SORT_OPTIONS = [
 
       <!-- Task selector -->
       <div class="mb-4">
-        <label class="block text-sm font-medium mb-1">Task</label>
+        <label for="bulkTaskSelect" class="block text-sm font-medium mb-1">Task</label>
         <select id="bulkTaskSelect" class="w-full border border-gray-600 bg-gray-700 rounded-lg px-3 py-2 text-sm">
           <option value="">-- Select a task --</option>
           {(userTasks ?? []).map((t: any) => (
@@ -333,7 +333,7 @@ const SORT_OPTIONS = [
 
       <!-- Optional message -->
       <div class="mb-5">
-        <label class="block text-sm font-medium mb-1">Message <span class="text-gray-400 font-normal">(optional)</span></label>
+        <label for="bulkMessage" class="block text-sm font-medium mb-1">Message <span class="text-gray-400 font-normal">(optional)</span></label>
         <textarea id="bulkMessage" rows="2"
                   placeholder="Hi! I think you'd be great for this task..."
                   class="w-full border border-gray-600 bg-gray-700 rounded-lg px-3 py-2 text-sm resize-none"></textarea>
@@ -365,7 +365,7 @@ const SORT_OPTIONS = [
 
       <!-- Task selector -->
       <div class="mb-4">
-        <label class="block text-sm font-medium mb-1">Task</label>
+        <label for="inviteTaskSelect" class="block text-sm font-medium mb-1">Task</label>
         <select id="inviteTaskSelect" class="w-full border border-gray-600 bg-gray-700 rounded-lg px-3 py-2 text-sm">
           <option value="">-- Select a task --</option>
           {(userTasks ?? []).map((t: any) => (
@@ -379,7 +379,7 @@ const SORT_OPTIONS = [
 
       <!-- Optional message -->
       <div class="mb-5">
-        <label class="block text-sm font-medium mb-1">Message <span class="text-gray-400 font-normal">(optional)</span></label>
+        <label for="inviteMessage" class="block text-sm font-medium mb-1">Message <span class="text-gray-400 font-normal">(optional)</span></label>
         <textarea id="inviteMessage" rows="3"
                   placeholder="Hi! I think you'd be great for this task..."
                   class="w-full border border-gray-600 bg-gray-700 rounded-lg px-3 py-2 text-sm resize-none"></textarea>
