@@ -666,7 +666,7 @@ async def transfer_credits(
         if user.credits < req.amount:
             raise HTTPException(
                 status_code=402,
-                detail={"error": "insufficient_credits", "available": user.credits, "required": req.amount},
+                detail={"error": "insufficient_credits", "message": f"You need {req.amount} credits but only have {user.credits}.", "available": user.credits, "required": req.amount},
             )
         user.credits -= req.amount
         org.credits += req.amount
@@ -675,7 +675,7 @@ async def transfer_credits(
         if org.credits < req.amount:
             raise HTTPException(
                 status_code=402,
-                detail={"error": "insufficient_org_credits", "available": org.credits, "required": req.amount},
+                detail={"error": "insufficient_org_credits", "message": f"Organization needs {req.amount} credits but only has {org.credits}.", "available": org.credits, "required": req.amount},
             )
         org.credits -= req.amount
         user.credits += req.amount

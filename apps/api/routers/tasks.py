@@ -162,6 +162,7 @@ async def create_task(
                 status_code=402,
                 detail={
                     "error": "insufficient_org_credits",
+                    "message": f"Organization needs {estimated_credits} credits but only has {org.credits}.",
                     "required": estimated_credits,
                     "available": org.credits,
                 },
@@ -173,6 +174,7 @@ async def create_task(
                 status_code=402,
                 detail={
                     "error": "insufficient_credits",
+                    "message": f"This task requires {estimated_credits} credits but you only have {user.credits}.",
                     "required": estimated_credits,
                     "available": user.credits,
                 },
@@ -391,6 +393,7 @@ async def create_tasks_batch(
             status_code=402,
             detail={
                 "error": "insufficient_credits",
+                "message": f"Batch of {len(req.tasks)} tasks requires {total_credits} credits but you only have {user.credits}.",
                 "required": total_credits,
                 "available": user.credits,
                 "task_count": len(req.tasks),

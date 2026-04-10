@@ -22,15 +22,26 @@ export async function apiFetch<T>(
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    // body.detail can be a string ("Not found") or an array of Pydantic
-    // validation errors ([{type, loc, msg}]).  Normalise to a readable string.
+    // The API returns errors in several formats — normalise to a readable string.
+    //  1. {"detail": "string"}                     — standard FastAPI HTTPException
+    //  2. {"detail": [{type, loc, msg}]}           — Pydantic validation errors
+    //  3. {"detail": {"error": "code", ...}}       — structured credit/rate-limit errors
+    //  4. {"error": "code", "message": "..."}      — global exception handler
+    //  5. {"error": "Rate limit exceeded: ..."}    — slowapi rate limiter
     let msg: string;
     if (typeof body.detail === "string") {
       msg = body.detail;
     } else if (Array.isArray(body.detail) && body.detail.length > 0) {
       msg = body.detail.map((e: any) => e.msg ?? String(e)).join("; ");
+    } else if (typeof body.detail === "object" && body.detail !== null) {
+      // Structured error — extract human-readable message from the dict
+      msg = body.detail.message ?? body.detail.error ?? JSON.stringify(body.detail);
+    } else if (body.message) {
+      msg = body.message;
+    } else if (body.error) {
+      msg = typeof body.error === "string" ? body.error : JSON.stringify(body.error);
     } else {
-      msg = body.message ?? `HTTP ${res.status}`;
+      msg = `HTTP ${res.status}`;
     }
     throw new Error(msg);
   }

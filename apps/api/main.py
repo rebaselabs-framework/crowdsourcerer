@@ -158,7 +158,21 @@ app = FastAPI(
 )
 
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+async def _custom_rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
+    """Return a structured JSON error for rate-limited requests."""
+    return JSONResponse(
+        status_code=429,
+        content={
+            "error": "rate_limit_exceeded",
+            "message": f"Too many requests. Limit: {exc.detail}. Please slow down and try again.",
+            "detail": str(exc.detail),
+        },
+        headers={"Retry-After": "60"},
+    )
+
+app.add_exception_handler(RateLimitExceeded, _custom_rate_limit_handler)
 
 # ─── CORS ─────────────────────────────────────────────────────────────────
 
