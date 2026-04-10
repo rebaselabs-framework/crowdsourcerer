@@ -34,32 +34,18 @@ from models.schemas import (
 from workers.base import get_rebasekit_client, WorkerError
 from workers.router import execute_task, TASK_CREDITS
 from core.sql import esc_like, LIKE_ESC
+from services.pricing import (
+    _HUMAN_TASK_BASE_CREDITS as HUMAN_TASK_BASE_CREDITS,
+    default_pricing,
+)
 
 logger = structlog.get_logger()
 limiter = Limiter(key_func=get_remote_address)
 router = APIRouter(prefix="/v1/tasks", tags=["tasks"])
 
-# Default credits cost for human tasks (requester pays this to fund worker rewards)
-HUMAN_TASK_BASE_CREDITS: dict[str, int] = {
-    "label_image": 3,
-    "label_text": 2,
-    "rate_quality": 2,
-    "verify_fact": 3,
-    "moderate_content": 2,
-    "compare_rank": 2,
-    "answer_question": 4,
-    "transcription_review": 5,
-}
-
-
 def _compute_task_cost(task: TaskDB) -> int:
-    """Recompute the credits originally charged for a task."""
-    if task.execution_mode == "human":
-        wr = task.worker_reward_credits or HUMAN_TASK_BASE_CREDITS.get(task.type, 2)
-        ar = task.assignments_required or 1
-        platform_fee = max(1, int(wr * ar * 0.2))
-        return wr * ar + platform_fee
-    return TASK_CREDITS.get(task.type, 5)
+    """Thin shim around :class:`services.pricing.TaskPricing`."""
+    return default_pricing.compute_task_cost(task)
 
 
 async def _refund_task_credits(
@@ -351,12 +337,8 @@ async def _mark_requester_onboarding(user_id: str, step: str) -> None:
 
 
 def _calc_credits(req: TaskCreateRequest) -> int:
-    """Calculate estimated credits for a task request."""
-    if req.type in HUMAN_TASK_TYPES:
-        worker_reward = req.worker_reward_credits or HUMAN_TASK_BASE_CREDITS.get(req.type, 2)
-        platform_fee = max(1, int(worker_reward * req.assignments_required * 0.2))
-        return worker_reward * req.assignments_required + platform_fee
-    return TASK_CREDITS.get(req.type, 5)
+    """Thin shim around :class:`services.pricing.TaskPricing`."""
+    return default_pricing.compute_create_cost(req)
 
 
 @router.post("/batch", status_code=201)
