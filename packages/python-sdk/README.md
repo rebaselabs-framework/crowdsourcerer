@@ -128,6 +128,34 @@ tasks = client.tasks.create_batch([
 print(f"Created {tasks.summary['created']} tasks, {tasks.summary['failed']} failed")
 ```
 
+## Webhook Verification
+
+Verify incoming webhook signatures to ensure they're authentic:
+
+```python
+from crowdsourcerer import verify_webhook
+
+# In your Flask / FastAPI handler:
+sig = request.headers["X-Crowdsorcerer-Signature"]
+body = request.get_data()  # raw bytes
+
+if not verify_webhook(body, YOUR_ENDPOINT_SECRET, sig):
+    abort(401, "Invalid signature")
+```
+
+During secret rotation (24-hour grace period with dual signatures):
+
+```python
+from crowdsourcerer import verify_webhook_with_rotation
+
+is_valid = verify_webhook_with_rotation(
+    payload=request.get_data(),
+    current_secret=NEW_SECRET,
+    previous_secret=OLD_SECRET,
+    signature_header=request.headers["X-Crowdsorcerer-Signature"],
+)
+```
+
 ## License
 
 MIT

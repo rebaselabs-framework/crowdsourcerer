@@ -692,13 +692,45 @@ function verifyWebhook(
 // const sig = req.headers["x-crowdsorcerer-signature"];
 // verifyWebhook(req.body, YOUR_SECRET, sig);`}</code></pre>
 
-          <div class="bg-gray-900 border border-yellow-900/50 rounded-lg p-4 text-sm mb-2">
+          <div class="bg-gray-900 border border-yellow-900/50 rounded-lg p-4 text-sm mb-4">
             <p class="text-yellow-400 font-semibold mb-1">Secret rotation</p>
             <p class="text-gray-400 text-xs">
               When you rotate a webhook secret, both the old and new signatures are sent for 24 hours
               (<code class="text-violet-300">v1</code> = new, <code class="text-violet-300">v0</code> = old).
               Verify against both during the rotation window, then switch to the new secret.
             </p>
+          </div>
+
+          <h3 class="text-lg font-semibold text-gray-200 mb-3">SDK helpers</h3>
+          <p class="text-sm text-gray-400 mb-3">
+            Both SDKs include built-in webhook verification so you don't have to implement it yourself:
+          </p>
+          <div class="grid md:grid-cols-2 gap-4">
+            <div>
+              <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Python</p>
+              <pre class="bg-gray-900 border border-gray-800 rounded-lg p-4 text-xs font-mono overflow-x-auto"><code class="text-gray-300">{`from crowdsourcerer import verify_webhook
+
+is_valid = verify_webhook(
+    payload=request.get_data(),
+    secret=YOUR_SECRET,
+    signature_header=request.headers[
+        "X-Crowdsorcerer-Signature"
+    ],
+)`}</code></pre>
+            </div>
+            <div>
+              <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">TypeScript</p>
+              <pre class="bg-gray-900 border border-gray-800 rounded-lg p-4 text-xs font-mono overflow-x-auto"><code class="text-gray-300">{`import { verifyWebhook } from
+  "@crowdsourcerer/sdk";
+
+const valid = verifyWebhook(
+  req.body,
+  process.env.WEBHOOK_SECRET!,
+  req.headers[
+    "x-crowdsorcerer-signature"
+  ],
+);`}</code></pre>
+            </div>
           </div>
         </section>
 

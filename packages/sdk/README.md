@@ -198,6 +198,32 @@ All accept typed input and optional `{ priority?, webhook_url? }`. All block unt
 | `getWebhookStats()` | Webhook delivery stats |
 | `listWebhookLogs(params?)` | Webhook delivery logs (filterable) |
 
+### Webhook Verification
+
+Verify incoming webhook signatures to ensure they're from CrowdSorcerer:
+
+```ts
+import { verifyWebhook } from "@crowdsourcerer/sdk";
+
+app.post("/webhook", (req, res) => {
+  const sig = req.headers["x-crowdsorcerer-signature"] as string;
+  if (!verifyWebhook(req.body, process.env.WEBHOOK_SECRET!, sig)) {
+    return res.status(401).send("Invalid signature");
+  }
+  // Handle the event
+  const { task_id, event } = JSON.parse(req.body);
+  res.sendStatus(200);
+});
+```
+
+Options:
+
+```ts
+verifyWebhook(payload, secret, sigHeader, {
+  toleranceSec: 300, // Reject deliveries older than 5 min (default)
+});
+```
+
 ## Full Documentation
 
 [https://crowdsourcerer.rebaselabs.online/docs](https://crowdsourcerer.rebaselabs.online/docs)
