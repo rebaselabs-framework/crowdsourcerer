@@ -16,6 +16,7 @@ Usage:
 
 import uuid
 from typing import Optional, Any
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import structlog
@@ -56,5 +57,5 @@ async def log_admin_action(
             target_type=target_type,
             target_id=str(target_id) if target_id else None,
         )
-    except Exception:
+    except SQLAlchemyError:
         logger.exception("audit.log_error", action=action)

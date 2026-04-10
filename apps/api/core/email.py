@@ -22,6 +22,7 @@ from typing import Optional
 
 import structlog
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 
 from core.config import get_settings
 
@@ -542,7 +543,7 @@ async def _get_prefs(user_id: str):
                 )
             )
             return result.scalar_one_or_none()
-    except Exception:
+    except SQLAlchemyError:
         return None
 
 

@@ -59,7 +59,7 @@ def validate_webhook_url(url: str) -> str:
     # Parse URL
     try:
         parsed = urlparse(url)
-    except Exception:
+    except ValueError:
         raise UnsafeURLError("Invalid URL format")
 
     # Scheme check

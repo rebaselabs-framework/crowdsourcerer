@@ -40,6 +40,7 @@ from typing import Any, Optional
 import httpx
 import structlog
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 
 from core.database import AsyncSessionLocal
 from core.encryption import decrypt_secret
@@ -116,7 +117,7 @@ def _render_payload_template(template_str: str, context: dict[str, Any]) -> dict
     rendered = re.sub(r"\{\{(\s*[\w][\w.]*\s*)\}\}", replacer, template_str)
     try:
         return json.loads(rendered)
-    except Exception:
+    except json.JSONDecodeError:
         logger.warning(
             "webhooks.template_render_invalid_json",
             template_preview=template_str[:120],
@@ -142,7 +143,7 @@ async def _get_user_event_template(
             )
             tpl = result.scalar_one_or_none()
             return tpl.template if tpl else None
-    except Exception:
+    except SQLAlchemyError:
         return None
 
 
@@ -231,7 +232,7 @@ async def _is_event_globally_enabled(user_id: str, event_type: str) -> bool:
             row = result.scalar_one_or_none()
             if row and row.webhook_event_prefs:
                 return bool(row.webhook_event_prefs.get(event_type, True))
-    except Exception:
+    except SQLAlchemyError:
         logger.warning(
             "webhooks.event_pref_check_failed",
             user_id=user_id,
@@ -335,7 +336,7 @@ async def _deliver_to_endpoint(
         }
         try:
             payload = _render_payload_template(custom_template, context)
-        except Exception:
+        except (KeyError, ValueError, TypeError):
             payload = default_payload
     else:
         payload = default_payload
@@ -385,7 +386,7 @@ async def _deliver_to_endpoint(
             error_msg = f"Client error: HTTP {resp.status_code}"
         else:
             error_msg = f"Server error: HTTP {resp.status_code}"
-    except Exception as exc:
+    except (httpx.HTTPError, OSError) as exc:
         error_msg = str(exc)
         logger.warning("persistent_webhook_failed", endpoint_id=endpoint_id,
                        url=endpoint.url, error=error_msg)
@@ -461,7 +462,7 @@ async def _update_endpoint_stats(*, endpoint_id: str, success: bool) -> None:
                     )
                 )
             await db.commit()
-    except Exception:
+    except SQLAlchemyError:
         logger.warning("webhook_endpoint_stats_update_failed", endpoint_id=endpoint_id)
 
 
@@ -500,7 +501,7 @@ async def _log_endpoint_delivery(
             )
             db.add(log)
             await db.commit()
-    except Exception:
+    except SQLAlchemyError:
         logger.warning("persistent_webhook_log_failed", endpoint_id=endpoint_id, task_id=task_id)
 
 
@@ -537,7 +538,7 @@ async def _deliver(
             error_msg = f"Server error: HTTP {resp.status_code}"
             logger.warning("webhook_server_error", url=url, status=resp.status_code,
                            event_type=event_type)
-    except Exception as exc:
+    except (httpx.HTTPError, OSError) as exc:
         error_msg = str(exc)
         logger.warning("webhook_failed", url=url, error=error_msg, event_type=event_type)
 
@@ -618,7 +619,7 @@ async def retry_webhook_log(*, log_id: str, user_id: str) -> dict:
         success = resp.status_code < 400
         if not success:
             error_msg = f"HTTP {resp.status_code}"
-    except Exception as exc:
+    except (httpx.HTTPError, OSError) as exc:
         error_msg = str(exc)
 
     duration_ms = int((_time.perf_counter() - t0) * 1000)
@@ -643,7 +644,7 @@ async def retry_webhook_log(*, log_id: str, user_id: str) -> dict:
             await db.commit()
             await db.refresh(new_log)
             new_id = str(new_log.id)
-    except Exception:
+    except SQLAlchemyError:
         logger.warning("webhook_retry_log_failed", original_id=log_id)
         new_id = None
 
@@ -684,7 +685,7 @@ async def _log(
             )
             db.add(log)
             await db.commit()
-    except Exception:
+    except SQLAlchemyError:
         logger.warning("webhook_log_failed", task_id=task_id)
 
 
@@ -772,7 +773,7 @@ async def replay_webhook_log(*, log_id: str, user_id: str) -> dict:
             success = resp.status_code < 400
             if not success:
                 error_msg = f"HTTP {resp.status_code}"
-        except Exception as exc:
+        except (httpx.HTTPError, OSError) as exc:
             error_msg = str(exc)
 
         duration_ms = int((_time.perf_counter() - t0) * 1000)
@@ -796,7 +797,7 @@ async def replay_webhook_log(*, log_id: str, user_id: str) -> dict:
                 )
                 db.add(replay_log)
                 await db.commit()
-        except Exception:
+        except SQLAlchemyError:
             logger.warning("webhook_replay_log_failed", original_id=log_id, endpoint=ep.url)
 
         results.append({

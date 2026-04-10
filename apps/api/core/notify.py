@@ -10,6 +10,7 @@ from typing import Optional
 from uuid import UUID
 
 import structlog
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.db import NotificationDB
@@ -76,6 +77,6 @@ async def create_notification(
         await db.flush()  # write without committing (caller commits)
         logger.debug("notification.created", user_id=str(user_id), type=type)
         return notif
-    except Exception:
+    except SQLAlchemyError:
         logger.exception("notification.create_failed", user_id=str(user_id), type=type)
         raise

@@ -126,7 +126,7 @@ class RebaseKitHealthCache:
                     r = await client.get(url)
                     # 200 = healthy; 401 = service is up but needs auth (still "up")
                     return service, r.status_code in (200, 401)
-            except Exception:
+            except (httpx.HTTPError, OSError):
                 return service, False
 
         results = await asyncio.gather(

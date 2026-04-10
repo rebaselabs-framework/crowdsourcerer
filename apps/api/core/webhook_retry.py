@@ -22,6 +22,7 @@ from typing import Optional
 import httpx
 import structlog
 from sqlalchemy import select, and_, update as sa_update
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from core.database import AsyncSessionLocal
@@ -95,7 +96,7 @@ async def enqueue_retry(
                 event_type=event_type,
                 next_retry_at=next_retry.isoformat(),
             )
-    except Exception:
+    except SQLAlchemyError:
         logger.error(
             "webhook_retry.enqueue_failed",
             url=url,
@@ -151,7 +152,11 @@ async def _process_item(item: WebhookDeliveryQueueDB) -> None:
             error_msg = f"Client error: HTTP {resp.status_code}"
         else:
             error_msg = f"Server error: HTTP {resp.status_code}"
-    except Exception as exc:
+    except (httpx.HTTPError, OSError) as exc:
+        # httpx.HTTPError covers transport/timeout/request failures from
+        # httpx itself; OSError covers bare-metal socket errors (refused
+        # connections, DNS failures) that a caller-supplied mock client
+        # might raise directly without wrapping.
         error_msg = str(exc)
 
     duration_ms = int((_time.perf_counter() - t0) * 1000)
@@ -174,7 +179,7 @@ async def _process_item(item: WebhookDeliveryQueueDB) -> None:
             )
             db.add(log)
             await db.commit()
-    except Exception:
+    except SQLAlchemyError:
         logger.warning("webhook_retry.log_failed", queue_id=str(item.id))
 
     # Update queue item status
@@ -291,7 +296,7 @@ async def _process_item(item: WebhookDeliveryQueueDB) -> None:
                 )
 
             await db.commit()
-    except Exception:
+    except SQLAlchemyError:
         logger.error(
             "webhook_retry.status_update_failed",
             queue_id=str(item.id),
@@ -335,7 +340,7 @@ async def _poll_once() -> int:
             )
             await db.commit()
 
-    except Exception:
+    except SQLAlchemyError:
         logger.error("webhook_retry.poll_failed", exc_info=True)
         return 0
 
@@ -359,7 +364,8 @@ async def _poll_once() -> int:
                         .values(status="pending", updated_at=now)
                     )
                     await db.commit()
-            except Exception:
+            except SQLAlchemyError:
+                # Row will be retried on the next poll — nothing else we can do.
                 pass
 
     return processed
@@ -446,6 +452,6 @@ async def get_queue_stats() -> dict:
             stats["total"] += count
 
         return stats
-    except Exception:
+    except SQLAlchemyError:
         logger.error("webhook_retry.stats_failed", exc_info=True)
         return {"error": "Failed to fetch queue stats"}

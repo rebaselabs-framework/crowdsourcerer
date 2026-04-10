@@ -27,6 +27,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 import structlog
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from core.background import safe_create_task
@@ -175,7 +176,7 @@ async def _fire_alert(
             )
             db.add(alert)
             await db.commit()
-    except Exception:
+    except SQLAlchemyError:
         logger.exception("system_alert.db_error", alert_type=alert_type)
 
     # Send email (fire-and-forget)

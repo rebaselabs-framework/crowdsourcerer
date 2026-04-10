@@ -34,6 +34,7 @@ from typing import Any
 
 import structlog
 from sqlalchemy import select, func, delete
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.db import TaskResultCacheDB
@@ -125,7 +126,7 @@ async def cache_lookup(
         entry.hit_count += 1
         entry.last_hit_at = now
         await db.commit()
-    except Exception:
+    except SQLAlchemyError:
         await db.rollback()
 
     logger.info("cache_hit", task_type=task_type, input_hash=h, hit_count=entry.hit_count)
@@ -184,7 +185,7 @@ async def cache_store(
 
         await db.commit()
         logger.info("cache_stored", task_type=task_type, input_hash=h, ttl_hours=ttl_h)
-    except Exception:
+    except SQLAlchemyError:
         await db.rollback()
         logger.warning("cache_store_failed", task_type=task_type, input_hash=h, exc_info=True)
 
