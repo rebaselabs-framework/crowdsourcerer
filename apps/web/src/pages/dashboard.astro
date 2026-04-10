@@ -89,8 +89,8 @@ const showOnboardingBanner = Boolean(
               <h2 class="font-semibold text-violet-200 text-base">Welcome to CrowdSorcerer!</h2>
             </div>
             <p class="text-sm text-gray-400 mb-3">
-              You have <strong class="text-violet-300">{credits?.available ?? 100} free credits</strong> — enough for
-              {(credits?.available ?? 100) >= 10 ? ` ${Math.floor((credits?.available ?? 100) / 10)} web research tasks` : " several quick tasks"}.
+              You have <strong class="text-violet-300">{(credits?.available ?? 100).toLocaleString()} free credits</strong> — enough for
+              {(credits?.available ?? 100) >= 10 ? ` ${Math.floor((credits?.available ?? 100) / 10).toLocaleString()} web research tasks` : " several quick tasks"}.
               Complete the quick-start guide to earn <strong class="text-amber-300">+200 bonus credits</strong>.
             </p>
             <div class="flex flex-wrap gap-3">
