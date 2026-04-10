@@ -2,7 +2,7 @@
 import Layout from '../../layouts/Layout.astro';
 import { requireAuth } from '../../lib/auth';
 
-const { token, user } = await requireAuth(Astro);
+const { token } = await requireAuth(Astro);
 const API_BASE = import.meta.env.PUBLIC_API_URL || 'http://api:8100';
 
 // Fetch featured templates + all templates + categories in parallel
@@ -43,7 +43,7 @@ function starHtml(rating: number, count: number): string {
 }
 ---
 
-<Layout title="Template Marketplace — CrowdSorcerer" user={user}>
+<Layout title="Template Marketplace — CrowdSorcerer">
 <div class="max-w-7xl mx-auto px-4 py-8">
 
   <!-- Header -->

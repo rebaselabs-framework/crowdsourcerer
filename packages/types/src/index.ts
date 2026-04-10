@@ -619,8 +619,8 @@ export interface Template {
   execution_mode: "ai" | "human";
   category: string | null;
   tags: string[] | null;
-  task_config: Record<string, any>;
-  example_input: Record<string, any> | null;
+  task_config: Record<string, unknown>;
+  example_input: Record<string, unknown> | null;
   is_public: boolean;
   is_featured: boolean;
   use_count: number;
@@ -637,8 +637,8 @@ export interface TemplateCreateRequest {
   execution_mode?: "ai" | "human";
   category?: string | null;
   tags?: string[] | null;
-  task_config?: Record<string, any>;
-  example_input?: Record<string, any> | null;
+  task_config?: Record<string, unknown>;
+  example_input?: Record<string, unknown> | null;
   is_public?: boolean;
 }
 
@@ -646,8 +646,8 @@ export interface TemplateUseResponse {
   template_id: string;
   task_type: string;
   execution_mode: string;
-  task_config: Record<string, any>;
-  example_input: Record<string, any> | null;
+  task_config: Record<string, unknown>;
+  example_input: Record<string, unknown> | null;
 }
 
 export interface TemplateRateResponse {

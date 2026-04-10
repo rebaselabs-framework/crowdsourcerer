@@ -34,7 +34,7 @@ export const POST: APIRoute = async ({ cookies }) => {
 
     if (res.ok && data.access_token) {
       setAuthCookies(
-        cookies as any,
+        cookies,
         data.access_token,
         data.refresh_token,
         data.expires_in,
@@ -48,7 +48,7 @@ export const POST: APIRoute = async ({ cookies }) => {
     }
 
     // Refresh failed — clear stale cookies
-    clearAuthCookies(cookies as any);
+    clearAuthCookies(cookies);
 
     return new Response(JSON.stringify({ detail: "Refresh failed" }), {
       status: 401,

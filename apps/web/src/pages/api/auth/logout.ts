@@ -22,7 +22,7 @@ export const POST: APIRoute = async ({ cookies }) => {
     }
   }
 
-  clearAuthCookies(cookies as any);
+  clearAuthCookies(cookies);
 
   return new Response(JSON.stringify({ message: "Logged out" }), {
     status: 200,

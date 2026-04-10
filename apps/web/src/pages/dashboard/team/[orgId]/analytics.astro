@@ -31,7 +31,7 @@ const daily: any[] = analytics?.daily ?? [];
 const maxCount = daily.reduce((m: number, d: any) => Math.max(m, d.count), 1);
 ---
 
-<Layout title={`${orgName} Analytics — CrowdSorcerer`} active="dashboard">
+<Layout title={`${orgName} Analytics — CrowdSorcerer`}>
   <div class="max-w-5xl mx-auto px-4 py-10">
 
     <!-- Header -->

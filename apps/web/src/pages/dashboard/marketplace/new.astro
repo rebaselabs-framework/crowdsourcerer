@@ -2,10 +2,13 @@
 import Layout from '../../../layouts/Layout.astro';
 import { requireAuth } from '../../../lib/auth';
 
-const { token: _token, user } = await requireAuth(Astro);
+// requireAuth runs for the side-effect of redirecting unauthenticated
+// users — this page renders only the create-template form, nothing
+// depends on the returned token or user object.
+await requireAuth(Astro);
 ---
 
-<Layout title="Create Template — CrowdSorcerer" user={user}>
+<Layout title="Create Template — CrowdSorcerer">
   <div class="max-w-2xl mx-auto px-4 py-8">
     <div class="flex items-center gap-3 mb-6">
       <a href="/dashboard/marketplace" class="text-gray-400 hover:text-gray-200">←</a>

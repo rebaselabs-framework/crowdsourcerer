@@ -20,7 +20,7 @@ export const POST: APIRoute = async ({ request, cookies }) => {
     // If successful, set both auth cookies
     if (res.ok && data.access_token) {
       setAuthCookies(
-        cookies as any,
+        cookies,
         data.access_token,
         data.refresh_token,
         data.expires_in,

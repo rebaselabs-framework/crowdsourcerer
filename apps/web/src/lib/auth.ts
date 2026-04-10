@@ -1,3 +1,4 @@
+import type { AstroCookies } from "astro";
 import type { AstroGlobal } from "astro";
 import { apiFetch } from "./api";
 
@@ -12,7 +13,7 @@ export const REFRESH_TOKEN_MAX_AGE = 60 * 60 * 24 * 30;  // 30 days
  * Set both auth cookies on the Astro response.
  */
 export function setAuthCookies(
-  cookies: AstroGlobal["cookies"],
+  cookies: AstroCookies,
   accessToken: string,
   refreshToken: string | null | undefined,
   expiresIn?: number,
@@ -40,7 +41,7 @@ export function setAuthCookies(
 /**
  * Clear both auth cookies (logout).
  */
-export function clearAuthCookies(cookies: AstroGlobal["cookies"]) {
+export function clearAuthCookies(cookies: AstroCookies) {
   cookies.delete("cs_token", { path: "/" });
   cookies.delete("cs_refresh", { path: "/" });
 }
