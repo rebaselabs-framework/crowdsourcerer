@@ -149,7 +149,7 @@ function taskLabel(type: string): string {
         <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 hover:border-violet-800 transition-colors">
           <div class="text-2xl mb-2">{taskIcon(type)}</div>
           <div class="text-sm font-medium text-gray-200">{taskLabel(type)}</div>
-          <div class="text-xs text-gray-500 mt-1">{credits} credits</div>
+          <div class="text-xs text-gray-500 mt-1">{credits} {credits === 1 ? "credit" : "credits"}</div>
         </div>
       ))}
     </div>
