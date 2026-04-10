@@ -5,6 +5,7 @@ Revises: 0060
 """
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.dialects.postgresql import UUID
 
 revision = "0061"
@@ -25,7 +26,7 @@ def upgrade() -> None:
         sa.Column("week_end", sa.Date(), nullable=False),
         sa.Column(
             "status",
-            sa.Enum("active", "processing", "completed", name="league_season_status_enum", create_type=False),
+            postgresql.ENUM("active", "processing", "completed", name="league_season_status_enum", create_type=False),
             server_default="active",
             nullable=False,
         ),
