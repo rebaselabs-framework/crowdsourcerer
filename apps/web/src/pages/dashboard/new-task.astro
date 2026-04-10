@@ -10,17 +10,28 @@ let error = "";
 let templates: any[] = [];
 let savedTemplates: any[] = [];
 let aiAvailable = true;
+let taskAvailability: Record<string, boolean> = {};
 
-// Check if AI services are available (lightweight — no DB query)
+// Check if AI services are available (live health check, cached 60s on backend)
 try {
   const cfgRes = await fetch(`${import.meta.env.PUBLIC_API_URL ?? "http://api:8100"}/v1/config`).catch(() => null);
   if (cfgRes?.ok) {
     const cfg = await cfgRes.json();
     aiAvailable = !!cfg.ai_available;
+    taskAvailability = cfg.task_availability ?? {};
   }
 } catch {
   // assume available if config check fails
 }
+
+// Count available vs total AI task types
+const aiTaskTypeNames = [
+  "web_research", "entity_lookup", "document_parse", "data_transform",
+  "llm_generate", "screenshot", "audio_transcribe", "pii_detect",
+  "code_execute", "web_intel",
+];
+const availableCount = aiTaskTypeNames.filter(t => taskAvailability[t]).length;
+const partiallyAvailable = aiAvailable && availableCount < aiTaskTypeNames.length;
 
 try {
   const tplRes = await apiFetch<any>("/v1/tasks/templates", { token });
@@ -176,7 +187,19 @@ if (Astro.request.method === "POST") {
         <div>
           <strong>AI tasks temporarily unavailable.</strong> The AI backend services are currently down.
           Human tasks (labeling, moderation, fact-checking, etc.) work normally.
-          AI tasks will be queued and processed when services are restored.
+          AI tasks submitted now will fail — <strong>credits are automatically refunded</strong> for failed tasks.
+          You can retry failed tasks later from your task list.
+        </div>
+      </div>
+    )}
+
+    {partiallyAvailable && (
+      <div class="mb-4 p-3 bg-blue-950/30 border border-blue-700/50 rounded-lg text-sm text-blue-300 flex items-start gap-2">
+        <span class="mt-0.5">ℹ️</span>
+        <div>
+          <strong>Some AI services degraded.</strong> {availableCount} of {aiTaskTypeNames.length} AI task types are
+          available. Unavailable task types are marked below. Tasks for unavailable services will
+          fail — credits are automatically refunded.
         </div>
       </div>
     )}
@@ -276,18 +299,26 @@ if (Astro.request.method === "POST") {
           AI Task Types <span class="text-xs text-gray-500">(executed instantly by AI)</span>
         </label>
         <div class="grid grid-cols-2 sm:grid-cols-5 gap-2">
-          {AI_TASK_TYPES.map(({ type, label, icon }) => (
-            <label class="cursor-pointer">
-              <input type="radio" name="type" value={type} required class="peer sr-only"
-                checked={presetType ? type === presetType : type === "web_research"} />
-              <div class="bg-gray-900 border border-gray-800 rounded-lg p-3 text-center
-                peer-checked:border-violet-500 peer-checked:bg-violet-950/30 hover:border-gray-600 transition-colors">
-                <div class="text-xl mb-1">{icon}</div>
-                <div class="text-xs font-medium text-gray-300">{label}</div>
-                <div class="text-xs text-gray-500 mt-0.5">{(TASK_CREDITS as any)[type]}cr</div>
-              </div>
-            </label>
-          ))}
+          {AI_TASK_TYPES.map(({ type, label, icon }) => {
+            const isUp = Object.keys(taskAvailability).length === 0 || taskAvailability[type] !== false;
+            return (
+              <label class="cursor-pointer relative">
+                <input type="radio" name="type" value={type} required class="peer sr-only"
+                  checked={presetType ? type === presetType : type === "web_research"} />
+                <div class:list={[
+                  "bg-gray-900 border rounded-lg p-3 text-center peer-checked:border-violet-500 peer-checked:bg-violet-950/30 transition-colors",
+                  isUp ? "border-gray-800 hover:border-gray-600" : "border-gray-800/50 opacity-60",
+                ]}>
+                  <div class="text-xl mb-1">{icon}</div>
+                  <div class="text-xs font-medium text-gray-300">{label}</div>
+                  <div class="text-xs text-gray-500 mt-0.5">{(TASK_CREDITS as any)[type]}cr</div>
+                  {!isUp && (
+                    <div class="text-[10px] text-amber-400 mt-1">⚠ offline</div>
+                  )}
+                </div>
+              </label>
+            );
+          })}
         </div>
       </div>
 

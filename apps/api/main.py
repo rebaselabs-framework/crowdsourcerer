@@ -23,6 +23,12 @@ from core.sweeper import start_sweeper, stop_sweeper
 from core.webhook_retry import start_retry_worker, stop_retry_worker
 from routers import auth, credits, tasks, users, worker, leaderboard, badges, challenges, quality, admin, webhooks, payouts, referrals, notifications, skills, disputes, export, orgs, pipelines, certifications, analytics, marketplace, reputation, triggers, search, experiments, onboarding, sla, comments, stripe_webhooks, profiles, two_factor, saved_searches, api_key_usage, skill_quiz, requester_onboarding, webhook_templates, task_dependencies, endorsements, worker_marketplace, ratings, portfolio, requester_templates, worker_teams, applications, availability, task_messages, notification_digest, global_search, oauth, platform_stats, announcements, leagues, quests
 from workers.base import get_rebasekit_client
+from core.rebasekit_health import (
+    warmup as warmup_health,
+    is_ai_available,
+    get_service_health,
+    get_available_task_types,
+)
 
 settings = get_settings()
 logger = structlog.get_logger()
@@ -116,6 +122,9 @@ async def lifespan(application: FastAPI):
     if settings.debug:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+    # Warm up RebaseKit health cache (non-blocking — logs result)
+    await warmup_health()
+
     # Start background sweeper (expires timed-out task assignments)
     start_sweeper(AsyncSessionLocal)
     logger.info("sweeper.scheduled", interval_seconds=300)
@@ -345,23 +354,30 @@ async def health_v1():
             "google_oauth": bool(settings.google_client_id),
             "payments_enabled": bool(settings.stripe_secret_key),
         }
-    # Always include AI service availability (helps frontend warn users)
-    body["ai_available"] = bool(settings.rebasekit_api_key)
+    # Live AI service availability (actually pings RebaseKit, cached 60s)
+    body["ai_available"] = await is_ai_available()
     return body
 
 
 @app.get("/v1/config", tags=["health"])
 async def config_v1():
-    """Static config flags for frontend UI toggling — no DB query, no auth.
+    """Config flags for frontend UI toggling — no DB query, no auth.
 
-    Use this instead of /v1/health when you only need feature flags.
+    Includes live RebaseKit service health (cached 60s) so the frontend
+    can accurately warn users about unavailable AI task types.
     """
-    return {
+    ai_up = await is_ai_available()
+    result: dict[str, Any] = {
         "email_enabled": settings.email_enabled,
         "google_oauth": bool(settings.google_client_id),
         "payments_enabled": bool(settings.stripe_secret_key),
-        "ai_available": bool(settings.rebasekit_api_key),
+        "ai_available": ai_up,
     }
+    # Include per-task-type availability when AI services are partially up
+    # (helps frontend disable specific task type tiles)
+    if settings.rebasekit_api_key:
+        result["task_availability"] = await get_available_task_types()
+    return result
 
 
 @app.get("/", tags=["health"])
