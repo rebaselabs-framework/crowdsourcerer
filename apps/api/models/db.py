@@ -52,7 +52,7 @@ class UserDB(Base):
     # Active org context (which org this user is currently "acting as")
     active_org_id = Column(UUID(as_uuid=True),
                            ForeignKey("organizations.id", ondelete="SET NULL"),
-                           nullable=True)
+                           nullable=True, index=True)
     # Pending credits = earned credits not yet confirmed (paid after first task completion)
     credits_pending = Column(Integer, default=0, nullable=False)
 
@@ -1321,7 +1321,7 @@ class WebhookDeliveryQueueDB(Base):
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
                      nullable=False, index=True)
     task_id = Column(UUID(as_uuid=True), ForeignKey("tasks.id", ondelete="SET NULL"),
-                     nullable=True)
+                     nullable=True, index=True)
     event_type = Column(String(64), nullable=False)
     url = Column(String(2048), nullable=False)
     payload = Column(JSON, nullable=False)
@@ -1790,7 +1790,7 @@ class RefreshTokenDB(Base):
     family_id = Column(UUID(as_uuid=True), nullable=False, index=True)
     expires_at = Column(DateTime(timezone=True), nullable=False)
     revoked_at = Column(DateTime(timezone=True), nullable=True)
-    replaced_by = Column(UUID(as_uuid=True), ForeignKey("refresh_tokens.id", ondelete="SET NULL"), nullable=True)
+    replaced_by = Column(UUID(as_uuid=True), ForeignKey("refresh_tokens.id", ondelete="SET NULL"), nullable=True, index=True)
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
 
 

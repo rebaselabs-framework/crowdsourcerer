@@ -278,35 +278,29 @@ async def get_worker_stats(
     if user.role not in ("worker", "both"):
         raise HTTPException(status_code=403, detail="Not enrolled as a worker.")
 
-    # Count assignments by status
-    active_count = await db.scalar(
-        select(func.count()).where(
-            TaskAssignmentDB.worker_id == user_id,
-            TaskAssignmentDB.status == "active",
-        )
-    ) or 0
-
-    submitted_count = await db.scalar(
-        select(func.count()).where(
-            TaskAssignmentDB.worker_id == user_id,
-            TaskAssignmentDB.status.in_(["submitted", "approved"]),
-        )
-    ) or 0
-
-    released_count = await db.scalar(
-        select(func.count()).where(
-            TaskAssignmentDB.worker_id == user_id,
-            TaskAssignmentDB.status.in_(["released", "timed_out"]),
-        )
-    ) or 0
-
-    # Total earnings
-    total_earnings = await db.scalar(
-        select(func.sum(TaskAssignmentDB.earnings_credits)).where(
-            TaskAssignmentDB.worker_id == user_id,
-            TaskAssignmentDB.status.in_(["submitted", "approved"]),
-        )
-    ) or 0
+    # Single query with conditional aggregates — replaces 4 sequential queries
+    stats_row = (await db.execute(
+        select(
+            func.count().filter(
+                TaskAssignmentDB.status == "active"
+            ).label("active"),
+            func.count().filter(
+                TaskAssignmentDB.status.in_(["submitted", "approved"])
+            ).label("submitted"),
+            func.count().filter(
+                TaskAssignmentDB.status.in_(["released", "timed_out"])
+            ).label("released"),
+            func.coalesce(func.sum(
+                TaskAssignmentDB.earnings_credits
+            ).filter(
+                TaskAssignmentDB.status.in_(["submitted", "approved"])
+            ), 0).label("earnings"),
+        ).where(TaskAssignmentDB.worker_id == user_id)
+    )).one()
+    active_count = stats_row.active
+    submitted_count = stats_row.submitted
+    released_count = stats_row.released
+    total_earnings = stats_row.earnings
 
     level, xp_to_next = compute_level(user.worker_xp)
 
@@ -1549,13 +1543,14 @@ async def get_earnings_analytics(
 
     best_month_credits = max((m["credits"] for m in monthly_earnings), default=0)
 
-    # ── 5. Weekly earnings (last 12 ISO weeks) ────────────────────────────────
-    from collections import defaultdict
+    # ── 5. Weekly earnings (last 12 ISO weeks) — aggregated in SQL ─────────
     twelve_weeks_ago = now - timedelta(weeks=12)
-    weekly_raw = await db.execute(
+    _week_trunc = func.date_trunc("week", TaskAssignmentDB.submitted_at)
+    weekly_agg = await db.execute(
         select(
-            TaskAssignmentDB.submitted_at,
-            TaskAssignmentDB.earnings_credits,
+            _week_trunc.label("week_start"),
+            func.coalesce(func.sum(TaskAssignmentDB.earnings_credits), 0).label("credits"),
+            func.count().label("tasks"),
         )
         .where(
             TaskAssignmentDB.worker_id == uid,
@@ -1563,16 +1558,15 @@ async def get_earnings_analytics(
             TaskAssignmentDB.submitted_at.isnot(None),
             TaskAssignmentDB.submitted_at >= twelve_weeks_ago,
         )
-        .order_by(TaskAssignmentDB.submitted_at)
+        .group_by(_week_trunc)
     )
-    # Bucket by ISO week key "YYYY-Www"
-    week_buckets: dict = defaultdict(lambda: {"credits": 0, "tasks": 0})
-    for row_at, row_credits in weekly_raw.all():
-        if row_at:
-            iso = row_at.isocalendar()
+    # Build lookup by ISO week key
+    week_buckets: dict = {}
+    for row in weekly_agg.all():
+        if row.week_start:
+            iso = row.week_start.isocalendar()
             key = f"{iso[0]}-W{iso[1]:02d}"
-            week_buckets[key]["credits"] += int(row_credits or 0)
-            week_buckets[key]["tasks"] += 1
+            week_buckets[key] = {"credits": int(row.credits), "tasks": int(row.tasks)}
 
     weekly_earnings: list[dict] = []
     for i in range(11, -1, -1):

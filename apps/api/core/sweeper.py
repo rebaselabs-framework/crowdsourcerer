@@ -235,12 +235,12 @@ async def _sweep_sla_breaches(session_factory: async_sessionmaker) -> int:
 
     async with session_factory() as db:
         try:
-            # Find human tasks still open/assigned
+            # Find human tasks still open/assigned (batch-limited to prevent OOM)
             res = await db.execute(
                 select(TaskDB).where(
                     TaskDB.execution_mode == "human",
                     TaskDB.status.in_(["open", "assigned"]),
-                )
+                ).limit(5000)
             )
             tasks = list(res.scalars().all())
             if not tasks:

@@ -937,12 +937,17 @@ class TestWebhookStats:
     @pytest.mark.asyncio
     async def test_happy_path_no_deliveries(self):
         db = _make_mock_db()
-        # 4 db.execute calls: total, succeeded, avg_duration, event_rows
+        # Consolidated stats query returns .one() with total/succeeded/avg_duration
+        _stats_row = MagicMock()
+        _stats_row.total = 0
+        _stats_row.succeeded = 0
+        _stats_row.avg_duration = None
+        _stats_result = MagicMock()
+        _stats_result.one = MagicMock(return_value=_stats_row)
+
         db.execute.side_effect = [
-            _result_scalar(0),   # total
-            _result_scalar(0),   # succeeded
-            _result_scalar(None),  # avg_duration
-            _scalars_result([]),   # by_event (returns .all() rows)
+            _stats_result,         # consolidated stats (.one())
+            _scalars_result([]),   # by_event (.all() rows)
         ]
         app, get_db = _get_app_and_override(db)
         try:
@@ -962,6 +967,14 @@ class TestWebhookStats:
     @pytest.mark.asyncio
     async def test_happy_path_with_deliveries(self):
         db = _make_mock_db()
+        # Consolidated stats query
+        _stats_row = MagicMock()
+        _stats_row.total = 10
+        _stats_row.succeeded = 8
+        _stats_row.avg_duration = 45.2
+        _stats_result = MagicMock()
+        _stats_result.one = MagicMock(return_value=_stats_row)
+
         # Mock event_rows result — .all() returns list of Row-like tuples
         event_row = MagicMock()
         event_row.event_type = "task.completed"
@@ -970,10 +983,8 @@ class TestWebhookStats:
         event_result.all = MagicMock(return_value=[event_row])
 
         db.execute.side_effect = [
-            _result_scalar(10),    # total
-            _result_scalar(8),     # succeeded
-            _result_scalar(45.2),  # avg_duration
-            event_result,          # by_event
+            _stats_result,   # consolidated stats (.one())
+            event_result,    # by_event
         ]
         app, get_db = _get_app_and_override(db)
         try:

@@ -451,25 +451,20 @@ async def webhook_stats(
     user_id: str = Depends(require_scope(SCOPE_WEBHOOKS_READ)),
 ):
     """Summary stats for the user's webhook deliveries."""
-    total = (await db.execute(
-        select(func.count()).select_from(WebhookLogDB).where(WebhookLogDB.user_id == user_id)
-    )).scalar() or 0
-
-    succeeded = (await db.execute(
-        select(func.count()).select_from(WebhookLogDB).where(
-            WebhookLogDB.user_id == user_id,
-            WebhookLogDB.success == True,
-        )
-    )).scalar() or 0
-
+    # Single query with conditional aggregates — replaces 3 sequential queries
+    _wh_stats = (await db.execute(
+        select(
+            func.count().label("total"),
+            func.count().filter(WebhookLogDB.success == True).label("succeeded"),
+            func.avg(WebhookLogDB.duration_ms).filter(
+                WebhookLogDB.success == True
+            ).label("avg_duration"),
+        ).select_from(WebhookLogDB).where(WebhookLogDB.user_id == user_id)
+    )).one()
+    total = _wh_stats.total or 0
+    succeeded = _wh_stats.succeeded or 0
     failed = total - succeeded
-
-    avg_duration = (await db.execute(
-        select(func.avg(WebhookLogDB.duration_ms)).select_from(WebhookLogDB).where(
-            WebhookLogDB.user_id == user_id,
-            WebhookLogDB.success == True,
-        )
-    )).scalar()
+    avg_duration = _wh_stats.avg_duration
 
     # Breakdown by event type
     event_rows = (await db.execute(

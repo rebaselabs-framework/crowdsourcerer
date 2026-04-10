@@ -66,24 +66,21 @@ async def _requester_overview_impl(days, org_id, db, user_id):
             raise HTTPException(status_code=403, detail="Not a member of this organization")
         filters = [TaskDB.org_id == org_id]
 
-    # Total tasks
-    total_tasks = (await db.execute(
-        select(func.count()).select_from(TaskDB).where(*filters)
-    )).scalar() or 0
-
-    tasks_completed = (await db.execute(
-        select(func.count()).select_from(TaskDB).where(*filters, TaskDB.status == "completed")
-    )).scalar() or 0
-
-    tasks_failed = (await db.execute(
-        select(func.count()).select_from(TaskDB).where(*filters, TaskDB.status == "failed")
-    )).scalar() or 0
-
-    tasks_pending = (await db.execute(
-        select(func.count()).select_from(TaskDB).where(
-            *filters, TaskDB.status.in_(["pending", "queued", "running", "open", "assigned"])
-        )
-    )).scalar() or 0
+    # Single query with conditional aggregates — replaces 4 sequential COUNT queries
+    _counts = (await db.execute(
+        select(
+            func.count().label("total"),
+            func.count().filter(TaskDB.status == "completed").label("completed"),
+            func.count().filter(TaskDB.status == "failed").label("failed"),
+            func.count().filter(
+                TaskDB.status.in_(["pending", "queued", "running", "open", "assigned"])
+            ).label("pending"),
+        ).select_from(TaskDB).where(*filters)
+    )).one()
+    total_tasks = _counts.total
+    tasks_completed = _counts.completed
+    tasks_failed = _counts.failed
+    tasks_pending = _counts.pending
 
     # Credits spent
     txn_filters = [CreditTransactionDB.user_id == uid, CreditTransactionDB.amount < 0]

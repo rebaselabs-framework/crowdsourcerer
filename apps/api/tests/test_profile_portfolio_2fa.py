@@ -629,10 +629,14 @@ async def test_profile_status_full_profile():
     worker = _make_worker(worker_id=USER_ID)
     db = _make_mock_db()
 
-    # First execute returns user, then scalar calls return skill_count and cert_count
-    db.execute.return_value = _scalar(worker)
-    # db.scalar is called for skill_count and cert_count
-    db.scalar.side_effect = [3, 1]  # 3 skills, 1 cert
+    # First execute returns user, second returns consolidated profile counts via .one()
+    _counts_row = MagicMock()
+    _counts_row.skills = 3
+    _counts_row.certs = 1
+    _counts_result = MagicMock()
+    _counts_result.one = MagicMock(return_value=_counts_row)
+
+    db.execute = AsyncMock(side_effect=[_scalar(worker), _counts_result])
 
     app.dependency_overrides[get_db] = _db_override(db)
     app.dependency_overrides[get_current_user_id] = lambda: USER_ID
@@ -670,8 +674,14 @@ async def test_profile_status_empty_profile():
         location=None, website_url=None,
     )
     db = _make_mock_db()
-    db.execute.return_value = _scalar(worker)
-    db.scalar.side_effect = [0, 0]  # no skills, no certs
+
+    _counts_row = MagicMock()
+    _counts_row.skills = 0
+    _counts_row.certs = 0
+    _counts_result = MagicMock()
+    _counts_result.one = MagicMock(return_value=_counts_row)
+
+    db.execute = AsyncMock(side_effect=[_scalar(worker), _counts_result])
 
     app.dependency_overrides[get_db] = _db_override(db)
     app.dependency_overrides[get_current_user_id] = lambda: USER_ID

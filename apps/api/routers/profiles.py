@@ -275,16 +275,20 @@ async def get_profile_status(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Count skills and certifications
-    skill_count = await db.scalar(
-        select(func.count()).where(WorkerSkillDB.worker_id == user_id)
-    ) or 0
-    cert_count = await db.scalar(
-        select(func.count()).where(
-            WorkerCertificationDB.worker_id == user_id,
-            WorkerCertificationDB.passed == True,  # noqa: E712
+    # Single query for both counts — replaces 2 sequential queries
+    _profile_counts = (await db.execute(
+        select(
+            select(func.count()).where(
+                WorkerSkillDB.worker_id == user_id
+            ).correlate(None).scalar_subquery().label("skills"),
+            select(func.count()).where(
+                WorkerCertificationDB.worker_id == user_id,
+                WorkerCertificationDB.passed == True,  # noqa: E712
+            ).correlate(None).scalar_subquery().label("certs"),
         )
-    ) or 0
+    )).one()
+    skill_count = _profile_counts.skills or 0
+    cert_count = _profile_counts.certs or 0
 
     # Weighted completion score:
     # name (15), bio (20), avatar (15), location (10), website (10),

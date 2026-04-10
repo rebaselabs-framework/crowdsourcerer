@@ -152,7 +152,7 @@ app = FastAPI(
         "url": "https://opensource.org/licenses/MIT",
     },
     servers=[
-        {"url": "https://api.rebaselabs.online", "description": "Production"},
+        {"url": "https://crowdsourcerer.rebaselabs.online", "description": "Production"},
         {"url": "http://localhost:8100", "description": "Local development"},
     ],
 )

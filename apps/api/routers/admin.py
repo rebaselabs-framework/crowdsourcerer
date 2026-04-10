@@ -853,32 +853,34 @@ async def trigger_weekly_digest(
     )
     worker_earnings_by_user = {str(r.worker_id): int(r.total or 0) for r in we_res}
 
-    for user in users:
-        uid = str(user.id)
-        tasks_created = tasks_created_by_user.get(uid, 0)
-        tasks_completed = tasks_completed_by_user.get(uid, 0)
-        credits_spent = credits_spent_by_user.get(uid, 0)
-        is_worker = user.role in ("worker", "both")
-        worker_tasks = worker_tasks_by_user.get(uid, 0) if is_worker else 0
-        worker_earnings_val = worker_earnings_by_user.get(uid, 0) if is_worker else 0
-        worker_xp = worker_tasks * 10
+    # Send emails concurrently with bounded parallelism (avoid sequential loop)
+    import asyncio
+    _sem = asyncio.Semaphore(20)  # max 20 concurrent email sends
 
-        user_name = user.name or user.email.split("@")[0]
-        await send_weekly_digest(
-            to_email=user.email,
-            user_name=user_name,
-            week_label=week_label,
-            tasks_created=tasks_created,
-            tasks_completed=tasks_completed,
-            credits_spent=credits_spent,
-            credits_balance=user.credits,
-            top_workers=top_workers,
-            worker_tasks_done=worker_tasks,
-            worker_earnings=worker_earnings_val,
-            worker_xp=worker_xp,
-            is_worker=is_worker,
-        )
-        sent += 1
+    async def _send_one_weekly(user):
+        uid = str(user.id)
+        is_worker = user.role in ("worker", "both")
+        async with _sem:
+            await send_weekly_digest(
+                to_email=user.email,
+                user_name=user.name or user.email.split("@")[0],
+                week_label=week_label,
+                tasks_created=tasks_created_by_user.get(uid, 0),
+                tasks_completed=tasks_completed_by_user.get(uid, 0),
+                credits_spent=credits_spent_by_user.get(uid, 0),
+                credits_balance=user.credits,
+                top_workers=top_workers,
+                worker_tasks_done=worker_tasks_by_user.get(uid, 0) if is_worker else 0,
+                worker_earnings=worker_earnings_by_user.get(uid, 0) if is_worker else 0,
+                worker_xp=(worker_tasks_by_user.get(uid, 0) * 10) if is_worker else 0,
+                is_worker=is_worker,
+            )
+
+    results = await asyncio.gather(*[_send_one_weekly(u) for u in users], return_exceptions=True)
+    sent = sum(1 for r in results if not isinstance(r, Exception))
+    for r in results:
+        if isinstance(r, Exception):
+            logger.warning("weekly_digest_send_failed", error=str(r))
 
     return {"sent": sent, "week": week_label}
 
@@ -964,27 +966,35 @@ async def trigger_daily_digest(
         if len(bucket) < 8:
             bucket.append(n)
 
-    for prefs in all_prefs:
+    # Send emails concurrently with bounded parallelism (avoid sequential loop)
+    import asyncio
+    _sem = asyncio.Semaphore(20)
+
+    async def _send_one_daily(prefs):
         user = users_by_id.get(prefs.user_id)
         if not user:
-            continue
-
+            return False
         notifs = notifs_by_user.get(user.id, [])
         highlights = [
             {"title": n.title or n.type, "body": n.body or "", "link": n.link or ""}
             for n in notifs
         ]
+        async with _sem:
+            await send_daily_digest(
+                to_email=user.email,
+                user_name=user.name or user.email.split("@")[0],
+                date_label=date_label,
+                unread_count=unread_by_user.get(user.id, 0),
+                highlights=highlights,
+                credits_balance=user.credits,
+            )
+        return True
 
-        user_name = user.name or user.email.split("@")[0]
-        await send_daily_digest(
-            to_email=user.email,
-            user_name=user_name,
-            date_label=date_label,
-            unread_count=unread_by_user.get(user.id, 0),
-            highlights=highlights,
-            credits_balance=user.credits,
-        )
-        sent += 1
+    results = await asyncio.gather(*[_send_one_daily(p) for p in all_prefs], return_exceptions=True)
+    sent = sum(1 for r in results if r is True)
+    for r in results:
+        if isinstance(r, Exception):
+            logger.warning("daily_digest_send_failed", error=str(r))
 
     return {"sent": sent, "date": date_label}
 
@@ -1493,27 +1503,27 @@ async def get_system_health(
     await db.execute(select(func.count()).select_from(UserDB).limit(1))
     db_ping_ms = round((_time_module.perf_counter() - t0) * 1000, 1)
 
-    # Task queue
-    pending = (await db.scalar(select(func.count()).where(TaskDB.status == "pending"))) or 0
-    running = (await db.scalar(select(func.count()).where(TaskDB.status.in_(["running", "queued"])))) or 0
-    open_tasks = (await db.scalar(select(func.count()).where(TaskDB.status == "open"))) or 0
-
-    # Tasks last hour
-    tasks_created_1h = (await db.scalar(
-        select(func.count()).where(TaskDB.created_at >= hour_ago)
-    )) or 0
-    tasks_completed_1h = (await db.scalar(
-        select(func.count()).where(
-            TaskDB.status == "completed",
-            TaskDB.completed_at >= hour_ago,
-        )
-    )) or 0
-    tasks_failed_1h = (await db.scalar(
-        select(func.count()).where(
-            TaskDB.status == "failed",
-            TaskDB.completed_at >= hour_ago,
-        )
-    )) or 0
+    # Single query with conditional aggregates — replaces 6 sequential COUNT queries
+    _task_stats = (await db.execute(
+        select(
+            func.count().filter(TaskDB.status == "pending").label("pending"),
+            func.count().filter(TaskDB.status.in_(["running", "queued"])).label("running"),
+            func.count().filter(TaskDB.status == "open").label("open_tasks"),
+            func.count().filter(TaskDB.created_at >= hour_ago).label("created_1h"),
+            func.count().filter(
+                TaskDB.status == "completed", TaskDB.completed_at >= hour_ago
+            ).label("completed_1h"),
+            func.count().filter(
+                TaskDB.status == "failed", TaskDB.completed_at >= hour_ago
+            ).label("failed_1h"),
+        ).select_from(TaskDB)
+    )).one()
+    pending = _task_stats.pending
+    running = _task_stats.running
+    open_tasks = _task_stats.open_tasks
+    tasks_created_1h = _task_stats.created_1h
+    tasks_completed_1h = _task_stats.completed_1h
+    tasks_failed_1h = _task_stats.failed_1h
 
     # Error rate (failed / (completed + failed)) in last hour
     terminal_1h = tasks_completed_1h + tasks_failed_1h

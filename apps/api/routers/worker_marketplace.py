@@ -802,6 +802,7 @@ async def get_watchlist(
         select(TaskWatchlistDB)
         .where(TaskWatchlistDB.worker_id == user_id)
         .order_by(TaskWatchlistDB.created_at.desc())
+        .limit(200)  # safety cap (creation is capped at 100)
     )
     result = await db.execute(q)
     items_db = result.scalars().all()

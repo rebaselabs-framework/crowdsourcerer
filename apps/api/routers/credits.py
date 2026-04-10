@@ -1,4 +1,5 @@
 """Credits endpoints: balance, transactions, checkout."""
+import asyncio
 from typing import Optional
 
 import structlog
@@ -104,9 +105,10 @@ async def create_checkout(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Ensure stripe customer
+    # Ensure stripe customer (sync SDK call — run in thread to avoid blocking event loop)
     if not user.stripe_customer_id:
-        customer = stripe.Customer.create(
+        customer = await asyncio.to_thread(
+            stripe.Customer.create,
             email=user.email,
             name=user.name,
             metadata={"user_id": user_id},
@@ -131,7 +133,8 @@ async def create_checkout(
     else:
         product_desc += f" at $0.01/credit"
 
-    session = stripe.checkout.Session.create(
+    session = await asyncio.to_thread(
+        stripe.checkout.Session.create,
         customer=user.stripe_customer_id,
         payment_method_types=["card"],
         line_items=[{

@@ -1097,10 +1097,22 @@ class TestAdminHealth:
     @pytest.mark.asyncio
     async def test_health_happy_path(self, app, admin_headers):
         db = _make_mock_db()
-        # The health endpoint uses both db.execute and db.scalar heavily
+        # Build a named-tuple-like mock for the consolidated task stats query
+        _task_row = MagicMock()
+        _task_row.pending = 0
+        _task_row.running = 0
+        _task_row.open_tasks = 0
+        _task_row.created_1h = 0
+        _task_row.completed_1h = 0
+        _task_row.failed_1h = 0
+        _task_stats_result = MagicMock()
+        _task_stats_result.one = MagicMock(return_value=_task_row)
+
         db.execute = AsyncMock(side_effect=_admin_then(
             # db_ping query
             _result_scalar(1),
+            # consolidated task stats (.one())
+            _task_stats_result,
             # failing_types
             MagicMock(all=MagicMock(return_value=[])),
             # stuck_ai
@@ -1126,8 +1138,19 @@ class TestAdminHealth:
     @pytest.mark.asyncio
     async def test_health_degraded_when_sweeper_stale(self, app, admin_headers):
         db = _make_mock_db()
+        _task_row = MagicMock()
+        _task_row.pending = 0
+        _task_row.running = 0
+        _task_row.open_tasks = 0
+        _task_row.created_1h = 0
+        _task_row.completed_1h = 0
+        _task_row.failed_1h = 0
+        _task_stats_result = MagicMock()
+        _task_stats_result.one = MagicMock(return_value=_task_row)
+
         db.execute = AsyncMock(side_effect=_admin_then(
             _result_scalar(1),
+            _task_stats_result,
             MagicMock(all=MagicMock(return_value=[])),
             MagicMock(all=MagicMock(return_value=[])),
             MagicMock(all=MagicMock(return_value=[])),
