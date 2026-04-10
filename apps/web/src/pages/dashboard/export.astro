@@ -8,7 +8,7 @@ if (!token) return Astro.redirect("/login");
 let orgs: any[] = [];
 try {
   const data = await apiFetch<any>("/v1/orgs", { token });
-  orgs = Array.isArray(data) ? data : (data as any).items ?? [];
+  orgs = Array.isArray(data) ? data : (data as { items?: any[] }).items ?? [];
 } catch (_) {}
 ---
 

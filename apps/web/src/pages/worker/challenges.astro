@@ -223,7 +223,8 @@ const TASK_TYPE_ICONS: Record<string, string> = {
       } else {
         const body = await res.json().catch(() => ({}));
         if (msg) {
-          msg.textContent = (body as any).detail ?? "Failed to claim. Try again.";
+          const detail = (body as { detail?: string }).detail;
+          msg.textContent = detail ?? "Failed to claim. Try again.";
           msg.classList.remove("hidden");
         }
         if (btn) {

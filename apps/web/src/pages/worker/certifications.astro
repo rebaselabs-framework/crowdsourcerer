@@ -46,8 +46,8 @@ let myCerts: any[] = [];
 let certDetail: any = null;
 let error: string | null = Astro.url.searchParams.get("error");
 // Read per-question attempt details from session (stored by POST handler before redirect)
-const lastAttemptDetails = resultType
-  ? ((await Astro.session?.get("cert_last_attempt")) as any[] | null) ?? null
+const lastAttemptDetails: unknown[] | null = resultType
+  ? ((await Astro.session?.get("cert_last_attempt")) as unknown[] | null) ?? null
   : null;
 
 try {
@@ -326,6 +326,12 @@ for (const c of myCerts) {
   </div>
 
   <script>
+    declare global {
+      interface Window {
+        submitCert?: () => boolean;
+      }
+    }
+
     function updateAnswers() {
       const answers: Array<{question_id: string|null, answer: string|string[]}> = [];
       const questions = document.querySelectorAll("[data-question-id]");
@@ -385,6 +391,6 @@ for (const c of myCerts) {
 
       return true;
     }
-    (window as any).submitCert = submitCert;
+    window.submitCert = submitCert;
   </script>
 </Layout>

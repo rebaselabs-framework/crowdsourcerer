@@ -479,7 +479,7 @@ const totalPages = Math.ceil(workers.total / workers.per_page);
         if (row) {
           const cells = row.querySelectorAll("td");
           if (cells[COL_STRIKES]) {
-            const newCount = (data as any).total_strikes ?? 1;
+            const newCount = (data as { total_strikes?: number }).total_strikes ?? 1;
             cells[COL_STRIKES].innerHTML = `<span class="text-orange-400 font-semibold">${newCount}</span>`;
           }
         }

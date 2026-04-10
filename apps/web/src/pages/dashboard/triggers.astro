@@ -357,7 +357,7 @@ document.getElementById("createTriggerForm")?.addEventListener("submit", async (
       location.reload();
     } else {
       const data = await res.json().catch(() => ({}));
-      msg.textContent = (data as any).detail || "Failed to create trigger";
+      msg.textContent = (data as { detail?: string }).detail || "Failed to create trigger";
       msg.className = "mt-2 text-xs text-center text-red-400";
       msg.classList.remove("hidden");
       if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = "Create Trigger"; }
@@ -405,7 +405,7 @@ document.querySelectorAll(".delete-trigger-btn").forEach(btn => {
         toast("Trigger deleted");
       } else {
         const data = await res.json().catch(() => ({}));
-        toast((data as any).detail || "Failed to delete trigger", false);
+        toast((data as { detail?: string }).detail || "Failed to delete trigger", false);
         (btn as HTMLButtonElement).disabled = false;
         btn.textContent = "🗑";
       }
@@ -427,7 +427,8 @@ document.querySelectorAll(".fire-btn").forEach(btn => {
       const res = await fetch(`/api/triggers/${triggerId}/fire`, { method: "POST" });
       if (res.ok) {
         const data = await res.json().catch(() => ({}));
-        toast(`✅ Pipeline run started — ID: ${String((data as any).run_id ?? "").slice(0, 8)}…`);
+        const runId = (data as { run_id?: string }).run_id ?? "";
+        toast(`✅ Pipeline run started — ID: ${runId.slice(0, 8)}…`);
         // Update stats inline — no page reload
         const runCountEl = document.querySelector<HTMLElement>(`[data-run-count="${triggerId}"]`);
         if (runCountEl) {
@@ -438,7 +439,7 @@ document.querySelectorAll(".fire-btn").forEach(btn => {
         if (lastFiredEl) lastFiredEl.textContent = new Date().toLocaleDateString();
       } else {
         const data = await res.json().catch(() => ({}));
-        toast((data as any).detail || "Failed to fire trigger", false);
+        toast((data as { detail?: string }).detail || "Failed to fire trigger", false);
       }
     } catch {
       toast("Network error — please try again", false);

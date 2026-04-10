@@ -23,7 +23,10 @@ const page        = Math.max(1, parseInt(Astro.url.searchParams.get("page") ?? "
 const PAGE_SIZE   = 24;
 
 const VALID_SORTS = ["newest", "reward_high", "reward_low", "urgent"] as const;
-const sort = VALID_SORTS.includes(sortParam as any) ? sortParam : "newest";
+type SortOption = (typeof VALID_SORTS)[number];
+const isValidSort = (v: string): v is SortOption =>
+  (VALID_SORTS as readonly string[]).includes(v);
+const sort: SortOption = isValidSort(sortParam) ? sortParam : "newest";
 
 // ── Fetch public task feed ────────────────────────────────────────────────────
 interface TaskPreview {

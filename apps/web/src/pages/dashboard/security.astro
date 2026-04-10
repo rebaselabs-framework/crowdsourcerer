@@ -203,8 +203,19 @@ try {
 </Layout>
 
 <script>
-  // ── QR code renderer (tiny pure-JS, no npm needed) ──────────────────────────
-  // We use the qrcode.js CDN for rendering
+  // qrcode.js is loaded from CDN and exposes a global.
+  declare global {
+    interface Window {
+      QRCode?: {
+        toCanvas: (
+          canvas: HTMLCanvasElement | null,
+          text: string,
+          opts: { width: number; margin: number },
+        ) => void;
+      };
+    }
+  }
+
   const qrScript = document.createElement("script");
   qrScript.src = "https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js";
   document.head.appendChild(qrScript);
@@ -234,13 +245,13 @@ try {
       // Wait for QR lib
       await new Promise<void>((resolve) => {
         const check = setInterval(() => {
-          if ((window as any).QRCode) { clearInterval(check); resolve(); }
+          if (window.QRCode) { clearInterval(check); resolve(); }
         }, 100);
       });
 
       spinner?.classList.add("hidden");
       canvas?.classList.remove("hidden");
-      (window as any).QRCode.toCanvas(canvas, totpUri, { width: 200, margin: 1 });
+      window.QRCode?.toCanvas(canvas, totpUri, { width: 200, margin: 1 });
       btnSetup.classList.add("hidden");
     } catch (e: any) {
       spinner!.textContent = e.message ?? "Error generating QR code";

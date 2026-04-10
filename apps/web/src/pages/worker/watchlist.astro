@@ -137,6 +137,12 @@ const statusColor: Record<string, string> = {
   </div>
 
   <script>
+    declare global {
+      interface Window {
+        removeFromWatchlist?: (taskId: string) => Promise<void>;
+      }
+    }
+
     function toast(msg: string, ok = true) {
       const t = document.createElement("div");
       t.className = `fixed bottom-4 right-4 px-4 py-2 rounded-lg text-white text-sm z-50 ${ok ? "bg-emerald-600" : "bg-red-600"}`;
@@ -161,6 +167,6 @@ const statusColor: Record<string, string> = {
         toast("Network error — please try again", false);
       }
     }
-    (window as any).removeFromWatchlist = removeFromWatchlist;
+    window.removeFromWatchlist = removeFromWatchlist;
   </script>
 </Layout>

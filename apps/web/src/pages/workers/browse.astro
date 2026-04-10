@@ -402,6 +402,15 @@ const SORT_OPTIONS = [
   </div>
 
   <script>
+    declare global {
+      interface Window {
+        openInviteModal?: (workerId: string, workerName: string) => void;
+        submitInvite?: () => Promise<void>;
+        closeBulkModal?: () => void;
+        submitBulkInvite?: () => Promise<void>;
+      }
+    }
+
     // ── Single invite ──────────────────────────────────────────────────────
     function openInviteModal(workerId: string, workerName: string) {
       (document.getElementById("inviteWorkerId") as HTMLInputElement).value = workerId;
@@ -577,9 +586,9 @@ const SORT_OPTIONS = [
     }
 
     // Make bulk functions global for inline onclick
-    (window as any).openInviteModal = openInviteModal;
-    (window as any).submitInvite = submitInvite;
-    (window as any).closeBulkModal = closeBulkModal;
-    (window as any).submitBulkInvite = submitBulkInvite;
+    window.openInviteModal = openInviteModal;
+    window.submitInvite = submitInvite;
+    window.closeBulkModal = closeBulkModal;
+    window.submitBulkInvite = submitBulkInvite;
   </script>
 </Layout>

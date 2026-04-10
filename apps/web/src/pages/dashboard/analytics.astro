@@ -18,7 +18,7 @@ let error: string | null = null;
 // Load orgs for filter dropdown
 try {
   const orgsData = await apiFetch<any[]>("/v1/orgs", { token });
-  orgs = Array.isArray(orgsData) ? orgsData : (orgsData as any).items ?? [];
+  orgs = Array.isArray(orgsData) ? orgsData : (orgsData as { items?: any[] }).items ?? [];
 } catch (_) {}
 
 // Run analytics queries in parallel with a 3s timeout each — avoids

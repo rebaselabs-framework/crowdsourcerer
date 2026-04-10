@@ -598,7 +598,7 @@ const noSkills = Array.isArray(profileStatus?.missing) &&
         )}
 
         <!-- ── Recent activity ───────────────────────────────────────────── -->
-        {(recentActivity as any[]).length > 0 && (
+        {recentActivity.length > 0 && (
           <div class="mb-8">
             <div class="flex items-center justify-between mb-3">
               <h2 class="text-base font-semibold text-gray-200">Recent activity</h2>
@@ -607,7 +607,7 @@ const noSkills = Array.isArray(profileStatus?.missing) &&
               </a>
             </div>
             <div class="bg-gray-900 border border-gray-800 rounded-xl divide-y divide-gray-800/60">
-              {(recentActivity as any[]).map((act: any) => {
+              {recentActivity.map((act: any) => {
                 const meta = TASK_TYPE_META[act.task_type] ?? { label: act.task_type, icon: "📋" };
                 const isApproved = act.status === "approved" || act.status === "released";
                 const isPending = act.status === "submitted";
@@ -860,7 +860,7 @@ const noSkills = Array.isArray(profileStatus?.missing) &&
           const errData = await res.json().catch(() => ({}));
           const t = document.createElement("div");
           t.className = "fixed bottom-4 right-4 px-4 py-2 rounded-lg text-white text-sm z-50 bg-red-600";
-          t.textContent = (errData as any).detail ?? "Failed to update availability";
+          t.textContent = (errData as { detail?: string }).detail ?? "Failed to update availability";
           document.body.appendChild(t);
           setTimeout(() => t.remove(), 4000);
         }

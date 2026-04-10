@@ -343,6 +343,12 @@ const taskTypes = [
   </div>
 
   <script>
+    declare global {
+      interface Window {
+        addVariant?: () => void;
+      }
+    }
+
     let variantCount = 2;
 
     function addVariant() {
@@ -387,7 +393,7 @@ const taskTypes = [
         document.getElementById("traffic-error")?.classList.add("hidden");
       }
     });
-    (window as any).addVariant = addVariant;
+    window.addVariant = addVariant;
 
     // Two-step confirm for delete-experiment forms
     document.querySelectorAll<HTMLFormElement>("form[data-confirm]").forEach(form => {
