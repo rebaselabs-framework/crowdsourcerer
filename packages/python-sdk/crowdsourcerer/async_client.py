@@ -41,7 +41,7 @@ class AsyncCrowdSorcerer:
         from crowdsourcerer import AsyncCrowdSorcerer
 
         async def main():
-            async with AsyncCrowdSorcerer(api_key="cs_live_...") as client:
+            async with AsyncCrowdSorcerer(api_key="csk_...") as client:
                 task = await client.tasks.create(
                     type="llm_generate",
                     input={"messages": [{"role": "user", "content": "Write a haiku"}]},

@@ -15,7 +15,7 @@ Requires Python 3.9+.
 ```python
 from crowdsourcerer import CrowdSorcerer
 
-client = CrowdSorcerer(api_key="cs_live_your_key_here")
+client = CrowdSorcerer(api_key="csk_your_key_here")
 
 # Run a web research task
 task = client.tasks.web_research(
@@ -35,7 +35,7 @@ import asyncio
 from crowdsourcerer import AsyncCrowdSorcerer
 
 async def main():
-    async with AsyncCrowdSorcerer(api_key="cs_live_...") as client:
+    async with AsyncCrowdSorcerer(api_key="csk_...") as client:
         # Create multiple tasks concurrently
         tasks = await asyncio.gather(
             client.tasks.pii_detect("My email is alice@example.com"),

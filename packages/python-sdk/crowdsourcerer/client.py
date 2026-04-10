@@ -43,7 +43,7 @@ class CrowdSorcerer:
 
         from crowdsourcerer import CrowdSorcerer
 
-        client = CrowdSorcerer(api_key="cs_live_...")
+        client = CrowdSorcerer(api_key="csk_...")
 
         task = client.tasks.create(
             type="web_research",

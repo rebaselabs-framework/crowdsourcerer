@@ -608,11 +608,11 @@ describe("API keys", () => {
 
   it("createApiKey sends POST /v1/api-keys", async () => {
     fetchMock.mockResolvedValueOnce(
-      jsonResponse({ id: "key-1", key: "cs_live_abc", name: "My Key", created_at: "2026-01-01T00:00:00Z" })
+      jsonResponse({ id: "key-1", key: "csk_abc", name: "My Key", created_at: "2026-01-01T00:00:00Z" })
     );
     const client = makeClient();
     const result = await client.createApiKey({ name: "My Key", scopes: ["tasks:read"] });
-    expect(result.key).toBe("cs_live_abc");
+    expect(result.key).toBe("csk_abc");
 
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body.name).toBe("My Key");

@@ -317,15 +317,15 @@ async def test_async_api_keys_create():
         json={
             "id": "00000000-0000-0000-0000-000000000011",
             "name": "new-key",
-            "key": "cs_live_abc123",
-            "key_prefix": "cs_live_",
+            "key": "csk_abc123",
+            "key_prefix": "csk_",
             "scopes": [],
             "created_at": "2026-01-01T00:00:00Z",
         },
     ))
     async with AsyncCrowdSorcerer(api_key="cs_test", base_url=BASE) as c:
         result = await c.api_keys.create("new-key")
-        assert result.key == "cs_live_abc123"
+        assert result.key == "csk_abc123"
 
 
 @respx.mock
