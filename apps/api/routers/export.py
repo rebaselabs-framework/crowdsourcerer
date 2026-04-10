@@ -1,4 +1,5 @@
 """Task result export — download completed tasks as CSV, JSON, or Excel."""
+import asyncio
 import csv
 import io
 import json
@@ -263,7 +264,8 @@ async def export_tasks(
         )
 
     if format == "xlsx":
-        xlsx_bytes = _build_xlsx(rows)
+        # openpyxl is CPU-intensive — run off event loop to avoid blocking
+        xlsx_bytes = await asyncio.to_thread(_build_xlsx, rows)
         return StreamingResponse(
             iter([xlsx_bytes]),
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

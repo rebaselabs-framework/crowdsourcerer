@@ -2,7 +2,7 @@
 // Serves /sitemap.xml with all public pages
 
 export async function GET() {
-  const siteUrl = "https://crowdsorcerer.dev";
+  const siteUrl = "https://crowdsourcerer.rebaselabs.online";
   const now = new Date().toISOString().split("T")[0];
 
   const staticPages = [

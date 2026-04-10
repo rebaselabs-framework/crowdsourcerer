@@ -92,6 +92,21 @@ def _result_scalar(val):
     return r
 
 
+def _result_row(**fields):
+    """Mock a result from db.execute() where .one() returns a row with named fields.
+
+    Used for consolidated aggregate queries (e.g. SELECT count() as total, ...).
+    """
+    row = MagicMock()
+    for k, v in fields.items():
+        setattr(row, k, v)
+    r = MagicMock()
+    r.one = MagicMock(return_value=row)
+    r.scalar = MagicMock(return_value=fields.get(list(fields.keys())[0]) if fields else 0)
+    r.all = MagicMock(return_value=[])
+    return r
+
+
 def _make_user_obj(**overrides):
     """Create a mock user object with sensible defaults."""
     u = MagicMock()
@@ -259,11 +274,20 @@ class TestAdminStats:
     @pytest.mark.asyncio
     async def test_stats_happy_path(self, app, admin_headers):
         db = _make_mock_db()
-        # All db.execute calls return result_scalar(0) by default; first is admin auth
+        # Stats endpoint uses consolidated queries (5 db.execute + 1 db.scalar)
         db.execute = AsyncMock(side_effect=_admin_then(
-            # Calls 2..N: all the count queries return 0
-            *[_result_scalar(0) for _ in range(20)]
+            # 1: user stats (consolidated row)
+            _result_row(total=0, active=0, workers=0, new_week=0, credits_sum=0),
+            # 2: task stats (consolidated row)
+            _result_row(total=0, completed=0, failed=0, running=0, open_human=0, this_week=0),
+            # 3: task type breakdown (returns .all() → [])
+            _result_scalar(0),
+            # 4: assignments (consolidated row)
+            _result_row(total=0, submitted=0),
+            # 5: webhooks (consolidated row)
+            _result_row(total=0, failed=0),
         ))
+        db.scalar = AsyncMock(return_value=0)  # credits_purchased
         r = await _get(app, "/v1/admin/stats", admin_headers, db)
         assert r.status_code == 200
         data = r.json()
@@ -279,35 +303,25 @@ class TestAdminStats:
     async def test_stats_success_rate_calculation(self, app, admin_headers):
         """When there are tasks, success_rate is computed correctly."""
         db = _make_mock_db()
-        call_count = 0
-
-        async def _side(*a, **kw):
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                return _scalar(_make_admin_user())
-            # total_users=10, active=8, workers=3, new_week=2
-            # total_tasks=100, completed=80, failed=10, running=5, open_human=3, this_week=20
-            mapping = {
-                2: 10, 3: 8, 4: 3, 5: 2,  # user counts
-                6: 100, 7: 80, 8: 10, 9: 5, 10: 3, 11: 20,  # task counts
-                # 12: task type breakdown (returns .all())
-                13: 500,  # credits_in_circulation
-                14: 1000,  # credits_purchased
-                15: 50,   # total_assignments
-                16: 40,   # submitted_assignments
-                17: 100,  # total_webhooks
-                18: 5,    # failed_webhooks
-            }
-            if call_count == 12:
-                # task type breakdown
-                return _result_scalar(0)
-            val = mapping.get(call_count, 0)
-            return _result_scalar(val)
-
-        db.execute = AsyncMock(side_effect=_side)
+        db.execute = AsyncMock(side_effect=_admin_then(
+            # 1: user stats
+            _result_row(total=10, active=8, workers=3, new_week=2, credits_sum=500),
+            # 2: task stats (100 total, 80 completed → success_rate = 80.0)
+            _result_row(total=100, completed=80, failed=10, running=5, open_human=3, this_week=20),
+            # 3: task type breakdown
+            _result_scalar(0),
+            # 4: assignments
+            _result_row(total=50, submitted=40),
+            # 5: webhooks
+            _result_row(total=100, failed=5),
+        ))
+        db.scalar = AsyncMock(return_value=1000)  # credits_purchased
         r = await _get(app, "/v1/admin/stats", admin_headers, db)
         assert r.status_code == 200
+        data = r.json()
+        assert data["tasks"]["success_rate"] == 80.0
+        assert data["users"]["total"] == 10
+        assert data["webhooks"]["success_rate"] == 95.0
 
 
 # =============================================================================

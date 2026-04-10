@@ -33,47 +33,51 @@ async def get_platform_stats(
     db: AsyncSession = Depends(get_db),
     _: str = Depends(require_admin),
 ):
-    """Overall platform statistics."""
+    """Overall platform statistics.
+
+    Consolidated queries: 17 sequential queries → 5 (one per table).
+    Uses PostgreSQL FILTER / CASE for conditional aggregates.
+    """
     now = datetime.now(timezone.utc)
     week_ago = now - timedelta(days=7)
-    today = now.date()
 
-    # User counts
-    total_users = (await db.execute(select(func.count()).select_from(UserDB))).scalar() or 0
-    active_users = (await db.execute(
-        select(func.count()).select_from(UserDB).where(UserDB.is_active == True)
-    )).scalar() or 0
-    workers = (await db.execute(
-        select(func.count()).select_from(UserDB).where(
-            UserDB.role.in_(["worker", "both"])
-        )
-    )).scalar() or 0
-    new_users_week = (await db.execute(
-        select(func.count()).select_from(UserDB).where(UserDB.created_at >= week_ago)
-    )).scalar() or 0
+    # ── 1/5: User stats (4 counts + 1 sum in one query) ──────────────────────
+    user_row = (await db.execute(
+        select(
+            func.count().label("total"),
+            func.count().filter(UserDB.is_active == True).label("active"),
+            func.count().filter(UserDB.role.in_(["worker", "both"])).label("workers"),
+            func.count().filter(UserDB.created_at >= week_ago).label("new_week"),
+            func.coalesce(func.sum(UserDB.credits), 0).label("credits_sum"),
+        ).select_from(UserDB)
+    )).one()
+    total_users = user_row.total
+    active_users = user_row.active
+    workers = user_row.workers
+    new_users_week = user_row.new_week
+    credits_in_circulation = user_row.credits_sum
 
-    # Task counts
-    total_tasks = (await db.execute(select(func.count()).select_from(TaskDB))).scalar() or 0
-    completed_tasks = (await db.execute(
-        select(func.count()).select_from(TaskDB).where(TaskDB.status == "completed")
-    )).scalar() or 0
-    failed_tasks = (await db.execute(
-        select(func.count()).select_from(TaskDB).where(TaskDB.status == "failed")
-    )).scalar() or 0
-    running_tasks = (await db.execute(
-        select(func.count()).select_from(TaskDB).where(TaskDB.status.in_(["running", "queued"]))
-    )).scalar() or 0
-    open_human_tasks = (await db.execute(
-        select(func.count()).select_from(TaskDB).where(
-            TaskDB.execution_mode == "human",
-            TaskDB.status == "open",
-        )
-    )).scalar() or 0
-    tasks_this_week = (await db.execute(
-        select(func.count()).select_from(TaskDB).where(TaskDB.created_at >= week_ago)
-    )).scalar() or 0
+    # ── 2/5: Task stats (6 counts in one query) ─────────────────────────────
+    task_row = (await db.execute(
+        select(
+            func.count().label("total"),
+            func.count().filter(TaskDB.status == "completed").label("completed"),
+            func.count().filter(TaskDB.status == "failed").label("failed"),
+            func.count().filter(TaskDB.status.in_(["running", "queued"])).label("running"),
+            func.count().filter(
+                TaskDB.execution_mode == "human", TaskDB.status == "open"
+            ).label("open_human"),
+            func.count().filter(TaskDB.created_at >= week_ago).label("this_week"),
+        ).select_from(TaskDB)
+    )).one()
+    total_tasks = task_row.total
+    completed_tasks = task_row.completed
+    failed_tasks = task_row.failed
+    running_tasks = task_row.running
+    open_human_tasks = task_row.open_human
+    tasks_this_week = task_row.this_week
 
-    # Task type breakdown (top 10)
+    # ── 3/5: Task type breakdown (top 10) — separate query (GROUP BY) ────────
     type_counts_result = await db.execute(
         select(TaskDB.type, func.count().label("cnt"))
         .group_by(TaskDB.type)
@@ -85,36 +89,32 @@ async def get_platform_stats(
         for row in type_counts_result.all()
     ]
 
-    # Credits
-    credits_in_circulation = (await db.execute(
-        select(func.sum(UserDB.credits)).select_from(UserDB)
-    )).scalar() or 0
+    # ── 4/5: Credit transactions — single aggregate ─────────────────────────
+    credits_purchased = (await db.scalar(
+        select(func.coalesce(func.sum(CreditTransactionDB.amount), 0))
+        .where(CreditTransactionDB.type == "credit", CreditTransactionDB.amount > 0)
+    )) or 0
 
-    # Revenue proxy: total positive credit transactions (purchases)
-    credits_purchased = (await db.execute(
-        select(func.sum(CreditTransactionDB.amount)).select_from(CreditTransactionDB).where(
-            CreditTransactionDB.type == "credit",
-            CreditTransactionDB.amount > 0,
-        )
-    )).scalar() or 0
+    # ── 5/5: Assignments + Webhooks (2 counts each, one query per table) ────
+    assign_row = (await db.execute(
+        select(
+            func.count().label("total"),
+            func.count().filter(
+                TaskAssignmentDB.status.in_(["submitted", "approved", "rejected"])
+            ).label("submitted"),
+        ).select_from(TaskAssignmentDB)
+    )).one()
+    total_assignments = assign_row.total
+    submitted_assignments = assign_row.submitted
 
-    # Worker assignments
-    total_assignments = (await db.execute(
-        select(func.count()).select_from(TaskAssignmentDB)
-    )).scalar() or 0
-    submitted_assignments = (await db.execute(
-        select(func.count()).select_from(TaskAssignmentDB).where(
-            TaskAssignmentDB.status.in_(["submitted", "approved", "rejected"])
-        )
-    )).scalar() or 0
-
-    # Webhooks
-    total_webhooks = (await db.execute(
-        select(func.count()).select_from(WebhookLogDB)
-    )).scalar() or 0
-    failed_webhooks = (await db.execute(
-        select(func.count()).select_from(WebhookLogDB).where(WebhookLogDB.success == False)
-    )).scalar() or 0
+    webhook_row = (await db.execute(
+        select(
+            func.count().label("total"),
+            func.count().filter(WebhookLogDB.success == False).label("failed"),
+        ).select_from(WebhookLogDB)
+    )).one()
+    total_webhooks = webhook_row.total
+    failed_webhooks = webhook_row.failed
 
     return {
         "users": {
