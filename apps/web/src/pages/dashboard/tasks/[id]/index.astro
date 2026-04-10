@@ -108,6 +108,9 @@ let applications: any[] = [];
 let myApplication: any = null;
 let me: any = null;
 let assignedTeam: any = null;
+let dependencies: any[] = [];
+let dependents: any[] = [];
+let taskMessages: any[] = [];
 
 try {
   [task, me] = await Promise.all([
@@ -126,43 +129,47 @@ try {
 const isRequester = task && me && String(task.user_id) === String(me.id);
 const isWorker = me && (me.role === "worker" || me.role === "both");
 
-// Load submissions for human tasks
-if (task?.execution_mode === "human") {
-  try {
-    submissions = await apiFetch<any[]>(`/v1/tasks/${id}/submissions`, { token });
-  } catch (_) {
-    submissions = [];
+// Fire all secondary data fetches in parallel — these are all independent
+{
+  type Fetch = Promise<any>;
+  const fetches: Record<string, Fetch> = {
+    comments: apiFetch<any>(`/v1/tasks/${id}/comments?per_page=100`, { token }).catch(() => null),
+    deps: apiFetch<any[]>(`/v1/tasks/${id}/dependencies`, { token }).catch(() => []),
+    dependents: apiFetch<any[]>(`/v1/tasks/${id}/dependents`, { token }).catch(() => []),
+    messages: apiFetch<any>(`/v1/tasks/${id}/messages?per_page=100`, { token }).catch(() => null),
+  };
+  // Conditional fetches — only added when relevant
+  if (task?.execution_mode === "human") {
+    fetches.submissions = apiFetch<any[]>(`/v1/tasks/${id}/submissions`, { token }).catch(() => []);
   }
-}
-
-// Load applications if application_mode
-if (task?.application_mode) {
-  if (isRequester) {
-    try {
-      applications = await apiFetch<any[]>(`/v1/tasks/${id}/applications`, { token });
-    } catch (_) { applications = []; }
+  if (task?.application_mode && isRequester) {
+    fetches.applications = apiFetch<any[]>(`/v1/tasks/${id}/applications`, { token }).catch(() => []);
   }
-  if (isWorker && !isRequester) {
-    try {
-      const workerApps = await apiFetch<any[]>("/v1/worker/applications", { token });
-      myApplication = workerApps.find((a: any) => String(a.task_id) === String(id)) ?? null;
-    } catch (_) { myApplication = null; }
+  if (task?.application_mode && isWorker && !isRequester) {
+    fetches.workerApps = apiFetch<any[]>("/v1/worker/applications", { token }).catch(() => []);
   }
-}
+  if (task?.assigned_team_id) {
+    fetches.team = apiFetch<any>(`/v1/worker-teams/${task.assigned_team_id}`, { token }).catch(() => null);
+  }
 
-// Load assigned team if any
-if (task?.assigned_team_id) {
-  try {
-    assignedTeam = await apiFetch<any>(`/v1/worker-teams/${task.assigned_team_id}`, { token }).catch(() => null);
-  } catch (_) { assignedTeam = null; }
-}
+  const keys = Object.keys(fetches);
+  const results = await Promise.all(Object.values(fetches));
+  const data: Record<string, any> = {};
+  keys.forEach((k, i) => { data[k] = results[i]; });
 
-// Load comments
-try {
-  const commentData = await apiFetch<any>(`/v1/tasks/${id}/comments?per_page=100`, { token });
+  // Unpack results
+  const commentData = data.comments;
   comments = commentData?.comments ?? [];
-} catch (_) {
-  comments = [];
+  submissions = data.submissions ?? [];
+  applications = data.applications ?? [];
+  if (data.workerApps) {
+    myApplication = data.workerApps.find((a: any) => String(a.task_id) === String(id)) ?? null;
+  }
+  assignedTeam = data.team ?? null;
+  const msgData = data.messages;
+  taskMessages = msgData?.messages ?? msgData ?? [];
+  dependencies = data.deps ?? [];
+  dependents = data.dependents ?? [];
 }
 
 // Build comment tree: root comments + their replies
@@ -174,25 +181,6 @@ comments.forEach((c: any) => {
     repliesByParent[c.parent_id].push(c);
   }
 });
-
-// Load task dependencies (upstream) + dependents (downstream)
-let dependencies: any[] = [];
-let dependents: any[] = [];
-try {
-  [dependencies, dependents] = await Promise.all([
-    apiFetch<any[]>(`/v1/tasks/${id}/dependencies`, { token }),
-    apiFetch<any[]>(`/v1/tasks/${id}/dependents`, { token }),
-  ]);
-} catch (_) {}
-
-// Load task messages
-let taskMessages: any[] = [];
-try {
-  const msgData = await apiFetch<any>(`/v1/tasks/${id}/messages?per_page=100`, { token });
-  taskMessages = msgData?.messages ?? msgData ?? [];
-} catch (_) {
-  taskMessages = [];
-}
 
 // Advance requester onboarding: view_results step (fire-and-forget, non-blocking)
 if (task?.status === "completed") {
@@ -2803,6 +2791,26 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
     }
   </script>
 
+  <!-- Shared marked.js loader — loads once, caches for all markdown blocks -->
+  <script is:inline>
+    window.__loadMarked = (function() {
+      var promise = null;
+      return function(cb) {
+        if (window.marked) { cb(); return; }
+        if (!promise) {
+          promise = new Promise(function(resolve, reject) {
+            var s = document.createElement("script");
+            s.src = "https://cdn.jsdelivr.net/npm/marked@9/marked.min.js";
+            s.onload = resolve;
+            s.onerror = reject;
+            document.head.appendChild(s);
+          });
+        }
+        promise.then(cb).catch(function() { /* CDN failed — keep plain text */ });
+      };
+    })();
+  </script>
+
   <!-- LLM Output: Markdown rendering + view toggle -->
   {richOutput?.kind === "llm_generate" && (
     <script is:inline define:vars={{ llmRawText: richOutput.text }}>
@@ -2832,21 +2840,15 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
       btnFormatted?.addEventListener("click", () => setView("formatted"));
       btnRaw?.addEventListener("click", () => setView("raw"));
 
-      // Load marked.js and render markdown
+      // Render markdown via shared loader (loads marked.js once)
       if (mdContainer && llmRawText) {
-        const script = document.createElement("script");
-        script.src = "https://cdn.jsdelivr.net/npm/marked@9/marked.min.js";
-        script.onload = () => {
+        window.__loadMarked(function() {
           try {
             mdContainer.innerHTML = marked.parse(llmRawText, { breaks: true, gfm: true });
           } catch (e) {
             // Fallback: keep the pre-rendered plain text
           }
-        };
-        script.onerror = () => {
-          // CDN failed: show raw text as fallback (already in the DOM as plain text)
-        };
-        document.head.appendChild(script);
+        });
       }
     </script>
   )}
@@ -2856,14 +2858,11 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
     <script is:inline define:vars={{ webResearchSummary: richOutput.summary }}>
       var container = document.getElementById("web-research-summary");
       if (container && webResearchSummary) {
-        var s = document.createElement("script");
-        s.src = "https://cdn.jsdelivr.net/npm/marked@9/marked.min.js";
-        s.onload = function() {
+        window.__loadMarked(function() {
           try {
             container.innerHTML = marked.parse(webResearchSummary, { breaks: true, gfm: true });
           } catch (_) { /* keep plain text fallback */ }
-        };
-        document.head.appendChild(s);
+        });
       }
     </script>
   )}
@@ -2873,14 +2872,11 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
     <script is:inline define:vars={{ webIntelReport: richOutput.report }}>
       var container = document.getElementById("web-intel-report");
       if (container && webIntelReport) {
-        var s = document.createElement("script");
-        s.src = "https://cdn.jsdelivr.net/npm/marked@9/marked.min.js";
-        s.onload = function() {
+        window.__loadMarked(function() {
           try {
             container.innerHTML = marked.parse(webIntelReport, { breaks: true, gfm: true });
           } catch (_) { /* keep plain text fallback */ }
-        };
-        document.head.appendChild(s);
+        });
       }
     </script>
   )}

@@ -41,20 +41,19 @@ try {
     ? { Authorization: `Bearer ${token}` }
     : {};
 
-  // Check platform config (lightweight — no DB query, no auth)
-  const configRes = await fetch(`${API_URL}/v1/config`).catch(() => null);
-  if (configRes?.ok) {
-    const cfg = await configRes.json();
-    emailEnabled = !!cfg.email_enabled;
-  }
-
   if (isLoggedIn) {
-    const [notifRes, msgRes, meRes, annRes] = await Promise.allSettled([
+    // Fetch config + user data in one parallel batch (config was previously sequential)
+    const [configRes, notifRes, msgRes, meRes, annRes] = await Promise.allSettled([
+      fetch(`${API_URL}/v1/config`),
       fetch(`${API_URL}/v1/notifications/unread-count`, { headers: authHeader }),
       fetch(`${API_URL}/v1/tasks/messages/unread-count`, { headers: authHeader }),
       fetch(`${API_URL}/v1/users/me`, { headers: authHeader }),
       fetch(`${API_URL}/v1/announcements`, { headers: authHeader }),
     ]);
+    if (configRes.status === "fulfilled" && configRes.value.ok) {
+      const cfg = await configRes.value.json();
+      emailEnabled = !!cfg.email_enabled;
+    }
     if (notifRes.status === "fulfilled" && notifRes.value.ok) {
       const data = await notifRes.value.json();
       unreadCount = data.unread_count ?? 0;
@@ -71,10 +70,17 @@ try {
       activeAnnouncements = await annRes.value.json();
     }
   } else {
-    // Even when logged out, fetch public announcements
-    const annRes = await fetch(`${API_URL}/v1/announcements`).catch(() => null);
-    if (annRes?.ok) {
-      activeAnnouncements = await annRes.json();
+    // Even when logged out, fetch config + public announcements in parallel
+    const [cfgRes, annRes] = await Promise.allSettled([
+      fetch(`${API_URL}/v1/config`),
+      fetch(`${API_URL}/v1/announcements`),
+    ]);
+    if (cfgRes.status === "fulfilled" && cfgRes.value.ok) {
+      const cfg = await cfgRes.value.json();
+      emailEnabled = !!cfg.email_enabled;
+    }
+    if (annRes.status === "fulfilled" && annRes.value.ok) {
+      activeAnnouncements = await annRes.value.json();
     }
   }
 } catch {
@@ -348,7 +354,7 @@ const ANN_ICON: Record<string, string> = {
         <a href="/use-cases" class="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
           🚀 Use Cases
         </a>
-        <a href="/tasks" class="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
+        <a href="/marketplace" class="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">
           🌐 Browse Tasks
         </a>
         <a href="/docs" class="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:bg-gray-800 rounded-lg transition-colors">

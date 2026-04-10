@@ -1,4 +1,5 @@
 """Auth endpoints: register, login, forgot/reset password, email verification."""
+import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Union
 import hashlib
@@ -42,15 +43,25 @@ router = APIRouter(prefix="/v1/auth", tags=["auth"])
 settings = get_settings()
 
 
-def _hash_password(password: str) -> str:
+def _hash_password_sync(password: str) -> str:
     return _bcrypt.hashpw(password.encode(), _bcrypt.gensalt()).decode()
 
 
-def _verify_password(password: str, hashed: str) -> bool:
+def _verify_password_sync(password: str, hashed: str) -> bool:
     try:
         return _bcrypt.checkpw(password.encode(), hashed.encode())
     except (ValueError, TypeError):
         return False
+
+
+async def _hash_password(password: str) -> str:
+    """Hash password off the event loop — bcrypt is intentionally slow (~300ms)."""
+    return await asyncio.to_thread(_hash_password_sync, password)
+
+
+async def _verify_password(password: str, hashed: str) -> bool:
+    """Verify password off the event loop — bcrypt is intentionally slow (~300ms)."""
+    return await asyncio.to_thread(_verify_password_sync, password, hashed)
 limiter = Limiter(key_func=get_remote_address)
 
 
@@ -73,7 +84,7 @@ async def register(
     user = UserDB(
         email=req.email,
         name=req.name,
-        password_hash=_hash_password(req.password),
+        password_hash=await _hash_password(req.password),
         role=req.role,
         credits=settings.free_tier_credits,
         email_verified=False,
@@ -136,7 +147,7 @@ async def login(
     result = await db.execute(select(UserDB).where(UserDB.email == req.email))
     user = result.scalar_one_or_none()
 
-    if not user or not _verify_password(req.password, user.password_hash or ""):
+    if not user or not await _verify_password(req.password, user.password_hash or ""):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
@@ -258,7 +269,7 @@ async def reset_password(
     if not user or not user.is_active:
         raise HTTPException(status_code=400, detail="Account not found or disabled.")
 
-    user.password_hash = _hash_password(req.new_password)
+    user.password_hash = await _hash_password(req.new_password)
     user.token_version = (user.token_version or 0) + 1
     rec.used = True
     await db.commit()
@@ -300,10 +311,10 @@ async def change_password(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    if not _verify_password(req.current_password, user.password_hash or ""):
+    if not await _verify_password(req.current_password, user.password_hash or ""):
         raise HTTPException(status_code=400, detail="Current password is incorrect")
 
-    user.password_hash = _hash_password(req.new_password)
+    user.password_hash = await _hash_password(req.new_password)
     user.token_version = (user.token_version or 0) + 1
     await db.commit()
 

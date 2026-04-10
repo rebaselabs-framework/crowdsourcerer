@@ -311,7 +311,7 @@ class CreditTransactionDB(Base):
     __tablename__ = "credit_transactions"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     task_id = Column(UUID(as_uuid=True), ForeignKey("tasks.id", ondelete="SET NULL"), nullable=True, index=True)
     amount = Column(Integer, nullable=False)  # positive = credit, negative = charge
     type = Column(
@@ -545,7 +545,7 @@ class OrgActivityLogDB(Base):
     org_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"),
                     nullable=False, index=True)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"),
-                     nullable=True)
+                     nullable=True, index=True)
     event_type = Column(String(64), nullable=False)  # task_created | task_completed | credit_spend
     task_id = Column(UUID(as_uuid=True), nullable=True)
     credits = Column(Integer, default=0, nullable=False)
@@ -671,10 +671,10 @@ class TaskPipelineStepRunDB(Base):
     run_id = Column(UUID(as_uuid=True), ForeignKey("task_pipeline_runs.id", ondelete="CASCADE"),
                     nullable=False, index=True)
     step_id = Column(UUID(as_uuid=True), ForeignKey("task_pipeline_steps.id", ondelete="CASCADE"),
-                     nullable=False)
+                     nullable=False, index=True)
     step_order = Column(Integer, nullable=False)
     task_id = Column(UUID(as_uuid=True), ForeignKey("tasks.id", ondelete="SET NULL"),
-                     nullable=True)  # The actual Task created for this step
+                     nullable=True, index=True)  # The actual Task created for this step
     status = Column(
         SAEnum("pending", "running", "completed", "failed", "skipped", "retrying",
                name="step_run_status_enum"),
@@ -763,7 +763,7 @@ class TaskTemplateDB(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     creator_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
-                        nullable=True)  # NULL = system template
+                        nullable=True, index=True)  # NULL = system template
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     task_type = Column(String(64), nullable=False, index=True)
@@ -946,7 +946,7 @@ class ABParticipantDB(Base):
     task_id = Column(UUID(as_uuid=True), ForeignKey("tasks.id", ondelete="SET NULL"),
                      nullable=True, unique=True)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"),
-                     nullable=True)
+                     nullable=True, index=True)
     assigned_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     completed_at = Column(DateTime(timezone=True), nullable=True)
     outcome = Column(String(16), nullable=True)        # completed / failed / cancelled
@@ -1042,7 +1042,7 @@ class SLABreachDB(Base):
     task_id = Column(UUID(as_uuid=True), ForeignKey("tasks.id", ondelete="CASCADE"),
                      nullable=False, unique=True, index=True)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"),
-                     nullable=True)
+                     nullable=True, index=True)
     plan = Column(String(16), nullable=False)
     priority = Column(String(16), nullable=False, default="normal")
     sla_hours = Column(Float, nullable=False)          # target SLA in hours
@@ -1082,7 +1082,7 @@ class StripeEventLogDB(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     stripe_event_id = Column(String(128), unique=True, nullable=False, index=True)
     event_type = Column(String(64), nullable=False, index=True)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     payload = Column(JSON, nullable=True)
     processed = Column(Boolean, default=False, nullable=False)
     error = Column(Text, nullable=True)
@@ -1377,8 +1377,8 @@ class WorkerEndorsementDB(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     worker_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
-    requester_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
-    task_id = Column(UUID(as_uuid=True), ForeignKey("tasks.id"), nullable=False)
+    requester_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    task_id = Column(UUID(as_uuid=True), ForeignKey("tasks.id"), nullable=False, index=True)
     skill_tag = Column(String(100), nullable=True)   # e.g. "data labeling", "fast turnaround"
     note = Column(Text, nullable=True)               # max 500 chars
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
@@ -1402,7 +1402,7 @@ class WorkerInviteDB(Base):
     worker_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
                        nullable=False, index=True)
     requester_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
-                          nullable=False)
+                          nullable=False, index=True)
     message = Column(Text, nullable=True)            # optional personal message (≤500 chars)
     status = Column(
         SAEnum("pending", "accepted", "declined", "expired", name="invite_status_enum"),

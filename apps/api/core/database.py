@@ -9,6 +9,8 @@ engine = create_async_engine(
     echo=settings.debug,
     pool_size=10,
     max_overflow=20,
+    pool_pre_ping=True,     # detect stale connections after DB restart
+    pool_recycle=3600,       # recycle connections after 1 hour
 )
 
 AsyncSessionLocal = async_sessionmaker(

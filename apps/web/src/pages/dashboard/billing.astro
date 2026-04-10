@@ -34,26 +34,29 @@ if (Astro.request.method === "POST") {
   }
 }
 
-try {
-  user = await apiFetch<any>("/v1/users/me", { token });
-} catch (e: any) {
-  // Only redirect to login for actual authentication failures.
-  if (e.message?.includes("401") || e.message?.includes("403")) {
+// Fetch all billing data in parallel — 3 independent API calls
+const [userRes, txRes, alertRes] = await Promise.allSettled([
+  apiFetch<any>("/v1/users/me", { token }),
+  apiFetch<any>("/v1/credits/history?limit=20", { token }),
+  apiFetch<any>("/v1/users/credit-alert", { token }),
+]);
+
+if (userRes.status === "fulfilled") {
+  user = userRes.value;
+} else {
+  const msg = userRes.reason?.message ?? "";
+  if (msg.includes("401") || msg.includes("403")) {
     return Astro.redirect("/login");
   }
 }
 
-try {
-  const txRes = await apiFetch<any>("/v1/credits/history?limit=20", { token });
-  transactions = txRes?.transactions ?? txRes ?? [];
-} catch (_) {
-  transactions = [];
+if (txRes.status === "fulfilled") {
+  const raw = txRes.value;
+  transactions = raw?.transactions ?? raw ?? [];
 }
 
-try {
-  creditAlert = await apiFetch<any>("/v1/users/credit-alert", { token });
-} catch (_) {
-  creditAlert = null;
+if (alertRes.status === "fulfilled") {
+  creditAlert = alertRes.value;
 }
 
 const PLAN_FEATURES: Record<string, string[]> = {
@@ -261,20 +264,18 @@ const currentPlan = user?.plan ?? "free";
       ))}
     </div>
 
-    <!-- Stripe portal link -->
+    <!-- Subscription management -->
     {currentPlan !== "free" && (
       <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-8 flex items-center justify-between">
         <div>
           <div class="font-medium text-gray-200 mb-1">Manage Subscription</div>
-          <p class="text-sm text-gray-400">Update payment method, view invoices, or cancel subscription.</p>
+          <p class="text-sm text-gray-400">Need to update payment method, view invoices, or cancel? Contact support.</p>
         </div>
         <a
-          href="https://billing.stripe.com/p/login/test_00g000000000000"
-          target="_blank"
-          rel="noopener noreferrer"
+          href="mailto:support@rebaselabs.online?subject=Billing%20inquiry"
           class="px-4 py-2 border border-gray-600 text-gray-300 text-sm rounded-lg hover:border-gray-400 hover:text-white transition-colors whitespace-nowrap"
         >
-          Stripe Portal →
+          Contact Support →
         </a>
       </div>
     )}
