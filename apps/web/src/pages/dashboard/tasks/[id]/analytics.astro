@@ -22,11 +22,11 @@ try {
 const a = analytics;
 
 const statusLabels = ["Approved", "Rejected", "Pending"];
-const statusData = a ? [a.approved_count, a.rejected_count, a.pending_count] : [0, 0, 0];
+const statusData = a ? [a.approved_count ?? 0, a.rejected_count ?? 0, a.pending_count ?? 0] : [0, 0, 0];
 const statusColors = ["#10b981", "#ef4444", "#f59e0b"];
 
-const distLabels: string[] = a ? Object.keys(a.response_distribution) : [];
-const distData: number[] = a ? Object.values(a.response_distribution) : [];
+const distLabels: string[] = a?.response_distribution ? Object.keys(a.response_distribution) : [];
+const distData: number[] = a?.response_distribution ? Object.values(a.response_distribution) : [];
 ---
 
 <Layout title={`Analytics — ${a?.title ?? "Task"}`}>

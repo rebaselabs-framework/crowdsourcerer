@@ -4,6 +4,8 @@ from typing import Optional
 import structlog
 import stripe
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from sqlalchemy.exc import IntegrityError
@@ -18,6 +20,7 @@ from models.schemas import (
 )
 
 logger = structlog.get_logger()
+limiter = Limiter(key_func=get_remote_address)
 router = APIRouter(prefix="/v1/credits", tags=["credits"])
 settings = get_settings()
 
@@ -83,7 +86,9 @@ async def list_transactions(
 
 
 @router.post("/checkout", response_model=CheckoutResponse)
+@limiter.limit("10/minute")
 async def create_checkout(
+    request: Request,
     req: CheckoutRequest,
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id),

@@ -16,6 +16,8 @@ from uuid import UUID
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, Query, Response
 from pydantic import BaseModel, Field
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -25,6 +27,7 @@ from core.database import get_db
 from models.db import PipelineTriggerDB, TaskPipelineDB, TaskPipelineStepDB, UserDB
 
 logger = structlog.get_logger()
+limiter = Limiter(key_func=get_remote_address)
 router = APIRouter(tags=["triggers"])
 
 # ─── Schemas ──────────────────────────────────────────────────────────────────
@@ -357,6 +360,7 @@ async def delete_trigger(
 # ─── Webhook fire endpoint ────────────────────────────────────────────────────
 
 @router.post("/v1/pipelines/webhooks/{token}")
+@limiter.limit("30/minute")
 async def fire_webhook_trigger(
     token: str,
     request: Request,

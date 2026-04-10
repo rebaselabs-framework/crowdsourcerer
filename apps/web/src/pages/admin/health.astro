@@ -31,10 +31,9 @@ const STATUS_ICON: Record<string, string> = {
 };
 
 const status: string = health?.status ?? "unknown";
-const errorRatePct = health ? Math.round(health.error_rate_1h * 100) : 0;
-const queueTotal = health
-  ? health.task_queue.pending + health.task_queue.running + health.task_queue.open
-  : 0;
+const errorRatePct = health?.error_rate_1h != null ? Math.round(health.error_rate_1h * 100) : 0;
+const tq = health?.task_queue;
+const queueTotal = tq ? (tq.pending ?? 0) + (tq.running ?? 0) + (tq.open ?? 0) : 0;
 ---
 
 <Layout title="System Health — Admin">

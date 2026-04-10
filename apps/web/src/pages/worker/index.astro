@@ -44,6 +44,9 @@ try {
       withTimeout(apiFetch("/v1/worker/tasks/feed?page=1&page_size=3", { token }), 2000),
       withTimeout(apiFetch("/v1/worker/activity?page_size=5", { token }), 2000, []),
     ]);
+    // withTimeout returns null on timeout — ensure arrays are never null
+    assignments = assignments ?? [];
+    recentActivity = recentActivity ?? [];
     const msgCount: any = await withTimeout(apiFetch("/v1/tasks/messages/unread-count", { token }), 1000);
     unreadMessages = msgCount?.count ?? 0;
   }

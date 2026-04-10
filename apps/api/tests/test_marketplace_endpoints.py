@@ -778,7 +778,7 @@ class TestRateTemplate:
                     json={"rating": 0},
                     headers=_auth_header(),
                 )
-            assert r.status_code == 400
+            assert r.status_code == 422  # Pydantic ge=1 constraint
         finally:
             _app.dependency_overrides.pop(get_db, None)
 
@@ -799,7 +799,7 @@ class TestRateTemplate:
                     json={"rating": 6},
                     headers=_auth_header(),
                 )
-            assert r.status_code == 400
+            assert r.status_code == 422  # Pydantic le=5 constraint
         finally:
             _app.dependency_overrides.pop(get_db, None)
 

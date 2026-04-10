@@ -134,7 +134,7 @@ async def get_priority_info():
 @router.get("/v1/tasks/sla-status", response_model=list[SLAStatusOut])
 async def get_my_sla_status(
     status_filter: Optional[str] = Query(None, alias="status"),
-    limit: int = Query(50, le=200),
+    limit: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ):
@@ -196,7 +196,7 @@ async def list_sla_breaches(
     resolved: Optional[bool] = Query(None),
     plan: Optional[str] = Query(None),
     priority: Optional[str] = Query(None),
-    limit: int = Query(100, le=500),
+    limit: int = Query(100, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
 ):
     """Admin: list all SLA breach records."""

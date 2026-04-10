@@ -7,8 +7,10 @@ from typing import AsyncIterator, Optional
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, Request, Response
 from fastapi.responses import StreamingResponse
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
@@ -34,6 +36,7 @@ from workers.router import execute_task, TASK_CREDITS
 from core.sql import esc_like, LIKE_ESC
 
 logger = structlog.get_logger()
+limiter = Limiter(key_func=get_remote_address)
 router = APIRouter(prefix="/v1/tasks", tags=["tasks"])
 
 # Default credits cost for human tasks (requester pays this to fund worker rewards)
@@ -679,7 +682,9 @@ async def get_task_templates():
 
 
 @router.get("/public")
+@limiter.limit("60/minute")
 async def public_task_feed(
+    request: Request,
     type: Optional[str] = Query(None, description="Filter by task type"),
     q: Optional[str] = Query(None, description="Text search across task instructions/title"),
     sort: str = Query("newest", description="Sort order: newest | reward_high | reward_low | urgent"),

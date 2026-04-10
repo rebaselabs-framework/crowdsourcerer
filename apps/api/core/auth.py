@@ -135,11 +135,18 @@ async def get_optional_user_id(
         return None
     token = credentials.credentials
     if token.startswith("csk_"):
-        from models.db import ApiKeyDB
+        from models.db import ApiKeyDB, UserDB
         hashed = _hash_api_key(token)
         result = await db.execute(select(ApiKeyDB).where(ApiKeyDB.key_hash == hashed))
         api_key = result.scalar_one_or_none()
-        return str(api_key.user_id) if api_key else None
+        if not api_key:
+            return None
+        # Check that the API key owner is active/not banned
+        user_result = await db.execute(select(UserDB).where(UserDB.id == api_key.user_id))
+        owner = user_result.scalar_one_or_none()
+        if not owner or not owner.is_active or getattr(owner, "is_banned", False):
+            return None
+        return str(api_key.user_id)
     return decode_access_token(token)
 
 
@@ -173,6 +180,8 @@ async def get_current_user(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Token invalidated — please log in again",
             )
+
+    verify_account_active(user)
 
     return user
 

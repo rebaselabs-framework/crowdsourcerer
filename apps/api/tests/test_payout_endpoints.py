@@ -1019,14 +1019,14 @@ class TestAdminReviewPayout:
         assert user.credits == 5000  # 0 + 5000 refund
 
     @pytest.mark.asyncio
-    async def test_review_invalid_status_400(self, admin_client):
-        """Invalid target status returns 400."""
+    async def test_review_invalid_status_422(self, admin_client):
+        """Invalid target status returns 422 (Pydantic Literal validation)."""
         r = await admin_client.post(
             f"/v1/payouts/{PAYOUT_ID}/review",
             json={"status": "pending"},
             headers={"Authorization": f"Bearer {_token(ADMIN_ID)}"},
         )
-        assert r.status_code == 400
+        assert r.status_code == 422
 
     @pytest.mark.asyncio
     async def test_review_not_found_404(self, admin_client):

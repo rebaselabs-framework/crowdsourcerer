@@ -6,21 +6,29 @@ const { token, user } = await requireAuth(Astro);
 const API_BASE = import.meta.env.PUBLIC_API_URL || 'http://api:8100';
 
 // Fetch featured templates + all templates + categories in parallel
-const [featuredRes, templatesRes, categoriesRes] = await Promise.all([
-  fetch(`${API_BASE}/v1/marketplace/templates?page_size=4&sort=featured&is_featured=true`, {
-    headers: { Authorization: `Bearer ${token}` },
-  }),
-  fetch(`${API_BASE}/v1/marketplace/templates?page_size=24&sort=featured`, {
-    headers: { Authorization: `Bearer ${token}` },
-  }),
-  fetch(`${API_BASE}/v1/marketplace/categories`, {
-    headers: { Authorization: `Bearer ${token}` },
-  }),
-]);
+let featuredData: any = { items: [] };
+let templatesData: any = { items: [], total: 0 };
+let categoriesData: any = [];
 
-const featuredData = featuredRes.ok ? await featuredRes.json() : { items: [] };
-const templatesData = templatesRes.ok ? await templatesRes.json() : { items: [], total: 0 };
-const categoriesData = categoriesRes.ok ? await categoriesRes.json() : [];
+try {
+  const [featuredRes, templatesRes, categoriesRes] = await Promise.all([
+    fetch(`${API_BASE}/v1/marketplace/templates?page_size=4&sort=featured&is_featured=true`, {
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+    fetch(`${API_BASE}/v1/marketplace/templates?page_size=24&sort=featured`, {
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+    fetch(`${API_BASE}/v1/marketplace/categories`, {
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+  ]);
+
+  featuredData = featuredRes.ok ? await featuredRes.json() : { items: [] };
+  templatesData = templatesRes.ok ? await templatesRes.json() : { items: [], total: 0 };
+  categoriesData = categoriesRes.ok ? await categoriesRes.json() : [];
+} catch (_) {
+  // API unreachable — render with empty data
+}
 
 const featuredTemplates = (featuredData.items || []).filter((t: any) => t.is_featured).slice(0, 4);
 const templates = templatesData.items || [];

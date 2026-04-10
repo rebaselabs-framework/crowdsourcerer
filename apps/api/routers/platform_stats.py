@@ -12,8 +12,10 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 import structlog
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,6 +23,7 @@ from core.database import get_db
 from models.db import TaskDB, UserDB, TaskAssignmentDB
 
 logger = structlog.get_logger()
+limiter = Limiter(key_func=get_remote_address)
 router = APIRouter(prefix="/v1/platform", tags=["platform"])
 
 # ── Simple in-process cache (5-minute TTL) ───────────────────────────────
@@ -61,7 +64,8 @@ class PlatformStats(BaseModel):
         "Results are cached for 5 minutes."
     ),
 )
-async def get_platform_stats(db: AsyncSession = Depends(get_db)) -> PlatformStats:
+@limiter.limit("30/minute")
+async def get_platform_stats(request: Request, db: AsyncSession = Depends(get_db)) -> PlatformStats:
     global _cache, _cache_at
 
     now = datetime.now(timezone.utc)

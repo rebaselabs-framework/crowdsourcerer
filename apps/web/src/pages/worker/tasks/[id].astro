@@ -31,7 +31,7 @@ try {
   // Check active assignment AND prior submissions in parallel (including timed_out)
   const [activeAssignments, submittedAssignments, approvedAssignments, rejectedAssignments, timedOutAssignments] =
     await Promise.all([
-      apiFetch<any[]>(`/v1/worker/assignments?status=active&page_size=50`, { token }),
+      apiFetch<any[]>(`/v1/worker/assignments?status=active&page_size=50`, { token }).catch(() => []),
       apiFetch<any[]>(`/v1/worker/assignments?status=submitted&page_size=50`, { token }).catch(() => []),
       apiFetch<any[]>(`/v1/worker/assignments?status=approved&page_size=50`, { token }).catch(() => []),
       apiFetch<any[]>(`/v1/worker/assignments?status=rejected&page_size=50`, { token }).catch(() => []),

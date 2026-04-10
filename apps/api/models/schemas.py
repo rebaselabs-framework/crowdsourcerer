@@ -21,7 +21,7 @@ def _strip_html(v: str | None) -> str | None:
 
 class RegisterRequest(BaseModel):
     email: EmailStr
-    password: str = Field(min_length=8)
+    password: str = Field(min_length=8, max_length=128)
     name: Optional[str] = None
 
     @field_validator("name", mode="before")
@@ -33,7 +33,7 @@ class RegisterRequest(BaseModel):
 
 class LoginRequest(BaseModel):
     email: EmailStr
-    password: str
+    password: str = Field(max_length=128)
 
 
 class TokenResponse(BaseModel):
@@ -391,8 +391,17 @@ class WorkerTaskClaimResponse(BaseModel):
 
 
 class WorkerTaskSubmitRequest(BaseModel):
-    response: dict[str, Any]  # Task-type-specific answer structure
-    worker_note: Optional[str] = None
+    response: dict[str, Any] = Field(description="Task-type-specific answer structure")
+    worker_note: Optional[str] = Field(None, max_length=5000)
+
+    @field_validator("response", mode="before")
+    @classmethod
+    def limit_response_size(cls, v: Any) -> Any:
+        """Reject payloads larger than 1 MB when serialized."""
+        import json
+        if isinstance(v, dict) and len(json.dumps(v, default=str)) > 1_048_576:
+            raise ValueError("Response payload must be under 1 MB")
+        return v
 
 
 class WorkerTaskSubmitResponse(BaseModel):
@@ -714,8 +723,8 @@ class PayoutRequestOut(BaseModel):
 
 
 class PayoutReviewRequest(BaseModel):
-    status: str  # processing | paid | rejected
-    admin_note: Optional[str] = None
+    status: Literal["processing", "paid", "rejected"]
+    admin_note: Optional[str] = Field(None, max_length=2000)
 
 
 class PayoutListOut(BaseModel):
@@ -1265,7 +1274,7 @@ class PaginatedTemplates(BaseModel):
 
 
 class TemplateRateRequest(BaseModel):
-    rating: int  # 1–5
+    rating: int = Field(ge=1, le=5)
 
 
 class TemplateRateResponse(BaseModel):
@@ -1493,14 +1502,14 @@ class SkillQuizAttemptOut(BaseModel):
 # ─── Webhook Endpoint schemas ──────────────────────────────────────────────
 
 class WebhookEndpointCreate(BaseModel):
-    url: str
-    description: Optional[str] = None
+    url: str = Field(max_length=2048)
+    description: Optional[str] = Field(None, max_length=500)
     events: Optional[list[str]] = None  # None = all events
 
 
 class WebhookEndpointUpdate(BaseModel):
-    url: Optional[str] = None
-    description: Optional[str] = None
+    url: Optional[str] = Field(None, max_length=2048)
+    description: Optional[str] = Field(None, max_length=500)
     events: Optional[list[str]] = None
     is_active: Optional[bool] = None
 

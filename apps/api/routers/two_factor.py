@@ -84,7 +84,9 @@ async def get_2fa_status(
 # ─── POST /v1/auth/2fa/setup ───────────────────────────────────────────────────
 
 @router.post("/setup", response_model=TwoFASetupResponse)
+@limiter.limit("5/minute")
 async def setup_2fa(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ):
@@ -123,7 +125,9 @@ async def setup_2fa(
 # ─── POST /v1/auth/2fa/enable ─────────────────────────────────────────────────
 
 @router.post("/enable", response_model=TwoFAEnableResponse)
+@limiter.limit("5/minute")
 async def enable_2fa(
+    request: Request,
     req: TwoFAEnableRequest,
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
@@ -162,7 +166,9 @@ async def enable_2fa(
 # ─── POST /v1/auth/2fa/disable ────────────────────────────────────────────────
 
 @router.post("/disable", status_code=204, response_model=None)
+@limiter.limit("5/minute")
 async def disable_2fa(
+    request: Request,
     req: TwoFADisableRequest,
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
