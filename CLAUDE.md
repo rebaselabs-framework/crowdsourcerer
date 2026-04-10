@@ -212,7 +212,7 @@ Escape `{` and `}` inside Astro template expressions when they're literal charac
 
 ## Current Status (2026-04-09)
 
-- **Tests**: 2107 backend (0 failures) + 189 E2E Playwright
+- **Tests**: 2173 backend (0 failures) + 189 E2E Playwright
 - **Endpoints**: 335 | **Pages**: 118 | **Migrations**: 66
 - **Revenue**: $0 | **Users**: 0
 - **Deployment**: Live at crowdsourcerer.rebaselabs.online
