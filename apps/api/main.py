@@ -29,6 +29,7 @@ from core.rebasekit_health import (
     is_ai_available,
     get_service_health,
     get_available_task_types,
+    get_ai_health_summary,
 )
 
 settings = get_settings()
@@ -355,8 +356,14 @@ async def health_v1():
             "google_oauth": bool(settings.google_client_id),
             "payments_enabled": bool(settings.stripe_secret_key),
         }
-    # Live AI service availability (actually pings RebaseKit, cached 60s)
-    body["ai_available"] = await is_ai_available()
+    # Live AI service availability (actually pings RebaseKit, cached 60s).
+    # Expose both the legacy `ai_available` bool and the three-tier status
+    # so dashboards can distinguish healthy from degraded fleets.
+    ai_summary = await get_ai_health_summary()
+    body["ai_available"] = ai_summary.is_available
+    body["ai_status"] = ai_summary.status
+    body["ai_services_up"] = ai_summary.services_up
+    body["ai_services_total"] = ai_summary.services_total
     return body
 
 
@@ -366,13 +373,27 @@ async def config_v1():
 
     Includes live RebaseKit service health (cached 60s) so the frontend
     can accurately warn users about unavailable AI task types.
+
+    `ai_status` is the preferred field for new UI:
+
+    - ``"healthy"``     — every worker is up.
+    - ``"degraded"``    — some workers are down; check ``task_availability``
+                          to disable the specific task tiles that won't run.
+    - ``"unavailable"`` — no worker is reachable (or the integration is
+                          not configured); block AI submissions entirely.
+
+    `ai_available` is kept for backwards compatibility with older
+    frontends and is true for both ``healthy`` and ``degraded`` fleets.
     """
-    ai_up = await is_ai_available()
+    ai_summary = await get_ai_health_summary()
     result: dict[str, Any] = {
         "email_enabled": settings.email_enabled,
         "google_oauth": bool(settings.google_client_id),
         "payments_enabled": bool(settings.stripe_secret_key),
-        "ai_available": ai_up,
+        "ai_available": ai_summary.is_available,
+        "ai_status": ai_summary.status,
+        "ai_services_up": ai_summary.services_up,
+        "ai_services_total": ai_summary.services_total,
     }
     # Include per-task-type availability when AI services are partially up
     # (helps frontend disable specific task type tiles)

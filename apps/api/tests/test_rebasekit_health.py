@@ -12,9 +12,12 @@ from core.rebasekit_health import (
     TASK_TO_SERVICE,
     ALL_SERVICES,
     CACHE_TTL,
+    AIHealthSummary,
     get_service_health,
     is_ai_available,
     get_available_task_types,
+    get_ai_health_status,
+    get_ai_health_summary,
     warmup,
     get_cache,
 )
@@ -305,6 +308,92 @@ class TestModuleFunctions:
         finally:
             cache._status = old_status
             cache._last_check = old_last
+
+
+# ─── Three-tier health status ───────────────────────────────────────────
+
+
+class TestAIHealthStatus:
+    """get_ai_health_status() / get_ai_health_summary() — the honest
+    replacement for the old ``is_ai_available``-as-truth pattern."""
+
+    def _seed(self, ups: dict[str, bool]):
+        cache = get_cache()
+        cache._status = {svc: ups.get(svc, False) for svc in ALL_SERVICES}
+        cache._last_check = time.monotonic()
+        return cache
+
+    @pytest.mark.asyncio
+    async def test_healthy_when_all_services_up(self):
+        cache = self._seed({svc: True for svc in ALL_SERVICES})
+        old_status = cache._status
+        old_last = cache._last_check
+        try:
+            with patch("core.rebasekit_health.get_settings", return_value=_mock_settings()):
+                summary = await get_ai_health_summary()
+                status = await get_ai_health_status()
+            assert summary.status == "healthy"
+            assert status == "healthy"
+            assert summary.services_up == summary.services_total
+            assert summary.is_available is True
+        finally:
+            cache._status = old_status
+            cache._last_check = old_last
+
+    @pytest.mark.asyncio
+    async def test_degraded_when_one_service_up(self):
+        """The whole point of the refactor: 1/N up is degraded, not healthy."""
+        cache = self._seed({"pii": True})
+        old_status = cache._status
+        old_last = cache._last_check
+        try:
+            with patch("core.rebasekit_health.get_settings", return_value=_mock_settings()):
+                summary = await get_ai_health_summary()
+            assert summary.status == "degraded"
+            assert summary.services_up == 1
+            assert summary.services_total == len(ALL_SERVICES)
+            # is_ai_available still True (backwards compat) but caller can
+            # now tell the difference.
+            assert summary.is_available is True
+        finally:
+            cache._status = old_status
+            cache._last_check = old_last
+
+    @pytest.mark.asyncio
+    async def test_unavailable_when_all_down(self):
+        cache = self._seed({})
+        old_status = cache._status
+        old_last = cache._last_check
+        try:
+            with patch("core.rebasekit_health.get_settings", return_value=_mock_settings()):
+                summary = await get_ai_health_summary()
+            assert summary.status == "unavailable"
+            assert summary.services_up == 0
+            assert summary.is_available is False
+        finally:
+            cache._status = old_status
+            cache._last_check = old_last
+
+    @pytest.mark.asyncio
+    async def test_unavailable_without_api_key(self):
+        """Missing API key short-circuits to unavailable without hitting the cache."""
+        with patch("core.rebasekit_health.get_settings", return_value=_mock_settings(api_key="")):
+            summary = await get_ai_health_summary()
+        assert summary.status == "unavailable"
+        assert summary.services_up == 0
+        assert summary.services_total == len(ALL_SERVICES)
+        assert all(up is False for up in summary.services.values())
+
+    def test_summary_is_frozen(self):
+        """AIHealthSummary is an immutable value object."""
+        s = AIHealthSummary(
+            status="healthy",
+            services_up=10,
+            services_total=10,
+            services={svc: True for svc in ALL_SERVICES},
+        )
+        with pytest.raises((AttributeError, Exception)):
+            s.status = "unavailable"  # type: ignore[misc]
 
 
 # ─── Service mapping correctness ────────────────────────────────────────

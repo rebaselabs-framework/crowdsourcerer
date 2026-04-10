@@ -10,6 +10,9 @@ let error = "";
 let templates: any[] = [];
 let savedTemplates: any[] = [];
 let aiAvailable = true;
+// "healthy" | "degraded" | "unavailable" — prefer this over aiAvailable
+// when rendering banners, since it distinguishes partial outages.
+let aiStatus: "healthy" | "degraded" | "unavailable" = "healthy";
 let taskAvailability: Record<string, boolean> = {};
 
 // Check if AI services are available (live health check, cached 60s on backend)
@@ -18,6 +21,7 @@ try {
   if (cfgRes?.ok) {
     const cfg = await cfgRes.json();
     aiAvailable = !!cfg.ai_available;
+    aiStatus = (cfg.ai_status as "healthy" | "degraded" | "unavailable") ?? (aiAvailable ? "healthy" : "unavailable");
     taskAvailability = cfg.task_availability ?? {};
   }
 } catch {
@@ -31,7 +35,7 @@ const aiTaskTypeNames = [
   "code_execute", "web_intel",
 ];
 const availableCount = aiTaskTypeNames.filter(t => taskAvailability[t]).length;
-const partiallyAvailable = aiAvailable && availableCount < aiTaskTypeNames.length;
+const partiallyAvailable = aiStatus === "degraded" || (aiAvailable && availableCount < aiTaskTypeNames.length);
 
 try {
   const tplRes = await apiFetch<any>("/v1/tasks/templates", { token });

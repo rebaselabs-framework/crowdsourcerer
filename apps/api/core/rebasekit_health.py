@@ -5,18 +5,24 @@ Results are cached with a configurable TTL (default 60s) to avoid
 hammering health endpoints on every request.
 
 Usage:
-    from core.rebasekit_health import get_service_health, is_ai_available
+    from core.rebasekit_health import get_service_health, get_ai_health_status
 
     status = await get_service_health()
     # {"pii": True, "llm": False, "webtask": False, ...}
 
-    if await is_ai_available():
-        ...
+    match await get_ai_health_status():
+        case "healthy":
+            ...   # all workers up
+        case "degraded":
+            ...   # some workers up, warn the user
+        case "unavailable":
+            ...   # no workers reachable, fall back / block
 """
 
 import asyncio
 import time
-from typing import Any
+from dataclasses import dataclass
+from typing import Literal
 
 import httpx
 import structlog
@@ -24,6 +30,29 @@ import structlog
 from core.config import get_settings
 
 logger = structlog.get_logger()
+
+# Public status enum. Three tiers avoid the historical lie where one service
+# up out of ten reported ai_available=True to the frontend.
+AIHealthStatus = Literal["healthy", "degraded", "unavailable"]
+
+
+@dataclass(frozen=True, slots=True)
+class AIHealthSummary:
+    """Snapshot of overall AI worker health.
+
+    Used by /v1/config and admin tooling so the UI can render a
+    "some task types unavailable" banner without re-deriving counts.
+    """
+
+    status: AIHealthStatus
+    services_up: int
+    services_total: int
+    services: dict[str, bool]
+
+    @property
+    def is_available(self) -> bool:
+        """True whenever at least one backing service is reachable."""
+        return self.status != "unavailable"
 
 # ── Service mapping ──────────────────────────────────────────────────────
 
@@ -142,13 +171,64 @@ async def get_service_health() -> dict[str, bool]:
     return await _cache.get_status()
 
 
-async def is_ai_available() -> bool:
-    """True if the API key is set AND at least one AI service is reachable."""
+async def get_ai_health_summary() -> AIHealthSummary:
+    """Compute the canonical AI-side health snapshot.
+
+    The three-tier status replaces the old "any service up" bool:
+
+    - ``healthy``     — API key present and **all** services reachable.
+    - ``degraded``    — API key present, at least one service up, but
+                        not all of them. Task types backed by downed
+                        services will still fail.
+    - ``unavailable`` — no API key configured, or every service is down.
+
+    This is the single source of truth; other helpers
+    (:func:`is_ai_available`, :func:`get_ai_health_status`) are thin
+    wrappers so callers can pick the shape that fits.
+    """
     settings = get_settings()
     if not settings.rebasekit_api_key:
-        return False
-    status = await _cache.get_status()
-    return any(status.values())
+        return AIHealthSummary(
+            status="unavailable",
+            services_up=0,
+            services_total=len(ALL_SERVICES),
+            services={svc: False for svc in ALL_SERVICES},
+        )
+
+    services = await _cache.get_status()
+    total = len(ALL_SERVICES)
+    up = sum(1 for svc in ALL_SERVICES if services.get(svc, False))
+
+    if up == 0:
+        status: AIHealthStatus = "unavailable"
+    elif up < total:
+        status = "degraded"
+    else:
+        status = "healthy"
+
+    return AIHealthSummary(
+        status=status,
+        services_up=up,
+        services_total=total,
+        services={svc: services.get(svc, False) for svc in ALL_SERVICES},
+    )
+
+
+async def get_ai_health_status() -> AIHealthStatus:
+    """Return just the three-tier status string (see :class:`AIHealthSummary`)."""
+    summary = await get_ai_health_summary()
+    return summary.status
+
+
+async def is_ai_available() -> bool:
+    """True whenever the integration is configured and ≥1 worker is reachable.
+
+    Retained for backwards compatibility — new code should prefer
+    :func:`get_ai_health_status` or :func:`get_ai_health_summary` which
+    distinguish a fully healthy fleet from a degraded one.
+    """
+    summary = await get_ai_health_summary()
+    return summary.is_available
 
 
 async def get_available_task_types() -> dict[str, bool]:
