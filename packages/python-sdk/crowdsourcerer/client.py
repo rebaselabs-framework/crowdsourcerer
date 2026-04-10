@@ -33,7 +33,7 @@ from .types import (
 DEFAULT_BASE_URL = "https://crowdsourcerer.rebaselabs.online"
 DEFAULT_TIMEOUT = 30.0
 DEFAULT_MAX_RETRIES = 3
-SDK_VERSION = "0.1.0"
+SDK_VERSION = "1.0.0"
 
 
 class CrowdSorcerer:

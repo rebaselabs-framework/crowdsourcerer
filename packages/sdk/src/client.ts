@@ -81,7 +81,7 @@ export class CrowdSorcerer {
       headers: {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${this.apiKey}`,
-        "X-Client": "crowdsourcerer-sdk/0.1.0",
+        "X-Client": "crowdsourcerer-sdk/1.0.0",
         ...(init.headers ?? {}),
       },
     }).finally(() => clearTimeout(timer));
