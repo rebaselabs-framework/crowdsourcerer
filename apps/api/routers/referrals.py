@@ -10,6 +10,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth import get_current_user_id
+from core.config import get_settings
 from core.database import get_db
 from core.notify import create_notification, NotifType
 from models.db import UserDB, ReferralDB, CreditTransactionDB
@@ -80,10 +81,8 @@ async def get_referral_stats(
     # Pending = user's credits_pending field
     pending_bonus = user.credits_pending
 
-    # Use the app's public URL (from env or a sensible default)
-    import os
-    base_url = os.getenv("PUBLIC_URL", "https://crowdsourcerer.rebaselabs.online")
-    referral_url = f"{base_url}/register?ref={code}"
+    # Use the canonical public site URL (env-driven via Settings).
+    referral_url = f"{get_settings().public_site_url}/register?ref={code}"
 
     return ReferralStatsOut(
         referral_code=code,

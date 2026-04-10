@@ -215,6 +215,8 @@ async def _send_alert_email(
 def _system_alert_html(alert_type: str, severity: str, title: str, detail: dict) -> str:
     severity_color = "#ef4444" if severity == "critical" else "#f59e0b"
     severity_label = "CRITICAL" if severity == "critical" else "WARNING"
+    site_url = get_settings().public_site_url
+    site_host = site_url.removeprefix("https://").removeprefix("http://")
 
     detail_rows = ""
     for key, value in detail.items():
@@ -261,7 +263,7 @@ def _system_alert_html(alert_type: str, severity: str, title: str, detail: dict)
   </table>
 
   <p>
-    <a href="https://crowdsourcerer.rebaselabs.online/admin/alerts"
+    <a href="{site_url}/admin/alerts"
        style="background:#6366f1;color:white;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:600">
       View Alert Dashboard →
     </a>
@@ -270,7 +272,7 @@ def _system_alert_html(alert_type: str, severity: str, title: str, detail: dict)
   <hr style="margin:24px 0;border:none;border-top:1px solid #e5e7eb">
   <p style="color:#9ca3af;font-size:12px;margin:0">
     CrowdSorcerer System Monitor &middot;
-    <a href="https://crowdsourcerer.rebaselabs.online" style="color:#9ca3af">crowdsourcerer.rebaselabs.online</a>
+    <a href="{site_url}" style="color:#9ca3af">{site_host}</a>
   </p>
 </body>
 </html>

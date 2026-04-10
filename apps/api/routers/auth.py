@@ -26,7 +26,6 @@ from models.schemas import (
 
 _RESET_TOKEN_TTL_MINUTES = 30
 _VERIFY_TOKEN_TTL_HOURS = 24
-_BASE_URL = "https://crowdsourcerer.rebaselabs.online"
 
 
 def _make_token() -> tuple[str, str]:
@@ -103,7 +102,7 @@ async def register(
 
     # Send verification email (fire-and-forget — don't block signup on email failure)
     from core.email import send_email_verification
-    verify_url = f"{_BASE_URL}/verify-email?token={raw_verify_token}"
+    verify_url = f"{settings.public_site_url}/verify-email?token={raw_verify_token}"
     safe_create_task(
         send_email_verification(user.email, verify_url, user.name),
         name="email.verification",
@@ -229,7 +228,7 @@ async def forgot_password(
         db.add(reset_rec)
         await db.commit()
 
-        reset_url = f"{_BASE_URL}/reset-password?token={raw_token}"
+        reset_url = f"{settings.public_site_url}/reset-password?token={raw_token}"
         # Send email fire-and-forget — don't block on email failures
         from core.email import send_password_reset
         safe_create_task(
@@ -389,7 +388,7 @@ async def resend_verification(
     await db.commit()
 
     from core.email import send_email_verification
-    verify_url = f"{_BASE_URL}/verify-email?token={raw_token}"
+    verify_url = f"{settings.public_site_url}/verify-email?token={raw_token}"
     safe_create_task(
         send_email_verification(user.email, verify_url, user.name),
         name="email.verification",

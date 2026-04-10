@@ -11,6 +11,12 @@ class Settings(BaseSettings):
     debug: bool = False
     port: int = 8100
 
+    # Public-facing site URL. Used for email templates, password-reset
+    # links, OAuth redirect builders, OpenAPI server metadata, and system
+    # alert notifications. Override per deployment so staging / preview /
+    # white-label stacks do not link back to the production domain.
+    public_site_url: str = "https://crowdsourcerer.rebaselabs.online"
+
     # Database
     database_url: str = "postgresql+asyncpg://postgres:postgres@db:5432/crowdsourcerer"
 

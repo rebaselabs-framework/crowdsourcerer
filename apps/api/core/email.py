@@ -31,7 +31,10 @@ _settings = get_settings()
 
 # ─── Shared email base template ─────────────────────────────────────────────
 
-SITE_URL = "https://crowdsourcerer.rebaselabs.online"
+# Pulled from Settings so white-label / staging deployments embed the
+# right links in transactional emails. Re-read once at module load —
+# changing public_site_url at runtime requires a restart.
+SITE_URL = _settings.public_site_url
 
 def _cs_base(
     *,
@@ -898,17 +901,17 @@ def _weekly_digest_html(
 {top_table}
 
 <div style="margin-top:24px;display:flex;gap:12px">
-  <a href="https://crowdsourcerer.rebaselabs.online/dashboard"
+  <a href="{SITE_URL}/dashboard"
      style="background:#6366f1;color:white;padding:10px 20px;border-radius:6px;text-decoration:none;display:inline-block">
      Go to Dashboard →</a>
-  <a href="https://crowdsourcerer.rebaselabs.online/dashboard/notification-preferences"
+  <a href="{SITE_URL}/dashboard/notification-preferences"
      style="background:#f3f4f6;color:#374151;padding:10px 20px;border-radius:6px;text-decoration:none;display:inline-block;margin-left:8px">
      Manage preferences</a>
 </div>
 <hr style="margin:24px 0;border:none;border-top:1px solid #e5e7eb">
 <p style="color:#9ca3af;font-size:12px">
   CrowdSorcerer Weekly Digest ·
-  <a href="https://crowdsourcerer.rebaselabs.online/dashboard/notification-preferences">Unsubscribe</a>
+  <a href="{SITE_URL}/dashboard/notification-preferences">Unsubscribe</a>
 </p>
 </body></html>
 """
@@ -961,7 +964,7 @@ def _daily_digest_html(
     for h in highlights[:8]:
         rows += (
             f'<tr><td style="padding:10px;border-bottom:1px solid #f3f4f6">'
-            f'<a href="https://crowdsourcerer.rebaselabs.online{h.get("link","")}" '
+            f'<a href="{SITE_URL}{h.get("link","")}" '
             f'style="color:#6366f1;text-decoration:none;font-weight:500">{h["title"]}</a>'
             f'<div style="font-size:12px;color:#6b7280;margin-top:2px">{h["body"][:120]}</div>'
             f'</td></tr>'
@@ -985,17 +988,17 @@ def _daily_digest_html(
 </p>
 
 <div style="margin-top:20px">
-  <a href="https://crowdsourcerer.rebaselabs.online/dashboard/notifications"
+  <a href="{SITE_URL}/dashboard/notifications"
      style="background:#6366f1;color:white;padding:10px 20px;border-radius:6px;text-decoration:none;display:inline-block">
      View All Notifications →</a>
-  <a href="https://crowdsourcerer.rebaselabs.online/dashboard/notification-preferences"
+  <a href="{SITE_URL}/dashboard/notification-preferences"
      style="color:#6b7280;font-size:13px;text-decoration:none;margin-left:16px">
      Manage digest</a>
 </div>
 <hr style="margin:24px 0;border:none;border-top:1px solid #e5e7eb">
 <p style="color:#9ca3af;font-size:12px">
   CrowdSorcerer Daily Digest ·
-  <a href="https://crowdsourcerer.rebaselabs.online/dashboard/notification-preferences">Unsubscribe</a>
+  <a href="{SITE_URL}/dashboard/notification-preferences">Unsubscribe</a>
 </p>
 </body></html>
 """

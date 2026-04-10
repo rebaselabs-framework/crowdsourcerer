@@ -49,7 +49,6 @@ _GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 _GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 _GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo"
 _STATE_TTL_SECONDS = 600  # 10 minutes
-_BASE_URL = "https://crowdsourcerer.rebaselabs.online"
 
 
 # ─── State helpers (stateless HMAC-signed state) ─────────────────────────────
@@ -116,7 +115,7 @@ async def google_login(
     }
     state = _sign_state(state_payload)
 
-    redirect_uri = f"{_BASE_URL}/v1/auth/google/callback"
+    redirect_uri = f"{settings.public_site_url}/v1/auth/google/callback"
     params = {
         "client_id": settings.google_client_id,
         "redirect_uri": redirect_uri,
@@ -155,7 +154,7 @@ async def google_callback(
         return RedirectResponse(url=f"/login?oauth_error={urllib.parse.quote(str(e.detail))}")
 
     # Exchange code for tokens
-    redirect_uri = f"{_BASE_URL}/v1/auth/google/callback"
+    redirect_uri = f"{settings.public_site_url}/v1/auth/google/callback"
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             token_res = await client.post(
