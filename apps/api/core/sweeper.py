@@ -665,9 +665,10 @@ async def _sweep_scheduled_tasks(session_factory: async_sessionmaker) -> int:
 async def _run_scheduled_ai_task(task_id: str, user_id: str) -> None:
     """Thin wrapper to run a scheduled AI task (mirrors _run_task in tasks router)."""
     from core.database import AsyncSessionLocal
+    from workers.base import get_rebasekit_client
     from workers.router import execute_task, TASK_CREDITS
     from core.webhooks import fire_webhook_for_task, fire_persistent_endpoints
-    from models.db import TaskDB, CreditTransactionDB
+    from models.db import TaskDB, UserDB, CreditTransactionDB
     from sqlalchemy import select
 
     async with AsyncSessionLocal() as db:
@@ -683,7 +684,8 @@ async def _run_scheduled_ai_task(task_id: str, user_id: str) -> None:
             # Execute
             import time as _time
             t0 = _time.perf_counter()
-            output = await execute_task(task.type, task.input)
+            client = get_rebasekit_client()
+            output = await execute_task(task.type, task.input, client)
             duration_ms = int((_time.perf_counter() - t0) * 1000)
             task.status = "completed"
             task.output = output
@@ -732,6 +734,56 @@ async def _run_scheduled_ai_task(task_id: str, user_id: str) -> None:
                 if t2:
                     t2.status = "failed"
                     t2.error = str(exc)
+                    t2.completed_at = datetime.now(timezone.utc)
+
+                    # Refund credits — mirrors _run_task error handling
+                    refund_amount = TASK_CREDITS.get(t2.type, 5)
+                    if t2.org_id:
+                        from models.db import OrganizationDB
+                        org_r = await db2.execute(
+                            select(OrganizationDB).where(
+                                OrganizationDB.id == t2.org_id
+                            ).with_for_update()
+                        )
+                        org = org_r.scalar_one_or_none()
+                        if org:
+                            org.credits += refund_amount
+                    else:
+                        user_r = await db2.execute(
+                            select(UserDB).where(
+                                UserDB.id == user_id
+                            ).with_for_update()
+                        )
+                        user = user_r.scalar_one_or_none()
+                        if user:
+                            user.credits += refund_amount
+
+                    txn = CreditTransactionDB(
+                        user_id=user_id,
+                        task_id=t2.id,
+                        amount=refund_amount,
+                        type="refund",
+                        description=f"Task failed: {t2.type}",
+                    )
+                    db2.add(txn)
+                    logger.info(
+                        "sweeper.scheduled_task_credits_refunded",
+                        task_id=task_id,
+                        amount=refund_amount,
+                    )
+
+                    # In-app notification for task owner
+                    from core.notify import create_notification, NotifType
+                    task_label = t2.type.replace("_", " ")
+                    await create_notification(
+                        db2, user_id,
+                        NotifType.TASK_FAILED,
+                        "Scheduled task failed — credits refunded ❌",
+                        f"Your scheduled {task_label} task failed: {str(exc)[:100]}. "
+                        f"{refund_amount} credits refunded.",
+                        link=f"/dashboard/tasks/{task_id}",
+                    )
+
                     await db2.commit()
 
 
