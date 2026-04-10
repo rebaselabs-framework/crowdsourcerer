@@ -215,8 +215,9 @@ async def _send_alert_email(
 def _system_alert_html(alert_type: str, severity: str, title: str, detail: dict) -> str:
     severity_color = "#ef4444" if severity == "critical" else "#f59e0b"
     severity_label = "CRITICAL" if severity == "critical" else "WARNING"
-    site_url = get_settings().public_site_url
-    site_host = site_url.removeprefix("https://").removeprefix("http://")
+    _cfg = get_settings()
+    site_url = _cfg.public_site_url
+    site_host = _cfg.public_site_host
 
     detail_rows = ""
     for key, value in detail.items():

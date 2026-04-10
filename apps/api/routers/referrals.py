@@ -18,6 +18,7 @@ from models.schemas import ReferralStatsOut, ReferralOut
 
 logger = structlog.get_logger()
 router = APIRouter(prefix="/v1/referrals", tags=["referrals"])
+settings = get_settings()
 
 # Credits given to referrer when the referred user completes their first task
 REFERRER_BONUS = 50
@@ -81,8 +82,7 @@ async def get_referral_stats(
     # Pending = user's credits_pending field
     pending_bonus = user.credits_pending
 
-    # Use the canonical public site URL (env-driven via Settings).
-    referral_url = f"{get_settings().public_site_url}/register?ref={code}"
+    referral_url = f"{settings.public_site_url}/register?ref={code}"
 
     return ReferralStatsOut(
         referral_code=code,

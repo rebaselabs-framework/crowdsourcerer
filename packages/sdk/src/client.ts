@@ -559,7 +559,6 @@ export interface VerifyWebhookOptions {
  * `ArrayBufferLike` / `SharedArrayBuffer` type gymnastics.
  */
 interface ParsedSignature {
-  timestamp: string;
   v1Sig: string;
   sigInputBuffer: ArrayBuffer;
 }
@@ -594,7 +593,7 @@ function parseSignatureHeader(
   view.set(tsPrefix, 0);
   view.set(payloadBytes, tsPrefix.length);
 
-  return { timestamp, v1Sig, sigInputBuffer };
+  return { v1Sig, sigInputBuffer };
 }
 
 /** Constant-time comparison of two equal-length hex strings. */

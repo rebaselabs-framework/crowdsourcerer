@@ -17,6 +17,16 @@ class Settings(BaseSettings):
     # white-label stacks do not link back to the production domain.
     public_site_url: str = "https://crowdsourcerer.rebaselabs.online"
 
+    @property
+    def public_site_host(self) -> str:
+        """Bare host (no scheme) — used as display text in email footers."""
+        return (
+            self.public_site_url
+            .removeprefix("https://")
+            .removeprefix("http://")
+            .rstrip("/")
+        )
+
     # Database
     database_url: str = "postgresql+asyncpg://postgres:postgres@db:5432/crowdsourcerer"
 

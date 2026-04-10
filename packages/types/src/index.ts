@@ -38,6 +38,28 @@ export type TaskStatus =
 
 export type TaskPriority = "low" | "normal" | "high" | "urgent";
 
+/**
+ * Three-tier AI worker fleet health. Mirrors the backend
+ * `AIHealthStatus` Literal in `apps/api/core/rebasekit_health.py` —
+ * the /v1/config and /v1/health endpoints both publish this field.
+ *
+ * - `healthy`     — every configured AI service is reachable.
+ * - `degraded`    — some services reachable, some not; check
+ *                   `task_availability` to disable specific task tiles.
+ * - `unavailable` — no services reachable or the integration is not
+ *                   configured; block AI submissions entirely.
+ */
+export type AIHealthStatus = "healthy" | "degraded" | "unavailable";
+
+/** Shape published at /v1/config for the frontend health banner. */
+export interface AIHealthConfig {
+  ai_available: boolean;
+  ai_status: AIHealthStatus;
+  ai_services_up: number;
+  ai_services_total: number;
+  task_availability?: Record<string, boolean>;
+}
+
 export type ExecutionMode = "ai" | "human";
 
 export type UserRole = "requester" | "worker" | "both";

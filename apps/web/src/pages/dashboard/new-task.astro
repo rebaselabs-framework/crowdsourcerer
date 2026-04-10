@@ -1,7 +1,7 @@
 ---
 import Layout from "@/layouts/Layout.astro";
 import { apiFetch, getToken } from "@/lib/api";
-import type { AITaskType } from "@crowdsourcerer/types";
+import type { AIHealthConfig, AIHealthStatus, AITaskType } from "@crowdsourcerer/types";
 import { TASK_CREDITS } from "@crowdsourcerer/types";
 
 const token = getToken(Astro.cookies);
@@ -10,33 +10,29 @@ if (!token) return Astro.redirect("/login");
 let error = "";
 let templates: any[] = [];
 let savedTemplates: any[] = [];
-let aiAvailable = true;
-// "healthy" | "degraded" | "unavailable" — prefer this over aiAvailable
-// when rendering banners, since it distinguishes partial outages.
-let aiStatus: "healthy" | "degraded" | "unavailable" = "healthy";
+let aiStatus: AIHealthStatus = "healthy";
 let taskAvailability: Record<string, boolean> = {};
 
-// Check if AI services are available (live health check, cached 60s on backend)
 try {
   const cfgRes = await fetch(`${import.meta.env.PUBLIC_API_URL ?? "http://api:8100"}/v1/config`).catch(() => null);
   if (cfgRes?.ok) {
-    const cfg = await cfgRes.json();
-    aiAvailable = !!cfg.ai_available;
-    aiStatus = (cfg.ai_status as "healthy" | "degraded" | "unavailable") ?? (aiAvailable ? "healthy" : "unavailable");
+    const cfg = (await cfgRes.json()) as Partial<AIHealthConfig>;
+    aiStatus = cfg.ai_status ?? (cfg.ai_available ? "healthy" : "unavailable");
     taskAvailability = cfg.task_availability ?? {};
   }
 } catch {
   // assume available if config check fails
 }
 
-// Count available vs total AI task types
-const aiTaskTypeNames = [
+const aiAvailable = aiStatus !== "unavailable";
+const partiallyAvailable = aiStatus === "degraded";
+
+const aiTaskTypeNames: AITaskType[] = [
   "web_research", "entity_lookup", "document_parse", "data_transform",
   "llm_generate", "screenshot", "audio_transcribe", "pii_detect",
   "code_execute", "web_intel",
 ];
-const availableCount = aiTaskTypeNames.filter(t => taskAvailability[t]).length;
-const partiallyAvailable = aiStatus === "degraded" || (aiAvailable && availableCount < aiTaskTypeNames.length);
+const availableCount = aiTaskTypeNames.filter(t => taskAvailability[t] !== false).length;
 
 try {
   const tplRes = await apiFetch<any>("/v1/tasks/templates", { token });
@@ -645,11 +641,8 @@ if (Astro.request.method === "POST") {
 )}
 
 <script>
-// ── Globals bridged across <script> blocks ─────────────────────────────────
-// The task detail / template pages assign __setMode and __savedTplData so
-// other scripts can switch the editor mode or pre-fill a saved template.
-// Declaring them on Window keeps the access strongly typed instead of the
-// previous `(window as any)` escape hatch.
+// Cross-<script> bridge: the SSR-injected inline script (define:vars) sets
+// these on window so later script blocks can react to a pre-filled template.
 interface SavedTemplateData {
   task_type?: string;
   task_input?: unknown;
@@ -667,9 +660,6 @@ declare global {
 // Provides structured per-type input forms instead of raw JSON.
 // Switches between "Form" and "JSON" modes via toggle buttons.
 
-// Common fields live on the base so narrowing is only needed for the
-// parts that actually differ per variant. Previously every access to
-// .required / .placeholder / .default required an `as any` cast.
 interface FieldBase {
   name: string;
   label: string;
