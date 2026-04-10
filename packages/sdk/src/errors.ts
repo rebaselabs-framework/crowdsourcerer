@@ -55,3 +55,21 @@ export class InsufficientCreditsError extends CrowdSorcererError {
     this.name = "InsufficientCreditsError";
   }
 }
+
+/**
+ * Raised when a request fails at the network layer (connection refused,
+ * DNS failure, per-request timeout, etc.) — before any HTTP response is
+ * received. These errors are always retryable.
+ *
+ * The original cause is preserved on `.cause` for debugging.
+ */
+export class NetworkError extends CrowdSorcererError {
+  constructor(cause: unknown, requestId?: string) {
+    const causeMsg =
+      cause instanceof Error ? cause.message : String(cause ?? "network error");
+    super(`Network error: ${causeMsg}`, 0, "network_error", requestId);
+    this.name = "NetworkError";
+    // Preserve the underlying error for consumers that want to inspect it.
+    (this as { cause?: unknown }).cause = cause;
+  }
+}

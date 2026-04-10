@@ -147,7 +147,8 @@ describe("error handling", () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse({ detail: "Too many requests" }, 429, { "retry-after": "30" })
     );
-    const client = makeClient();
+    // maxRetries: 0 — we want the error, not the retry behaviour here.
+    const client = makeClient({ maxRetries: 0 });
     try {
       await client.getMe();
       expect.unreachable("should have thrown");
@@ -193,7 +194,7 @@ describe("error handling", () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse({ error: "internal", message: "Server error" }, 500)
     );
-    const client = makeClient();
+    const client = makeClient({ maxRetries: 0 });
     try {
       await client.getMe();
       expect.unreachable("should have thrown");
@@ -207,7 +208,7 @@ describe("error handling", () => {
     fetchMock.mockResolvedValueOnce(
       new Response("Bad Gateway", { status: 502 })
     );
-    const client = makeClient();
+    const client = makeClient({ maxRetries: 0 });
     await expect(client.getMe()).rejects.toThrow(CrowdSorcererError);
   });
 
@@ -217,6 +218,98 @@ describe("error handling", () => {
     // cancelTask expects 204
     const result = await client.cancelTask("task-1");
     expect(result).toBeUndefined();
+  });
+});
+
+// ─── Retries ─────────────────────────────────────────────────────────────────
+
+describe("retry logic", () => {
+  // Keep backoff effectively instant so tests stay fast. The full-jitter
+  // formula picks in [0, window); base=1 + cap=1 → max 1ms per sleep.
+  const RETRY_OPTS = { retryBaseDelayMs: 1, retryMaxDelayMs: 1 };
+
+  it("retries transient 5xx and eventually succeeds", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ error: "oops", message: "boom" }, 500))
+      .mockResolvedValueOnce(new Response("Bad Gateway", { status: 502 }))
+      .mockResolvedValueOnce(jsonResponse({ id: "u1" }));
+
+    const client = makeClient({ maxRetries: 3, ...RETRY_OPTS });
+    const me = await client.getMe();
+    expect(me).toEqual({ id: "u1" });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("retries 429 and eventually succeeds", async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({ detail: "slow down" }, 429, { "retry-after": "0" }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ id: "u1" }));
+
+    const client = makeClient({ maxRetries: 2, ...RETRY_OPTS });
+    const me = await client.getMe();
+    expect(me).toEqual({ id: "u1" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not retry 4xx (other than 429)", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ error: "not_found", message: "nope" }, 404),
+    );
+    const client = makeClient({ maxRetries: 5, ...RETRY_OPTS });
+    await expect(client.getMe()).rejects.toThrow(CrowdSorcererError);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not retry AuthError (401)", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ detail: "Unauthorized" }, 401),
+    );
+    const client = makeClient({ maxRetries: 5, ...RETRY_OPTS });
+    await expect(client.getMe()).rejects.toThrow(AuthError);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not retry InsufficientCreditsError (402)", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ required: 5, available: 1 }, 402),
+    );
+    const client = makeClient({ maxRetries: 5, ...RETRY_OPTS });
+    await expect(
+      client.submitTask({ type: "pii_detect", input: { text: "x" } }),
+    ).rejects.toThrow(InsufficientCreditsError);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries network errors and wraps them in NetworkError", async () => {
+    fetchMock
+      .mockRejectedValueOnce(new TypeError("fetch failed"))
+      .mockResolvedValueOnce(jsonResponse({ id: "u1" }));
+
+    const client = makeClient({ maxRetries: 2, ...RETRY_OPTS });
+    const me = await client.getMe();
+    expect(me).toEqual({ id: "u1" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("gives up after maxRetries and surfaces the last error", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({ error: "boom", message: "still broken" }, 500),
+    );
+    const client = makeClient({ maxRetries: 2, ...RETRY_OPTS });
+    await expect(client.getMe()).rejects.toThrow(CrowdSorcererError);
+    // 1 initial attempt + 2 retries = 3 total
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("respects maxRetries: 0 (no retries at all)", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({ error: "boom", message: "500" }, 500),
+    );
+    const client = makeClient({ maxRetries: 0 });
+    await expect(client.getMe()).rejects.toThrow(CrowdSorcererError);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
 

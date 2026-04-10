@@ -38,24 +38,38 @@ import {
   AuthError,
   RateLimitError,
   InsufficientCreditsError,
+  NetworkError,
 } from "./errors";
 
 export interface CrowdSorcererOptions {
   apiKey: string;
   baseUrl?: string;
+  /** Per-request timeout in ms. Each retry attempt gets its own timeout. */
   timeout?: number;
+  /**
+   * Maximum number of retries after the initial attempt. Set to 0 to disable.
+   * Retries apply to transient failures only: network errors, 429, and 5xx.
+   */
   maxRetries?: number;
+  /** Base delay (ms) for exponential backoff. Defaults to 250. */
+  retryBaseDelayMs?: number;
+  /** Hard cap (ms) on a single backoff interval. Defaults to 8000. */
+  retryMaxDelayMs?: number;
 }
 
 const DEFAULT_BASE_URL = "https://crowdsourcerer.rebaselabs.online";
 const DEFAULT_TIMEOUT = 30_000;
 const DEFAULT_MAX_RETRIES = 3;
+const DEFAULT_RETRY_BASE_MS = 250;
+const DEFAULT_RETRY_MAX_MS = 8_000;
 
 export class CrowdSorcerer {
   private readonly apiKey: string;
   private readonly baseUrl: string;
   private readonly timeout: number;
   private readonly maxRetries: number;
+  private readonly retryBaseDelayMs: number;
+  private readonly retryMaxDelayMs: number;
 
   constructor(options: CrowdSorcererOptions) {
     if (!options.apiKey) throw new AuthError("apiKey is required");
@@ -63,28 +77,68 @@ export class CrowdSorcerer {
     this.baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/$/, "");
     this.timeout = options.timeout ?? DEFAULT_TIMEOUT;
     this.maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES;
+    this.retryBaseDelayMs = options.retryBaseDelayMs ?? DEFAULT_RETRY_BASE_MS;
+    this.retryMaxDelayMs = options.retryMaxDelayMs ?? DEFAULT_RETRY_MAX_MS;
   }
 
-  // ─── Internal fetch ─────────────────────────────────────────────────────
+  // ─── Internal fetch + retry ──────────────────────────────────────────────
 
-  private async fetch<T>(
+  /**
+   * Execute a request with automatic retries on transient failures.
+   *
+   * Retryable: network errors, per-request timeouts, HTTP 429, and HTTP 5xx.
+   * Not retryable: 4xx other than 429 (AuthError, InsufficientCreditsError,
+   * generic client errors).
+   *
+   * Backoff is exponential with full jitter, capped at `retryMaxDelayMs`.
+   * On 429 the `Retry-After` header (if present) takes precedence.
+   */
+  private async fetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+    let attempt = 0;
+    while (true) {
+      try {
+        return await this.fetchOnce<T>(path, init);
+      } catch (err) {
+        if (attempt >= this.maxRetries || !isRetryableError(err)) throw err;
+        const delay = computeBackoffMs(
+          err,
+          attempt,
+          this.retryBaseDelayMs,
+          this.retryMaxDelayMs,
+        );
+        attempt += 1;
+        await sleep(delay);
+      }
+    }
+  }
+
+  private async fetchOnce<T>(
     path: string,
-    init: RequestInit = {}
+    init: RequestInit,
   ): Promise<T> {
     const url = `${this.baseUrl}${path}`;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeout);
 
-    const response = await globalThis.fetch(url, {
-      ...init,
-      signal: controller.signal,
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${this.apiKey}`,
-        "X-Client": "crowdsourcerer-sdk/1.0.0",
-        ...(init.headers ?? {}),
-      },
-    }).finally(() => clearTimeout(timer));
+    let response: Response;
+    try {
+      response = await globalThis.fetch(url, {
+        ...init,
+        signal: controller.signal,
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${this.apiKey}`,
+          "X-Client": "crowdsourcerer-sdk/1.0.0",
+          ...(init.headers ?? {}),
+        },
+      });
+    } catch (err) {
+      // Network error or per-request timeout (AbortError). Wrap so the
+      // retry layer can recognise it as transient.
+      throw new NetworkError(err);
+    } finally {
+      clearTimeout(timer);
+    }
 
     const requestId = response.headers.get("x-request-id") ?? undefined;
 
@@ -443,6 +497,49 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// ─── Retry helpers ──────────────────────────────────────────────────────────
+
+/**
+ * Classify an error as retryable or permanent.
+ *
+ * Retryable: network/timeout errors, 429 rate limits, and any 5xx.
+ * Permanent: auth failures, credit errors, 4xx client errors other than 429.
+ */
+function isRetryableError(err: unknown): boolean {
+  if (err instanceof NetworkError) return true;
+  if (err instanceof RateLimitError) return true;
+  if (err instanceof AuthError) return false;
+  if (err instanceof InsufficientCreditsError) return false;
+  if (err instanceof CrowdSorcererError) return err.status >= 500;
+  return false;
+}
+
+/**
+ * Compute backoff for the next retry attempt. Uses exponential backoff
+ * with full jitter (AWS architecture blog — "Exponential Backoff And
+ * Jitter"). For 429 responses the server-supplied Retry-After header
+ * takes precedence, capped at `maxDelayMs`.
+ *
+ * @param err       Last thrown error from the previous attempt.
+ * @param attempt   0-indexed attempt number that just failed.
+ * @param baseMs    Base delay (first retry waits up to baseMs).
+ * @param maxDelayMs Hard cap on any individual sleep.
+ */
+function computeBackoffMs(
+  err: unknown,
+  attempt: number,
+  baseMs: number,
+  maxDelayMs: number,
+): number {
+  if (err instanceof RateLimitError && typeof err.retryAfter === "number" && err.retryAfter > 0) {
+    return Math.min(err.retryAfter * 1000, maxDelayMs);
+  }
+  // Exponential window: base, 2×base, 4×base, ... capped.
+  const window = Math.min(baseMs * 2 ** attempt, maxDelayMs);
+  // Full jitter — pick uniformly in [0, window).
+  return Math.floor(Math.random() * window);
+}
+
 // ─── Webhook verification ───────────────────────────────────────────────────
 
 export interface VerifyWebhookOptions {
@@ -451,41 +548,27 @@ export interface VerifyWebhookOptions {
 }
 
 /**
- * Verify a CrowdSorcerer webhook signature.
+ * Parsed webhook signature header + reconstructed signing input.
  *
- * Every webhook delivery includes an `X-Crowdsorcerer-Signature` header
- * in the format `t=TIMESTAMP,v1=HMAC_HEX`. This function verifies that
- * the payload was signed by your endpoint secret and is recent enough
- * to prevent replay attacks.
+ * Shared between `verifyWebhook` (Node crypto) and `verifyWebhookAsync`
+ * (Web Crypto) so the parsing, replay-check, and buffer assembly logic
+ * only lives in one place.
  *
- * @param payload - The raw request body as a string or Buffer.
- * @param secret - Your webhook endpoint signing secret.
- * @param signatureHeader - Value of the `X-Crowdsorcerer-Signature` header.
- * @param options - Optional tolerance configuration.
- * @returns `true` if the signature is valid and the timestamp is within tolerance.
- *
- * @example
- * ```ts
- * import { verifyWebhook } from "@crowdsourcerer/sdk";
- *
- * app.post("/webhook", (req, res) => {
- *   const sig = req.headers["x-crowdsorcerer-signature"] as string;
- *   if (!verifyWebhook(req.body, process.env.WEBHOOK_SECRET!, sig)) {
- *     return res.status(401).send("Invalid signature");
- *   }
- *   // Handle the event
- *   res.sendStatus(200);
- * });
- * ```
+ * `sigInputBuffer` is returned as a concrete `ArrayBuffer` (not a
+ * `Uint8Array` view) so it flows into `SubtleCrypto.sign` without any
+ * `ArrayBufferLike` / `SharedArrayBuffer` type gymnastics.
  */
-export function verifyWebhook(
-  payload: string | Uint8Array,
-  secret: string,
-  signatureHeader: string,
-  options?: VerifyWebhookOptions,
-): boolean {
-  const tolerance = options?.toleranceSec ?? 300;
+interface ParsedSignature {
+  timestamp: string;
+  v1Sig: string;
+  sigInputBuffer: ArrayBuffer;
+}
 
+function parseSignatureHeader(
+  payload: string | Uint8Array,
+  signatureHeader: string,
+  toleranceSec: number,
+): ParsedSignature | null {
   // Parse "t=TIMESTAMP,v1=SIGNATURE[,v0=OLD_SIGNATURE]"
   const parts: Record<string, string> = {};
   for (const segment of signatureHeader.split(",")) {
@@ -496,51 +579,160 @@ export function verifyWebhook(
 
   const timestamp = parts["t"];
   const v1Sig = parts["v1"];
-  if (!timestamp || !v1Sig) return false;
+  if (!timestamp || !v1Sig) return null;
 
   // Replay protection
-  if (Math.abs(Date.now() / 1000 - Number(timestamp)) > tolerance) return false;
+  if (Math.abs(Date.now() / 1000 - Number(timestamp)) > toleranceSec) return null;
 
-  // Reconstruct the signed input: "{timestamp}.{payload}"
+  // Reconstruct the signed input: "{timestamp}.{payload}" into a fresh,
+  // owned ArrayBuffer so crypto APIs have an unambiguous buffer type.
   const payloadBytes =
     typeof payload === "string" ? new TextEncoder().encode(payload) : payload;
   const tsPrefix = new TextEncoder().encode(`${timestamp}.`);
-  const sigInput = new Uint8Array(tsPrefix.length + payloadBytes.length);
-  sigInput.set(tsPrefix, 0);
-  sigInput.set(payloadBytes, tsPrefix.length);
+  const sigInputBuffer = new ArrayBuffer(tsPrefix.length + payloadBytes.length);
+  const view = new Uint8Array(sigInputBuffer);
+  view.set(tsPrefix, 0);
+  view.set(payloadBytes, tsPrefix.length);
 
-  // Use Node.js crypto (available in all supported runtimes)
-  try {
-    const crypto = require("crypto");
-    const expected = crypto
-      .createHmac("sha256", secret)
-      .update(sigInput)
-      .digest("hex");
-    return crypto.timingSafeEqual(
-      Buffer.from(expected, "utf-8"),
-      Buffer.from(v1Sig, "utf-8"),
-    );
-  } catch {
-    // Fallback: constant-time-ish comparison (no native crypto)
-    const crypto2 = globalThis.crypto;
-    if (crypto2?.subtle) {
-      // Web Crypto API not available synchronously — return simple compare
-      // For production use, prefer the Node.js crypto path above.
-    }
-    // Simple string comparison (not timing-safe, but functional)
-    const encoder = new TextEncoder();
-    const key = encoder.encode(secret);
-    // Use Web Crypto if available (async fallback not possible in sync fn)
-    // For non-Node environments, consider using the async verifyWebhookAsync
-    return v1Sig === computeHmacFallback(key, sigInput);
-  }
+  return { timestamp, v1Sig, sigInputBuffer };
 }
 
-/** Minimal fallback HMAC for environments without Node.js crypto. */
-function computeHmacFallback(
-  _key: Uint8Array,
-  _data: Uint8Array,
-): string {
-  // If we get here, no crypto is available — always fail secure
-  return "";
+/** Constant-time comparison of two equal-length hex strings. */
+function constantTimeEqualHex(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
+/**
+ * Verify a CrowdSorcerer webhook signature (Node.js / Bun).
+ *
+ * Every webhook delivery includes an `X-Crowdsorcerer-Signature` header
+ * in the format `t=TIMESTAMP,v1=HMAC_HEX`. This function verifies that
+ * the payload was signed by your endpoint secret and is recent enough
+ * to prevent replay attacks.
+ *
+ * Requires Node.js `crypto` or Bun. For Edge / Deno / browser runtimes
+ * that only expose Web Crypto, use {@link verifyWebhookAsync} instead.
+ *
+ * @param payload - The raw request body as a string or Buffer.
+ * @param secret - Your webhook endpoint signing secret.
+ * @param signatureHeader - Value of the `X-Crowdsorcerer-Signature` header.
+ * @param options - Optional tolerance configuration.
+ * @returns `true` if the signature is valid and the timestamp is within tolerance.
+ *
+ * @throws {CrowdSorcererError} if Node `crypto` is not available — call
+ *   {@link verifyWebhookAsync} from non-Node runtimes.
+ *
+ * @example
+ * ```ts
+ * import { verifyWebhook } from "@crowdsourcerer/sdk";
+ *
+ * app.post("/webhook", (req, res) => {
+ *   const sig = req.headers["x-crowdsorcerer-signature"] as string;
+ *   if (!verifyWebhook(req.body, process.env.WEBHOOK_SECRET!, sig)) {
+ *     return res.status(401).send("Invalid signature");
+ *   }
+ *   res.sendStatus(200);
+ * });
+ * ```
+ */
+export function verifyWebhook(
+  payload: string | Uint8Array,
+  secret: string,
+  signatureHeader: string,
+  options?: VerifyWebhookOptions,
+): boolean {
+  const parsed = parseSignatureHeader(
+    payload,
+    signatureHeader,
+    options?.toleranceSec ?? 300,
+  );
+  if (!parsed) return false;
+
+  // Node.js / Bun path. We lazily require to keep this file bundleable in
+  // browser builds — the require is only hit when this function is called.
+  let nodeCrypto: typeof import("crypto");
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    nodeCrypto = require("crypto");
+  } catch (err) {
+    throw new CrowdSorcererError(
+      "verifyWebhook requires Node.js `crypto`. Use verifyWebhookAsync in " +
+        "Edge / Deno / browser runtimes.",
+      0,
+      "crypto_unavailable",
+    );
+  }
+
+  const expected = nodeCrypto
+    .createHmac("sha256", secret)
+    .update(Buffer.from(parsed.sigInputBuffer))
+    .digest("hex");
+
+  // timingSafeEqual requires equal-length buffers; fall back to our own
+  // constant-time comparator if the lengths differ (invalid signature).
+  if (expected.length !== parsed.v1Sig.length) return false;
+  return nodeCrypto.timingSafeEqual(
+    Buffer.from(expected, "utf-8"),
+    Buffer.from(parsed.v1Sig, "utf-8"),
+  );
+}
+
+/**
+ * Async webhook verification using the Web Crypto API.
+ *
+ * Works in any runtime that exposes `globalThis.crypto.subtle`: modern
+ * browsers, Deno, Cloudflare Workers, Vercel Edge, and recent Node.js.
+ *
+ * @throws {CrowdSorcererError} if Web Crypto is not available.
+ */
+export async function verifyWebhookAsync(
+  payload: string | Uint8Array,
+  secret: string,
+  signatureHeader: string,
+  options?: VerifyWebhookOptions,
+): Promise<boolean> {
+  const parsed = parseSignatureHeader(
+    payload,
+    signatureHeader,
+    options?.toleranceSec ?? 300,
+  );
+  if (!parsed) return false;
+
+  const subtle = globalThis.crypto?.subtle;
+  if (!subtle) {
+    throw new CrowdSorcererError(
+      "verifyWebhookAsync requires Web Crypto (globalThis.crypto.subtle).",
+      0,
+      "crypto_unavailable",
+    );
+  }
+
+  // Copy the UTF-8 encoded secret into an owned ArrayBuffer for the
+  // same reason as sigInputBuffer above.
+  const secretBytes = new TextEncoder().encode(secret);
+  const keyBuffer = new ArrayBuffer(secretBytes.length);
+  new Uint8Array(keyBuffer).set(secretBytes);
+  const key = await subtle.importKey(
+    "raw",
+    keyBuffer,
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signature = await subtle.sign("HMAC", key, parsed.sigInputBuffer);
+
+  // Convert the raw HMAC bytes to lowercase hex so we can compare against
+  // the wire-format `v1=<hex>` field.
+  const bytes = new Uint8Array(signature);
+  let expectedHex = "";
+  for (let i = 0; i < bytes.length; i++) {
+    expectedHex += bytes[i].toString(16).padStart(2, "0");
+  }
+
+  return constantTimeEqualHex(expectedHex, parsed.v1Sig.toLowerCase());
 }
