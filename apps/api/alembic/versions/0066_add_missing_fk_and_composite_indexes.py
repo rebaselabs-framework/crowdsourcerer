@@ -4,7 +4,6 @@ Missing FK indexes cause full table scans on JOIN and CASCADE operations.
 Composite indexes cover the most common query patterns identified by audit.
 
 Indexes added:
-- worker_endorsements (requester_id): FK index
 - worker_endorsements (task_id): FK index
 - worker_invites (requester_id): FK index
 - org_activity_log (user_id): FK index
@@ -16,6 +15,9 @@ Indexes added:
 - task_pipeline_step_runs (task_id): FK index
 - notifications (user_id, is_read, created_at): composite for unread count + listing
 - task_assignments (worker_id, submitted_at): composite for worker performance queries
+
+(``ix_worker_endorsements_requester_id`` is created in 0052 and was
+re-created here by accident.)
 
 Revision ID: 0066
 Revises: 0065
@@ -31,11 +33,6 @@ depends_on = None
 def upgrade() -> None:
     # ── Missing FK indexes (prevent full scans on JOINs and CASCADE deletes) ──
 
-    op.create_index(
-        "ix_worker_endorsements_requester_id",
-        "worker_endorsements",
-        ["requester_id"],
-    )
     op.create_index(
         "ix_worker_endorsements_task_id",
         "worker_endorsements",
@@ -113,4 +110,3 @@ def downgrade() -> None:
     op.drop_index("ix_org_activity_log_user_id", "org_activity_log")
     op.drop_index("ix_worker_invites_requester_id", "worker_invites")
     op.drop_index("ix_worker_endorsements_task_id", "worker_endorsements")
-    op.drop_index("ix_worker_endorsements_requester_id", "worker_endorsements")
