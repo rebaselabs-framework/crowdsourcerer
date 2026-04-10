@@ -188,6 +188,8 @@ const TASK_TYPE_ICONS: Record<string, string> = {
 </Layout>
 
 <script>
+  import { extractDetail } from "@/lib/api";
+
   const btn = document.getElementById("claim-btn") as HTMLButtonElement | null;
   const msg = document.getElementById("claim-msg");
 
@@ -223,8 +225,7 @@ const TASK_TYPE_ICONS: Record<string, string> = {
       } else {
         const body = await res.json().catch(() => ({}));
         if (msg) {
-          const detail = (body as { detail?: string }).detail;
-          msg.textContent = detail ?? "Failed to claim. Try again.";
+          msg.textContent = extractDetail(body, "Failed to claim. Try again.");
           msg.classList.remove("hidden");
         }
         if (btn) {

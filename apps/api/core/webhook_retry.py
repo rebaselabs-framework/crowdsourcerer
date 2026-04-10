@@ -153,10 +153,6 @@ async def _process_item(item: WebhookDeliveryQueueDB) -> None:
         else:
             error_msg = f"Server error: HTTP {resp.status_code}"
     except (httpx.HTTPError, OSError) as exc:
-        # httpx.HTTPError covers transport/timeout/request failures from
-        # httpx itself; OSError covers bare-metal socket errors (refused
-        # connections, DNS failures) that a caller-supplied mock client
-        # might raise directly without wrapping.
         error_msg = str(exc)
 
     duration_ms = int((_time.perf_counter() - t0) * 1000)

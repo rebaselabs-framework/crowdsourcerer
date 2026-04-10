@@ -641,20 +641,7 @@ if (Astro.request.method === "POST") {
 )}
 
 <script>
-// Cross-<script> bridge: the SSR-injected inline script (define:vars) sets
-// these on window so later script blocks can react to a pre-filled template.
-interface SavedTemplateData {
-  task_type?: string;
-  task_input?: unknown;
-  task_config?: Record<string, unknown>;
-}
-
-declare global {
-  interface Window {
-    __setMode?: (mode: "form" | "json") => void;
-    __savedTplData?: SavedTemplateData | null;
-  }
-}
+// window.__setMode and window.__savedTplData are typed in src/env.d.ts.
 
 // ── Form builder ────────────────────────────────────────────────────────────
 // Provides structured per-type input forms instead of raw JSON.

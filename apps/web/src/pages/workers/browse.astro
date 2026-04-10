@@ -402,15 +402,6 @@ const SORT_OPTIONS = [
   </div>
 
   <script>
-    declare global {
-      interface Window {
-        openInviteModal?: (workerId: string, workerName: string) => void;
-        submitInvite?: () => Promise<void>;
-        closeBulkModal?: () => void;
-        submitBulkInvite?: () => Promise<void>;
-      }
-    }
-
     // ── Single invite ──────────────────────────────────────────────────────
     function openInviteModal(workerId: string, workerName: string) {
       (document.getElementById("inviteWorkerId") as HTMLInputElement).value = workerId;

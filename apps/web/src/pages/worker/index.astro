@@ -817,6 +817,8 @@ const noSkills = Array.isArray(profileStatus?.missing) &&
 </Layout>
 
 <script>
+  import { extractDetail } from "@/lib/api";
+
   // Availability toggle
   document.querySelectorAll(".availability-btn").forEach(btn => {
     btn.addEventListener("click", async () => {
@@ -860,7 +862,7 @@ const noSkills = Array.isArray(profileStatus?.missing) &&
           const errData = await res.json().catch(() => ({}));
           const t = document.createElement("div");
           t.className = "fixed bottom-4 right-4 px-4 py-2 rounded-lg text-white text-sm z-50 bg-red-600";
-          t.textContent = (errData as { detail?: string }).detail ?? "Failed to update availability";
+          t.textContent = extractDetail(errData, "Failed to update availability");
           document.body.appendChild(t);
           setTimeout(() => t.remove(), 4000);
         }

@@ -326,12 +326,6 @@ for (const c of myCerts) {
   </div>
 
   <script>
-    declare global {
-      interface Window {
-        submitCert?: () => boolean;
-      }
-    }
-
     function updateAnswers() {
       const answers: Array<{question_id: string|null, answer: string|string[]}> = [];
       const questions = document.querySelectorAll("[data-question-id]");

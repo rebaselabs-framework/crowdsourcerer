@@ -134,12 +134,6 @@ const statusIcon: Record<string, string> = {
   </div>
 
   <script>
-    declare global {
-      interface Window {
-        respondToInvite?: (inviteId: string, action: "accept" | "decline") => Promise<void>;
-      }
-    }
-
     async function respondToInvite(inviteId: string, action: "accept" | "decline") {
       const statusEl = document.getElementById(`invite-${inviteId}-status`)!;
       const card     = document.getElementById(`invite-${inviteId}`)!;

@@ -223,6 +223,8 @@ function formatDetails(method: string, details: Record<string, string>): string 
 </Layout>
 
 <script>
+  import { extractDetail } from "@/lib/api";
+
   // Proxy route handles auth via httpOnly cookie — no client-side token needed
 
   let pendingPayoutId: string | null = null;
@@ -281,7 +283,7 @@ function formatDetails(method: string, details: Record<string, string>): string 
         body: JSON.stringify({ status: pendingAction, admin_note: noteText }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error((data as { detail?: string }).detail ?? "Failed to update");
+      if (!res.ok) throw new Error(extractDetail(data, "Failed to update"));
 
       // Close modal
       modal.classList.add("hidden");

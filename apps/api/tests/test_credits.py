@@ -160,8 +160,8 @@ def test_task_credit_costs_are_integers():
 # ── Credit atomicity (unit tests, no DB/HTTP) ─────────────────────────────────
 
 def test_calc_credits_ai_task():
-    """_calc_credits returns the fixed TASK_CREDITS value for AI tasks."""
-    from routers.tasks import _calc_credits
+    """AI task cost is the fixed TASK_CREDITS value."""
+    from services.pricing import default_pricing
     from workers.router import TASK_CREDITS
 
     class _Req:
@@ -170,22 +170,20 @@ def test_calc_credits_ai_task():
         assignments_required = 1
 
     expected = TASK_CREDITS["web_research"]
-    assert _calc_credits(_Req()) == expected
+    assert default_pricing.compute_create_cost(_Req()) == expected
 
 
 def test_calc_credits_human_task():
-    """_calc_credits for a human task includes worker reward + 20% platform fee."""
-    from routers.tasks import _calc_credits
+    """Human task cost = worker reward + 20% platform fee."""
+    from services.pricing import default_pricing
 
     class _Req:
         type = "label_text"
         worker_reward_credits = 10
         assignments_required = 3
 
-    # worker_reward * assignments + ceil(worker_reward * assignments * 0.2)
-    # = 10 * 3 + max(1, int(10 * 3 * 0.2)) = 30 + 6 = 36
-    result = _calc_credits(_Req())
-    assert result == 36
+    # 10 * 3 + max(1, int(30 * 0.2)) = 30 + 6 = 36
+    assert default_pricing.compute_create_cost(_Req()) == 36
 
 
 def test_batch_credit_partial_refund_logic():

@@ -60,6 +60,19 @@ export function getToken(cookies: AstroCookies): string | undefined {
 }
 
 /**
+ * Read a human-readable error message off an unknown JSON response body.
+ * Use in inline `<script>` catch blocks where `apiFetch`'s normalizer
+ * isn't available (client code, not SSR).
+ */
+export function extractDetail(body: unknown, fallback = "Request failed"): string {
+  if (typeof body === "object" && body !== null) {
+    const d = (body as { detail?: unknown }).detail;
+    if (typeof d === "string" && d.length > 0) return d;
+  }
+  return fallback;
+}
+
+/**
  * Race a promise against a timeout.
  * If the promise doesn't resolve within `ms` milliseconds, resolves with `fallback`.
  *

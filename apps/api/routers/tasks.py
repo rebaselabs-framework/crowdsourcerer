@@ -34,19 +34,11 @@ from models.schemas import (
 from workers.base import get_rebasekit_client, WorkerError
 from workers.router import execute_task, TASK_CREDITS
 from core.sql import esc_like, LIKE_ESC
-from services.pricing import (
-    _HUMAN_TASK_BASE_CREDITS as HUMAN_TASK_BASE_CREDITS,
-    default_pricing,
-)
+from services.pricing import HUMAN_TASK_BASE_CREDITS, default_pricing
 
 logger = structlog.get_logger()
 limiter = Limiter(key_func=get_remote_address)
 router = APIRouter(prefix="/v1/tasks", tags=["tasks"])
-
-def _compute_task_cost(task: TaskDB) -> int:
-    """Thin shim around :class:`services.pricing.TaskPricing`."""
-    return default_pricing.compute_task_cost(task)
-
 
 async def _refund_task_credits(
     db: AsyncSession, task: TaskDB, amount: int, user_id: str,
@@ -336,11 +328,6 @@ async def _mark_requester_onboarding(user_id: str, step: str) -> None:
             )
 
 
-def _calc_credits(req: TaskCreateRequest) -> int:
-    """Thin shim around :class:`services.pricing.TaskPricing`."""
-    return default_pricing.compute_create_cost(req)
-
-
 @router.post("/batch", status_code=201)
 async def create_tasks_batch(
     req: BatchTaskCreateRequest,
@@ -354,7 +341,7 @@ async def create_tasks_batch(
     the `failed` array without rolling back successful tasks.
     """
     # Pre-flight: calculate total cost
-    total_credits = sum(_calc_credits(t) for t in req.tasks)
+    total_credits = sum(default_pricing.compute_create_cost(t) for t in req.tasks)
 
     # Lock user row to prevent concurrent batch requests from racing on balance.
     result = await db.execute(
@@ -393,7 +380,7 @@ async def create_tasks_batch(
     for i, task_req in enumerate(req.tasks):
         try:
             is_human = task_req.type in HUMAN_TASK_TYPES
-            est = _calc_credits(task_req)
+            est = default_pricing.compute_create_cost(task_req)
 
             if is_human:
                 worker_reward = task_req.worker_reward_credits or HUMAN_TASK_BASE_CREDITS.get(task_req.type, 2)
@@ -928,7 +915,7 @@ async def bulk_task_action(
                 failed.append({"task_id": str(task_id), "reason": f"cannot cancel task with status '{task.status}'"})
                 continue
             task.status = "cancelled"
-            refund = _compute_task_cost(task)
+            refund = default_pricing.compute_task_cost(task)
             if refund > 0:
                 await _refund_task_credits(db, task, refund, user_id)
             succeeded.append(str(task_id))
@@ -990,7 +977,7 @@ async def bulk_cancel_tasks(
             skipped += 1
             continue
         task.status = "cancelled"
-        refund = _compute_task_cost(task)
+        refund = default_pricing.compute_task_cost(task)
         if refund > 0:
             await _refund_task_credits(db, task, refund, user_id)
         cancelled_ids.append(str(task_id))
@@ -1258,7 +1245,7 @@ async def cancel_task(
     task.status = "cancelled"
 
     # Refund credits that were charged at task creation
-    refund = _compute_task_cost(task)
+    refund = default_pricing.compute_task_cost(task)
     if refund > 0:
         await _refund_task_credits(db, task, refund, user_id)
 
@@ -2118,7 +2105,7 @@ async def _run_task(task_id: str, user_id: str):
                     task.completed_at = datetime.now(timezone.utc)
 
                     # Refund credits for failed task
-                    refund_amount = _compute_task_cost(task)
+                    refund_amount = default_pricing.compute_task_cost(task)
                     await _refund_task_credits(db, task, refund_amount, str(task.user_id), reason="failed")
                     logger.info("task_credits_refunded", task_id=task_id, amount=refund_amount)
 
@@ -2170,7 +2157,7 @@ async def _run_task(task_id: str, user_id: str):
                     task.completed_at = datetime.now(timezone.utc)
 
                     # Refund credits for failed task
-                    refund_amount = _compute_task_cost(task)
+                    refund_amount = default_pricing.compute_task_cost(task)
                     await _refund_task_credits(db, task, refund_amount, str(task.user_id), reason="failed")
                     logger.info("task_credits_refunded", task_id=task_id, amount=refund_amount)
 

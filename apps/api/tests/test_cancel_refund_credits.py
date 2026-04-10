@@ -140,7 +140,8 @@ class TestComputeTaskCost:
 
     def test_ai_task_cost_matches_task_credits_table(self):
         """AI task cost is looked up from the TASK_CREDITS dict."""
-        from routers.tasks import _compute_task_cost
+        from services.pricing import default_pricing
+        _compute_task_cost = default_pricing.compute_task_cost
         from workers.router import TASK_CREDITS
 
         for task_type, expected_cost in TASK_CREDITS.items():
@@ -151,14 +152,16 @@ class TestComputeTaskCost:
 
     def test_ai_task_unknown_type_defaults_to_5(self):
         """Unknown AI task type defaults to 5 credits."""
-        from routers.tasks import _compute_task_cost
+        from services.pricing import default_pricing
+        _compute_task_cost = default_pricing.compute_task_cost
 
         task = _make_task(execution_mode="ai", task_type="unknown_type")
         assert _compute_task_cost(task) == 5
 
     def test_human_task_cost_with_explicit_reward(self):
         """Human task cost = worker_reward * assignments + 20% platform fee."""
-        from routers.tasks import _compute_task_cost
+        from services.pricing import default_pricing
+        _compute_task_cost = default_pricing.compute_task_cost
 
         task = _make_task(
             execution_mode="human",
@@ -171,7 +174,8 @@ class TestComputeTaskCost:
 
     def test_human_task_cost_with_default_reward(self):
         """When worker_reward_credits is None, fall back to HUMAN_TASK_BASE_CREDITS."""
-        from routers.tasks import _compute_task_cost, HUMAN_TASK_BASE_CREDITS
+        from services.pricing import default_pricing, HUMAN_TASK_BASE_CREDITS
+        _compute_task_cost = default_pricing.compute_task_cost
 
         task = _make_task(
             execution_mode="human",
@@ -185,7 +189,8 @@ class TestComputeTaskCost:
 
     def test_human_task_minimum_platform_fee_is_1(self):
         """Platform fee is at least 1 even for tiny reward * assignment products."""
-        from routers.tasks import _compute_task_cost
+        from services.pricing import default_pricing
+        _compute_task_cost = default_pricing.compute_task_cost
 
         task = _make_task(
             execution_mode="human",
@@ -203,7 +208,8 @@ class TestCalcCredits:
 
     def test_ai_task_credits(self):
         """_calc_credits returns TASK_CREDITS for AI task types."""
-        from routers.tasks import _calc_credits
+        from services.pricing import default_pricing
+        _calc_credits = default_pricing.compute_create_cost
         from workers.router import TASK_CREDITS
 
         req = _req(type="web_research", worker_reward_credits=None, assignments_required=1)
@@ -211,7 +217,8 @@ class TestCalcCredits:
 
     def test_human_task_credits(self):
         """_calc_credits for human tasks = worker_reward * assignments + 20% fee."""
-        from routers.tasks import _calc_credits
+        from services.pricing import default_pricing
+        _calc_credits = default_pricing.compute_create_cost
 
         req = _req(type="label_text", worker_reward_credits=10, assignments_required=3)
         assert _calc_credits(req) == 36  # 30 + 6
@@ -549,7 +556,9 @@ class TestBulkCancelRefunds:
     @pytest.mark.asyncio
     async def test_bulk_cancel_large_batch_accounting(self):
         """Cancelling 12 tasks refunds correct total."""
-        from routers.tasks import bulk_cancel_tasks, _compute_task_cost
+        from routers.tasks import bulk_cancel_tasks
+        from services.pricing import default_pricing
+        _compute_task_cost = default_pricing.compute_task_cost
 
         uid = uuid4()
         tasks = [
@@ -585,7 +594,8 @@ class TestBatchCreationRefund:
 
     def test_partial_failure_refunds_overcharged(self):
         """If 1 of 3 tasks fails, the user is refunded the cost of the failed task."""
-        from routers.tasks import _calc_credits
+        from services.pricing import default_pricing
+        _calc_credits = default_pricing.compute_create_cost
 
         # Simulate 3 AI tasks, all web_research (10 credits each)
         task_costs = [10, 10, 10]
@@ -669,7 +679,8 @@ class TestCreditRoundTrip:
     def test_charge_then_refund_nets_zero(self):
         """Credits balance returns to exactly the starting value after
         charge + refund for every AI task type."""
-        from routers.tasks import _compute_task_cost
+        from services.pricing import default_pricing
+        _compute_task_cost = default_pricing.compute_task_cost
         from workers.router import TASK_CREDITS
 
         for task_type, cost in TASK_CREDITS.items():
@@ -687,7 +698,9 @@ class TestCreditRoundTrip:
     def test_charge_then_refund_nets_zero_human_tasks(self):
         """Credits balance returns to exactly the starting value after
         charge + refund for human tasks with various parameters."""
-        from routers.tasks import _compute_task_cost, _calc_credits
+        from services.pricing import default_pricing
+        _compute_task_cost = default_pricing.compute_task_cost
+        _calc_credits = default_pricing.compute_create_cost
 
         test_cases = [
             ("label_text", 5, 1),
@@ -774,7 +787,8 @@ class TestCreditRoundTrip:
 
     def test_large_batch_credit_accounting(self):
         """Credit accounting is exact for 15 mixed-type tasks."""
-        from routers.tasks import _calc_credits
+        from services.pricing import default_pricing
+        _calc_credits = default_pricing.compute_create_cost
 
         task_specs = [
             ("web_research", None, 1),    # 10

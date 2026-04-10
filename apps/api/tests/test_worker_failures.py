@@ -765,9 +765,9 @@ class TestFailureRefundAmounts:
     ])
     def test_refund_matches_task_cost(self, task_type, expected_cost):
         """Each task type's refund amount matches its credit cost."""
-        from routers.tasks import _compute_task_cost
+        from services.pricing import default_pricing
         task = _make_mock_task(task_type=task_type)
-        assert _compute_task_cost(task) == expected_cost
+        assert default_pricing.compute_task_cost(task) == expected_cost
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

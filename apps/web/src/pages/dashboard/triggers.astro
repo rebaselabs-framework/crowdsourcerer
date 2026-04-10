@@ -279,6 +279,8 @@ const CRON_EXAMPLES = [
 </Layout>
 
 <script>
+import { extractDetail } from "@/lib/api";
+
 function toast(msg: string, ok = true) {
   const t = document.createElement("div");
   t.className = `fixed bottom-4 right-4 px-4 py-2 rounded-lg text-white text-sm z-50 ${ok ? "bg-emerald-600" : "bg-red-600"}`;
@@ -357,7 +359,7 @@ document.getElementById("createTriggerForm")?.addEventListener("submit", async (
       location.reload();
     } else {
       const data = await res.json().catch(() => ({}));
-      msg.textContent = (data as { detail?: string }).detail || "Failed to create trigger";
+      msg.textContent = extractDetail(data, "Failed to create trigger");
       msg.className = "mt-2 text-xs text-center text-red-400";
       msg.classList.remove("hidden");
       if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = "Create Trigger"; }
@@ -405,7 +407,7 @@ document.querySelectorAll(".delete-trigger-btn").forEach(btn => {
         toast("Trigger deleted");
       } else {
         const data = await res.json().catch(() => ({}));
-        toast((data as { detail?: string }).detail || "Failed to delete trigger", false);
+        toast(extractDetail(data, "Failed to delete trigger"), false);
         (btn as HTMLButtonElement).disabled = false;
         btn.textContent = "🗑";
       }
@@ -439,7 +441,7 @@ document.querySelectorAll(".fire-btn").forEach(btn => {
         if (lastFiredEl) lastFiredEl.textContent = new Date().toLocaleDateString();
       } else {
         const data = await res.json().catch(() => ({}));
-        toast((data as { detail?: string }).detail || "Failed to fire trigger", false);
+        toast(extractDetail(data, "Failed to fire trigger"), false);
       }
     } catch {
       toast("Network error — please try again", false);
