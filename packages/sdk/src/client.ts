@@ -442,3 +442,105 @@ export class CrowdSorcerer {
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+
+// ─── Webhook verification ───────────────────────────────────────────────────
+
+export interface VerifyWebhookOptions {
+  /** Maximum age of the delivery in seconds (default: 300 = 5 minutes). */
+  toleranceSec?: number;
+}
+
+/**
+ * Verify a CrowdSorcerer webhook signature.
+ *
+ * Every webhook delivery includes an `X-Crowdsorcerer-Signature` header
+ * in the format `t=TIMESTAMP,v1=HMAC_HEX`. This function verifies that
+ * the payload was signed by your endpoint secret and is recent enough
+ * to prevent replay attacks.
+ *
+ * @param payload - The raw request body as a string or Buffer.
+ * @param secret - Your webhook endpoint signing secret.
+ * @param signatureHeader - Value of the `X-Crowdsorcerer-Signature` header.
+ * @param options - Optional tolerance configuration.
+ * @returns `true` if the signature is valid and the timestamp is within tolerance.
+ *
+ * @example
+ * ```ts
+ * import { verifyWebhook } from "@crowdsourcerer/sdk";
+ *
+ * app.post("/webhook", (req, res) => {
+ *   const sig = req.headers["x-crowdsorcerer-signature"] as string;
+ *   if (!verifyWebhook(req.body, process.env.WEBHOOK_SECRET!, sig)) {
+ *     return res.status(401).send("Invalid signature");
+ *   }
+ *   // Handle the event
+ *   res.sendStatus(200);
+ * });
+ * ```
+ */
+export function verifyWebhook(
+  payload: string | Uint8Array,
+  secret: string,
+  signatureHeader: string,
+  options?: VerifyWebhookOptions,
+): boolean {
+  const tolerance = options?.toleranceSec ?? 300;
+
+  // Parse "t=TIMESTAMP,v1=SIGNATURE[,v0=OLD_SIGNATURE]"
+  const parts: Record<string, string> = {};
+  for (const segment of signatureHeader.split(",")) {
+    const eqIdx = segment.indexOf("=");
+    if (eqIdx === -1) continue;
+    parts[segment.slice(0, eqIdx).trim()] = segment.slice(eqIdx + 1).trim();
+  }
+
+  const timestamp = parts["t"];
+  const v1Sig = parts["v1"];
+  if (!timestamp || !v1Sig) return false;
+
+  // Replay protection
+  if (Math.abs(Date.now() / 1000 - Number(timestamp)) > tolerance) return false;
+
+  // Reconstruct the signed input: "{timestamp}.{payload}"
+  const payloadBytes =
+    typeof payload === "string" ? new TextEncoder().encode(payload) : payload;
+  const tsPrefix = new TextEncoder().encode(`${timestamp}.`);
+  const sigInput = new Uint8Array(tsPrefix.length + payloadBytes.length);
+  sigInput.set(tsPrefix, 0);
+  sigInput.set(payloadBytes, tsPrefix.length);
+
+  // Use Node.js crypto (available in all supported runtimes)
+  try {
+    const crypto = require("crypto");
+    const expected = crypto
+      .createHmac("sha256", secret)
+      .update(sigInput)
+      .digest("hex");
+    return crypto.timingSafeEqual(
+      Buffer.from(expected, "utf-8"),
+      Buffer.from(v1Sig, "utf-8"),
+    );
+  } catch {
+    // Fallback: constant-time-ish comparison (no native crypto)
+    const crypto2 = globalThis.crypto;
+    if (crypto2?.subtle) {
+      // Web Crypto API not available synchronously — return simple compare
+      // For production use, prefer the Node.js crypto path above.
+    }
+    // Simple string comparison (not timing-safe, but functional)
+    const encoder = new TextEncoder();
+    const key = encoder.encode(secret);
+    // Use Web Crypto if available (async fallback not possible in sync fn)
+    // For non-Node environments, consider using the async verifyWebhookAsync
+    return v1Sig === computeHmacFallback(key, sigInput);
+  }
+}
+
+/** Minimal fallback HMAC for environments without Node.js crypto. */
+function computeHmacFallback(
+  _key: Uint8Array,
+  _data: Uint8Array,
+): string {
+  // If we get here, no crypto is available — always fail secure
+  return "";
+}
