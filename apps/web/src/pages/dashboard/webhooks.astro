@@ -306,20 +306,44 @@ const ALL_EVENTS = (eventTypes?.events ?? []).map((e: any) => e.type);
         <div class="mt-10 bg-gray-900 border border-gray-800 rounded-xl p-6">
           <h3 class="font-semibold mb-3">Verifying webhook signatures</h3>
           <p class="text-sm text-gray-400 mb-4">
-            Every delivery includes an <code class="bg-gray-800 px-1.5 py-0.5 rounded font-mono text-xs">X-Crowdsourcerer-Signature</code> header.
+            Every delivery includes an <code class="bg-gray-800 px-1.5 py-0.5 rounded font-mono text-xs">X-Crowdsorcerer-Signature</code> header
+            in the format <code class="bg-gray-800 px-1.5 py-0.5 rounded font-mono text-xs">t=TIMESTAMP,v1=HMAC_HEX</code>.
             Verify it with your signing secret to ensure the payload is authentic.
           </p>
           <pre class="bg-gray-950 rounded-lg p-4 text-xs font-mono text-gray-300 overflow-x-auto"><code># Python example
-import hmac, hashlib
+import hmac, hashlib, time
 
-def verify(payload_bytes: bytes, secret: str, signature: str) -&gt; bool:
-    expected = hmac.new(secret.encode(), payload_bytes, hashlib.sha256).hexdigest()
+def verify_webhook(payload_bytes: bytes, secret: str,
+                   sig_header: str, tolerance: int = 300) -&gt; bool:
+    # Parse "t=TIMESTAMP,v1=SIGNATURE"
+    parts = &lbrace;&rbrace;
+    for part in sig_header.split(","):
+        key, _, value = part.partition("=")
+        parts[key.strip()] = value.strip()
+
+    timestamp = parts.get("t")
+    signature = parts.get("v1")
+    if not timestamp or not signature:
+        return False
+
+    # Reject deliveries older than tolerance (replay protection)
+    if abs(time.time() - int(timestamp)) &gt; tolerance:
+        return False
+
+    # Reconstruct: "{`{timestamp}.{payload}`}"
+    sig_input = f"&lbrace;timestamp&rbrace;.".encode() + payload_bytes
+    expected = hmac.new(
+        secret.encode(), sig_input, hashlib.sha256
+    ).hexdigest()
     return hmac.compare_digest(expected, signature)
 
 # In your Flask/FastAPI handler:
-sig = request.headers.get("X-Crowdsourcerer-Signature", "")
-if not verify(request.get_data(), YOUR_SECRET, sig):
+sig = request.headers["X-Crowdsorcerer-Signature"]
+if not verify_webhook(request.get_data(), YOUR_SECRET, sig):
     abort(401, "Invalid signature")</code></pre>
+          <p class="text-xs text-gray-500 mt-3">
+            See the <a href="/docs#webhooks" class="text-violet-400 hover:text-violet-300">full webhook docs</a> for Node.js examples and secret rotation details.
+          </p>
         </div>
       </div>
     )}

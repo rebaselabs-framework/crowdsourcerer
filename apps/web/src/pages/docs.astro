@@ -209,6 +209,167 @@ const taskTypes = [
 }`,
   },
 ];
+
+const humanTaskTypes = [
+  {
+    id: "label-image",
+    name: "Label Image",
+    slug: "label_image",
+    credits: 3,
+    description: "Workers classify images by selecting from a set of predefined labels.",
+    fields: [
+      { name: "image_url", type: "string", required: true, desc: "URL of the image to label" },
+      { name: "labels", type: "string[]", required: true, desc: "Array of possible labels to choose from" },
+      { name: "description", type: "string", required: false, desc: "Additional context for workers" },
+    ],
+    example: `{
+  "type": "label_image",
+  "input": {
+    "image_url": "https://example.com/photo.jpg",
+    "labels": ["cat", "dog", "bird", "other"],
+    "description": "Select the animal in this photo"
+  }
+}`,
+  },
+  {
+    id: "label-text",
+    name: "Label Text",
+    slug: "label_text",
+    credits: 2,
+    description: "Workers categorize text into one of the provided categories.",
+    fields: [
+      { name: "text", type: "string", required: true, desc: "Text to categorize" },
+      { name: "categories", type: "string[]", required: true, desc: "Array of possible categories" },
+    ],
+    example: `{
+  "type": "label_text",
+  "input": {
+    "text": "The new iPhone has amazing battery life and a great camera",
+    "categories": ["positive", "negative", "neutral"]
+  }
+}`,
+  },
+  {
+    id: "rate-quality",
+    name: "Rate Quality",
+    slug: "rate_quality",
+    credits: 2,
+    description: "Workers rate content quality on a 1\u20135 scale based on specified criteria.",
+    fields: [
+      { name: "title", type: "string", required: true, desc: "Title of the content to rate" },
+      { name: "content", type: "string", required: true, desc: "The content to evaluate" },
+      { name: "criteria", type: "string", required: false, desc: "What to evaluate (e.g. clarity, accuracy)" },
+    ],
+    example: `{
+  "type": "rate_quality",
+  "input": {
+    "title": "Introduction to Machine Learning",
+    "content": "Machine learning is a subset of AI...",
+    "criteria": "Rate the accuracy and clarity of this explanation"
+  }
+}`,
+  },
+  {
+    id: "verify-fact",
+    name: "Verify Fact",
+    slug: "verify_fact",
+    credits: 3,
+    description: "Workers verify whether a claim is true, false, or indeterminate given the provided context.",
+    fields: [
+      { name: "claim", type: "string", required: true, desc: "The factual claim to verify" },
+      { name: "context", type: "string", required: true, desc: "Supporting context or evidence" },
+    ],
+    example: `{
+  "type": "verify_fact",
+  "input": {
+    "claim": "Python was created by Guido van Rossum in 1991",
+    "context": "Python is a high-level programming language first released in 1991 by Guido van Rossum."
+  }
+}`,
+  },
+  {
+    id: "moderate-content",
+    name: "Moderate Content",
+    slug: "moderate_content",
+    credits: 2,
+    description: "Workers review content against a policy and decide to approve, reject, or escalate.",
+    fields: [
+      { name: "content", type: "string", required: true, desc: "The content to moderate" },
+      { name: "content_type", type: "string", required: false, desc: "Type of content (e.g. comment, review, post)" },
+      { name: "policy_context", type: "string", required: false, desc: "Moderation policy or guidelines" },
+    ],
+    example: `{
+  "type": "moderate_content",
+  "input": {
+    "content": "This product is absolutely terrible, worst purchase ever!",
+    "content_type": "product_review",
+    "policy_context": "Reject spam, hate speech, and threats. Allow negative opinions."
+  }
+}`,
+  },
+  {
+    id: "compare-rank",
+    name: "Compare & Rank",
+    slug: "compare_rank",
+    credits: 2,
+    description: "Workers compare two options and select the better one based on given criteria.",
+    fields: [
+      { name: "option_a", type: "string", required: true, desc: "First option to compare" },
+      { name: "option_b", type: "string", required: true, desc: "Second option to compare" },
+      { name: "criteria", type: "string", required: false, desc: "What to compare on (e.g. readability, accuracy)" },
+    ],
+    example: `{
+  "type": "compare_rank",
+  "input": {
+    "option_a": "Machine learning uses algorithms to learn from data.",
+    "option_b": "ML is when computers figure stuff out from examples.",
+    "criteria": "Which explanation is clearer and more professional?"
+  }
+}`,
+  },
+  {
+    id: "answer-question",
+    name: "Answer Question",
+    slug: "answer_question",
+    credits: 4,
+    description: "Workers read content and answer a question about it. Supports free-text and multiple-choice formats.",
+    fields: [
+      { name: "content", type: "string", required: true, desc: "Source content to read" },
+      { name: "question", type: "string", required: true, desc: "Question to answer" },
+      { name: "answer_format", type: "\"free_text\" | \"multiple_choice\"", required: false, desc: "Answer format (default: free_text)" },
+      { name: "choices", type: "string[]", required: false, desc: "Options for multiple-choice format" },
+    ],
+    example: `{
+  "type": "answer_question",
+  "input": {
+    "content": "The Eiffel Tower was built in 1889 for the World's Fair...",
+    "question": "When was the Eiffel Tower built?",
+    "answer_format": "multiple_choice",
+    "choices": ["1876", "1889", "1901", "1912"]
+  }
+}`,
+  },
+  {
+    id: "transcription-review",
+    name: "Transcription Review",
+    slug: "transcription_review",
+    credits: 5,
+    description: "Workers review and correct an AI-generated transcript against the original audio.",
+    fields: [
+      { name: "audio_url", type: "string", required: true, desc: "URL of the audio file" },
+      { name: "ai_transcript", type: "string", required: true, desc: "AI-generated transcript to review" },
+      { name: "language", type: "string", required: false, desc: "Language of the audio (e.g. en, es)" },
+    ],
+    example: `{
+  "type": "transcription_review",
+  "input": {
+    "audio_url": "https://example.com/recording.mp3",
+    "ai_transcript": "Welcome to the podast about artifical inteligence...",
+    "language": "en"
+  }
+}`,
+  },
+];
 ---
 
 <Layout title="Docs — CrowdSorcerer">
@@ -224,9 +385,16 @@ const taskTypes = [
         <a href="#authentication" class="block py-1 text-gray-400 hover:text-gray-200 transition-colors">Authentication</a>
         <a href="#tasks" class="block py-1 text-gray-400 hover:text-gray-200 transition-colors">Task lifecycle</a>
         <a href="#sdk" class="block py-1 text-gray-400 hover:text-gray-200 transition-colors">TypeScript SDK</a>
+        <a href="#python-sdk" class="block py-1 text-gray-400 hover:text-gray-200 transition-colors">Python SDK</a>
         <a href="#webhooks" class="block py-1 text-gray-400 hover:text-gray-200 transition-colors">Webhooks</a>
-        <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mt-4 mb-2">Task types</div>
+        <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mt-4 mb-2">AI task types</div>
         {taskTypes.map((t) => (
+          <a href={`#${t.id}`} class="block py-1 text-gray-400 hover:text-gray-200 transition-colors">
+            {t.name} <span class="text-gray-600 text-xs">{t.credits}cr</span>
+          </a>
+        ))}
+        <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mt-4 mb-2">Human task types</div>
+        {humanTaskTypes.map((t) => (
           <a href={`#${t.id}`} class="block py-1 text-gray-400 hover:text-gray-200 transition-colors">
             {t.name} <span class="text-gray-600 text-xs">{t.credits}cr</span>
           </a>
@@ -252,11 +420,13 @@ const taskTypes = [
             <li>Generate an API key from the <a href="/dashboard/api-keys" class="text-violet-400 hover:text-violet-300">API Keys page</a></li>
             <li>Submit your first task via the REST API or SDK</li>
           </ol>
-          <pre class="bg-gray-900 border border-gray-800 rounded-lg p-4 text-sm font-mono overflow-x-auto"><code class="text-gray-300">{`# Install the SDK
-npm install @crowdsourcerer/sdk
-
-# Or call the REST API directly
-curl -X POST https://crowdsourcerer.rebaselabs.online/v1/tasks \\
+          <div class="space-y-3">
+            <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide">TypeScript / Node.js</p>
+            <pre class="bg-gray-900 border border-gray-800 rounded-lg p-4 text-sm font-mono overflow-x-auto"><code class="text-gray-300">{`npm install @crowdsourcerer/sdk`}</code></pre>
+            <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Python</p>
+            <pre class="bg-gray-900 border border-gray-800 rounded-lg p-4 text-sm font-mono overflow-x-auto"><code class="text-gray-300">{`pip install crowdsourcerer-sdk`}</code></pre>
+            <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide">cURL</p>
+            <pre class="bg-gray-900 border border-gray-800 rounded-lg p-4 text-sm font-mono overflow-x-auto"><code class="text-gray-300">{`curl -X POST https://crowdsourcerer.rebaselabs.online/v1/tasks \\
   -H "Authorization: Bearer csk_YOUR_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -266,6 +436,7 @@ curl -X POST https://crowdsourcerer.rebaselabs.online/v1/tasks \\
       "instruction": "Extract the main heading and description"
     }
   }'`}</code></pre>
+          </div>
         </section>
 
         <!-- Authentication -->
@@ -359,26 +530,183 @@ const balance = await crowd.getCredits();
 console.log(balance.available); // → 87`}</code></pre>
         </section>
 
+        <!-- Python SDK -->
+        <section id="python-sdk">
+          <h2 class="text-2xl font-bold text-gray-100 mb-4">Python SDK</h2>
+          <pre class="bg-gray-900 border border-gray-800 rounded-lg p-4 text-sm font-mono overflow-x-auto mb-6"><code>pip install crowdsourcerer-sdk</code></pre>
+          <p class="text-sm text-gray-400 mb-4">Requires Python 3.9+. Supports both sync and async clients.</p>
+          <h3 class="text-lg font-semibold text-gray-200 mb-3">Sync client</h3>
+          <pre class="bg-gray-900 border border-gray-800 rounded-lg p-4 text-sm font-mono overflow-x-auto mb-6"><code class="text-gray-300">{`from crowdsourcerer import CrowdSorcerer
+
+client = CrowdSorcerer(api_key="csk_YOUR_KEY")
+
+# Typed helpers — submit + wait for result
+result = client.tasks.web_research(
+    url="https://news.ycombinator.com",
+    instruction="Extract the top 5 headlines",
+)
+print(result.output)
+
+# Or submit + poll manually
+task = client.tasks.create("screenshot", {"url": "https://example.com"})
+completed = client.tasks.wait(task.id)
+
+# Check credits
+balance = client.credits.balance()
+print(f"Available: {balance.available} credits")`}</code></pre>
+
+          <h3 class="text-lg font-semibold text-gray-200 mb-3">Async client</h3>
+          <pre class="bg-gray-900 border border-gray-800 rounded-lg p-4 text-sm font-mono overflow-x-auto mb-6"><code class="text-gray-300">{`import asyncio
+from crowdsourcerer import AsyncCrowdSorcerer
+
+async def main():
+    async with AsyncCrowdSorcerer(api_key="csk_YOUR_KEY") as client:
+        # Run multiple tasks concurrently
+        tasks = await asyncio.gather(
+            client.tasks.pii_detect("My email is alice@example.com"),
+            client.tasks.screenshot("https://example.com"),
+            client.tasks.llm_generate(
+                messages=[{"role": "user", "content": "Write a haiku about AI"}]
+            ),
+        )
+        results = await asyncio.gather(*[client.tasks.wait(t.id) for t in tasks])
+        for r in results:
+            print(r.type, r.status)
+
+asyncio.run(main())`}</code></pre>
+
+          <h3 class="text-lg font-semibold text-gray-200 mb-3">Error handling</h3>
+          <pre class="bg-gray-900 border border-gray-800 rounded-lg p-4 text-sm font-mono overflow-x-auto"><code class="text-gray-300">{`from crowdsourcerer import (
+    CrowdSorcerer, AuthError, RateLimitError,
+    InsufficientCreditsError, TaskError,
+)
+
+client = CrowdSorcerer(api_key="csk_YOUR_KEY")
+
+try:
+    task = client.tasks.create("web_research", {"url": "https://example.com"})
+    result = client.tasks.wait(task.id)
+except InsufficientCreditsError:
+    print("Top up at crowdsourcerer.rebaselabs.online/dashboard/credits")
+except RateLimitError as e:
+    print(f"Rate limited — retry after {e.retry_after}s")
+except TaskError as e:
+    print(f"Task failed: {e}")
+except AuthError:
+    print("Invalid API key")`}</code></pre>
+        </section>
+
         <!-- Webhooks -->
         <section id="webhooks">
           <h2 class="text-2xl font-bold text-gray-100 mb-4">Webhooks</h2>
           <p class="text-sm mb-4">
-            Set <code class="text-violet-300">webhook_url</code> when creating a task.
-            On completion we POST to that URL with retries (up to 3, exponential backoff):
+            Get notified when tasks complete instead of polling.
+            Set <code class="text-violet-300">webhook_url</code> when creating a task,
+            or register a persistent endpoint in the <a href="/dashboard/webhooks" class="text-violet-400 hover:text-violet-300">dashboard</a>.
+            Deliveries retry up to 3 times with exponential backoff.
           </p>
-          <pre class="bg-gray-900 border border-gray-800 rounded-lg p-4 text-sm font-mono overflow-x-auto mb-4"><code>{`{
+          <pre class="bg-gray-900 border border-gray-800 rounded-lg p-4 text-sm font-mono overflow-x-auto mb-6"><code>{`POST https://your-server.com/webhook
+
+{
   "task_id": "3f4a1b2c-...",
   "event": "task.completed"
 }`}</code></pre>
-          <p class="text-sm text-gray-400">
-            Then fetch full details from <code class="text-violet-300">GET /v1/tasks/{"{task_id}"}</code>.
+          <p class="text-sm text-gray-400 mb-6">
+            Fetch full details from <code class="text-violet-300">GET /v1/tasks/{"{task_id}"}</code> after receiving the event.
           </p>
+
+          <h3 class="text-lg font-semibold text-gray-200 mb-3">Signature verification</h3>
+          <p class="text-sm mb-4">
+            Every webhook delivery is signed with your endpoint's secret using HMAC-SHA256.
+            Always verify signatures to ensure requests came from CrowdSorcerer.
+          </p>
+          <p class="text-sm mb-4">
+            The signature is in the <code class="text-violet-300">X-Crowdsorcerer-Signature</code> header
+            in the format <code class="text-violet-300">t=TIMESTAMP,v1=HMAC_HEX</code>.
+            The timestamp is also available separately in <code class="text-violet-300">X-Crowdsorcerer-Timestamp</code>.
+          </p>
+
+          <h4 class="text-sm font-semibold text-gray-300 mb-2">Python</h4>
+          <pre class="bg-gray-900 border border-gray-800 rounded-lg p-4 text-xs font-mono overflow-x-auto mb-4"><code class="text-gray-300">{`import hmac, hashlib, time
+
+def verify_webhook(payload_bytes: bytes, secret: str, sig_header: str,
+                   tolerance: int = 300) -> bool:
+    """Verify a CrowdSorcerer webhook signature."""
+    # Parse "t=TIMESTAMP,v1=SIGNATURE"
+    parts = {}
+    for part in sig_header.split(","):
+        key, _, value = part.partition("=")
+        parts[key.strip()] = value.strip()
+
+    timestamp = parts.get("t")
+    signature = parts.get("v1")
+    if not timestamp or not signature:
+        return False
+
+    # Reject old deliveries (replay protection)
+    if abs(time.time() - int(timestamp)) > tolerance:
+        return False
+
+    # Reconstruct the signed payload: "{timestamp}.{body}"
+    sig_input = f"{timestamp}.".encode() + payload_bytes
+    expected = hmac.new(
+        secret.encode(), sig_input, hashlib.sha256
+    ).hexdigest()
+    return hmac.compare_digest(expected, signature)
+
+# In your Flask / FastAPI handler:
+# sig = request.headers["X-Crowdsorcerer-Signature"]
+# verify_webhook(request.get_data(), YOUR_SECRET, sig)`}</code></pre>
+
+          <h4 class="text-sm font-semibold text-gray-300 mb-2">Node.js / TypeScript</h4>
+          <pre class="bg-gray-900 border border-gray-800 rounded-lg p-4 text-xs font-mono overflow-x-auto mb-4"><code class="text-gray-300">{`import crypto from "crypto";
+
+function verifyWebhook(
+  payloadBytes: Buffer, secret: string,
+  sigHeader: string, toleranceSec = 300
+): boolean {
+  const parts: Record<string, string> = {};
+  for (const p of sigHeader.split(",")) {
+    const [k, ...v] = p.split("=");
+    parts[k.trim()] = v.join("=").trim();
+  }
+  const ts = parts["t"], sig = parts["v1"];
+  if (!ts || !sig) return false;
+
+  if (Math.abs(Date.now() / 1000 - Number(ts)) > toleranceSec) return false;
+
+  const sigInput = Buffer.concat([
+    Buffer.from(ts + "."),
+    payloadBytes,
+  ]);
+  const expected = crypto
+    .createHmac("sha256", secret)
+    .update(sigInput)
+    .digest("hex");
+  return crypto.timingSafeEqual(
+    Buffer.from(expected), Buffer.from(sig)
+  );
+}
+
+// In your Express handler:
+// const sig = req.headers["x-crowdsorcerer-signature"];
+// verifyWebhook(req.body, YOUR_SECRET, sig);`}</code></pre>
+
+          <div class="bg-gray-900 border border-yellow-900/50 rounded-lg p-4 text-sm mb-2">
+            <p class="text-yellow-400 font-semibold mb-1">Secret rotation</p>
+            <p class="text-gray-400 text-xs">
+              When you rotate a webhook secret, both the old and new signatures are sent for 24 hours
+              (<code class="text-violet-300">v1</code> = new, <code class="text-violet-300">v0</code> = old).
+              Verify against both during the rotation window, then switch to the new secret.
+            </p>
+          </div>
         </section>
 
-        <!-- Task type reference -->
+        <!-- AI Task type reference -->
         <section>
-          <h2 class="text-2xl font-bold text-gray-100 mb-2">Task type reference</h2>
-          <p class="text-gray-400 text-sm mb-10">Detailed input schemas for all 10 task types.</p>
+          <h2 class="text-2xl font-bold text-gray-100 mb-2">AI task types</h2>
+          <p class="text-gray-400 text-sm mb-2">10 task types processed automatically by AI workers. Results typically in seconds.</p>
+          <p class="text-gray-500 text-xs mb-10">Credit costs shown are per task. Credits are charged on submission and refunded if the task fails.</p>
 
           {taskTypes.map((t) => (
             <div id={t.id} class="mb-12 scroll-mt-8">
@@ -386,6 +714,77 @@ console.log(balance.available); // → 87`}</code></pre>
                 <h3 class="text-xl font-bold text-gray-100">{t.name}</h3>
                 <code class="text-violet-300 bg-gray-900 px-2 py-0.5 rounded text-sm">{t.slug}</code>
                 <span class="text-xs text-gray-500">{t.credits} {t.credits === 1 ? "credit" : "credits"}</span>
+              </div>
+              <p class="text-sm text-gray-400 mb-4">{t.description}</p>
+
+              <!-- Input schema -->
+              <h4 class="text-sm font-semibold text-gray-300 mb-2">Input schema</h4>
+              <div class="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden mb-4">
+                <table class="w-full text-xs">
+                  <thead>
+                    <tr class="border-b border-gray-800">
+                      <th class="text-left px-4 py-2 text-gray-500 font-medium">Field</th>
+                      <th class="text-left px-4 py-2 text-gray-500 font-medium">Type</th>
+                      <th class="text-left px-4 py-2 text-gray-500 font-medium">Req?</th>
+                      <th class="text-left px-4 py-2 text-gray-500 font-medium">Description</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {t.fields.map((f) => (
+                      <tr class="border-b border-gray-800/50">
+                        <td class="px-4 py-2 font-mono text-violet-300">{f.name}</td>
+                        <td class="px-4 py-2 font-mono text-gray-400">{f.type}</td>
+                        <td class="px-4 py-2 text-gray-500">{f.required ? "✓" : ""}</td>
+                        <td class="px-4 py-2 text-gray-400">{f.desc}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <!-- Example -->
+              <h4 class="text-sm font-semibold text-gray-300 mb-2">Example</h4>
+              <pre class="bg-gray-900 border border-gray-800 rounded-lg p-4 text-xs font-mono overflow-x-auto"><code class="text-gray-300">{t.example}</code></pre>
+            </div>
+          ))}
+        </section>
+
+        <!-- Human Task type reference -->
+        <section>
+          <h2 class="text-2xl font-bold text-gray-100 mb-2">Human task types</h2>
+          <p class="text-gray-400 text-sm mb-2">8 task types completed by human workers. Best for subjective judgments, quality evaluation, and tasks requiring human context.</p>
+          <p class="text-gray-500 text-xs mb-4">
+            Credit costs are the base worker reward per assignment. Total cost =
+            <code class="text-violet-300 bg-gray-900 px-1 rounded">(worker_reward &times; assignments) + platform_fee</code>
+            where platform fee is 20% (minimum 1 credit).
+          </p>
+
+          <div class="bg-gray-900 border border-gray-800 rounded-lg p-4 text-sm mb-10">
+            <h4 class="text-gray-200 font-semibold mb-2">Human task options</h4>
+            <p class="text-gray-400 text-xs mb-3">These fields can be set on any human task type alongside the task-specific input:</p>
+            <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+              <div><code class="text-violet-300">assignments_required</code> <span class="text-gray-500">(1-10, default: 1)</span></div>
+              <div class="text-gray-400">Number of workers needed</div>
+              <div><code class="text-violet-300">consensus_strategy</code></div>
+              <div class="text-gray-400">any_first | majority_vote | unanimous | requester_review</div>
+              <div><code class="text-violet-300">worker_reward_credits</code></div>
+              <div class="text-gray-400">Override default worker reward (1-10,000)</div>
+              <div><code class="text-violet-300">claim_timeout_minutes</code> <span class="text-gray-500">(5-480, default: 30)</span></div>
+              <div class="text-gray-400">Time for worker to submit</div>
+              <div><code class="text-violet-300">min_skill_level</code> <span class="text-gray-500">(1-5)</span></div>
+              <div class="text-gray-400">Minimum worker proficiency</div>
+              <div><code class="text-violet-300">task_instructions</code></div>
+              <div class="text-gray-400">Guidance text shown to workers</div>
+            </div>
+          </div>
+
+          {humanTaskTypes.map((t) => (
+            <div id={t.id} class="mb-12 scroll-mt-8">
+              <div class="flex items-center gap-3 mb-3">
+                <h3 class="text-xl font-bold text-gray-100">{t.name}</h3>
+                <code class="text-violet-300 bg-gray-900 px-2 py-0.5 rounded text-sm">{t.slug}</code>
+                <span class="text-xs text-gray-500">{t.credits} {t.credits === 1 ? "credit" : "credits"}</span>
+                <span class="text-xs bg-blue-950 text-blue-400 px-2 py-0.5 rounded-full">human</span>
               </div>
               <p class="text-sm text-gray-400 mb-4">{t.description}</p>
 
