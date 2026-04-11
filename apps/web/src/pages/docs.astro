@@ -324,11 +324,11 @@ const humanTaskTypes = [
         <!-- Quickstart -->
         <section id="quickstart">
           <h2 class="text-2xl font-bold text-gray-100 mb-4">Quickstart</h2>
-          <p class="mb-4">Get your first task result in under 2 minutes.</p>
+          <p class="mb-4">Post your first task and pull the worker's response as typed JSON.</p>
           <ol class="list-decimal list-inside space-y-2 text-sm mb-6">
             <li><a href={mailto(CONTACT_EMAIL, "CrowdSorcerer early access")} class="text-violet-400 hover:text-violet-300">Request early access</a> — we're in closed beta and onboarding one cohort at a time</li>
             <li>Generate an API key from the <a href="/dashboard/api-keys" class="text-violet-400 hover:text-violet-300">API Keys page</a></li>
-            <li>Submit your first task via the REST API or SDK</li>
+            <li>POST a task, then poll <code class="text-violet-300 bg-gray-900 px-1 rounded">/v1/tasks/{`{id}`}</code> or subscribe to a webhook for the result</li>
           </ol>
           <div class="space-y-3">
             <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide">TypeScript / Node.js</p>
@@ -340,11 +340,13 @@ const humanTaskTypes = [
   -H "Authorization: Bearer csk_YOUR_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "type": "web_research",
+    "type": "label_text",
     "input": {
-      "url": "https://example.com",
-      "instruction": "Extract the main heading and description"
-    }
+      "text": "The new iPhone is great!",
+      "categories": ["positive", "negative", "neutral"],
+      "question": "What is the sentiment?"
+    },
+    "assignments_required": 3
   }'`}</code></pre>
           </div>
         </section>
@@ -372,15 +374,20 @@ const humanTaskTypes = [
         <!-- Task lifecycle -->
         <section id="tasks">
           <h2 class="text-2xl font-bold text-gray-100 mb-4">Task lifecycle</h2>
-          <p class="mb-4 text-sm">Tasks execute asynchronously. States:</p>
+          <p class="mb-4 text-sm">
+            Human tasks go through the worker marketplace. Once posted, the task is
+            visible to skill-matched workers who can claim it, do the work, and submit a
+            typed response within the timeout you set.
+          </p>
           <div class="flex items-center gap-2 text-sm mb-6 flex-wrap">
-            {["queued", "running", "completed", "failed", "cancelled"].map((s, i, arr) => (
+            {["open", "assigned", "completed", "failed", "cancelled"].map((s, i, arr) => (
               <>
                 <span class:list={[
                   "px-2 py-1 rounded-full font-mono text-xs",
                   s === "completed" ? "bg-green-950 text-green-400" :
                   s === "failed" ? "bg-red-950 text-red-400" :
-                  s === "running" ? "bg-yellow-950 text-yellow-400" :
+                  s === "assigned" ? "bg-yellow-950 text-yellow-400" :
+                  s === "open" ? "bg-violet-950 text-violet-300" :
                   "bg-gray-800 text-gray-300"
                 ]}>{s}</span>
                 {i < arr.length - 1 && <span class="text-gray-500">→</span>}
@@ -389,17 +396,26 @@ const humanTaskTypes = [
           </div>
           <p class="text-sm mb-4">
             Submit a task → get a <code class="text-violet-300">task_id</code> →
-            poll <code class="text-violet-300">GET /v1/tasks/{"{task_id}"}</code> or use webhooks.
-            Credits are charged immediately on submission (refunded automatically if the task fails).
+            poll <code class="text-violet-300">GET /v1/tasks/{"{task_id}"}</code> or subscribe to a webhook.
+            Credits are reserved on submission (<code class="text-violet-300">worker_reward &times; assignments</code> plus platform fee)
+            and released to the worker(s) on approval. Unused slots are refunded if the task closes early or no
+            worker claims it before <code class="text-violet-300">claim_timeout_minutes</code>.
           </p>
 
           <h3 class="text-lg font-semibold text-gray-200 mb-3 mt-6">Submit a task</h3>
           <pre class="bg-gray-900 border border-gray-800 rounded-lg p-4 text-sm font-mono overflow-x-auto mb-4"><code>POST /v1/tasks
 {`{
-  "type": "web_research",
-  "input": { "url": "https://example.com" },
-  "priority": "normal",           // optional: low | normal | high
-  "webhook_url": "https://..."    // optional
+  "type": "label_text",
+  "input": {
+    "text": "The new iPhone is great!",
+    "categories": ["positive", "negative", "neutral"],
+    "question": "What is the sentiment?"
+  },
+  "assignments_required": 3,           // 1–20 workers
+  "consensus_strategy": "majority_vote", // any_first | majority_vote | unanimous | requester_review
+  "claim_timeout_minutes": 60,         // how long a worker has to submit
+  "priority": "normal",                // low | normal | high | urgent
+  "webhook_url": "https://..."         // optional
 }`}</code></pre>
 
           <h3 class="text-lg font-semibold text-gray-200 mb-3 mt-6">Poll for result</h3>
@@ -408,13 +424,18 @@ const humanTaskTypes = [
 // Response when completed:
 {`{
   "id": "uuid",
-  "type": "web_research",
+  "type": "label_text",
   "status": "completed",
-  "output": { "summary": "...", "raw": {...} },
-  "credits_used": 10,
-  "duration_ms": 3420,
-  "created_at": "2025-01-01T00:00:00Z",
-  "completed_at": "2025-01-01T00:00:03Z"
+  "execution_mode": "human",
+  "output": {
+    "summary": "positive (3/3 workers agree)",
+    "raw": { "submissions": [...] }
+  },
+  "credits_used": 9,
+  "assignments_required": 3,
+  "assignments_completed": 3,
+  "created_at": "2026-04-11T00:00:00Z",
+  "completed_at": "2026-04-11T00:12:31Z"
 }`}</code></pre>
         </section>
 
