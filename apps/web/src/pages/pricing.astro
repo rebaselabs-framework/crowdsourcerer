@@ -1,19 +1,5 @@
 ---
 import Layout from "@/layouts/Layout.astro";
-import { TASK_CREDITS, CREDITS_PER_USD } from "@crowdsourcerer/types";
-
-const AI_TASK_DESCRIPTIONS: Record<string, string> = {
-  web_research:    "Scrape and summarize any URL — JS-rendered sites, tables, links",
-  entity_lookup:   "Enrich companies or people: funding, tech stack, social profiles",
-  document_parse:  "Extract text, tables, and metadata from PDFs and Word docs",
-  data_transform:  "Convert, clean, filter, and reshape data between formats",
-  llm_generate:    "Route to best LLM (Claude, GPT-4, Gemini, Mistral, and more)",
-  screenshot:      "Full-page screenshot of any URL — mobile or desktop viewport",
-  audio_transcribe:"Transcribe audio/video files with speaker detection",
-  pii_detect:      "Detect and redact 30+ PII types for safe LLM processing",
-  code_execute:    "Run Python, JS, or shell code in a sandboxed environment",
-  web_intel:       "Multi-source web intelligence — research queries, not just URLs",
-};
 
 const HUMAN_TASK_TYPES = [
   { type: "label_image",        label: "Image Labeling",         example: "Bounding boxes, segmentation, classification" },
@@ -27,24 +13,6 @@ const HUMAN_TASK_TYPES = [
 ];
 
 const PLANS = [
-  {
-    id: "free",
-    name: "Free",
-    price: 0,
-    credits: 1_000,
-    tagline: "Try it. No card required.",
-    features: [
-      "1,000 credits on signup",
-      "10 tasks / day",
-      "2 pipelines total",
-      "2 pipeline runs / day",
-      "1 worker per human task",
-      "Community support",
-    ],
-    cta: "Start for free",
-    ctaHref: "/register",
-    highlight: false,
-  },
   {
     id: "starter",
     name: "Starter",
@@ -103,42 +71,42 @@ const PLANS = [
 ];
 
 const COMPARISON_ROWS = [
-  { feature: "Credits included",         free: "1,000",      starter: "1,000",    pro: "10,000",      enterprise: "Custom" },
-  { feature: "AI tasks / day",           free: "10",         starter: "100",      pro: "500",         enterprise: "Unlimited" },
-  { feature: "Pipelines (total)",        free: "2",          starter: "10",       pro: "Unlimited",   enterprise: "Unlimited" },
-  { feature: "Pipeline runs / day",      free: "2",          starter: "20",       pro: "100",         enterprise: "Unlimited" },
-  { feature: "Batch task size",          free: "10",         starter: "25",       pro: "50",          enterprise: "50" },
-  { feature: "Workers per human task",   free: "1",          starter: "5",        pro: "20",          enterprise: "100" },
-  { feature: "API key scopes",           free: "✓",          starter: "✓",        pro: "✓",           enterprise: "✓" },
-  { feature: "Webhooks",                 free: "✓",          starter: "✓",        pro: "✓",           enterprise: "✓" },
-  { feature: "Org / team sharing",       free: "✓",          starter: "✓",        pro: "✓",           enterprise: "✓" },
-  { feature: "A/B experiments",          free: "✓",          starter: "✓",        pro: "✓",           enterprise: "✓" },
-  { feature: "Priority routing",         free: "—",          starter: "✓",        pro: "✓",           enterprise: "✓" },
-  { feature: "SLA guarantees",           free: "—",          starter: "24 h",     pro: "8 h",         enterprise: "Custom" },
-  { feature: "Dedicated support",        free: "—",          starter: "—",        pro: "—",           enterprise: "✓" },
-  { feature: "SSO / SAML",               free: "—",          starter: "—",        pro: "—",           enterprise: "✓" },
+  { feature: "Credits included",         starter: "1,000",    pro: "10,000",      enterprise: "Custom" },
+  { feature: "Tasks / day",              starter: "100",      pro: "500",         enterprise: "Unlimited" },
+  { feature: "Pipelines (total)",        starter: "10",       pro: "Unlimited",   enterprise: "Unlimited" },
+  { feature: "Pipeline runs / day",      starter: "20",       pro: "100",         enterprise: "Unlimited" },
+  { feature: "Batch task size",          starter: "25",       pro: "50",          enterprise: "50" },
+  { feature: "Workers per human task",   starter: "5",        pro: "20",          enterprise: "100" },
+  { feature: "API key scopes",           starter: "✓",        pro: "✓",           enterprise: "✓" },
+  { feature: "Webhooks",                 starter: "✓",        pro: "✓",           enterprise: "✓" },
+  { feature: "Org / team sharing",       starter: "✓",        pro: "✓",           enterprise: "✓" },
+  { feature: "A/B experiments",          starter: "✓",        pro: "✓",           enterprise: "✓" },
+  { feature: "Priority routing",         starter: "✓",        pro: "✓",           enterprise: "✓" },
+  { feature: "SLA guarantees",           starter: "24 h",     pro: "8 h",         enterprise: "Custom" },
+  { feature: "Dedicated support",        starter: "—",        pro: "—",           enterprise: "✓" },
+  { feature: "SSO / SAML",               starter: "—",        pro: "—",           enterprise: "✓" },
 ];
 
 const FAQ = [
   {
     q: "Do credits expire?",
-    a: "No. Credits you purchase never expire. Free signup credits (1,000) also never expire.",
+    a: "No. Credits you purchase never expire.",
   },
   {
     q: "What happens if a task fails?",
-    a: "Credits are refunded automatically for failed tasks. You're only charged for successful completions.",
+    a: "Credits are refunded automatically for failed tasks, including timeouts where no worker claims the task inside the window you set. You're only charged for successful completions.",
   },
   {
-    q: "Can I mix AI and human tasks on the same account?",
-    a: "Yes. AI tasks deduct credits from your balance immediately. For human tasks, the reward you set goes to the worker — you pay that reward plus a small platform fee (included in the credit cost).",
+    q: "How are rewards priced?",
+    a: "You set the reward per worker (minimum 5 credits). Workers earn exactly that — we don't mark it up. The platform fee is folded into the credit cost separately.",
   },
   {
-    q: "How are human task rewards priced?",
-    a: "You set the reward per human task (minimum 5 credits). Workers are paid directly from that reward. The platform does not add a markup on top — what you set is what workers earn.",
+    q: "Can I get multiple workers on the same task?",
+    a: "Yes. Set assignments_required (up to 20 on Pro) to get N independent submissions, then use a consensus strategy: any_first, majority_vote, unanimous, or requester_review.",
   },
   {
-    q: "Can I upgrade or downgrade plans?",
-    a: "You're not locked into a plan. Credits are purchased individually — Free gives 1,000, Starter gives 1,000, Pro gives 10,000. Buy more any time from the dashboard.",
+    q: "Can I chain AI steps with human steps?",
+    a: "Yes — through pipelines. A pipeline can post a human task, then run an LLM summary on the result, then post another human task for QA. All on the same balance and audit trail. See /docs for pipeline shapes.",
   },
   {
     q: "What if I need more than 10,000 credits?",
@@ -163,10 +131,10 @@ const FAQ = [
       Simple, transparent pricing
     </h1>
     <p class="text-xl text-gray-400 max-w-xl mx-auto mb-6">
-      Credits never expire. Pay as you go — no monthly subscription required.
-      Start free with 1,000 credits.
+      Credits never expire. Pay as you go — no monthly subscription.
+      Set the reward you pay workers, pay a small platform fee, you're done.
     </p>
-    <p class="text-sm text-gray-500">$1 = 100 credits &nbsp;·&nbsp; AI tasks from 1¢ &nbsp;·&nbsp; Credits refunded on failed tasks</p>
+    <p class="text-sm text-gray-500">$1 = 100 credits &nbsp;·&nbsp; Min reward 5¢ per worker &nbsp;·&nbsp; Credits refunded on failed tasks</p>
   </section>
 
   <!-- Plan cards -->
@@ -256,7 +224,7 @@ const FAQ = [
             {COMPARISON_ROWS.map((row, i) => (
               <tr class:list={["border-b border-gray-800/50", i % 2 !== 0 ? "bg-gray-800/20" : ""]}>
                 <td class="px-5 py-3 text-gray-400">{row.feature}</td>
-                {([row.free, row.starter, row.pro, row.enterprise] as string[]).map((val, pi) => (
+                {([row.starter, row.pro, row.enterprise] as string[]).map((val, pi) => (
                   <td class:list={[
                     "px-4 py-3 text-center",
                     val === "—" ? "text-gray-700" : PLANS[pi].highlight ? "text-violet-300 font-medium" : "text-gray-300",
@@ -272,42 +240,12 @@ const FAQ = [
     </div>
   </section>
 
-  <!-- AI task pricing -->
-  <section class="max-w-6xl mx-auto px-6 pb-20">
-    <div class="grid md:grid-cols-2 gap-12">
-
-      <!-- AI tasks -->
-      <div>
-        <h2 class="text-xl font-bold mb-2">🤖 AI task pricing</h2>
-        <p class="text-sm text-gray-400 mb-5">Credits deducted on submission. Refunded automatically if the task fails.</p>
-        <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-          <table class="w-full text-sm">
-            <thead>
-              <tr class="border-b border-gray-800">
-                <th class="text-left px-4 py-3 text-gray-500 font-medium">Task type</th>
-                <th class="text-right px-4 py-3 text-gray-500 font-medium">Credits</th>
-                <th class="text-right px-4 py-3 text-gray-500 font-medium">USD</th>
-              </tr>
-            </thead>
-            <tbody>
-              {Object.entries(TASK_CREDITS).map(([type, credits], i) => (
-                <tr class:list={["border-b border-gray-800/40", i % 2 !== 0 ? "bg-gray-800/20" : ""]}>
-                  <td class="px-4 py-2.5">
-                    <div class="font-mono text-violet-300 text-xs">{type}</div>
-                    <div class="text-gray-500 text-[11px] mt-0.5">{AI_TASK_DESCRIPTIONS[type] ?? ""}</div>
-                  </td>
-                  <td class="px-4 py-2.5 text-right text-gray-300 font-medium">{credits}</td>
-                  <td class="px-4 py-2.5 text-right text-gray-500">${(credits / CREDITS_PER_USD).toFixed(2)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
+  <!-- Task pricing -->
+  <section class="max-w-3xl mx-auto px-6 pb-20">
+    <div>
       <!-- Human tasks -->
       <div>
-        <h2 class="text-xl font-bold mb-2">👥 Human task pricing</h2>
+        <h2 class="text-xl font-bold mb-2">👥 Task pricing</h2>
         <p class="text-sm text-gray-400 mb-5">
           You set the reward per task. Workers earn exactly what you set — no markup.
           Minimum reward: <span class="text-gray-300 font-medium">5 credits (5¢)</span>.
@@ -350,15 +288,16 @@ const FAQ = [
     </div>
   </section>
 
-  <!-- Credit packs value callout -->
+  <!-- What $10 gets you -->
   <section class="max-w-6xl mx-auto px-6 pb-20">
     <div class="bg-gradient-to-r from-violet-950/40 via-gray-900 to-indigo-950/40 border border-violet-800/30 rounded-2xl p-8 md:p-10">
+      <h3 class="text-center text-sm text-gray-500 uppercase tracking-widest mb-6">What $10 gets you</h3>
       <div class="grid md:grid-cols-4 gap-6 text-center">
         {[
-          { value: "10 research tasks", desc: "for $1.00", icon: "🌐" },
-          { value: "100 LLM generations", desc: "for $1.00", icon: "🤖" },
-          { value: "20 document parses", desc: "for $0.60", icon: "📄" },
-          { value: "Any mix", desc: "credits cover all types", icon: "🔮" },
+          { value: "~330 labels", desc: "at 3¢ per assignment", icon: "🏷️" },
+          { value: "~100 QA reviews", desc: "at 10¢ per assignment", icon: "⭐" },
+          { value: "~50 moderations", desc: "3 workers × ~7¢ each", icon: "🛡️" },
+          { value: "Any mix", desc: "credits cover every task type", icon: "🔮" },
         ].map(({ value, desc, icon }) => (
           <div>
             <div class="text-3xl mb-2">{icon}</div>
@@ -462,13 +401,13 @@ const FAQ = [
   <!-- Bottom CTA -->
   <section class="max-w-4xl mx-auto px-6 pb-24 text-center">
     <h2 class="text-3xl font-bold mb-4">Ready to build?</h2>
-    <p class="text-gray-400 mb-8">Start with 1,000 free credits. No credit card required.</p>
+    <p class="text-gray-400 mb-8">We're onboarding beta users one at a time. Tell us what you want to build and we'll get you a key.</p>
     <div class="flex flex-wrap justify-center gap-4">
-      <a href="/register" class="px-8 py-3 bg-violet-600 hover:bg-violet-500 text-white font-semibold rounded-xl transition-colors">
-        Start for free →
+      <a href="mailto:crowdsource@rebaselabs.online?subject=CrowdSorcerer%20early%20access" class="px-8 py-3 bg-violet-600 hover:bg-violet-500 text-white font-semibold rounded-xl transition-colors">
+        Request early access
       </a>
-      <a href="/docs/sandbox" class="px-8 py-3 border border-gray-700 hover:border-gray-500 text-gray-300 font-semibold rounded-xl transition-colors">
-        Try the sandbox
+      <a href="/docs" class="px-8 py-3 border border-gray-700 hover:border-gray-500 text-gray-300 font-semibold rounded-xl transition-colors">
+        Read the docs
       </a>
     </div>
   </section>

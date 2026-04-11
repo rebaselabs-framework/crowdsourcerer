@@ -3,108 +3,99 @@ import Layout from "@/layouts/Layout.astro";
 
 const useCases = [
   {
-    icon: "🌐",
-    title: "Web Research at Scale",
-    slug: "web-research",
-    description: "Automate competitor analysis, market research, price monitoring, and news aggregation with AI-powered web crawlers.",
-    tags: ["web_research", "web_intel"],
-    cost: "From 5¢/page",
-  },
-  {
-    icon: "📄",
-    title: "Document Parsing & Extraction",
-    slug: "document-parsing",
-    description: "Extract structured data from PDFs, invoices, contracts, and scanned documents at any scale.",
-    tags: ["document_parse"],
-    cost: "From 3¢/doc",
-  },
-  {
-    icon: "🏢",
-    title: "Entity & Business Lookup",
-    slug: "entity-extraction",
-    description: "Enrich your data with verified company info, executive contacts, addresses, and firmographic data.",
-    tags: ["entity_lookup"],
-    cost: "From 2¢/entity",
-  },
-  {
-    icon: "🔄",
-    title: "Data Transformation",
-    slug: "data-transformation",
-    description: "Normalize, clean, and transform messy datasets. Convert between formats, merge fields, and standardize records.",
-    tags: ["data_transform"],
-    cost: "From 1¢/record",
+    icon: "🏷️",
+    title: "Training data labeling",
+    description: "Build supervised datasets: sentiment, intent, NER, toxicity, bounding boxes. Run 3–20 workers per task with majority vote for consensus.",
+    tags: ["label_text", "label_image"],
   },
   {
     icon: "🛡️",
-    title: "Content Moderation",
-    slug: "content-moderation",
-    description: "Keep your platform safe with AI + human review of user-generated content, images, and profiles.",
-    tags: ["moderate_content", "pii_detect"],
-    cost: "From 2¢/item",
+    title: "Content moderation",
+    description: "Route user-reported posts to humans for final approve/reject decisions with a written reason. Pair with policy context for consistent rulings.",
+    tags: ["moderate_content"],
+  },
+  {
+    icon: "⭐",
+    title: "AI output quality review",
+    description: "Have workers rate LLM-generated summaries, answers, or images on a 1–5 scale with written critique. Use the results as an eval set or RLHF signal.",
+    tags: ["rate_quality", "compare_rank"],
+  },
+  {
+    icon: "✅",
+    title: "Fact verification",
+    description: "Check claims against sources. Workers return true / false / unverifiable with a citation. Useful for news aggregators, knowledge bases, and LLM output grounding.",
+    tags: ["verify_fact"],
+  },
+  {
+    icon: "📝",
+    title: "Transcription QA",
+    description: "Send an AI-generated transcript to a worker for correction. Combine with an LLM pre-pass in a pipeline so humans only touch segments flagged as uncertain.",
+    tags: ["transcription_review"],
+  },
+  {
+    icon: "💬",
+    title: "Domain Q&A and research",
+    description: "Ask workers to answer free-form questions with optional context. Route by skill certification so specialists get specialist tasks.",
+    tags: ["answer_question"],
   },
 ];
 ---
 
 <Layout
-  title="Use Cases — CrowdSorcerer AI Task Platform"
-  description="Discover how companies use CrowdSorcerer for web research, document parsing, entity lookup, data transformation, and content moderation at scale."
+  title="Use cases — CrowdSorcerer"
+  description="Training-data labeling, content moderation, AI output QA, fact checking, transcription review, and domain research — all through one API."
 >
   <div class="max-w-5xl mx-auto px-6 py-20">
     <!-- Header -->
     <div class="text-center mb-16">
       <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-violet-800 bg-violet-950/50 text-violet-300 text-sm mb-6">
         <span class="w-2 h-2 rounded-full bg-violet-400 animate-pulse"></span>
-        10 task types · 18 AI worker types
+        8 task types · 1 API
       </div>
       <h1 class="text-4xl sm:text-5xl font-bold tracking-tight mb-4">
-        What will you build?
+        What workers do for you
       </h1>
       <p class="text-xl text-gray-400 max-w-2xl mx-auto">
-        CrowdSorcerer handles the heavy lifting — you send tasks, we route them to
-        the right AI workers and return structured results.
+        Real humans complete your tasks inside the SLA you set. Every response
+        comes back as typed JSON. Chain them with LLM / parse / exec primitives
+        via pipelines when you need hybrid workflows.
       </p>
     </div>
 
     <!-- Use case cards -->
     <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-16">
-      {useCases.map(({ icon, title, slug, description, tags, cost }) => (
-        <a
-          href={`/use-cases/${slug}`}
-          class="group bg-gray-900 border border-gray-800 hover:border-violet-700 rounded-2xl p-6 transition-all hover:shadow-lg hover:shadow-violet-900/20"
-        >
+      {useCases.map(({ icon, title, description, tags }) => (
+        <div class="bg-gray-900 border border-gray-800 rounded-2xl p-6">
           <div class="text-3xl mb-4">{icon}</div>
-          <h2 class="text-lg font-semibold mb-2 group-hover:text-violet-300 transition-colors">{title}</h2>
+          <h2 class="text-lg font-semibold mb-2">{title}</h2>
           <p class="text-gray-400 text-sm mb-4 leading-relaxed">{description}</p>
-          <div class="flex items-center justify-between">
-            <div class="flex flex-wrap gap-1">
-              {tags.map(t => (
-                <span class="text-xs px-1.5 py-0.5 rounded bg-gray-800 text-gray-500 font-mono">{t}</span>
-              ))}
-            </div>
-            <span class="text-xs text-emerald-400 font-medium">{cost}</span>
+          <div class="flex flex-wrap gap-1">
+            {tags.map(t => (
+              <span class="text-xs px-1.5 py-0.5 rounded bg-gray-800 text-gray-500 font-mono">{t}</span>
+            ))}
           </div>
-        </a>
+        </div>
       ))}
     </div>
 
     <!-- CTA -->
     <div class="bg-gradient-to-r from-violet-950/50 to-blue-950/50 border border-violet-800/40 rounded-2xl p-10 text-center">
-      <h2 class="text-2xl font-bold mb-3">Ready to automate?</h2>
+      <h2 class="text-2xl font-bold mb-3">Have a different workflow?</h2>
       <p class="text-gray-400 mb-6 max-w-md mx-auto">
-        Get 1,000 free credits on signup. No credit card required.
+        Tell us what you want to build. We're onboarding beta users one at a time.
       </p>
       <div class="flex flex-wrap items-center justify-center gap-4">
         <a
-          href="/register"
+          href="mailto:crowdsource@rebaselabs.online?subject=CrowdSorcerer%20use%20case"
           class="px-6 py-3 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-semibold transition-colors"
         >
-          Start free →
+          Request early access
         </a>
         <a
-          href="/docs/api-reference"
+          href="/docs"
           class="px-6 py-3 rounded-xl border border-gray-700 hover:border-gray-500 text-gray-300 transition-colors"
         >
-          Read the API docs
+          Read the docs
         </a>
       </div>
     </div>

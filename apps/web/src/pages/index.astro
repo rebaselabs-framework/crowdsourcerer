@@ -1,63 +1,53 @@
 ---
 import Layout from "@/layouts/Layout.astro";
-import { TASK_CREDITS } from "@crowdsourcerer/types";
 
-function taskIcon(type: string): string {
-  const icons: Record<string, string> = {
-    web_research: "🌐", entity_lookup: "🏢", document_parse: "📄",
-    data_transform: "🔄", llm_generate: "🤖", screenshot: "📸",
-    audio_transcribe: "🎙️", pii_detect: "🔒", code_execute: "⚡",
-    web_intel: "🕵️",
-  };
-  return icons[type] ?? "🔮";
-}
-
-function taskLabel(type: string): string {
-  const labels: Record<string, string> = {
-    web_research: "Web Research", entity_lookup: "Entity Lookup",
-    document_parse: "Doc Parse", data_transform: "Data Transform",
-    llm_generate: "LLM Generate", screenshot: "Screenshot",
-    audio_transcribe: "Transcribe", pii_detect: "PII Detect",
-    code_execute: "Code Execute", web_intel: "Web Intel",
-  };
-  return labels[type] ?? type;
-}
+const HUMAN_TASKS = [
+  { type: "label_text",          icon: "🏷️", label: "Label Text",        desc: "Sentiment, categories, spam detection" },
+  { type: "label_image",         icon: "🖼️", label: "Label Image",       desc: "Bounding boxes, object tags, content flags" },
+  { type: "rate_quality",        icon: "⭐", label: "Rate Quality",      desc: "Score AI output on a 1–5 or custom scale" },
+  { type: "verify_fact",         icon: "✅", label: "Verify Fact",       desc: "Check a claim against sources" },
+  { type: "moderate_content",    icon: "🛡️", label: "Moderate",          desc: "Approve, reject, or escalate user content" },
+  { type: "compare_rank",        icon: "📊", label: "Compare & Rank",    desc: "Pick A vs B on any criterion" },
+  { type: "answer_question",     icon: "💬", label: "Answer Question",   desc: "Open-ended Q&A with optional context" },
+  { type: "transcription_review",icon: "📝", label: "Review Transcript", desc: "Correct an AI-generated transcript" },
+];
 ---
 
-<Layout title="CrowdSorcerer — AI-Powered Task API" description="One API for web research, entity lookup, document parsing, code execution, and 6 more task types. Plus a gamified human workforce for labeling and QA. Start free.">
+<Layout title="CrowdSorcerer — A human work API" description="Post labeling, moderation, ranking, and QA tasks. Real workers claim them, submit results, and you pull structured JSON. Pay per task in credits. Hybrid human+AI pipelines included.">
   <!-- Hero -->
   <section class="max-w-5xl mx-auto px-6 pt-20 pb-24 text-center">
     <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-violet-800 bg-violet-950/50 text-violet-300 text-sm mb-8">
       <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-      Open beta — free to use
+      Closed beta — launching soon
     </div>
 
     <h1 class="text-5xl sm:text-6xl font-bold tracking-tight mb-6">
-      One API for<br />
-      <span class="text-violet-400">10 AI task types.</span>
+      A REST API for<br />
+      <span class="text-violet-400">human work.</span>
     </h1>
 
     <p class="text-xl text-gray-400 max-w-2xl mx-auto mb-4">
-      Web research, entity enrichment, document parsing, code execution,
-      LLM generation, and more — all through a single REST API.
-      No provider juggling. No infra to manage.
+      Post a task. A real worker claims it, does the work, and submits a
+      structured answer. You get it back as typed JSON or a webhook.
+      Label, moderate, rank, verify, review — same flow every time.
     </p>
     <p class="text-sm text-gray-500 max-w-xl mx-auto mb-10">
-      Plus a gamified human workforce for data labeling, content moderation, and QA.
+      Need an LLM summary or a PDF parse in between two human steps?
+      Chain them as a pipeline. One balance, one audit trail, one webhook.
     </p>
 
     <div class="flex flex-wrap items-center justify-center gap-4">
       <a
-        href="/register"
+        href="/docs"
         class="px-6 py-3 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-semibold transition-colors"
       >
-        Start free — 1,000 credits
+        Read the docs
       </a>
       <a
-        href="/docs"
+        href="/pricing"
         class="px-6 py-3 rounded-xl border border-gray-700 hover:border-gray-500 text-gray-300 font-semibold transition-colors"
       >
-        Read the docs
+        See pricing
       </a>
     </div>
   </section>
@@ -68,88 +58,32 @@ function taskLabel(type: string): string {
     <div class="grid md:grid-cols-3 gap-8">
       <div class="text-center">
         <div class="w-14 h-14 rounded-2xl bg-violet-950/60 border border-violet-800/50 flex items-center justify-center text-2xl mx-auto mb-4">1</div>
-        <h3 class="text-lg font-semibold text-gray-200 mb-2">Submit a task</h3>
-        <p class="text-gray-400 text-sm">POST to <code class="text-violet-400 text-xs">/v1/tasks</code> with the task type and input. Or use the TypeScript / Python SDK.</p>
+        <h3 class="text-lg font-semibold text-gray-200 mb-2">Post a task</h3>
+        <p class="text-gray-400 text-sm">POST to <code class="text-violet-400 text-xs">/v1/tasks</code> with the task type, the input, and how many workers should touch it. Credits are reserved up front.</p>
       </div>
       <div class="text-center">
         <div class="w-14 h-14 rounded-2xl bg-violet-950/60 border border-violet-800/50 flex items-center justify-center text-2xl mx-auto mb-4">2</div>
-        <h3 class="text-lg font-semibold text-gray-200 mb-2">We route it</h3>
-        <p class="text-gray-400 text-sm">CrowdSorcerer picks the right worker — AI for automation tasks, humans for labeling and QA.</p>
+        <h3 class="text-lg font-semibold text-gray-200 mb-2">A worker claims it</h3>
+        <p class="text-gray-400 text-sm">The task shows up in the worker marketplace. A skill-matched worker claims it, does the work, and submits a structured answer within the timeout you set.</p>
       </div>
       <div class="text-center">
         <div class="w-14 h-14 rounded-2xl bg-violet-950/60 border border-violet-800/50 flex items-center justify-center text-2xl mx-auto mb-4">3</div>
         <h3 class="text-lg font-semibold text-gray-200 mb-2">Get structured results</h3>
-        <p class="text-gray-400 text-sm">Poll for completion, or receive a webhook. Every response is typed JSON — ready for your pipeline.</p>
-      </div>
-    </div>
-  </section>
-
-  <!-- Interactive API Demo -->
-  <section class="max-w-5xl mx-auto px-6 pb-20">
-    <div class="text-center mb-8">
-      <h2 class="text-2xl font-bold text-gray-200 mb-2">See it in action</h2>
-      <p class="text-gray-400 text-sm">Pick a scenario and watch the API respond.</p>
-    </div>
-
-    <!-- Demo terminal window -->
-    <div class="rounded-2xl overflow-hidden border border-gray-700 bg-gray-900 shadow-2xl">
-      <!-- Window chrome -->
-      <div class="flex items-center gap-2 px-4 py-3 bg-gray-800/80 border-b border-gray-700">
-        <div class="w-3 h-3 rounded-full bg-red-500/70"></div>
-        <div class="w-3 h-3 rounded-full bg-yellow-500/70"></div>
-        <div class="w-3 h-3 rounded-full bg-green-500/70"></div>
-        <span class="ml-3 text-xs text-gray-500 font-mono">CrowdSorcerer API</span>
-        <!-- Scenario tabs -->
-        <div class="ml-auto flex gap-1">
-          <button class="demo-tab active-tab px-3 py-1 rounded text-xs font-medium transition-colors" data-demo="0">🌐 Web Research</button>
-          <button class="demo-tab px-3 py-1 rounded text-xs font-medium transition-colors" data-demo="1">🤖 LLM Generate</button>
-          <button class="demo-tab px-3 py-1 rounded text-xs font-medium transition-colors" data-demo="2">🏢 Entity Lookup</button>
-        </div>
-      </div>
-
-      <!-- Split pane: request + response -->
-      <div class="grid md:grid-cols-2 gap-0 divide-y md:divide-y-0 md:divide-x divide-gray-800">
-        <!-- Request pane -->
-        <div class="p-5">
-          <div class="flex items-center gap-2 mb-3">
-            <span class="text-[10px] font-bold uppercase tracking-widest text-violet-400 bg-violet-950/40 border border-violet-800/50 px-2 py-0.5 rounded">POST</span>
-            <span class="text-xs text-gray-500 font-mono">/v1/tasks</span>
-          </div>
-          <pre id="demo-request" class="text-sm font-mono text-gray-300 leading-relaxed overflow-x-auto whitespace-pre-wrap min-h-[160px]"></pre>
-        </div>
-
-        <!-- Response pane -->
-        <div class="p-5">
-          <div class="flex items-center gap-2 mb-3">
-            <span id="demo-status-badge" class="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded border text-gray-400 bg-gray-800 border-gray-700">Waiting…</span>
-            <span id="demo-status-label" class="text-xs text-gray-500">Submit a task to see results</span>
-          </div>
-          <pre id="demo-response" class="text-sm font-mono text-gray-500 leading-relaxed overflow-x-auto whitespace-pre-wrap min-h-[160px]"></pre>
-        </div>
-      </div>
-
-      <!-- Progress bar + action -->
-      <div class="px-5 py-4 bg-gray-950/50 border-t border-gray-800 flex items-center justify-between gap-4">
-        <div class="flex-1 bg-gray-800 rounded-full h-1.5 overflow-hidden">
-          <div id="demo-progress" class="h-full bg-violet-500 rounded-full transition-all duration-300" style="width: 0%"></div>
-        </div>
-        <button id="demo-run-btn" class="flex-shrink-0 px-4 py-1.5 bg-violet-600 hover:bg-violet-500 text-white text-xs font-semibold rounded-lg transition-colors">
-          ▶ Run demo
-        </button>
+        <p class="text-gray-400 text-sm">Poll for completion, or receive a webhook. Every submission is typed JSON — ready for your downstream pipeline. Failed tasks auto-refund.</p>
       </div>
     </div>
   </section>
 
   <!-- Task types grid -->
   <section class="max-w-5xl mx-auto px-6 pb-20">
-    <h2 class="text-2xl font-bold text-center mb-3 text-gray-300">10 AI task types. One endpoint.</h2>
-    <p class="text-gray-500 text-sm text-center mb-10">Each task type has its own schema, workers, and quality checks.</p>
-    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
-      {Object.entries(TASK_CREDITS).map(([type, credits]) => (
+    <h2 class="text-2xl font-bold text-center mb-3 text-gray-300">Eight task types. One endpoint.</h2>
+    <p class="text-gray-500 text-sm text-center mb-10">Each task type has a strict input schema and a matching worker response schema — so you never have to parse free-text.</p>
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {HUMAN_TASKS.map(({ icon, label, desc }) => (
         <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 hover:border-violet-800 transition-colors">
-          <div class="text-2xl mb-2">{taskIcon(type)}</div>
-          <div class="text-sm font-medium text-gray-200">{taskLabel(type)}</div>
-          <div class="text-xs text-gray-500 mt-1">{credits} {credits === 1 ? "credit" : "credits"}</div>
+          <div class="text-2xl mb-2">{icon}</div>
+          <div class="text-sm font-medium text-gray-200">{label}</div>
+          <div class="text-xs text-gray-500 mt-1">{desc}</div>
         </div>
       ))}
     </div>
@@ -159,15 +93,15 @@ function taskLabel(type: string): string {
   <section class="max-w-5xl mx-auto px-6 pb-20">
     <div class="grid md:grid-cols-2 gap-8 items-center">
       <div>
-        <h2 class="text-3xl font-bold mb-4">Five lines to your first task.</h2>
+        <h2 class="text-3xl font-bold mb-4">A few lines to your first task.</h2>
         <p class="text-gray-400 mb-4">
-          Install the SDK. Create a client. Call a method.
-          Every task type has a typed helper — autocomplete included.
+          Install the SDK. Create a client. Post a task.
+          The SDK polls until the worker submits — or you subscribe to a webhook and move on.
         </p>
         <ul class="text-gray-400 text-sm space-y-2 mb-6">
           <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">✓</span> TypeScript + Python SDKs</li>
           <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">✓</span> Webhook delivery with HMAC signatures</li>
-          <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">✓</span> Task pipelines — chain AI + human steps</li>
+          <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">✓</span> Pipelines — chain human steps with LLM / parse / exec primitives</li>
           <li class="flex items-start gap-2"><span class="text-emerald-400 mt-0.5">✓</span> Org-level billing, API keys, and RBAC</li>
         </ul>
         <a href="/docs" class="text-violet-400 hover:text-violet-300 font-medium">
@@ -179,14 +113,19 @@ function taskLabel(type: string): string {
 
 <span class="text-violet-400">const</span> crowd = <span class="text-violet-400">new</span> <span class="text-yellow-400">CrowdSorcerer</span>({"{"}<span class="text-orange-400"> apiKey</span>: <span class="text-green-400">"csk_..."</span> {"}"});
 
-<span class="text-gray-500">// Research a company</span>
-<span class="text-violet-400">const</span> task = <span class="text-violet-400">await</span> crowd.<span class="text-yellow-400">entityLookup</span>({"{"}<span class="text-orange-400">
-  entity_type</span>: <span class="text-green-400">"company"</span>,<span class="text-orange-400">
-  name</span>: <span class="text-green-400">"OpenAI"</span>,
+<span class="text-gray-500">// Ask workers to classify a review</span>
+<span class="text-violet-400">const</span> task = <span class="text-violet-400">await</span> crowd.<span class="text-yellow-400">runTask</span>({"{"}<span class="text-orange-400">
+  type</span>: <span class="text-green-400">"label_text"</span>,<span class="text-orange-400">
+  input</span>: {"{"}<span class="text-orange-400">
+    text</span>: <span class="text-green-400">"The new iPhone is great!"</span>,<span class="text-orange-400">
+    categories</span>: [<span class="text-green-400">"positive"</span>, <span class="text-green-400">"negative"</span>],<span class="text-orange-400">
+    question</span>: <span class="text-green-400">"Sentiment?"</span>,
+  {"}"},<span class="text-orange-400">
+  assignments_required</span>: <span class="text-orange-400">3</span>,
 {"}"});
 
 console.<span class="text-yellow-400">log</span>(task.output.summary);
-<span class="text-gray-500">// → "OpenAI: AI safety company..."</span></pre>
+<span class="text-gray-500">// → "positive (3/3 workers agree)"</span></pre>
       </div>
     </div>
   </section>
@@ -238,127 +177,69 @@ console.<span class="text-yellow-400">log</span>(task.output.summary);
   <!-- Pricing preview -->
   <section class="max-w-5xl mx-auto px-6 pb-20 text-center">
     <h2 class="text-3xl font-bold mb-3">Pay per task</h2>
-    <p class="text-gray-400 mb-10">1,000 credits free on signup. No credit card required. $1 = 100 credits.</p>
+    <p class="text-gray-400 mb-10">No subscription. Buy credits once, spend them over time. $1 = 100 credits.</p>
     <div class="grid md:grid-cols-3 gap-6">
-      <div class="bg-gradient-to-br from-violet-950/60 to-gray-900 border-2 border-violet-600 rounded-xl p-6 text-left relative overflow-hidden">
-        <div class="absolute top-3 right-3">
-          <span class="text-[10px] font-bold uppercase tracking-widest bg-violet-600 text-white px-2 py-0.5 rounded-full">Start here</span>
-        </div>
-        <div class="text-sm text-violet-400 font-semibold mb-1">Free</div>
-        <div class="text-3xl font-bold mb-1">$0</div>
-        <div class="text-violet-300 font-medium mb-3">1,000 credits</div>
-        <div class="text-sm text-gray-400 mb-4">Try every task type. No commitment.</div>
-        <a
-          href="/register"
-          class="inline-block w-full text-center py-2.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-sm font-semibold transition-colors"
-        >
-          Get started free →
-        </a>
-      </div>
       <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 text-left">
         <div class="text-sm text-gray-500 mb-1">Starter</div>
         <div class="text-3xl font-bold mb-1">$10</div>
         <div class="text-violet-300 font-medium mb-3">1,000 credits</div>
-        <div class="text-sm text-gray-500">Best for prototypes and small projects</div>
+        <div class="text-sm text-gray-500">For prototypes and small projects. ~300–500 labeling tasks at 3 assignments each.</div>
       </div>
-      <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 text-left">
-        <div class="text-sm text-gray-500 mb-1">Pro</div>
+      <div class="bg-gradient-to-br from-violet-950/60 to-gray-900 border-2 border-violet-600 rounded-xl p-6 text-left relative overflow-hidden">
+        <div class="absolute top-3 right-3">
+          <span class="text-[10px] font-bold uppercase tracking-widest bg-violet-600 text-white px-2 py-0.5 rounded-full">Most popular</span>
+        </div>
+        <div class="text-sm text-violet-400 font-semibold mb-1">Pro</div>
         <div class="text-3xl font-bold mb-1">$90</div>
         <div class="text-violet-300 font-medium mb-3">10,000 credits</div>
-        <div class="text-sm text-gray-500">10% volume discount. Production-ready.</div>
+        <div class="text-sm text-gray-400 mb-4">10% volume discount. Production datasets and recurring pipelines.</div>
+        <a href="/pricing" class="inline-block w-full text-center py-2.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-sm font-semibold transition-colors">
+          See all plans →
+        </a>
       </div>
-    </div>
-  </section>
-
-  <!-- Pricing Calculator -->
-  <section class="max-w-5xl mx-auto px-6 pb-20">
-    <div class="bg-gradient-to-br from-gray-900 to-gray-950 border border-gray-800 rounded-2xl p-8 md:p-10">
-      <h2 class="text-2xl font-bold mb-2">Estimate your cost</h2>
-      <p class="text-gray-400 text-sm mb-8">$1 = 100 credits. Most tasks cost 1–10 credits.</p>
-
-      <div class="grid md:grid-cols-2 gap-8">
-        <div class="space-y-5">
-          <div>
-            <label for="calc-type" class="block text-sm text-gray-400 mb-2">Task type</label>
-            <select id="calc-type" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500">
-              <option value="1">LLM Generate (1 cr)</option>
-              <option value="2">Data Transform (2 cr)</option>
-              <option value="2">PII Detect (2 cr)</option>
-              <option value="3">Document Parse (3 cr)</option>
-              <option value="3">Code Execute (3 cr)</option>
-              <option value="5">Entity Lookup (5 cr)</option>
-              <option value="5">Web Intel (5 cr)</option>
-              <option value="8">Audio Transcribe (8 cr)</option>
-              <option value="10">Web Research (10 cr)</option>
-              <option value="2">Screenshot (2 cr)</option>
-            </select>
-          </div>
-          <div>
-            <label for="calc-tasks" class="block text-sm text-gray-400 mb-2">Tasks per month</label>
-            <input
-              type="range"
-              id="calc-tasks"
-              min="10"
-              max="10000"
-              step="10"
-              value="500"
-              class="w-full accent-violet-500"
-            />
-            <div class="flex justify-between text-xs text-gray-500 mt-1">
-              <span>10</span>
-              <span id="calc-tasks-val" class="text-violet-300 font-medium">500</span>
-              <span>10,000</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="flex flex-col justify-center bg-gray-800/50 rounded-xl p-6 border border-gray-700">
-          <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Estimated monthly cost</div>
-          <div class="text-5xl font-bold text-violet-300 mb-1" id="calc-result">$5.00</div>
-          <div class="text-sm text-gray-400 mb-4" id="calc-credits">500 credits needed</div>
-          <div class="text-xs text-gray-500" id="calc-plan">Covered by Starter plan ($10/mo)</div>
-          <a href="/pricing" class="mt-4 text-sm text-violet-400 hover:text-violet-300 transition-colors">
-            See all plans →
-          </a>
-        </div>
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 text-left">
+        <div class="text-sm text-gray-500 mb-1">Enterprise</div>
+        <div class="text-3xl font-bold mb-1">Talk to us</div>
+        <div class="text-violet-300 font-medium mb-3">Custom volume</div>
+        <div class="text-sm text-gray-500">Dedicated workers, SLAs, private workforces, and procurement-friendly invoicing.</div>
       </div>
     </div>
   </section>
 
   <!-- Why CrowdSorcerer — honest comparison -->
   <section class="max-w-5xl mx-auto px-6 pb-20">
-    <h2 class="text-2xl font-bold text-center mb-3 text-gray-300">Why not just use the APIs directly?</h2>
-    <p class="text-gray-500 text-sm text-center mb-10 max-w-2xl mx-auto">You could wire up each provider yourself. Here's what you'd need to build.</p>
+    <h2 class="text-2xl font-bold text-center mb-3 text-gray-300">Why CrowdSorcerer over the alternatives</h2>
+    <p class="text-gray-500 text-sm text-center mb-10 max-w-2xl mx-auto">You could wire up MTurk, stitch together a few Fiverr contractors, or build an internal tool. Here's what you get instead.</p>
     <div class="grid md:grid-cols-2 gap-6">
       {[
         {
-          title: "Unified task schema",
-          desc: "One input/output format across 10 task types. No learning 10 different API schemas.",
+          title: "Typed input → typed output",
+          desc: "Every task type has a strict JSON schema both sides. No free-text parsing, no 'did they read the instructions?' debugging.",
           icon: "📐",
         },
         {
-          title: "Automatic routing",
-          desc: "Submit a task — we pick the best worker. Swap providers without changing your code.",
+          title: "Pipelines, not one-off tasks",
+          desc: "Chain human steps with LLM summarization, PDF parsing, and code execution. One API, one credit balance, one audit trail.",
           icon: "🔀",
         },
         {
-          title: "Human + AI in one API",
-          desc: "Chain AI automation with human QA. Same endpoint, same billing, same webhooks.",
-          icon: "🤝",
-        },
-        {
           title: "Built-in quality control",
-          desc: "Worker reputation scores, consensus checks, and automatic re-routing on failures.",
+          desc: "Gold-standard checks, consensus across N workers, automatic disagreement review, per-worker reputation scores.",
           icon: "✅",
         },
         {
+          title: "Skill certification + gamification",
+          desc: "Workers level up through tiered certs, unlock higher-paying tasks, and stay engaged through leagues, quests, and streaks.",
+          icon: "🎯",
+        },
+        {
           title: "Credits, not subscriptions",
-          desc: "Pay per task, not per seat or per month. Scale to zero when you're not using it.",
+          desc: "Pay per assignment. Scale to zero when you're not running a batch. No seat fees, no 'enterprise sales call to get a quote'.",
           icon: "💰",
         },
         {
           title: "Typed SDKs + webhooks",
-          desc: "TypeScript and Python SDKs with full autocomplete. HMAC-signed webhook delivery.",
+          desc: "TypeScript and Python SDKs with full autocomplete. HMAC-signed webhooks with replay protection. Org-level API keys with scopes.",
           icon: "🔧",
         },
       ].map(({ title, desc, icon }) => (
@@ -373,13 +254,13 @@ console.<span class="text-yellow-400">log</span>(task.output.summary);
     </div>
   </section>
 
-  <!-- Open source + transparency -->
+  <!-- Stats -->
   <section class="max-w-5xl mx-auto px-6 pb-20">
     <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
       {[
-        { value: "10", label: "AI task types" },
         { value: "8", label: "Human task types" },
-        { value: "1¢", label: "Cheapest task" },
+        { value: "3", label: "Consensus strategies" },
+        { value: "1¢", label: "Cheapest assignment" },
         { value: "2", label: "SDKs (TS + Python)" },
       ].map(({ value, label }) => (
         <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 text-center">
@@ -393,269 +274,25 @@ console.<span class="text-yellow-400">log</span>(task.output.summary);
   <!-- Final CTA -->
   <section class="max-w-5xl mx-auto px-6 pb-24">
     <div class="text-center bg-gradient-to-br from-violet-950/50 to-gray-950 border border-violet-800/40 rounded-2xl p-12">
-      <h2 class="text-3xl font-bold mb-4">Try it in 30 seconds.</h2>
+      <h2 class="text-3xl font-bold mb-4">Closed beta.</h2>
       <p class="text-gray-400 mb-8 max-w-lg mx-auto">
-        Sign up, grab your API key, submit a task. 1,000 free credits, no credit card.
+        We're onboarding a small cohort before the public launch. Email us with what you want to build and we'll get you an account.
       </p>
       <div class="flex flex-wrap justify-center gap-4">
         <a
-          href="/register"
+          href="mailto:hello@rebaselabs.online?subject=CrowdSorcerer early access"
           class="px-8 py-3 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-semibold transition-colors"
         >
-          Create free account
+          Request early access
         </a>
         <a
-          href="/docs/api-reference"
+          href="/docs"
           class="px-8 py-3 rounded-xl border border-gray-700 hover:border-gray-500 text-gray-300 font-semibold transition-colors"
         >
-          API Reference
+          Read the docs
         </a>
       </div>
     </div>
   </section>
 
-  <script>
-    const typeEl = document.getElementById("calc-type") as HTMLSelectElement;
-    const tasksEl = document.getElementById("calc-tasks") as HTMLInputElement;
-    const tasksValEl = document.getElementById("calc-tasks-val")!;
-    const resultEl = document.getElementById("calc-result")!;
-    const creditsEl = document.getElementById("calc-credits")!;
-    const planEl = document.getElementById("calc-plan")!;
-
-    function update() {
-      const creditPerTask = Number(typeEl?.value ?? 1);
-      const taskCount = Number(tasksEl?.value ?? 500);
-      const totalCredits = creditPerTask * taskCount;
-      const usd = totalCredits / 100;
-
-      tasksValEl.textContent = taskCount.toLocaleString();
-      resultEl.textContent = `$${usd.toFixed(2)}`;
-      creditsEl.textContent = `${totalCredits.toLocaleString()} credits needed`;
-
-      let planText = "";
-      if (totalCredits <= 100) planText = "Covered by Free plan";
-      else if (totalCredits <= 1000) planText = "Covered by Starter plan ($10/mo)";
-      else if (totalCredits <= 10000) planText = "Covered by Pro plan ($90/mo — 10% savings)";
-      else planText = "Contact us for Enterprise pricing";
-      planEl.textContent = planText;
-    }
-
-    typeEl?.addEventListener("change", update);
-    tasksEl?.addEventListener("input", update);
-    update();
-  </script>
-
-  <script>
-    // ── Interactive API Demo ──────────────────────────────────────────────────
-    const DEMOS = [
-      {
-        request: `{
-  "type": "web_research",
-  "input": {
-    "url": "https://news.ycombinator.com",
-    "instruction": "List the top 5 story titles"
-  },
-  "priority": "normal"
-}`,
-        response: `{
-  "id": "task_8f3a2c1d",
-  "status": "completed",
-  "type": "web_research",
-  "output": {
-    "summary": "Hacker News front page features stories
-about AI safety research, a new Rust HTTP
-library, PostgreSQL 17 benchmarks, and a
-discussion on distributed systems.",
-    "key_facts": [
-      "Top story: AI alignment paper by Anthropic",
-      "PostgreSQL 17 shows 40% query speedup",
-      "New Rust async HTTP client: 2M req/sec"
-    ],
-    "sources": ["https://news.ycombinator.com"]
-  },
-  "credits_used": 10,
-  "completed_at": "2026-03-24T14:02:11Z"
-}`,
-      },
-      {
-        request: `{
-  "type": "llm_generate",
-  "input": {
-    "messages": [{
-      "role": "user",
-      "content": "Write 3 taglines for a
-crowdsourcing + AI task API platform"
-    }],
-    "model": "claude-3-5-haiku-20241022"
-  }
-}`,
-        response: `{
-  "id": "task_2e9b1f4a",
-  "status": "completed",
-  "type": "llm_generate",
-  "output": {
-    "text": "**1.** Route any task. Get results instantly.
-
-**2.** 10 AI workers. One API. Zero setup.
-
-**3.** From prompt to production — in minutes,
-not months.",
-    "model": "claude-3-5-haiku-20241022",
-    "tokens": 84
-  },
-  "credits_used": 1,
-  "completed_at": "2026-03-24T14:02:04Z"
-}`,
-      },
-      {
-        request: `{
-  "type": "entity_lookup",
-  "input": {
-    "entity_type": "company",
-    "domain": "stripe.com",
-    "enrich_fields": [
-      "description",
-      "headcount",
-      "funding"
-    ]
-  }
-}`,
-        response: `{
-  "id": "task_7c4d8e2b",
-  "status": "completed",
-  "type": "entity_lookup",
-  "output": {
-    "name": "Stripe",
-    "description": "Online payment processing
-for internet businesses.",
-    "headcount": "~8,000 employees",
-    "funding": "$2.2B raised",
-    "founded": 2010,
-    "hq": "South San Francisco, CA"
-  },
-  "credits_used": 5,
-  "completed_at": "2026-03-24T14:02:07Z"
-}`,
-      },
-    ];
-
-    let currentDemo = 0;
-    let running = false;
-
-    const reqEl    = document.getElementById("demo-request");
-    const resEl    = document.getElementById("demo-response");
-    const progEl   = document.getElementById("demo-progress") as HTMLElement | null;
-    const statusBadge = document.getElementById("demo-status-badge");
-    const statusLabel = document.getElementById("demo-status-label");
-    const runBtn   = document.getElementById("demo-run-btn") as HTMLButtonElement | null;
-    const tabs     = document.querySelectorAll(".demo-tab");
-
-    function setTab(idx: number) {
-      currentDemo = idx;
-      tabs.forEach((t, i) => {
-        if (i === idx) {
-          t.classList.add("active-tab");
-        } else {
-          t.classList.remove("active-tab");
-        }
-      });
-      // Reset display
-      if (reqEl) reqEl.textContent = DEMOS[idx].request;
-      if (resEl) { resEl.textContent = ""; resEl.classList.add("text-gray-500"); resEl.classList.remove("text-green-300"); }
-      setStatus("idle", "Click ▶ Run demo to execute");
-      if (progEl) progEl.style.width = "0%";
-    }
-
-    function setStatus(state: string, label: string) {
-      if (!statusBadge || !statusLabel) return;
-      statusLabel.textContent = label;
-      if (state === "idle") {
-        statusBadge.textContent = "Ready";
-        statusBadge.className = "text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded border text-gray-400 bg-gray-800 border-gray-700";
-      } else if (state === "running") {
-        statusBadge.textContent = "Processing";
-        statusBadge.className = "text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded border text-yellow-300 bg-yellow-950/40 border-yellow-800/50 animate-pulse";
-      } else if (state === "done") {
-        statusBadge.textContent = "200 OK";
-        statusBadge.className = "text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded border text-green-300 bg-green-950/40 border-green-800/50";
-      }
-    }
-
-    async function runDemo() {
-      if (running) return;
-      running = true;
-      if (runBtn) { runBtn.textContent = "⏳ Running…"; runBtn.disabled = true; }
-
-      const demo = DEMOS[currentDemo];
-      if (reqEl) reqEl.textContent = demo.request;
-      if (resEl) { resEl.textContent = ""; resEl.classList.remove("text-green-300"); resEl.classList.add("text-gray-500"); }
-      setStatus("running", "Routing task to AI worker…");
-
-      // Animate progress bar from 0 → 85%
-      if (progEl) progEl.style.width = "0%";
-      await new Promise(r => setTimeout(r, 50));
-      if (progEl) { progEl.style.transition = "width 1.4s ease-out"; progEl.style.width = "85%"; }
-
-      await new Promise(r => setTimeout(r, 1500));
-      setStatus("running", "Worker processing…");
-      await new Promise(r => setTimeout(r, 900));
-
-      // Complete: flash to 100%
-      if (progEl) { progEl.style.transition = "width 0.25s ease-out"; progEl.style.width = "100%"; }
-      setStatus("done", "Task completed ✓");
-
-      // Type out the response
-      if (resEl) {
-        const outputEl = resEl;
-        outputEl.classList.remove("text-gray-500");
-        outputEl.classList.add("text-green-300");
-        const text = demo.response;
-        let i = 0;
-        function typeNext() {
-          if (i < text.length) {
-            outputEl.textContent += text[i++];
-            setTimeout(typeNext, i < 50 ? 12 : 4);
-          } else {
-            running = false;
-            if (runBtn) { runBtn.textContent = "▶ Run again"; runBtn.disabled = false; }
-            if (progEl) setTimeout(() => { progEl.style.transition = "width 0.6s"; progEl.style.width = "0%"; }, 2000);
-          }
-        }
-        typeNext();
-      }
-    }
-
-    // Tab clicks
-    tabs.forEach((tab, i) => {
-      tab.addEventListener("click", () => {
-        if (!running) setTab(i);
-      });
-    });
-
-    // Run button
-    runBtn?.addEventListener("click", runDemo);
-
-    // Init
-    setTab(0);
-
-    // Auto-run once after 1.5s to grab attention
-    setTimeout(() => { if (!running) runDemo(); }, 1500);
-  </script>
-
-  <style is:global>
-    .demo-tab {
-      background: transparent;
-      color: #6b7280;
-      border: 1px solid transparent;
-    }
-    .demo-tab:hover {
-      color: #d1d5db;
-      background: #1f2937;
-    }
-    .demo-tab.active-tab {
-      background: #1f2937;
-      color: #e5e7eb;
-      border-color: #374151;
-    }
-  </style>
 </Layout>
