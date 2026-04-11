@@ -99,15 +99,17 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v5
-        with:
-          node-version: "22"
-
+      # actions/setup-node@v5 auto-detects pnpm for caching, so pnpm must
+      # be on PATH before setup-node runs. Install it first.
       - name: Install pnpm
         uses: pnpm/action-setup@v4
         with:
           version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -128,15 +130,17 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v5
-        with:
-          node-version: "22"
-
+      # actions/setup-node@v5 auto-detects pnpm for caching, so pnpm must
+      # be on PATH before setup-node runs. Install it first.
       - name: Install pnpm
         uses: pnpm/action-setup@v4
         with:
           version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
