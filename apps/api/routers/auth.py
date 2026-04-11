@@ -73,6 +73,15 @@ async def register(
     ref: Optional[str] = Query(None, description="Referral code"),
     db: AsyncSession = Depends(get_db),
 ):
+    # Registration is gated by the REGISTRATION_ENABLED env var and closed
+    # by default until public launch. Checked here (not as a dependency) so
+    # the OpenAPI schema still advertises the endpoint during the beta.
+    if not get_settings().registration_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Registration is closed. Contact support for early access.",
+        )
+
     # Check email uniqueness
     existing = await db.execute(select(UserDB).where(UserDB.email == req.email))
     if existing.scalar_one_or_none():

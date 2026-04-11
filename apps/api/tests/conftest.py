@@ -13,10 +13,29 @@ import uuid
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
 # Add apps/api/ to sys.path (parent of the tests/ directory)
 api_root = Path(__file__).parent.parent
 if str(api_root) not in sys.path:
     sys.path.insert(0, str(api_root))
+
+
+@pytest.fixture(autouse=True)
+def _open_registration_for_tests():
+    """Tests predate the production registration gate — flip it on for
+    every test so the 19+ existing /register tests still exercise the
+    signup path. Tests that want to verify the closed-registration
+    behaviour override this by setting the flag back to False locally.
+    """
+    from core.config import get_settings
+    s = get_settings()
+    prev = s.registration_enabled
+    s.registration_enabled = True
+    try:
+        yield
+    finally:
+        s.registration_enabled = prev
 
 
 # ─── Shared test helpers ──────────────────────────────────────────────────

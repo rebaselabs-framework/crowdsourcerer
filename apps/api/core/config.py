@@ -83,8 +83,13 @@ class Settings(BaseSettings):
     stripe_price_id_pro: str = ""
 
     # Credits
-    free_tier_credits: int = 1000  # credits given on signup (beta — generous for onboarding)
+    free_tier_credits: int = 0     # credits given on signup — 0 until launch
     credits_per_usd: int = 100     # 1 USD = 100 credits
+
+    # Registration gate — closed by default until public launch.
+    # When False, POST /v1/auth/register returns 403. OAuth flows are
+    # gated separately in routers/oauth.py via the same flag.
+    registration_enabled: bool = False
 
     # Crypto payment addresses (owner-controlled)
     btc_address: str = "bc1qvzvwjcvpcztwcuv5ef42frzlq2xn46g7usxfcm"

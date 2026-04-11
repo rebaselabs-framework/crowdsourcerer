@@ -30,6 +30,11 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       API_KEY_SALT: ${API_KEY_SALT}
       DEBUG: ${DEBUG:-false}
+      # Signup gating — closed by default until public launch. Flip to
+      # "true" to re-open /v1/auth/register (and the Google OAuth new-user
+      # branch). FREE_TIER_CREDITS controls the balance granted on signup.
+      REGISTRATION_ENABLED: ${REGISTRATION_ENABLED:-false}
+      FREE_TIER_CREDITS: ${FREE_TIER_CREDITS:-0}
       # Email notifications (optional — set EMAIL_ENABLED=true to activate)
       EMAIL_ENABLED: ${EMAIL_ENABLED:-false}
       SMTP_HOST: ${SMTP_HOST:-}

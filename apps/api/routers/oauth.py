@@ -213,7 +213,9 @@ async def google_callback(
                 user.email_verification_token_hash = None
 
     if not user:
-        # 3. Brand-new user via Google
+        # 3. Brand-new user via Google — gated by registration flag.
+        if not settings.registration_enabled:
+            return RedirectResponse(url="/login?oauth_error=registration_closed")
         intended_role = state_payload.get("role", "requester")
         if intended_role not in ("requester", "worker", "both"):
             intended_role = "requester"

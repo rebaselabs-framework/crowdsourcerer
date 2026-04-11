@@ -291,6 +291,36 @@ class TestRegisterWithMockDB:
             app.dependency_overrides.pop(get_db, None)
 
 
+class TestRegistrationGate:
+    """The /v1/auth/register endpoint must 403 when REGISTRATION_ENABLED=false.
+
+    The rest of the suite runs with registration opened via the autouse
+    fixture in conftest.py, so these tests explicitly close it again to
+    exercise the gate.
+    """
+
+    @pytest.mark.asyncio
+    async def test_closed_registration_returns_403(self, app):
+        from core.config import get_settings
+        # Reset rate limiter so prior tests don't leak a 429 into this one.
+        app.state.limiter._storage.reset()
+        from routers.auth import limiter as _auth_limiter
+        _auth_limiter._storage.reset()
+
+        settings = get_settings()
+        settings.registration_enabled = False
+        try:
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+                r = await c.post("/v1/auth/register", json={
+                    "email": "shouldnotexist@test.com",
+                    "password": "testpassword",
+                })
+            assert r.status_code == 403
+            assert "closed" in r.json()["detail"].lower()
+        finally:
+            settings.registration_enabled = True
+
+
 # ── Task endpoints ────────────────────────────────────────────────────────────
 
 class TestTasksAuth:

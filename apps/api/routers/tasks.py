@@ -38,6 +38,28 @@ from services.credit_ledger import default_ledger
 from services.pricing import HUMAN_TASK_BASE_CREDITS, default_pricing
 
 
+def _require_verified(user: UserDB) -> None:
+    """Reject task creation for users whose email isn't verified.
+
+    Defence-in-depth against abusive signups burning through LLM credits
+    on throwaway addresses. Separate from the registration gate so existing
+    unverified accounts can still log in and view their dashboard — they
+    just can't spend credits until they click the verification link.
+    """
+    if not user.email_verified:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "email_not_verified",
+                "message": (
+                    "Verify your email address before creating tasks. "
+                    "Check your inbox or request a new verification link "
+                    "from account settings."
+                ),
+            },
+        )
+
+
 async def _refund_task_credits(
     db: AsyncSession,
     task: TaskDB,
@@ -95,6 +117,7 @@ async def create_task(
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    _require_verified(user)
 
     # Enforce plan quota limits (daily + per-minute burst)
     from core.quotas import enforce_task_creation_quota, enforce_task_burst_limit
@@ -337,6 +360,7 @@ async def create_tasks_batch(
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    _require_verified(user)
 
     # Enforce plan quota limits (batch size + daily limit + burst)
     from core.quotas import enforce_task_creation_quota, enforce_task_burst_limit, record_task_creation, record_task_burst, enforce_batch_size
@@ -1978,6 +2002,7 @@ async def rerun_task(
     user = user_result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    _require_verified(user)
 
     # Use org pool if original task had an org
     if original.org_id:

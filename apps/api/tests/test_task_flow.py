@@ -327,6 +327,27 @@ class TestCreateHumanTask:
             r = await c.post("/v1/tasks", json={"type": "label_text", "input": {}})
         assert r.status_code == 401
 
+    @pytest.mark.asyncio
+    async def test_create_task_unverified_email_returns_403(self, app, requester_headers):
+        """Users whose email isn't verified can't burn credits on tasks."""
+        requester = _make_requester(credits=1000)
+        requester.email_verified = False
+        db = _make_mock_db()
+        db.execute.return_value = _scalar_result(requester)
+
+        from core.database import get_db
+        app.dependency_overrides[get_db] = _db_override(db)
+        try:
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+                r = await c.post("/v1/tasks", json={
+                    "type": "llm_generate",
+                    "input": {"prompt": "hi"},
+                }, headers=requester_headers)
+            assert r.status_code == 403
+            assert r.json()["detail"]["error"] == "email_not_verified"
+        finally:
+            app.dependency_overrides.pop(get_db, None)
+
 
 # ── Step 2: Claim task ────────────────────────────────────────────────────────
 
