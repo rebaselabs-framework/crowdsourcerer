@@ -143,47 +143,6 @@ async def test_async_tasks_batch():
         assert result.summary["created"] == 1
 
 
-# ─── Convenience helpers ─────────────────────────────────────────────────
-
-
-@respx.mock
-@pytest.mark.asyncio
-async def test_async_web_research():
-    respx.post(f"{BASE}/v1/tasks").mock(return_value=httpx.Response(
-        200,
-        json={
-            "id": "00000000-0000-0000-0000-000000000002",
-            "type": "web_research",
-            "status": "queued",
-            "credits_used": 10,
-            "execution_mode": "ai",
-            "created_at": "2026-01-01T00:00:00Z",
-        },
-    ))
-    async with AsyncCrowdSorcerer(api_key="cs_test", base_url=BASE) as c:
-        task = await c.tasks.web_research("https://example.com", "Summarise")
-        assert task.type == "web_research"
-
-
-@respx.mock
-@pytest.mark.asyncio
-async def test_async_pii_detect():
-    respx.post(f"{BASE}/v1/tasks").mock(return_value=httpx.Response(
-        200,
-        json={
-            "id": "00000000-0000-0000-0000-000000000003",
-            "type": "pii_detect",
-            "status": "queued",
-            "credits_used": 2,
-            "execution_mode": "ai",
-            "created_at": "2026-01-01T00:00:00Z",
-        },
-    ))
-    async with AsyncCrowdSorcerer(api_key="cs_test", base_url=BASE) as c:
-        task = await c.tasks.pii_detect("John Doe lives at 123 Main St")
-        assert task.type == "pii_detect"
-
-
 # ─── Error handling ──────────────────────────────────────────────────────
 
 

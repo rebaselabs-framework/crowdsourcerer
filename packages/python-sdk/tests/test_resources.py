@@ -345,37 +345,6 @@ class TestSyncClientEdgeCases:
         assert "crowdsourcerer-python/1.0.0" in headers.get("x-client", "")
 
     @respx.mock
-    def test_task_convenience_helpers(self):
-        """Test all task convenience methods send the right type."""
-        for method, task_type, args in [
-            ("web_research", "web_research", ("https://example.com", "Summarise")),
-            ("entity_lookup", "entity_lookup", ("company", "Acme")),
-            ("document_parse", "document_parse", ("https://example.com/doc.pdf",)),
-            ("data_transform", "data_transform", ([1, 2], "sum")),
-            ("llm_generate", "llm_generate", ([{"role": "user", "content": "Hi"}],)),
-            ("screenshot", "screenshot", ("https://example.com",)),
-            ("audio_transcribe", "audio_transcribe", ("https://example.com/audio.mp3",)),
-            ("pii_detect", "pii_detect", ("John Doe",)),
-            ("code_execute", "code_execute", ("print('hi')",)),
-            ("web_intel", "web_intel", ("latest AI news",)),
-        ]:
-            respx.post(f"{BASE}/v1/tasks").mock(return_value=httpx.Response(
-                200,
-                json={
-                    "id": "00000000-0000-0000-0000-000000000001",
-                    "type": task_type,
-                    "status": "queued",
-                    "credits_used": 1,
-                    "execution_mode": "ai",
-                    "created_at": "2026-01-01T00:00:00Z",
-                },
-            ))
-            c = make_client()
-            result = getattr(c.tasks, method)(*args)
-            assert result.type == task_type
-            respx.pop("POST", f"{BASE}/v1/tasks")
-
-    @respx.mock
     def test_request_id_propagated(self):
         """Error includes x-request-id from response headers."""
         respx.get(f"{BASE}/v1/users/me").mock(

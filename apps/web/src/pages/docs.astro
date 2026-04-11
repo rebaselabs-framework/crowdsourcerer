@@ -2,67 +2,27 @@
 import Layout from "@/layouts/Layout.astro";
 import { CONTACT_EMAIL, mailto } from "@/lib/contact";
 
+// Pipeline AI primitives. These are NOT submittable via POST /v1/tasks —
+// they only run as steps inside a pipeline. Documented here so
+// pipeline authors know the input schema for each step type.
 const taskTypes = [
   {
-    id: "web-research",
-    name: "Web Research",
-    slug: "web_research",
-    credits: 10,
-    description: "Scrape and summarize any URL. Supports JavaScript-rendered pages, table extraction, and link discovery.",
+    id: "llm-generate",
+    name: "LLM Generate",
+    slug: "llm_generate",
+    credits: 1,
+    description: "Direct LLM completion via the configured provider (Anthropic, Gemini, or OpenAI — picked by LLM_PROVIDER env or auto-detected from whichever API key is set).",
     fields: [
-      { name: "url", type: "string", required: true, desc: "URL to scrape" },
-      { name: "instruction", type: "string", required: false, desc: "What to extract (default: main content)" },
-      { name: "extract_tables", type: "boolean", required: false, desc: "Extract tables (default: false)" },
-      { name: "extract_links", type: "boolean", required: false, desc: "Extract links (default: false)" },
-      { name: "wait_for_selector", type: "string", required: false, desc: "CSS selector to wait for before scraping" },
+      { name: "messages", type: "Message[]", required: true, desc: "Array of {role, content} messages. system, user, assistant roles supported." },
+      { name: "system_prompt", type: "string", required: false, desc: "System prompt; merged with any system messages in the array." },
+      { name: "model", type: "string", required: false, desc: "Provider-specific model id; defaults to the provider's configured default." },
+      { name: "temperature", type: "number", required: false, desc: "0–2 (default: 0.7)" },
+      { name: "max_tokens", type: "number", required: false, desc: "Max output tokens (default: 2048)" },
     ],
     example: `{
-  "type": "web_research",
+  "type": "llm_generate",
   "input": {
-    "url": "https://news.ycombinator.com",
-    "instruction": "List the top 5 story titles and their scores"
-  }
-}`,
-  },
-  {
-    id: "entity-lookup",
-    name: "Entity Lookup",
-    slug: "entity_lookup",
-    credits: 5,
-    description: "Enrich company or person data: description, tech stack, headcount, funding, social profiles.",
-    fields: [
-      { name: "entity_type", type: "\"company\" | \"person\"", required: true, desc: "Type of entity to enrich" },
-      { name: "name", type: "string", required: false, desc: "Company or person name" },
-      { name: "domain", type: "string", required: false, desc: "Company domain (e.g. stripe.com)" },
-      { name: "linkedin_url", type: "string", required: false, desc: "LinkedIn profile URL" },
-      { name: "enrich_fields", type: "string[]", required: false, desc: "Specific fields to include" },
-    ],
-    example: `{
-  "type": "entity_lookup",
-  "input": {
-    "entity_type": "company",
-    "domain": "stripe.com"
-  }
-}`,
-  },
-  {
-    id: "document-parse",
-    name: "Document Parse",
-    slug: "document_parse",
-    credits: 3,
-    description: "Extract text, tables, and metadata from PDFs, Word docs, images, and other documents.",
-    fields: [
-      { name: "url", type: "string", required: false, desc: "URL to a document file" },
-      { name: "base64_content", type: "string", required: false, desc: "Base64-encoded file content" },
-      { name: "mime_type", type: "string", required: false, desc: "MIME type when using base64 (e.g. application/pdf)" },
-      { name: "extract_tables", type: "boolean", required: false, desc: "Extract tables (default: true)" },
-      { name: "extract_images", type: "boolean", required: false, desc: "Extract images (default: false)" },
-    ],
-    example: `{
-  "type": "document_parse",
-  "input": {
-    "url": "https://example.com/report.pdf",
-    "extract_tables": true
+    "messages": [{"role": "user", "content": "Summarize the pros and cons of microservices in 3 bullet points each."}]
   }
 }`,
   },
@@ -71,11 +31,11 @@ const taskTypes = [
     name: "Data Transform",
     slug: "data_transform",
     credits: 2,
-    description: "Transform data between formats: CSV↔JSON, clean/normalize, filter, reshape.",
+    description: "Wraps your data and a natural-language instruction in a structured prompt and runs it through the LLM. Use for CSV↔JSON conversion, field renaming, normalization, filtering, etc.",
     fields: [
-      { name: "data", type: "any", required: true, desc: "Input data (JSON, CSV string, array, etc.)" },
-      { name: "transform", type: "string", required: true, desc: "Natural language description of the transformation" },
-      { name: "output_format", type: "string", required: false, desc: "Desired output format: json, csv, markdown (default: json)" },
+      { name: "data", type: "any", required: true, desc: "Input data (object, array, or plain text)." },
+      { name: "transform", type: "string", required: true, desc: "Natural-language description of what to do." },
+      { name: "output_format", type: "\"json\" | \"csv\" | \"markdown\" | \"text\"", required: false, desc: "Desired output format (default: json)." },
     ],
     example: `{
   "type": "data_transform",
@@ -87,66 +47,38 @@ const taskTypes = [
 }`,
   },
   {
-    id: "llm-generate",
-    name: "LLM Generate",
-    slug: "llm_generate",
-    credits: 1,
-    description: "Route to the best LLM for the job. Supports Claude, GPT-4, Gemini, Mistral, and more via the RebaseKit LLM router.",
+    id: "web-research",
+    name: "Web Research",
+    slug: "web_research",
+    credits: 10,
+    description: "Fetches a URL with httpx, extracts visible text with BeautifulSoup, and summarises through the LLM using your instruction.",
     fields: [
-      { name: "messages", type: "Message[]", required: true, desc: "Array of {role, content} messages" },
-      { name: "system_prompt", type: "string", required: false, desc: "System prompt (prepended if no system message in messages)" },
-      { name: "model", type: "string", required: false, desc: "Model ID (default: claude-3-5-haiku-20241022)" },
-      { name: "temperature", type: "number", required: false, desc: "Temperature 0–2 (default: 0.7)" },
-      { name: "max_tokens", type: "number", required: false, desc: "Max output tokens (default: 2048)" },
+      { name: "url", type: "string", required: true, desc: "URL to fetch. Must be publicly reachable (private/loopback IPs are blocked)." },
+      { name: "instruction", type: "string", required: false, desc: "What to summarise or extract. Defaults to a general page summary." },
     ],
     example: `{
-  "type": "llm_generate",
+  "type": "web_research",
   "input": {
-    "messages": [{"role": "user", "content": "Summarize the pros and cons of microservices in 3 bullet points each."}],
-    "model": "claude-3-5-haiku-20241022"
+    "url": "https://news.ycombinator.com",
+    "instruction": "List the top 5 story titles"
   }
 }`,
   },
   {
-    id: "screenshot",
-    name: "Screenshot",
-    slug: "screenshot",
-    credits: 2,
-    description: "Capture a full-page or viewport screenshot of any URL. Returns a base64-encoded image.",
+    id: "document-parse",
+    name: "Document Parse",
+    slug: "document_parse",
+    credits: 3,
+    description: "Local extraction for PDF (pypdf), DOCX (python-docx), XLSX (openpyxl), and plain text. No network calls once the document is fetched.",
     fields: [
-      { name: "url", type: "string", required: true, desc: "URL to screenshot" },
-      { name: "width", type: "number", required: false, desc: "Viewport width in px (default: 1280)" },
-      { name: "height", type: "number", required: false, desc: "Viewport height in px (default: 800)" },
-      { name: "full_page", type: "boolean", required: false, desc: "Capture full scrollable page (default: false)" },
-      { name: "format", type: "\"png\" | \"jpeg\"", required: false, desc: "Image format (default: png)" },
-      { name: "wait_for_selector", type: "string", required: false, desc: "CSS selector to wait for before capturing" },
+      { name: "url", type: "string", required: false, desc: "URL to a document. Mutually exclusive with content_base64." },
+      { name: "content_base64", type: "string", required: false, desc: "Base64-encoded document content (20 MB cap)." },
+      { name: "mime_type", type: "string", required: false, desc: "Hint when content_base64 is used and the magic bytes are ambiguous." },
     ],
     example: `{
-  "type": "screenshot",
+  "type": "document_parse",
   "input": {
-    "url": "https://example.com",
-    "full_page": true,
-    "format": "jpeg"
-  }
-}`,
-  },
-  {
-    id: "audio-transcribe",
-    name: "Audio Transcribe",
-    slug: "audio_transcribe",
-    credits: 8,
-    description: "Transcribe audio files with speaker diarization. Supports MP3, WAV, M4A, and more.",
-    fields: [
-      { name: "url", type: "string", required: false, desc: "URL to an audio file" },
-      { name: "base64_audio", type: "string", required: false, desc: "Base64-encoded audio content" },
-      { name: "language", type: "string", required: false, desc: "BCP-47 language code (auto-detected if omitted)" },
-      { name: "diarize", type: "boolean", required: false, desc: "Speaker diarization (default: false)" },
-    ],
-    example: `{
-  "type": "audio_transcribe",
-  "input": {
-    "url": "https://example.com/interview.mp3",
-    "diarize": true
+    "url": "https://example.com/report.pdf"
   }
 }`,
   },
@@ -155,12 +87,11 @@ const taskTypes = [
     name: "PII Detect",
     slug: "pii_detect",
     credits: 2,
-    description: "Detect, mask, or vault 30+ PII types (names, emails, SSNs, credit cards, etc.).",
+    description: "In-process regex detector for email, phone, SSN, credit-card (Luhn-validated), IBAN, IPv4/6, and passport numbers. Optionally returns a redacted copy.",
     fields: [
-      { name: "text", type: "string", required: true, desc: "Text to analyze" },
-      { name: "entities", type: "string[]", required: false, desc: "Specific PII types to detect (default: all)" },
-      { name: "mask", type: "boolean", required: false, desc: "Replace PII with [TYPE] tokens (default: false)" },
-      { name: "vault", type: "boolean", required: false, desc: "Store PII in vault, return placeholder tokens (default: false)" },
+      { name: "text", type: "string", required: true, desc: "Text to scan." },
+      { name: "entities", type: "string[]", required: false, desc: "Subset of entity types to detect (default: all)." },
+      { name: "mask", type: "boolean", required: false, desc: "Include a redacted copy of the input in the output." },
     ],
     example: `{
   "type": "pii_detect",
@@ -175,37 +106,18 @@ const taskTypes = [
     name: "Code Execute",
     slug: "code_execute",
     credits: 3,
-    description: "Run Python, JavaScript, TypeScript, or Bash code in a sandboxed environment.",
+    description: "Sandboxed Python subprocess. Runs python -I in a temp directory with rlimits on CPU, file size, and memory. Python only — other languages are not supported.",
     fields: [
-      { name: "code", type: "string", required: true, desc: "Code to execute" },
-      { name: "language", type: "\"python\" | \"javascript\" | \"typescript\" | \"bash\"", required: false, desc: "Language (default: python)" },
-      { name: "timeout_seconds", type: "number", required: false, desc: "Execution timeout (default: 30)" },
-      { name: "stdin", type: "string", required: false, desc: "Standard input to pass to the program" },
+      { name: "code", type: "string", required: true, desc: "Python source to run." },
+      { name: "language", type: "\"python\"", required: false, desc: "Only python is accepted." },
+      { name: "timeout_seconds", type: "number", required: false, desc: "Wall-clock timeout (default: 10, max: 30)." },
+      { name: "stdin", type: "string", required: false, desc: "Standard input passed to the script." },
     ],
     example: `{
   "type": "code_execute",
   "input": {
     "code": "import json\\ndata = [1, 2, 3, 4, 5]\\nprint(json.dumps({'sum': sum(data), 'mean': sum(data)/len(data)}))",
     "language": "python"
-  }
-}`,
-  },
-  {
-    id: "web-intel",
-    name: "Web Intel",
-    slug: "web_intel",
-    credits: 5,
-    description: "AI-powered web intelligence gathering. Search the web and synthesize results into structured insights.",
-    fields: [
-      { name: "query", type: "string", required: true, desc: "Research query or question" },
-      { name: "sources", type: "string[]", required: false, desc: "Specific domains or URLs to prioritize" },
-      { name: "max_results", type: "number", required: false, desc: "Max search results to process (default: 10)" },
-    ],
-    example: `{
-  "type": "web_intel",
-  "input": {
-    "query": "Latest AI coding assistants launched in 2025 — compare features and pricing",
-    "max_results": 15
   }
 }`,
   },
@@ -388,14 +300,14 @@ const humanTaskTypes = [
         <a href="#sdk" class="block py-1 text-gray-400 hover:text-gray-200 transition-colors">TypeScript SDK</a>
         <a href="#python-sdk" class="block py-1 text-gray-400 hover:text-gray-200 transition-colors">Python SDK</a>
         <a href="#webhooks" class="block py-1 text-gray-400 hover:text-gray-200 transition-colors">Webhooks</a>
-        <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mt-4 mb-2">AI task types</div>
-        {taskTypes.map((t) => (
+        <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mt-4 mb-2">Human task types</div>
+        {humanTaskTypes.map((t) => (
           <a href={`#${t.id}`} class="block py-1 text-gray-400 hover:text-gray-200 transition-colors">
             {t.name} <span class="text-gray-500 text-xs">{t.credits}cr</span>
           </a>
         ))}
-        <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mt-4 mb-2">Human task types</div>
-        {humanTaskTypes.map((t) => (
+        <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mt-4 mb-2">Pipeline AI primitives</div>
+        {taskTypes.map((t) => (
           <a href={`#${t.id}`} class="block py-1 text-gray-400 hover:text-gray-200 transition-colors">
             {t.name} <span class="text-gray-500 text-xs">{t.credits}cr</span>
           </a>
@@ -514,14 +426,24 @@ const humanTaskTypes = [
 
 const crowd = new CrowdSorcerer({ apiKey: process.env.CROWDSOURCERER_API_KEY! });
 
-// Typed helpers — submit + wait for result
-const result = await crowd.webResearch({ url: "https://news.ycombinator.com" });
-const entity = await crowd.entityLookup({ entity_type: "company", name: "Stripe" });
-const llm    = await crowd.llmGenerate({ messages: [{ role: "user", content: "Hello!" }] });
+// Submit + poll until the worker finishes (or timeout)
+const task = await crowd.runTask({
+  type: "label_text",
+  input: {
+    text: "The new iPhone is great!",
+    categories: ["positive", "negative", "neutral"],
+    question: "What is the sentiment?",
+  },
+  assignments_required: 3,        // get 3 independent workers
+});
+console.log(task.output?.summary); // → "positive (3/3 workers agree)"
 
-// Or submit async + poll manually
-const { task_id } = await crowd.submitTask({ type: "screenshot", input: { url: "..." } });
-const task = await crowd.getTask(task_id);
+// Or submit async and poll manually
+const { task_id } = await crowd.submitTask({
+  type: "moderate_content",
+  input: { content: "User-submitted post goes here", guidelines: "..." },
+});
+const result = await crowd.getTask(task_id);
 
 // Credits
 const balance = await crowd.getCredits();
@@ -538,16 +460,15 @@ console.log(balance.available); // → 87`}</code></pre>
 
 client = CrowdSorcerer(api_key="csk_YOUR_KEY")
 
-# Typed helpers — submit + wait for result
-result = client.tasks.web_research(
-    url="https://news.ycombinator.com",
-    instruction="Extract the top 5 headlines",
-)
-print(result.output)
+# Submit a human task and wait for the worker(s) to finish
+task = client.tasks.create("label_text", {
+    "text": "The new iPhone is great!",
+    "categories": ["positive", "negative", "neutral"],
+    "question": "What is the sentiment?",
+}, assignments_required=3)
 
-# Or submit + poll manually
-task = client.tasks.create("screenshot", {"url": "https://example.com"})
 completed = client.tasks.wait(task.id)
+print(completed.output)
 
 # Check credits
 balance = client.credits.balance()
@@ -559,17 +480,17 @@ from crowdsourcerer import AsyncCrowdSorcerer
 
 async def main():
     async with AsyncCrowdSorcerer(api_key="csk_YOUR_KEY") as client:
-        # Run multiple tasks concurrently
-        tasks = await asyncio.gather(
-            client.tasks.pii_detect("My email is alice@example.com"),
-            client.tasks.screenshot("https://example.com"),
-            client.tasks.llm_generate(
-                messages=[{"role": "user", "content": "Write a haiku about AI"}]
-            ),
-        )
+        # Fan out a batch of rate_quality tasks concurrently
+        tasks = await asyncio.gather(*[
+            client.tasks.create("rate_quality", {
+                "content": ai_output,
+                "criteria": "Rate the factual accuracy 1–5",
+            }, assignments_required=2)
+            for ai_output in pending_outputs
+        ])
         results = await asyncio.gather(*[client.tasks.wait(t.id) for t in tasks])
         for r in results:
-            print(r.type, r.status)
+            print(r.id, r.status, r.output)
 
 asyncio.run(main())`}</code></pre>
 
@@ -582,7 +503,9 @@ asyncio.run(main())`}</code></pre>
 client = CrowdSorcerer(api_key="csk_YOUR_KEY")
 
 try:
-    task = client.tasks.create("web_research", {"url": "https://example.com"})
+    task = client.tasks.create("verify_fact", {
+        "claim": "The Eiffel Tower is 330 metres tall",
+    })
     result = client.tasks.wait(task.id)
 except InsufficientCreditsError:
     print("Top up at crowdsourcerer.rebaselabs.online/dashboard/credits")
@@ -734,9 +657,14 @@ const valid = verifyWebhook(
 
         <!-- AI Task type reference -->
         <section>
-          <h2 class="text-2xl font-bold text-gray-100 mb-2">AI task types</h2>
-          <p class="text-gray-400 text-sm mb-2">10 task types processed automatically by AI workers. Results typically in seconds.</p>
-          <p class="text-gray-500 text-xs mb-10">Credit costs shown are per task. Credits are charged on submission and refunded if the task fails.</p>
+          <h2 class="text-2xl font-bold text-gray-100 mb-2">Pipeline AI primitives</h2>
+          <p class="text-gray-400 text-sm mb-2">
+            Six in-process primitives that pipelines can chain with human steps.
+            They are <strong class="text-amber-300">not submittable via <code class="text-violet-300">POST /v1/tasks</code> directly</strong> —
+            that endpoint rejects them with a 422 pointing at
+            <code class="text-violet-300">/v1/pipelines</code>. Documented here so pipeline authors know the input schema for each step type.
+          </p>
+          <p class="text-gray-500 text-xs mb-10">Credit costs shown are per step. Credits are charged on pipeline execution and refunded on failure.</p>
 
           {taskTypes.map((t) => (
             <div id={t.id} class="mb-12 scroll-mt-8">

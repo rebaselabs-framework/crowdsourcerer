@@ -237,37 +237,10 @@ class _TasksResource:
         """Cancel a task."""
         self._c._request("DELETE", f"/v1/tasks/{task_id}")
 
-    # ─── Convenience helpers ──────────────────────────────────────────────
-
-    def web_research(self, url: str, instruction: str, **kwargs) -> TaskCreateResponse:
-        return self.create("web_research", {"url": url, "instruction": instruction}, **kwargs)
-
-    def entity_lookup(self, entity_type: str, name: str, **kwargs) -> TaskCreateResponse:
-        return self.create("entity_lookup", {"entity_type": entity_type, "name": name}, **kwargs)
-
-    def document_parse(self, url: str, **kwargs) -> TaskCreateResponse:
-        return self.create("document_parse", {"url": url}, **kwargs)
-
-    def data_transform(self, data: Any, transform: str, **kwargs) -> TaskCreateResponse:
-        return self.create("data_transform", {"data": data, "transform": transform}, **kwargs)
-
-    def llm_generate(self, messages: List[Dict], model: str = "claude-3-5-haiku-20241022", **kwargs) -> TaskCreateResponse:
-        return self.create("llm_generate", {"messages": messages, "model": model}, **kwargs)
-
-    def screenshot(self, url: str, **kwargs) -> TaskCreateResponse:
-        return self.create("screenshot", {"url": url}, **kwargs)
-
-    def audio_transcribe(self, url: str, language: str = "en", **kwargs) -> TaskCreateResponse:
-        return self.create("audio_transcribe", {"url": url, "language": language}, **kwargs)
-
-    def pii_detect(self, text: str, mask: bool = True, **kwargs) -> TaskCreateResponse:
-        return self.create("pii_detect", {"text": text, "mask": mask}, **kwargs)
-
-    def code_execute(self, code: str, language: str = "python", **kwargs) -> TaskCreateResponse:
-        return self.create("code_execute", {"code": code, "language": language}, **kwargs)
-
-    def web_intel(self, query: str, **kwargs) -> TaskCreateResponse:
-        return self.create("web_intel", {"query": query}, **kwargs)
+    # Typed task-type helpers previously lived here. They were all AI-only
+    # (web_research, llm_generate, etc.) and were dropped when AI task
+    # types became pipeline-only primitives that /v1/tasks rejects at the
+    # schema layer. Use ``create(type, input)`` directly for human tasks.
 
 
 class _CreditsResource:

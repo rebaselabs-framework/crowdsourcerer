@@ -196,21 +196,8 @@ class _AsyncTasksResource:
     async def cancel(self, task_id: Union[str, UUID]) -> None:
         await self._c._request("DELETE", f"/v1/tasks/{task_id}")
 
-    # Convenience helpers
-    async def web_research(self, url: str, instruction: str, **kw) -> TaskCreateResponse:
-        return await self.create("web_research", {"url": url, "instruction": instruction}, **kw)
-
-    async def llm_generate(self, messages: List[Dict], model: str = "claude-3-5-haiku-20241022", **kw) -> TaskCreateResponse:
-        return await self.create("llm_generate", {"messages": messages, "model": model}, **kw)
-
-    async def pii_detect(self, text: str, mask: bool = True, **kw) -> TaskCreateResponse:
-        return await self.create("pii_detect", {"text": text, "mask": mask}, **kw)
-
-    async def screenshot(self, url: str, **kw) -> TaskCreateResponse:
-        return await self.create("screenshot", {"url": url}, **kw)
-
-    async def audio_transcribe(self, url: str, language: str = "en", **kw) -> TaskCreateResponse:
-        return await self.create("audio_transcribe", {"url": url, "language": language}, **kw)
+    # Typed task-type helpers were dropped when AI task types became
+    # pipeline-only primitives. Use ``create(type, input)`` directly.
 
 
 class _AsyncCreditsResource:
