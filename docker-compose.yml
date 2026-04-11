@@ -43,6 +43,10 @@ services:
       # Authorised redirect URI: https://crowdsourcerer.rebaselabs.online/v1/auth/google/callback
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      # Sentry error tracking (optional — leave SENTRY_DSN empty to disable)
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
+      SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0.1}
     depends_on:
       db:
         condition: service_healthy

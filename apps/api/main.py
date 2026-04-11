@@ -31,9 +31,14 @@ from core.rebasekit_health import (
     get_available_task_types,
     get_ai_health_summary,
 )
+from core.observability import init_sentry
 
 settings = get_settings()
 logger = structlog.get_logger()
+
+# Sentry has to wrap the FastAPI constructor, so initialise it before
+# ``app = FastAPI(...)`` runs. No-op when SENTRY_DSN is empty.
+init_sentry(settings)
 
 # ─── Rate limiting ────────────────────────────────────────────────────────
 

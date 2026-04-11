@@ -27,6 +27,16 @@ class Settings(BaseSettings):
             .rstrip("/")
         )
 
+    # Observability — Sentry error tracking
+    # Leave sentry_dsn empty to disable (zero-cost no-op init). When set,
+    # unhandled exceptions in the FastAPI app, background workers, and
+    # the narrowed try/except catches (webhooks, sweeper, notifications,
+    # etc.) are automatically captured with request context.
+    sentry_dsn: str = ""
+    sentry_environment: str = "production"
+    sentry_traces_sample_rate: float = 0.1      # 10% APM sampling
+    sentry_profiles_sample_rate: float = 0.0    # profiling off by default
+
     # Database
     database_url: str = "postgresql+asyncpg://postgres:postgres@db:5432/crowdsourcerer"
 
