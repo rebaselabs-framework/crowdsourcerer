@@ -34,42 +34,29 @@ from models.schemas import (
 from workers.base import get_rebasekit_client, WorkerError
 from workers.router import execute_task, TASK_CREDITS
 from core.sql import esc_like, LIKE_ESC
+from services.credit_ledger import default_ledger
 from services.pricing import HUMAN_TASK_BASE_CREDITS, default_pricing
+
+
+async def _refund_task_credits(
+    db: AsyncSession,
+    task: TaskDB,
+    amount: int,
+    user_id: str,
+    reason: str = "cancelled",
+) -> None:
+    """Back-compat shim. Prefer ``default_ledger.refund(db, task, amount, reason=...)``.
+
+    user_id is ignored — the ledger derives the payer from the task.
+    Retained so existing tests and direct callers don't need to
+    migrate in the same PR as the service extraction.
+    """
+    _ = user_id
+    await default_ledger.refund(db, task, amount, reason=reason)
 
 logger = structlog.get_logger()
 limiter = Limiter(key_func=get_remote_address)
 router = APIRouter(prefix="/v1/tasks", tags=["tasks"])
-
-async def _refund_task_credits(
-    db: AsyncSession, task: TaskDB, amount: int, user_id: str,
-    reason: str = "cancelled",
-) -> None:
-    """Refund *amount* credits to the task's billing target (org or user)."""
-    if task.org_id:
-        from models.db import OrganizationDB
-        org_res = await db.execute(
-            select(OrganizationDB).where(OrganizationDB.id == task.org_id).with_for_update()
-        )
-        org = org_res.scalar_one_or_none()
-        if org:
-            org.credits += amount
-    else:
-        user_res = await db.execute(
-            select(UserDB).where(UserDB.id == user_id).with_for_update()
-        )
-        user = user_res.scalar_one_or_none()
-        if user:
-            user.credits += amount
-
-    txn = CreditTransactionDB(
-        user_id=user_id,
-        task_id=task.id,
-        amount=amount,
-        type="refund",
-        description=f"Task {reason}: {task.type}",
-    )
-    db.add(txn)
-
 
 @router.post("", response_model=TaskCreateResponse, status_code=201)
 async def create_task(
