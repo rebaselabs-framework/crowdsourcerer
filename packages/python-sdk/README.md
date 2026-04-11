@@ -1,6 +1,6 @@
 # CrowdSorcerer Python SDK
 
-Official Python SDK for the [CrowdSorcerer](https://crowdsourcerer.rebaselabs.online) AI task crowdsourcing platform.
+Official Python SDK for [CrowdSorcerer](https://crowdsourcerer.rebaselabs.online) — a REST API for human work. Post labeling, moderation, ranking, and QA tasks; real workers complete them and submit typed JSON results.
 
 ## Installation
 
@@ -17,15 +17,16 @@ from crowdsourcerer import CrowdSorcerer
 
 client = CrowdSorcerer(api_key="csk_your_key_here")
 
-# Run a web research task
-task = client.tasks.web_research(
-    url="https://techcrunch.com/latest",
-    instruction="Extract the top 3 headlines and their summaries",
-)
+# Post a text classification task, ask 3 workers, wait for consensus
+task = client.tasks.create("label_text", {
+    "text": "The new iPhone is great!",
+    "categories": ["positive", "negative", "neutral"],
+    "question": "What is the sentiment?",
+}, assignments_required=3)
 
-# Wait for completion (polls every 2s, up to 5 minutes)
+# Poll until all workers submit (or timeout at 5 minutes)
 result = client.tasks.wait(task.id)
-print(result.output)
+print(result.output)  # e.g. {"summary": "positive (3/3 agree)", ...}
 ```
 
 ## Async Support
@@ -36,37 +37,42 @@ from crowdsourcerer import AsyncCrowdSorcerer
 
 async def main():
     async with AsyncCrowdSorcerer(api_key="csk_...") as client:
-        # Create multiple tasks concurrently
-        tasks = await asyncio.gather(
-            client.tasks.pii_detect("My email is alice@example.com"),
-            client.tasks.screenshot("https://example.com"),
-            client.tasks.llm_generate(
-                messages=[{"role": "user", "content": "Write a haiku about AI"}]
-            ),
-        )
-        # Wait for all tasks
+        # Fan out a batch of rating tasks concurrently
+        pending_outputs = [...]  # AI-generated text to evaluate
+        tasks = await asyncio.gather(*[
+            client.tasks.create("rate_quality", {
+                "content": out,
+                "criteria": "Rate factual accuracy 1–5",
+            }, assignments_required=2)
+            for out in pending_outputs
+        ])
         results = await asyncio.gather(*[client.tasks.wait(t.id) for t in tasks])
+        for r in results:
+            print(r.id, r.status, r.output)
 
 asyncio.run(main())
 ```
 
 ## Task Types
 
-| Type | Credits | Description |
-|------|---------|-------------|
-| `web_research` | 10 | Scrape & extract from URLs |
-| `entity_lookup` | 5 | Company/person enrichment |
-| `document_parse` | 3 | Extract text/tables from PDFs |
-| `data_transform` | 2 | Restructure data with AI |
-| `llm_generate` | 1 | Run a prompt against any LLM |
-| `screenshot` | 2 | Full-page screenshot |
-| `audio_transcribe` | 8 | Transcribe audio/video files |
-| `pii_detect` | 2 | Detect & mask PII |
-| `code_execute` | 3 | Run sandboxed code |
-| `web_intel` | 5 | Deep web intelligence |
+`POST /v1/tasks` accepts the 8 human task types below:
 
-Human tasks (completed by real workers):
-`label_image`, `label_text`, `rate_quality`, `verify_fact`, `moderate_content`, `compare_rank`, `answer_question`, `transcription_review`
+| Type | Base credits | Description |
+|------|--------------|-------------|
+| `label_image` | 3 | Bounding boxes, segmentation, classification |
+| `label_text` | 2 | Sentiment, categories, spam detection |
+| `rate_quality` | 2 | Score content on a 1–5 (or custom) scale |
+| `verify_fact` | 3 | Check a claim against sources |
+| `moderate_content` | 2 | Approve / reject / escalate user content |
+| `compare_rank` | 2 | Pick A vs B (or rank N) on any criterion |
+| `answer_question` | 4 | Open-ended Q&A with optional context |
+| `transcription_review` | 5 | Correct an AI-generated transcript |
+
+The backend also has 6 AI primitives (`llm_generate`, `data_transform`,
+`pii_detect`, `document_parse`, `code_execute`, `web_research`) but those
+are **pipeline-only** — they run as steps inside `/v1/pipelines`, not as
+standalone submissions. Calling `client.tasks.create()` with an AI type
+directly returns a 422.
 
 ## API Reference
 
@@ -74,13 +80,12 @@ Human tasks (completed by real workers):
 
 ### `client.tasks`
 
-- `.create(type, input, priority?, webhook_url?, ...)` → `TaskCreateResponse`
-- `.create_batch(tasks)` → `BatchTaskCreateResponse`
+- `.create(type, input, priority?, webhook_url?, assignments_required?, worker_reward_credits?, task_instructions?, claim_timeout_minutes?)` → `TaskCreateResponse`
+- `.create_batch(tasks)` → `BatchTaskCreateResponse` (up to 50 at a time)
 - `.get(task_id)` → `Task`
 - `.list(limit?, offset?, status?, type?)` → `PaginatedTasks`
-- `.wait(task_id, poll_interval?, timeout?)` → `Task`
+- `.wait(task_id, poll_interval?, timeout?)` → `Task` — polls until completed / failed
 - `.cancel(task_id)`
-- **Shortcuts**: `.web_research()`, `.entity_lookup()`, `.document_parse()`, `.data_transform()`, `.llm_generate()`, `.screenshot()`, `.audio_transcribe()`, `.pii_detect()`, `.code_execute()`, `.web_intel()`
 
 ### `client.credits`
 
@@ -100,15 +105,20 @@ Human tasks (completed by real workers):
 ## Error Handling
 
 ```python
-from crowdsourcerer import CrowdSorcerer, AuthError, RateLimitError, InsufficientCreditsError, TaskError
+from crowdsourcerer import (
+    CrowdSorcerer, AuthError, RateLimitError,
+    InsufficientCreditsError, TaskError,
+)
 
-client = CrowdSorcerer(api_key="cs_...")
+client = CrowdSorcerer(api_key="csk_...")
 
 try:
-    task = client.tasks.create("web_research", {"url": "https://example.com"})
+    task = client.tasks.create("verify_fact", {
+        "claim": "The Eiffel Tower is 330 metres tall",
+    })
     result = client.tasks.wait(task.id)
 except InsufficientCreditsError:
-    print("Not enough credits — top up at crowdsourcerer.rebaselabs.online")
+    print("Top up at crowdsourcerer.rebaselabs.online/dashboard/credits")
 except RateLimitError as e:
     print(f"Rate limited, retry after {e.retry_after}s")
 except TaskError as e:
@@ -117,13 +127,36 @@ except AuthError:
     print("Invalid API key")
 ```
 
+## Consensus across multiple workers
+
+Any human task accepts `assignments_required` (1–20) plus a
+`consensus_strategy`. The task stays open until enough workers submit,
+then the strategy decides how the result is computed.
+
+```python
+task = client.tasks.create(
+    "rate_quality",
+    {"content": "<ai output>", "criteria": "Rate 1–5 on factual accuracy"},
+    assignments_required=5,
+    # consensus_strategy can be "any_first" | "majority_vote"
+    # | "unanimous" | "requester_review"
+)
+```
+
 ## Batch Uploads
 
 ```python
 tasks = client.tasks.create_batch([
-    {"type": "pii_detect", "input": {"text": "Call John at 555-0100"}},
-    {"type": "screenshot", "input": {"url": "https://example.com"}},
-    {"type": "llm_generate", "input": {"messages": [{"role": "user", "content": "Hi"}]}},
+    {"type": "label_text", "input": {
+        "text": "Great product, fast shipping!",
+        "categories": ["positive", "negative", "neutral"],
+        "question": "Sentiment?",
+    }},
+    {"type": "moderate_content", "input": {
+        "content": "...",
+        "content_type": "text",
+        "policy_context": "Flag spam and off-topic",
+    }},
 ])
 print(f"Created {tasks.summary['created']} tasks, {tasks.summary['failed']} failed")
 ```
