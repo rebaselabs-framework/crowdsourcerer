@@ -1,15 +1,16 @@
 """LLM-backed task handlers.
 
-Three task types, one shared :class:`core.llm_client.AnthropicClient`:
+Three task types, one shared :class:`core.llm_client.LLMProvider`:
 
-- ``llm_generate``   raw messages → Anthropic → text
+- ``llm_generate``   raw messages → LLM → text
 - ``data_transform`` wrap user data + instruction in a structured
                      prompt, delegate to llm_generate
 - ``web_research``   fetch the URL with httpx, strip HTML to visible
                      text with BeautifulSoup, summarise with llm_generate
 
-All three raise :class:`core.llm_client.LLMUnavailableError` when
-``ANTHROPIC_API_KEY`` is unset so the dispatcher can return a clean 503.
+All three raise :class:`core.llm_client.LLMUnavailableError` when no
+LLM provider key is configured (Anthropic / Gemini / OpenAI), so the
+dispatcher can return a clean 503.
 """
 
 from __future__ import annotations

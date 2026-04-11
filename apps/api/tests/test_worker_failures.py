@@ -810,20 +810,26 @@ class TestExecuteTaskDispatcherErrors:
         assert "code" in str(exc_info.value).lower()
 
     @pytest.mark.asyncio
-    async def test_llm_generate_without_api_key_raises_503(self):
-        """LLM-backed task types refuse to run without ANTHROPIC_API_KEY."""
+    async def test_llm_generate_without_any_provider_raises_503(self):
+        """LLM-backed task types refuse to run when no provider key is set."""
         from workers.router import execute_task
         from core.config import get_settings
         from core import llm_client
 
-        # Reset the cached client so it rebuilds with the patched settings.
-        llm_client._client = None
-        llm_client._client_key = None
+        llm_client.reset_client_cache()
 
         settings = get_settings()
-        orig_key = settings.anthropic_api_key
+        orig = (
+            settings.anthropic_api_key,
+            settings.gemini_api_key,
+            settings.openai_api_key,
+            settings.llm_provider,
+        )
         try:
             object.__setattr__(settings, "anthropic_api_key", "")
+            object.__setattr__(settings, "gemini_api_key", "")
+            object.__setattr__(settings, "openai_api_key", "")
+            object.__setattr__(settings, "llm_provider", "")
             with pytest.raises(WorkerError) as exc_info:
                 await execute_task(
                     "llm_generate",
@@ -831,9 +837,17 @@ class TestExecuteTaskDispatcherErrors:
                 )
             assert exc_info.value.status_code == 503
         finally:
-            object.__setattr__(settings, "anthropic_api_key", orig_key)
-            llm_client._client = None
-            llm_client._client_key = None
+            (
+                settings_anthropic,
+                settings_gemini,
+                settings_openai,
+                settings_provider,
+            ) = orig
+            object.__setattr__(settings, "anthropic_api_key", settings_anthropic)
+            object.__setattr__(settings, "gemini_api_key", settings_gemini)
+            object.__setattr__(settings, "openai_api_key", settings_openai)
+            object.__setattr__(settings, "llm_provider", settings_provider)
+            llm_client.reset_client_cache()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

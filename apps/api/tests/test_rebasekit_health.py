@@ -35,6 +35,12 @@ from core.rebasekit_health import (
 def _mock_settings(*, anthropic_key: str = "test-key") -> MagicMock:
     s = MagicMock()
     s.anthropic_api_key = anthropic_key
+    # Explicitly null the other provider keys — a bare MagicMock returns
+    # a truthy child mock for any attribute, which makes the
+    # "all three empty" branch unreachable unless we pin them.
+    s.gemini_api_key = ""
+    s.openai_api_key = ""
+    s.llm_provider = ""
     return s
 
 

@@ -47,13 +47,30 @@ class Settings(BaseSettings):
     refresh_token_expire_days: int = 30  # refresh tokens last 30 days
     api_key_salt: str = "change-me-in-production"
 
-    # Anthropic API — direct client for llm_generate / data_transform /
-    # web_research task types. Empty key disables the LLM-backed
-    # task types and they raise a clear 503.
+    # ── LLM provider configuration ────────────────────────────────────
+    # llm_generate / data_transform / web_research go through
+    # core.llm_client.get_llm_client(), which picks a provider based
+    # on ``llm_provider`` (or auto-detects from whichever key is set).
+    # Set LLM_PROVIDER explicitly to 'anthropic' / 'gemini' / 'openai'
+    # to disambiguate when multiple keys are configured.
+    llm_provider: str = ""  # empty → auto-detect
+    llm_default_model: str = ""  # empty → per-provider default
+    llm_timeout_seconds: float = 60.0
+
+    # Anthropic
     anthropic_api_key: str = ""
     anthropic_base_url: str = "https://api.anthropic.com"
     anthropic_default_model: str = "claude-haiku-4-5-20251001"
-    anthropic_timeout_seconds: float = 60.0
+
+    # Google Gemini
+    gemini_api_key: str = ""
+    gemini_base_url: str = "https://generativelanguage.googleapis.com"
+    gemini_default_model: str = "gemini-2.5-flash"
+
+    # OpenAI
+    openai_api_key: str = ""
+    openai_base_url: str = "https://api.openai.com"
+    openai_default_model: str = "gpt-4o-mini"
 
     # RebaseKit (legacy — retained for pii fallback only; now unused)
     rebasekit_api_key: str = ""

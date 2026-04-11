@@ -8,9 +8,12 @@ in-process or talk directly to Anthropic, so "health" reduces to:
   are unconditionally ``healthy`` — they have no external dependency,
   so the only way they fail is a code bug.
 - **LLM handlers** (``llm_generate``, ``data_transform``,
-  ``web_research``) are ``healthy`` iff ``ANTHROPIC_API_KEY`` is set.
-  We don't actually ping Anthropic on every probe because the cost
-  is non-trivial and rate-limited.
+  ``web_research``) are ``healthy`` iff at least one LLM provider
+  key is configured — Anthropic, Gemini, or OpenAI. The actual
+  provider is selected by :func:`core.llm_client.get_llm_client`;
+  this module only cares whether *some* key is present. We don't
+  ping the provider on every probe because the cost is non-trivial
+  and rate-limited.
 
 The public surface
 (:func:`get_service_health`, :func:`get_ai_health_summary`,
@@ -113,9 +116,16 @@ class RebaseKitHealthCache:
 
     async def _refresh(self) -> None:
         """Recompute service status from config. No network calls —
-        local handlers are always up, LLM is up iff the key is set."""
+        local handlers are always up, LLM is up iff any provider key
+        (Anthropic / Gemini / OpenAI) is configured."""
         settings = get_settings()
-        llm_up = bool(settings.anthropic_api_key)
+        llm_up = any(
+            (
+                bool(settings.anthropic_api_key),
+                bool(settings.gemini_api_key),
+                bool(settings.openai_api_key),
+            )
+        )
         self._status = {
             "local": True,
             "llm": llm_up,
@@ -125,12 +135,17 @@ class RebaseKitHealthCache:
             "ai_health_refresh",
             local=True,
             llm=llm_up,
+            provider=settings.llm_provider or "auto",
         )
         if not llm_up:
             logger.warning(
                 "llm_task_types_disabled",
-                message="ANTHROPIC_API_KEY not set — llm_generate, "
-                "data_transform, web_research are unavailable.",
+                message=(
+                    "No LLM provider key configured — set one of "
+                    "ANTHROPIC_API_KEY, GEMINI_API_KEY, or OPENAI_API_KEY. "
+                    "llm_generate / data_transform / web_research are "
+                    "currently unavailable."
+                ),
             )
 
 
