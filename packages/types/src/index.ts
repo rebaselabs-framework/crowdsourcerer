@@ -1,24 +1,5 @@
 // ─── Task Types ────────────────────────────────────────────────────────────
 
-/**
- * AI-powered task types. All handlers run in-process or call Anthropic
- * directly — no RebaseKit gateway dependency.
- *
- * - `web_research`   httpx fetch → BeautifulSoup extract → llm_generate
- * - `document_parse` pypdf / python-docx / openpyxl local extraction
- * - `data_transform` llm_generate with a structured transform prompt
- * - `llm_generate`   direct POST to api.anthropic.com/v1/messages
- * - `pii_detect`     local regex detector (email / phone / SSN / etc.)
- * - `code_execute`   Python subprocess sandbox (temp dir + rlimits)
- */
-export type AITaskType =
-  | "web_research"
-  | "document_parse"
-  | "data_transform"
-  | "llm_generate"
-  | "pii_detect"
-  | "code_execute";
-
 /** Human task types (completed by human workers in the marketplace) */
 export type HumanTaskType =
   | "label_image"
@@ -30,7 +11,33 @@ export type HumanTaskType =
   | "answer_question"
   | "transcription_review";
 
-export type TaskType = AITaskType | HumanTaskType;
+/**
+ * AI task types are **pipeline-only primitives** — not user-submittable
+ * via POST /v1/tasks. Pipelines can chain these with human steps for
+ * hybrid human+AI workflows; see /v1/pipelines. Kept in the public
+ * types so the pipeline builder UI and Task record shape stay honest.
+ *
+ * - `web_research`   httpx fetch → BeautifulSoup extract → LLM summary
+ * - `document_parse` pypdf / python-docx / openpyxl local extraction
+ * - `data_transform` LLM query with a structured transform prompt
+ * - `llm_generate`   direct provider call (Anthropic / Gemini / OpenAI)
+ * - `pii_detect`     local regex detector (email / phone / SSN / etc.)
+ * - `code_execute`   Python subprocess sandbox (temp dir + rlimits)
+ */
+export type AITaskType =
+  | "web_research"
+  | "document_parse"
+  | "data_transform"
+  | "llm_generate"
+  | "pii_detect"
+  | "code_execute";
+
+/** Directly submittable via POST /v1/tasks. */
+export type TaskType = HumanTaskType;
+
+/** Union of every type that can appear on a stored Task row — includes
+ *  AI primitives emitted by pipeline step execution. */
+export type PipelineStepTaskType = HumanTaskType | AITaskType;
 
 export type TaskStatus =
   | "pending"
@@ -43,28 +50,6 @@ export type TaskStatus =
   | "cancelled";
 
 export type TaskPriority = "low" | "normal" | "high" | "urgent";
-
-/**
- * Three-tier AI worker fleet health. Mirrors the backend
- * `AIHealthStatus` Literal in `apps/api/core/rebasekit_health.py` —
- * the /v1/config and /v1/health endpoints both publish this field.
- *
- * - `healthy`     — every configured AI service is reachable.
- * - `degraded`    — some services reachable, some not; check
- *                   `task_availability` to disable specific task tiles.
- * - `unavailable` — no services reachable or the integration is not
- *                   configured; block AI submissions entirely.
- */
-export type AIHealthStatus = "healthy" | "degraded" | "unavailable";
-
-/** Shape published at /v1/config for the frontend health banner. */
-export interface AIHealthConfig {
-  ai_available: boolean;
-  ai_status: AIHealthStatus;
-  ai_services_up: number;
-  ai_services_total: number;
-  task_availability?: Record<string, boolean>;
-}
 
 export type ExecutionMode = "ai" | "human";
 
@@ -226,7 +211,10 @@ export interface WorkerResponse {
 
 export interface Task {
   id: string;
-  type: TaskType;
+  /** Stored task rows include pipeline-emitted AI steps, so the type
+   *  field uses the broader union. Directly-created tasks are always
+   *  a HumanTaskType. */
+  type: PipelineStepTaskType;
   status: TaskStatus;
   priority: TaskPriority;
   execution_mode: ExecutionMode;

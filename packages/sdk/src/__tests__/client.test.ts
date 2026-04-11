@@ -322,8 +322,8 @@ describe("tasks", () => {
 
     const client = makeClient();
     const result = await client.submitTask({
-      type: "llm_generate",
-      input: { messages: [{ role: "user", content: "Hello" }] },
+      type: "label_text",
+      input: { text: "Hello", categories: ["a", "b"] },
       priority: "high",
     });
 
@@ -334,7 +334,7 @@ describe("tasks", () => {
     expect(url).toBe(`${BASE_URL}/v1/tasks`);
     expect(init.method).toBe("POST");
     const body = JSON.parse(init.body);
-    expect(body.type).toBe("llm_generate");
+    expect(body.type).toBe("label_text");
     expect(body.priority).toBe("high");
   });
 
@@ -407,7 +407,7 @@ describe("tasks", () => {
 
     const client = makeClient();
     const task = await client.runTask(
-      { type: "llm_generate", input: { messages: [{ role: "user", content: "Hi" }] } },
+      { type: "label_text", input: { text: "Hi", categories: ["a", "b"] } },
       { pollIntervalMs: 10, timeoutMs: 5000 }
     );
 
@@ -422,7 +422,7 @@ describe("tasks", () => {
 
     const client = makeClient();
     const task = await client.runTask(
-      { type: "llm_generate", input: { messages: [{ role: "user", content: "Hi" }] } },
+      { type: "label_text", input: { text: "Hi", categories: ["a", "b"] } },
       { pollIntervalMs: 10 }
     );
     expect(task.status).toBe("failed");
@@ -438,90 +438,11 @@ describe("tasks", () => {
     const client = makeClient();
     await expect(
       client.runTask(
-        { type: "llm_generate", input: { messages: [{ role: "user", content: "Hi" }] } },
+        { type: "label_text", input: { text: "Hi", categories: ["a", "b"] } },
         { pollIntervalMs: 10, timeoutMs: 50 }
       )
     ).rejects.toThrow("did not complete within timeout");
   });
-});
-
-// ─── Typed Task Helpers ──────────────────────────────────────────────────────
-
-describe("typed task helpers", () => {
-  const createResp = { task_id: "task-1", status: "queued", estimated_credits: 1 };
-
-  // Each helper calls runTask, which does POST + poll. For these tests we
-  // just verify the POST body contains the right type and inputs.
-  async function testHelper(
-    method: keyof CrowdSorcerer,
-    args: unknown[],
-    expectedType: string,
-    expectedInputKeys: string[]
-  ) {
-    // Mock create + immediate completion
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse(createResp))
-      .mockResolvedValueOnce(jsonResponse({ ...TASK_FIXTURE, id: "task-1", type: expectedType }));
-
-    const client = makeClient();
-    // @ts-expect-error - dynamic method call
-    await client[method](...args);
-
-    const [, init] = fetchMock.mock.calls[0];
-    const body = JSON.parse(init.body);
-    expect(body.type).toBe(expectedType);
-    for (const key of expectedInputKeys) {
-      expect(body.input).toHaveProperty(key);
-    }
-  }
-
-  it("webResearch", () =>
-    testHelper(
-      "webResearch",
-      [{ url: "https://example.com", instruction: "Summarise" }],
-      "web_research",
-      ["url", "instruction"]
-    ));
-
-  it("documentParse", () =>
-    testHelper(
-      "documentParse",
-      [{ url: "https://example.com/doc.pdf" }],
-      "document_parse",
-      ["url"]
-    ));
-
-  it("dataTransform", () =>
-    testHelper(
-      "dataTransform",
-      [{ data: [1, 2, 3], transform: "sum" }],
-      "data_transform",
-      ["data", "transform"]
-    ));
-
-  it("llmGenerate", () =>
-    testHelper(
-      "llmGenerate",
-      [{ messages: [{ role: "user", content: "Hello" }] }],
-      "llm_generate",
-      ["messages"]
-    ));
-
-  it("piiDetect", () =>
-    testHelper(
-      "piiDetect",
-      [{ text: "John Doe lives at 123 Main St" }],
-      "pii_detect",
-      ["text"]
-    ));
-
-  it("codeExecute", () =>
-    testHelper(
-      "codeExecute",
-      [{ code: "print('hello')", language: "python" }],
-      "code_execute",
-      ["code"]
-    ));
 });
 
 // ─── Credits ─────────────────────────────────────────────────────────────────

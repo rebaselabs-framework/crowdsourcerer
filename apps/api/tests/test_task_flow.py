@@ -328,6 +328,17 @@ class TestCreateHumanTask:
         assert r.status_code == 401
 
     @pytest.mark.asyncio
+    async def test_create_task_rejects_ai_task_type(self, app, requester_headers):
+        """AI task types are pipeline-only primitives, not directly submittable."""
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            r = await c.post("/v1/tasks", json={
+                "type": "llm_generate",
+                "input": {"messages": [{"role": "user", "content": "hi"}]},
+            }, headers=requester_headers)
+        assert r.status_code == 422
+        assert "pipeline" in r.text.lower()
+
+    @pytest.mark.asyncio
     async def test_create_task_unverified_email_returns_403(self, app, requester_headers):
         """Users whose email isn't verified can't burn credits on tasks."""
         requester = _make_requester(credits=1000)
@@ -340,8 +351,8 @@ class TestCreateHumanTask:
         try:
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
                 r = await c.post("/v1/tasks", json={
-                    "type": "llm_generate",
-                    "input": {"prompt": "hi"},
+                    "type": "label_text",
+                    "input": {"text": "hi"},
                 }, headers=requester_headers)
             assert r.status_code == 403
             assert r.json()["detail"]["error"] == "email_not_verified"

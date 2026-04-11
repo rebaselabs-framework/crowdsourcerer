@@ -26,9 +26,6 @@ from routers import auth, credits, tasks, users, worker, leaderboard, badges, ch
 from workers.base import get_rebasekit_client
 from core.rebasekit_health import (
     warmup as warmup_health,
-    is_ai_available,
-    get_service_health,
-    get_available_task_types,
     get_ai_health_summary,
 )
 from core.observability import init_sentry
@@ -385,37 +382,17 @@ async def health_v1():
 
 @app.get("/v1/config", tags=["health"])
 async def config_v1():
-    """Config flags for frontend UI toggling — no DB query, no auth.
+    """Public feature flags for the frontend — no DB query, no auth.
 
-    Includes live RebaseKit service health (cached 60s) so the frontend
-    can accurately warn users about unavailable AI task types.
-
-    `ai_status` is the preferred field for new UI:
-
-    - ``"healthy"``     — every worker is up.
-    - ``"degraded"``    — some workers are down; check ``task_availability``
-                          to disable the specific task tiles that won't run.
-    - ``"unavailable"`` — no worker is reachable (or the integration is
-                          not configured); block AI submissions entirely.
-
-    `ai_available` is kept for backwards compatibility with older
-    frontends and is true for both ``healthy`` and ``degraded`` fleets.
+    AI task types are pipeline-only primitives and not user-submittable,
+    so the frontend does not need to know about LLM provider readiness.
+    Ops liveness for pagers lives on ``/v1/health`` instead.
     """
-    ai_summary = await get_ai_health_summary()
-    result: dict[str, Any] = {
+    return {
         "email_enabled": settings.email_enabled,
         "google_oauth": bool(settings.google_client_id),
         "payments_enabled": bool(settings.stripe_secret_key),
-        "ai_available": ai_summary.is_available,
-        "ai_status": ai_summary.status,
-        "ai_services_up": ai_summary.services_up,
-        "ai_services_total": ai_summary.services_total,
     }
-    # Include per-task-type availability when AI services are partially up
-    # (helps frontend disable specific task type tiles)
-    if settings.rebasekit_api_key:
-        result["task_availability"] = await get_available_task_types()
-    return result
 
 
 @app.get("/", tags=["health"])

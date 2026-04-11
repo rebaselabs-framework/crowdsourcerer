@@ -2,9 +2,7 @@ import type {
   Task,
   TaskCreateRequest,
   TaskCreateResponse,
-  TaskType,
-  TaskInput,
-  TaskPriority,
+  PipelineStepTaskType,
   CreditBalance,
   CreditTransaction,
   ApiKey,
@@ -12,12 +10,6 @@ import type {
   ApiKeyCreateResponse,
   User,
   PaginatedResponse,
-  WebResearchInput,
-  DocumentParseInput,
-  DataTransformInput,
-  LLMGenerateInput,
-  PiiDetectInput,
-  CodeExecuteInput,
   Template,
   TemplateCreateRequest,
   TemplateUseResponse,
@@ -184,10 +176,11 @@ export class CrowdSorcerer {
     return this.fetch<Task>(`/v1/tasks/${taskId}`);
   }
 
-  /** List tasks with optional filters */
+  /** List tasks with optional filters. Type filter accepts any stored
+   *  task type, including pipeline-emitted AI steps. */
   async listTasks(params?: {
     status?: Task["status"];
-    type?: TaskType;
+    type?: PipelineStepTaskType;
     page?: number;
     page_size?: number;
   }): Promise<PaginatedResponse<Task>> {
@@ -231,50 +224,6 @@ export class CrowdSorcerer {
       408,
       "timeout"
     );
-  }
-
-  // ─── Typed task helpers ──────────────────────────────────────────────────
-
-  async webResearch(
-    input: WebResearchInput,
-    opts?: { priority?: TaskPriority; webhook_url?: string }
-  ) {
-    return this.runTask({ type: "web_research", input, ...opts });
-  }
-
-  async documentParse(
-    input: DocumentParseInput,
-    opts?: { priority?: TaskPriority; webhook_url?: string }
-  ) {
-    return this.runTask({ type: "document_parse", input, ...opts });
-  }
-
-  async dataTransform(
-    input: DataTransformInput,
-    opts?: { priority?: TaskPriority; webhook_url?: string }
-  ) {
-    return this.runTask({ type: "data_transform", input, ...opts });
-  }
-
-  async llmGenerate(
-    input: LLMGenerateInput,
-    opts?: { priority?: TaskPriority; webhook_url?: string }
-  ) {
-    return this.runTask({ type: "llm_generate", input, ...opts });
-  }
-
-  async piiDetect(
-    input: PiiDetectInput,
-    opts?: { priority?: TaskPriority; webhook_url?: string }
-  ) {
-    return this.runTask({ type: "pii_detect", input, ...opts });
-  }
-
-  async codeExecute(
-    input: CodeExecuteInput,
-    opts?: { priority?: TaskPriority; webhook_url?: string }
-  ) {
-    return this.runTask({ type: "code_execute", input, ...opts });
   }
 
   // ─── Credits ─────────────────────────────────────────────────────────────

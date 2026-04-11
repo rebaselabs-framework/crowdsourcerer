@@ -16,7 +16,6 @@ let userTags: any[] = [];
 // task_id → unread DM count; task_id → total DM count
 let msgUnreadByTask: Record<string, number> = {};
 let msgTotalByTask: Record<string, number> = {};
-let aiAvailable = true;
 
 try {
   const qs = new URLSearchParams({ page: String(page), page_size: "20" });
@@ -24,15 +23,13 @@ try {
   if (type) qs.set("type", type);
   if (tag) qs.set("tag", tag);
   if (search) qs.set("q", search);
-  const [tasksData, tagsData, msgInbox, cfgData] = await Promise.all([
+  const [tasksData, tagsData, msgInbox] = await Promise.all([
     apiFetch<any>(`/v1/tasks?${qs}`, { token }),
     apiFetch<any[]>("/v1/tasks/tags", { token }).catch(() => []),
     apiFetch<any[]>("/v1/tasks/messages/inbox", { token }).catch(() => []),
-    fetch(`${import.meta.env.PUBLIC_API_URL ?? "http://api:8100"}/v1/config`).then(r => r.json()).catch(() => null),
   ]);
   tasks = tasksData;
   userTags = tagsData;
-  if (cfgData) aiAvailable = !!cfgData.ai_available;
   for (const thread of (msgInbox ?? [])) {
     msgUnreadByTask[thread.task_id] = thread.unread_count ?? 0;
     msgTotalByTask[thread.task_id] = thread.total_messages ?? 0;
@@ -93,17 +90,6 @@ const STATUS_COLORS: Record<string, string> = {
         </a>
       </div>
     </div>
-
-    {!aiAvailable && (
-      <div class="mb-4 p-3 bg-amber-950/30 border border-amber-700/50 rounded-lg text-sm text-amber-300 flex items-start gap-2">
-        <span class="mt-0.5">⚠️</span>
-        <div>
-          <strong>AI services degraded.</strong> Some AI backend services are currently down.
-          AI tasks may fail — credits are automatically refunded for failed tasks.
-          Use <strong>Retry failed</strong> to reprocess tasks when services recover.
-        </div>
-      </div>
-    )}
 
     <!-- Filters -->
     <form class="flex flex-wrap gap-3 mb-4">

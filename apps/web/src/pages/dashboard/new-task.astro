@@ -1,8 +1,6 @@
 ---
 import Layout from "@/layouts/Layout.astro";
 import { apiFetch, getToken } from "@/lib/api";
-import type { AIHealthConfig, AIHealthStatus, AITaskType } from "@crowdsourcerer/types";
-import { TASK_CREDITS } from "@crowdsourcerer/types";
 
 const token = getToken(Astro.cookies);
 if (!token) return Astro.redirect("/login");
@@ -10,36 +8,13 @@ if (!token) return Astro.redirect("/login");
 let error = "";
 let templates: any[] = [];
 let savedTemplates: any[] = [];
-let aiStatus: AIHealthStatus = "healthy";
-let taskAvailability: Record<string, boolean> = {};
-
-try {
-  const cfgRes = await fetch(`${import.meta.env.PUBLIC_API_URL ?? "http://api:8100"}/v1/config`).catch(() => null);
-  if (cfgRes?.ok) {
-    const cfg = (await cfgRes.json()) as Partial<AIHealthConfig>;
-    aiStatus = cfg.ai_status ?? (cfg.ai_available ? "healthy" : "unavailable");
-    taskAvailability = cfg.task_availability ?? {};
-  }
-} catch {
-  // assume available if config check fails
-}
-
-const aiAvailable = aiStatus !== "unavailable";
-const partiallyAvailable = aiStatus === "degraded";
-
-const aiTaskTypeNames: AITaskType[] = [
-  "web_research",
-  "document_parse",
-  "data_transform",
-  "llm_generate",
-  "pii_detect",
-  "code_execute",
-];
-const availableCount = aiTaskTypeNames.filter(t => taskAvailability[t] !== false).length;
 
 try {
   const tplRes = await apiFetch<any>("/v1/tasks/templates", { token });
-  templates = tplRes?.templates ?? [];
+  // AI task types are pipeline-only primitives, so filter out any AI
+  // templates from the quick-start row — clicking one would pre-fill
+  // an invalid type and get rejected at submit time.
+  templates = (tplRes?.templates ?? []).filter((t: any) => t?.category !== "ai");
 } catch {
   // non-fatal
 }
@@ -84,22 +59,6 @@ if (savedTplId) {
     error = "Could not load saved template — form is blank. You can fill it in manually.";
   }
 }
-
-interface TaskTypeOption {
-  type: AITaskType;
-  label: string;
-  icon: string;
-  placeholder: string;
-}
-
-const AI_TASK_TYPES: TaskTypeOption[] = [
-  { type: "web_research", label: "Web Research", icon: "🌐", placeholder: '{\n  "url": "https://example.com/article",\n  "instruction": "Extract the main content and key points"\n}' },
-  { type: "document_parse", label: "Doc Parse", icon: "📄", placeholder: '{\n  "url": "https://example.com/doc.pdf"\n}' },
-  { type: "data_transform", label: "Data Transform", icon: "🔄", placeholder: '{\n  "data": {"name": "Alice", "age": 30},\n  "transform": "Convert to CSV format",\n  "output_format": "csv"\n}' },
-  { type: "llm_generate", label: "LLM Generate", icon: "🤖", placeholder: '{\n  "messages": [{"role": "user", "content": "Write a haiku about AI"}]\n}' },
-  { type: "pii_detect", label: "PII Detect", icon: "🔒", placeholder: '{\n  "text": "My name is John Doe, email: john@example.com",\n  "mask": true\n}' },
-  { type: "code_execute", label: "Code Execute", icon: "⚡", placeholder: '{\n  "language": "python",\n  "code": "print(sum(range(100)))"\n}' },
-];
 
 const HUMAN_TASK_TYPE_LIST = [
   { type: "label_image",         label: "Label Image",    icon: "🖼️", placeholder: '{\n  "image_url": "https://example.com/image.jpg",\n  "labels": ["cat", "dog", "bird"],\n  "question": "What animal is in this image?"\n}' },
@@ -187,29 +146,6 @@ if (Astro.request.method === "POST") {
       </a>
     </div>
     <p class="text-gray-400 text-sm mb-6">Select a task type, provide JSON input, and get results.</p>
-
-    {!aiAvailable && (
-      <div class="mb-4 p-3 bg-amber-950/30 border border-amber-700/50 rounded-lg text-sm text-amber-300 flex items-start gap-2">
-        <span class="mt-0.5">⚠️</span>
-        <div>
-          <strong>AI tasks temporarily unavailable.</strong> The AI backend services are currently down.
-          Human tasks (labeling, moderation, fact-checking, etc.) work normally.
-          AI tasks submitted now will fail — <strong>credits are automatically refunded</strong> for failed tasks.
-          You can retry failed tasks later from your task list.
-        </div>
-      </div>
-    )}
-
-    {partiallyAvailable && (
-      <div class="mb-4 p-3 bg-blue-950/30 border border-blue-700/50 rounded-lg text-sm text-blue-300 flex items-start gap-2">
-        <span class="mt-0.5">ℹ️</span>
-        <div>
-          <strong>Some AI services degraded.</strong> {availableCount} of {aiTaskTypeNames.length} AI task types are
-          available. Unavailable task types are marked below. Tasks for unavailable services will
-          fail — credits are automatically refunded.
-        </div>
-      </div>
-    )}
 
     {/* Duplication banner */}
     {duplicateParams && (
@@ -300,45 +236,16 @@ if (Astro.request.method === "POST") {
     )}
 
     <form method="POST" class="space-y-6">
-      <!-- Task type picker -->
-      <div>
-        <label class="block text-sm font-medium text-gray-300 mb-3">
-          AI Task Types <span class="text-xs text-gray-500">(executed instantly by AI)</span>
-        </label>
-        <div class="grid grid-cols-2 sm:grid-cols-5 gap-2">
-          {AI_TASK_TYPES.map(({ type, label, icon }) => {
-            const isUp = Object.keys(taskAvailability).length === 0 || taskAvailability[type] !== false;
-            return (
-              <label class="cursor-pointer relative">
-                <input type="radio" name="type" value={type} required class="peer sr-only"
-                  checked={presetType ? type === presetType : type === "web_research"} />
-                <div class:list={[
-                  "bg-gray-900 border rounded-lg p-3 text-center peer-checked:border-violet-500 peer-checked:bg-violet-950/30 transition-colors",
-                  isUp ? "border-gray-800 hover:border-gray-600" : "border-gray-800/50 opacity-60",
-                ]}>
-                  <div class="text-xl mb-1">{icon}</div>
-                  <div class="text-xs font-medium text-gray-300">{label}</div>
-                  <div class="text-xs text-gray-500 mt-0.5">{TASK_CREDITS[type]}cr</div>
-                  {!isUp && (
-                    <div class="text-[10px] text-amber-400 mt-1">⚠ offline</div>
-                  )}
-                </div>
-              </label>
-            );
-          })}
-        </div>
-      </div>
-
       <!-- Human task type picker -->
       <div>
         <label class="block text-sm font-medium text-gray-300 mb-3">
-          Human Task Types <span class="text-xs text-gray-500">(completed by workers in the marketplace)</span>
+          Task Type <span class="text-xs text-gray-500">(completed by workers in the marketplace)</span>
         </label>
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
           {HUMAN_TASK_TYPE_LIST.map(({ type, label, icon }) => (
             <label class="cursor-pointer">
               <input type="radio" name="type" value={type} required class="peer sr-only"
-                checked={presetType === type} />
+                checked={presetType ? type === presetType : type === "label_text"} />
               <div class="bg-gray-900 border border-gray-800 rounded-lg p-3 text-center
                 peer-checked:border-violet-500 peer-checked:bg-violet-950/30 hover:border-gray-600 transition-colors">
                 <div class="text-xl mb-1">{icon}</div>
@@ -697,30 +604,6 @@ type FieldDef =
   | TagsFieldDef;
 
 const FORM_FIELDS: Record<string, FieldDef[]> = {
-  web_research: [
-    { name: "url", label: "URL to research", type: "url", required: true, placeholder: "https://example.com/article" },
-    { name: "instruction", label: "What to find or extract", type: "textarea", rows: 2, placeholder: "Summarise the key points and identify the main argument" },
-  ],
-  document_parse: [
-    { name: "url", label: "Document URL (PDF, DOCX, XLSX, TXT)", type: "url", required: true, placeholder: "https://example.com/report.pdf" },
-  ],
-  data_transform: [
-    { name: "data", label: "Input data (JSON or plain text)", type: "textarea", rows: 3, placeholder: '{"name": "Alice", "age": 30}' },
-    { name: "transform", label: "Transformation instruction", type: "textarea", rows: 2, placeholder: "Normalise all keys to snake_case" },
-    { name: "output_format", label: "Output format", type: "select", options: ["json", "csv", "text", "markdown"], default: "json" },
-  ],
-  llm_generate: [
-    { name: "__prompt", label: "User message / prompt", type: "textarea", rows: 5, required: true, placeholder: "Write a haiku about the ocean." },
-  ],
-  pii_detect: [
-    { name: "text", label: "Text to scan for PII", type: "textarea", rows: 4, required: true, placeholder: "My name is Jane Doe, email: jane@example.com, SSN: 123-45-6789" },
-    { name: "mask", label: "Redact PII in output", type: "checkbox", default: true },
-  ],
-  code_execute: [
-    { name: "code", label: "Python code", type: "textarea", rows: 7, required: true, monospace: true, placeholder: "print(sum(range(100)))" },
-    { name: "timeout_seconds", label: "Timeout (seconds, max 30)", type: "number", default: 10, min: 1, max: 30 },
-  ],
-  // Human task types
   label_image: [
     { name: "image_url", label: "Image URL", type: "url", required: true, placeholder: "https://example.com/image.jpg" },
     { name: "labels", label: "Labels (comma-separated)", type: "tags", required: true, placeholder: "cat, dog, bird" },
@@ -818,15 +701,6 @@ function serializeGuidedForm(type: string): string {
     } else if (f.type === "tags") {
       const raw = (el as HTMLInputElement).value.trim();
       obj[f.name] = raw ? raw.split(",").map(s => s.trim()).filter(Boolean) : [];
-    } else if (f.name === "__prompt") {
-      // LLM generate: build messages array from prompt
-      const prompt = (el as HTMLTextAreaElement).value.trim();
-      obj["messages"] = [{ role: "user", content: prompt }];
-      // Also set model from the model select
-      const modelEl = document.getElementById("gf-model");
-      if (modelEl) obj["model"] = (modelEl as HTMLSelectElement).value;
-    } else if (f.name === "model" && type === "llm_generate") {
-      // Already handled above via __prompt special case
     } else if (f.name === "scale" && type === "rate_quality") {
       const raw = (el as HTMLSelectElement).value;
       obj[f.name] = raw.split(",").map(Number);
@@ -1033,7 +907,7 @@ document.querySelectorAll<HTMLInputElement>('input[name="type"]').forEach(radio 
   });
 });
 
-// Init on load: render form for the default-checked type (web_research)
+// Init on load: render the guided form for whichever task type is checked
 {
   const checked = document.querySelector<HTMLInputElement>('input[name="type"]:checked');
   if (checked) renderGuidedForm(checked.value);

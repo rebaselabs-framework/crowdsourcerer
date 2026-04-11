@@ -115,10 +115,12 @@ class WorkerSkillInterestsUpdate(BaseModel):
 
 # ─── Tasks ────────────────────────────────────────────────────────────────
 
+# Only human task types are directly submittable via POST /v1/tasks.
+# The six AI task types (llm_generate, data_transform, web_research,
+# pii_detect, document_parse, code_execute) still exist as *internal*
+# primitives that pipelines can chain with human steps, but they are
+# not first-class products on their own — see routers/pipelines.py.
 ALL_TASK_TYPES = Literal[
-    "web_research", "entity_lookup", "document_parse", "data_transform",
-    "llm_generate", "screenshot", "audio_transcribe", "pii_detect",
-    "code_execute", "web_intel",
     "label_image", "label_text", "rate_quality",
     "verify_fact", "moderate_content", "compare_rank",
     "answer_question", "transcription_review",
@@ -129,6 +131,13 @@ HUMAN_TASK_TYPES = {
     "verify_fact", "moderate_content", "compare_rank",
     "answer_question", "transcription_review",
 }
+
+# AI task types — intentionally not in ALL_TASK_TYPES. Kept here as a
+# single source of truth for validators and pipeline step gating.
+AI_TASK_TYPES = frozenset({
+    "llm_generate", "data_transform", "web_research",
+    "pii_detect", "document_parse", "code_execute",
+})
 
 
 CONSENSUS_STRATEGIES = Literal["any_first", "majority_vote", "unanimous", "requester_review"]
@@ -144,6 +153,20 @@ class TaskCreateRequest(BaseModel):
 
     type: ALL_TASK_TYPES
     input: dict[str, Any]
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_ai_task_types(cls, data: Any) -> Any:
+        # AI task types are pipeline-only primitives. Intercept them
+        # before Pydantic's Literal validator so the error message
+        # points at pipelines instead of listing valid human types.
+        if isinstance(data, dict) and data.get("type") in AI_TASK_TYPES:
+            raise ValueError(
+                f"task type {data['type']!r} is a pipeline-only primitive. "
+                "Use POST /v1/pipelines to chain it with human tasks; "
+                "POST /v1/tasks only accepts human task types."
+            )
+        return data
     priority: Literal["low", "normal", "high", "urgent"] = "normal"
     metadata: Optional[dict[str, Any]] = None
     webhook_url: Optional[str] = None
