@@ -122,8 +122,10 @@ class WorkerSkillInterestsUpdate(BaseModel):
 #
 # ``ALL_TASK_TYPES`` has to stay a hand-written Literal because Pydantic
 # evaluates it at class-definition time and can't consume a runtime
-# frozenset. A module-level assertion below guards against drift from
-# the canonical list in :mod:`core.task_types`.
+# frozenset. Drift from :data:`core.task_types.HUMAN_TASK_TYPES` is
+# guarded by ``tests/test_core_task_types.py::TestSchemaLiteralDrift``
+# rather than a module-level assert — an import-time crash would kill
+# the whole app, a failing test just turns CI red.
 ALL_TASK_TYPES = Literal[
     "label_image", "label_text", "rate_quality",
     "verify_fact", "moderate_content", "compare_rank",
@@ -132,12 +134,6 @@ ALL_TASK_TYPES = Literal[
 
 # Re-exported from :mod:`core.task_types` — canonical definitions.
 from core.task_types import AI_TASK_TYPES, HUMAN_TASK_TYPES
-
-# Guard against the Literal above drifting from the canonical set.
-assert set(ALL_TASK_TYPES.__args__) == HUMAN_TASK_TYPES, (
-    "models.schemas.ALL_TASK_TYPES Literal drifted from "
-    "core.task_types.HUMAN_TASK_TYPES — update the Literal in sync."
-)
 
 
 CONSENSUS_STRATEGIES = Literal["any_first", "majority_vote", "unanimous", "requester_review"]
