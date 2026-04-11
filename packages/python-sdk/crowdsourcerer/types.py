@@ -10,32 +10,39 @@ from pydantic import BaseModel, Field
 
 # ─── Enums ────────────────────────────────────────────────────────────────
 
-TaskType = Literal[
-    # AI task types
-    "web_research", "entity_lookup", "document_parse", "data_transform",
-    "llm_generate", "screenshot", "audio_transcribe", "pii_detect",
-    "code_execute", "web_intel",
-    # Human task types
+# Human task types are directly submittable via POST /v1/tasks.
+HumanTaskType = Literal[
     "label_image", "label_text", "rate_quality", "verify_fact",
     "moderate_content", "compare_rank", "answer_question", "transcription_review",
+]
+
+# Pipeline-internal AI primitives. POST /v1/tasks rejects these with a 422 —
+# they only run as pipeline steps. Kept in the Literal so stored task rows
+# (which include pipeline-emitted AI steps) typecheck.
+AITaskType = Literal[
+    "llm_generate", "data_transform", "pii_detect",
+    "document_parse", "code_execute", "web_research",
+]
+
+TaskType = Literal[
+    "label_image", "label_text", "rate_quality", "verify_fact",
+    "moderate_content", "compare_rank", "answer_question", "transcription_review",
+    "llm_generate", "data_transform", "pii_detect",
+    "document_parse", "code_execute", "web_research",
 ]
 
 TaskStatus = Literal["pending", "queued", "running", "open", "assigned", "completed", "failed", "cancelled"]
 TaskPriority = Literal["low", "normal", "high", "urgent"]
 ExecutionMode = Literal["ai", "human"]
 
-# Credits charged per task type
+# Credits charged per AI task type (pipeline step cost).
 TASK_CREDITS: Dict[str, int] = {
-    "web_research": 10,
-    "entity_lookup": 5,
-    "document_parse": 3,
-    "data_transform": 2,
     "llm_generate": 1,
-    "screenshot": 2,
-    "audio_transcribe": 8,
+    "data_transform": 2,
     "pii_detect": 2,
+    "document_parse": 3,
     "code_execute": 3,
-    "web_intel": 5,
+    "web_research": 10,
 }
 
 

@@ -1,11 +1,11 @@
-"""Task result cache — deduplicates identical AI task runs.
+"""Task result cache — deduplicates identical AI task runs inside pipelines.
 
 How it works
 ------------
-Before executing an AI task via RebaseKit, we compute a stable SHA-256 hash
-of (task_type, canonical-JSON(input)).  If a matching, non-expired entry exists
-in ``task_result_cache``, we return the cached output immediately and skip the
-external API call entirely.
+Before executing a pipeline AI step, we compute a stable SHA-256 hash of
+(task_type, canonical-JSON(input)). If a matching, non-expired entry exists
+in ``task_result_cache``, we return the cached output immediately and skip
+the handler entirely.
 
 After a successful run (cache miss), we store the result so future identical
 calls can benefit.
@@ -19,11 +19,11 @@ Credit economics
 Task types and TTLs
 -------------------
 Some task types return time-sensitive data (e.g. ``web_research`` scrapes a
-live URL) so their cache entries expire sooner.  TTLs are configurable via
-``Settings.cache_ttl_*``.  A TTL of 0 means "never expire".
+live URL) so their cache entries expire sooner. TTLs are configurable via
+``Settings.cache_ttl_*``. A TTL of 0 means "never expire".
 
 The ``task_result_cache_enabled`` config flag lets you disable caching globally
-without redeploying (useful when debugging RebaseKit issues).
+without redeploying.
 """
 
 import hashlib
@@ -44,16 +44,13 @@ logger = structlog.get_logger()
 # Credits charged for a cache hit (small fee to cover DB lookup overhead)
 CACHE_HIT_FEE_CREDITS: int = 1
 
-# Per-type TTL in hours (0 = never expire)
+# Per-type TTL in hours (0 = never expire). Keyed on the 6 pipeline-AI
+# primitives we still support; unknown types fall back to 6h in _ttl_hours().
 _DEFAULT_TTL_HOURS: dict[str, int] = {
     "web_research": 1,      # Live web content stales quickly
-    "screenshot": 2,        # Pages change
-    "web_intel": 2,         # Live intelligence data
-    "audio_transcribe": 0,  # Deterministic — fine to cache indefinitely
     "document_parse": 0,    # Same document → same parse
     "data_transform": 0,    # Pure function
     "llm_generate": 6,      # Prompt → output; model may update
-    "entity_lookup": 4,     # Entity data changes slowly
     "pii_detect": 0,        # Deterministic
     "code_execute": 0,      # Deterministic
 }

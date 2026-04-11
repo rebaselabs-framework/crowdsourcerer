@@ -3,17 +3,17 @@
 // that corrupts { chars inside <script> tags in complex pages.
 
 const API = document.getElementById("pipeline-config").dataset.apiUrl ?? "";
+// Pipeline-only AI primitives. Kept in sync with the 6 entries in
+// apps/api/core/task_types.py::_AI and packages/types/src/index.ts::AI_TASK_TYPE_IDS.
+// This file is a plain /scripts/pipelines.js served as-is (not bundled),
+// so it can't import from the types package — update both places together.
 const AI_TYPES = [
-  { value: "web_research", label: "🔍 Web Research" },
-  { value: "entity_lookup", label: "🏷️ Entity Lookup" },
-  { value: "document_parse", label: "📄 Document Parse" },
+  { value: "llm_generate",   label: "🤖 LLM Generate" },
   { value: "data_transform", label: "🔄 Data Transform" },
-  { value: "llm_generate", label: "🤖 LLM Generate" },
-  { value: "screenshot", label: "📸 Screenshot" },
-  { value: "audio_transcribe", label: "🎙️ Audio Transcribe" },
-  { value: "pii_detect", label: "🔒 PII Detect" },
-  { value: "code_execute", label: "💻 Code Execute" },
-  { value: "web_intel", label: "🌐 Web Intel" },
+  { value: "pii_detect",     label: "🔒 PII Detect" },
+  { value: "document_parse", label: "📄 Document Parse" },
+  { value: "code_execute",   label: "⚡ Code Execute" },
+  { value: "web_research",   label: "🌐 Web Research" },
 ];
 const HUMAN_TYPES = [
   { value: "label_image", label: "🖼️ Label Image" },

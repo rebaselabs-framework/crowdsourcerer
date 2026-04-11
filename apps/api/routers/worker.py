@@ -1698,20 +1698,10 @@ async def recent_worker_activity(
 
 # ─── Skill recommendations ─────────────────────────────────────────────────
 
-# Human-readable labels and categories for all task types
+# Human-readable labels and categories for every task type a worker
+# can receive recommendations for. Human-only: workers never claim AI
+# primitives, those run inside pipelines.
 _TASK_META: dict[str, dict] = {
-    # AI tasks
-    "web_research":       {"label": "Web Research",      "category": "ai",    "worker_reward": 5},
-    "entity_lookup":      {"label": "Entity Lookup",     "category": "ai",    "worker_reward": 3},
-    "document_parse":     {"label": "Document Parse",    "category": "ai",    "worker_reward": 2},
-    "data_transform":     {"label": "Data Transform",    "category": "ai",    "worker_reward": 1},
-    "llm_generate":       {"label": "LLM Generate",      "category": "ai",    "worker_reward": 1},
-    "screenshot":         {"label": "Screenshot",        "category": "ai",    "worker_reward": 1},
-    "audio_transcribe":   {"label": "Audio Transcribe",  "category": "ai",    "worker_reward": 4},
-    "pii_detect":         {"label": "PII Detection",     "category": "ai",    "worker_reward": 1},
-    "code_execute":       {"label": "Code Execute",      "category": "ai",    "worker_reward": 2},
-    "web_intel":          {"label": "Web Intelligence",  "category": "ai",    "worker_reward": 3},
-    # Human tasks
     "label_image":        {"label": "Label Image",       "category": "human", "worker_reward": 3},
     "label_text":         {"label": "Label Text",        "category": "human", "worker_reward": 2},
     "rate_quality":       {"label": "Rate Quality",      "category": "human", "worker_reward": 2},
@@ -1874,7 +1864,7 @@ async def get_worker_recommendations(
         {"label_image", "label_text", "moderate_content"},
         {"verify_fact", "answer_question"},
         {"rate_quality", "compare_rank"},
-        {"transcription_review", "audio_transcribe"},
+        {"transcription_review", "answer_question"},
     ]
     # Categories the worker has experience in
     worker_categories = {

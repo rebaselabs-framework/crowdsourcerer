@@ -135,14 +135,11 @@ class Settings(BaseSettings):
     task_result_cache_enabled: bool = True      # Master on/off switch
     # Per-type TTL overrides (hours; 0 = never expire).  Env var: CACHE_TTL_WEB_RESEARCH etc.
     # These are optional — the hardcoded defaults in core/result_cache.py are used otherwise.
+    # Only the 6 pipeline-AI primitives that still exist are listed.
     cache_ttl_web_research: int | None = None
-    cache_ttl_screenshot: int | None = None
-    cache_ttl_web_intel: int | None = None
-    cache_ttl_audio_transcribe: int | None = None
     cache_ttl_document_parse: int | None = None
     cache_ttl_data_transform: int | None = None
     cache_ttl_llm_generate: int | None = None
-    cache_ttl_entity_lookup: int | None = None
     cache_ttl_pii_detect: int | None = None
     cache_ttl_code_execute: int | None = None
 

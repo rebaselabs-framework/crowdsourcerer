@@ -63,7 +63,7 @@ def test_input_hash_nested_ordering_independence():
 
 def test_ttl_hours_deterministic_types_never_expire():
     """Purely deterministic task types should have TTL of 0 (never expire)."""
-    for task_type in ("audio_transcribe", "document_parse", "data_transform", "pii_detect", "code_execute"):
+    for task_type in ("document_parse", "data_transform", "pii_detect", "code_execute"):
         assert _ttl_hours(task_type) == 0, f"Expected TTL 0 for {task_type}"
 
 

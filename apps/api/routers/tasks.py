@@ -606,60 +606,10 @@ async def get_task_templates():
                     "task_instructions": "Listen to the audio and correct any errors in the AI-generated transcript.",
                 },
             },
-            # ── AI task templates ─────────────────────────────────────────
-            {
-                "id": "web_research",
-                "name": "Web Research",
-                "description": "AI researches a URL and returns a summary",
-                "type": "web_research",
-                "icon": "🔍",
-                "category": "ai",
-                "estimated_credits": 10,
-                "default_input": {
-                    "url": "",
-                    "instruction": "Extract the main content from this page",
-                },
-            },
-            {
-                "id": "llm_generate",
-                "name": "LLM Text Generation",
-                "description": "Generate text using Claude or other LLMs",
-                "type": "llm_generate",
-                "icon": "✨",
-                "category": "ai",
-                "estimated_credits": 1,
-                "default_input": {
-                    "prompt": "",
-                    "model": "claude-3-haiku-20240307",
-                    "max_tokens": 1024,
-                },
-            },
-            {
-                "id": "entity_lookup",
-                "name": "Entity Enrichment",
-                "description": "Look up company or person information",
-                "type": "entity_lookup",
-                "icon": "🏢",
-                "category": "ai",
-                "estimated_credits": 5,
-                "default_input": {
-                    "name": "",
-                    "type": "company",
-                },
-            },
-            {
-                "id": "pii_detection",
-                "name": "PII Detection",
-                "description": "Detect and mask personal information in text",
-                "type": "pii_detect",
-                "icon": "🔒",
-                "category": "ai",
-                "estimated_credits": 2,
-                "default_input": {
-                    "text": "",
-                    "mask": True,
-                },
-            },
+            # AI-task templates used to live here (web_research / llm_generate
+            # / entity_lookup / pii_detection). They were removed because
+            # every one of them would pre-fill a task that POST /v1/tasks
+            # now rejects with a 422 — AI types are pipeline-only primitives.
         ]
     }
 
