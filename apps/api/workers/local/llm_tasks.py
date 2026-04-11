@@ -16,6 +16,7 @@ dispatcher can return a clean 503.
 from __future__ import annotations
 
 import json
+import ssl
 from typing import Any
 
 import httpx
@@ -25,6 +26,13 @@ from bs4 import BeautifulSoup
 from core.llm_client import LLMError, LLMUnavailableError, get_llm_client
 
 logger = structlog.get_logger()
+
+# web_research fetches arbitrary user-supplied URLs. certifi's Mozilla
+# bundle doesn't include every valid chain in the wild (notably some
+# Cloudflare cross-signed ECC paths), so we defer to the OS trust store
+# — which on Debian slim images is /etc/ssl/certs/ca-certificates.crt
+# and stays current via apt security updates.
+_SSL_CONTEXT = ssl.create_default_context()
 
 
 # ── llm_generate ──────────────────────────────────────────────────────
@@ -167,6 +175,7 @@ async def web_research(inp: dict) -> dict:
         async with httpx.AsyncClient(
             timeout=_FETCH_TIMEOUT,
             follow_redirects=True,
+            verify=_SSL_CONTEXT,
             headers={
                 "user-agent": (
                     "Mozilla/5.0 (compatible; CrowdSorcerer-WebResearch/1.0; "

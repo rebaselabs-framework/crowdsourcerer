@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import base64
 import io
+import ssl
 from dataclasses import dataclass
 from typing import Any
 
@@ -16,6 +17,11 @@ import httpx
 
 _MAX_DOCUMENT_BYTES = 20 * 1024 * 1024  # 20 MB hard cap
 _FETCH_TIMEOUT = 20.0
+
+# Use the OS trust store instead of httpx's bundled certifi so we pick
+# up CA chains that certifi's Mozilla bundle occasionally misses — see
+# workers/local/llm_tasks.py for the full rationale.
+_SSL_CONTEXT = ssl.create_default_context()
 
 
 class DocumentParseError(ValueError):
@@ -165,7 +171,11 @@ def parse_bytes(data: bytes, mime_type: str | None = None) -> ParsedDocument:
 
 
 async def _fetch(url: str) -> tuple[bytes, str | None]:
-    async with httpx.AsyncClient(timeout=_FETCH_TIMEOUT, follow_redirects=True) as client:
+    async with httpx.AsyncClient(
+        timeout=_FETCH_TIMEOUT,
+        follow_redirects=True,
+        verify=_SSL_CONTEXT,
+    ) as client:
         r = await client.get(url)
         r.raise_for_status()
         content_type = r.headers.get("content-type", "").split(";")[0].strip() or None
