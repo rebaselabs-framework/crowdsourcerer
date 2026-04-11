@@ -54,3 +54,6 @@ logs/
 *.dockerignore
 .playwright-cli/
 .playwright/
+
+# Claude Code session-local state (task queue, scratch)
+.claude/
