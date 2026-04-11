@@ -172,14 +172,13 @@ class TaskDB(Base):
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     type = Column(
         SAEnum(
-            # AI-powered task types (executed by RebaseKit APIs)
-            "web_research", "entity_lookup", "document_parse", "data_transform",
-            "llm_generate", "screenshot", "audio_transcribe", "pii_detect",
-            "code_execute", "web_intel",
-            # Human task types (completed by workers in the marketplace)
+            # Human task types (submittable via POST /v1/tasks)
             "label_image", "label_text", "rate_quality",
             "verify_fact", "moderate_content", "compare_rank",
             "answer_question", "transcription_review",
+            # Pipeline-AI primitives (pipeline-only — see routers/pipelines.py)
+            "web_research", "document_parse", "data_transform",
+            "llm_generate", "pii_detect", "code_execute",
             name="task_type_enum",
         ),
         nullable=False,
