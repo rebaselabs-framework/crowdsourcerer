@@ -351,17 +351,15 @@ function fmt(d: string) {
           <label for="est-type" class="block text-xs text-gray-400 mb-1.5">Task type</label>
           <select id="est-type"
             class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500">
-            <option value="llm_generate" data-cost="1">llm_generate (1 cr)</option>
-            <option value="data_transform" data-cost="2">data_transform (2 cr)</option>
-            <option value="document_parse" data-cost="3">document_parse (3 cr)</option>
-            <option value="code_execute" data-cost="3">code_execute (3 cr)</option>
-            <option value="screenshot" data-cost="2">screenshot (2 cr)</option>
-            <option value="pii_detect" data-cost="2">pii_detect (2 cr)</option>
-            <option value="entity_lookup" data-cost="5">entity_lookup (5 cr)</option>
-            <option value="web_intel" data-cost="5">web_intel (5 cr)</option>
-            <option value="web_research" data-cost="10">web_research (10 cr)</option>
-            <option value="audio_transcribe" data-cost="8">audio_transcribe (8 cr)</option>
-            <option value="human_label" data-cost="0" data-human="true">Human task (custom)</option>
+            <option value="human_label" data-cost="0" data-human="true" selected>Human task (custom reward)</option>
+            <optgroup label="Pipeline AI step cost">
+              <option value="llm_generate"   data-cost="1">llm_generate (1 cr)</option>
+              <option value="data_transform" data-cost="2">data_transform (2 cr)</option>
+              <option value="pii_detect"     data-cost="2">pii_detect (2 cr)</option>
+              <option value="document_parse" data-cost="3">document_parse (3 cr)</option>
+              <option value="code_execute"   data-cost="3">code_execute (3 cr)</option>
+              <option value="web_research"   data-cost="10">web_research (10 cr)</option>
+            </optgroup>
           </select>
         </div>
 

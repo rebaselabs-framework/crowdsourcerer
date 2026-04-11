@@ -1,5 +1,6 @@
 ---
 import Layout from "@/layouts/Layout.astro";
+import { CONTACT_EMAIL, mailto } from "@/lib/contact";
 
 const useCases = [
   {
@@ -86,7 +87,7 @@ const useCases = [
       </p>
       <div class="flex flex-wrap items-center justify-center gap-4">
         <a
-          href="mailto:crowdsource@rebaselabs.online?subject=CrowdSorcerer%20use%20case"
+          href={mailto(CONTACT_EMAIL, "CrowdSorcerer use case")}
           class="px-6 py-3 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-semibold transition-colors"
         >
           Request early access

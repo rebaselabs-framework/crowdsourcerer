@@ -10,7 +10,6 @@ export async function GET() {
     { loc: "/pricing", priority: "0.9", changefreq: "monthly" },
     { loc: "/docs", priority: "0.8", changefreq: "weekly" },
     { loc: "/docs/api-reference", priority: "0.8", changefreq: "weekly" },
-    { loc: "/docs/sandbox", priority: "0.8", changefreq: "weekly" },
     { loc: "/use-cases", priority: "0.9", changefreq: "monthly" },
     { loc: "/register", priority: "0.7", changefreq: "monthly" },
     { loc: "/login", priority: "0.5", changefreq: "monthly" },

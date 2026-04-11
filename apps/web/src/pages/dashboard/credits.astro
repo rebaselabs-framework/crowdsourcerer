@@ -1,6 +1,7 @@
 ---
 import Layout from "@/layouts/Layout.astro";
 import { apiFetch, getToken } from "@/lib/api";
+import { CONTACT_EMAIL, mailto } from "@/lib/contact";
 
 const token = getToken(Astro.cookies);
 
@@ -85,7 +86,7 @@ try {
     <h2 class="text-xl font-bold mb-4">Buy credits</h2>
     {!paymentsEnabled && (
       <div class="mb-6 p-4 bg-gray-900 border border-gray-700 rounded-xl text-sm text-gray-400">
-        💳 Credit purchases are not yet available. Contact <a href="mailto:crowdsource@rebaselabs.online" class="text-violet-400">crowdsource@rebaselabs.online</a> for bulk credit purchases.
+        💳 Credit purchases are not yet available. Contact <a href={mailto(CONTACT_EMAIL)} class="text-violet-400">{CONTACT_EMAIL}</a> for bulk credit purchases.
       </div>
     )}
     <div id="checkout-error" class="hidden text-sm text-red-400 bg-red-950/20 border border-red-800 rounded-lg px-4 py-3 mb-4"></div>
@@ -114,7 +115,7 @@ try {
           <h3 class="font-medium mb-1">Pay with crypto</h3>
           <p class="text-sm text-gray-400 mb-3">
             Send to any of the wallets below, then email
-            <a href="mailto:crowdsource@rebaselabs.online" class="text-violet-400">crowdsource@rebaselabs.online</a>
+            <a href={mailto(CONTACT_EMAIL)} class="text-violet-400">{CONTACT_EMAIL}</a>
             with your transaction hash and account email. Credits added within 24h.
           </p>
           <div class="grid sm:grid-cols-3 gap-3 text-xs font-mono">

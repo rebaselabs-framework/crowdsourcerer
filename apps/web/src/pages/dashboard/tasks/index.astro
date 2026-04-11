@@ -112,9 +112,16 @@ const STATUS_COLORS: Record<string, string> = {
       </select>
       <select name="type" class="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500">
         <option value="" selected={!type}>All types</option>
-        {["web_research","entity_lookup","document_parse","data_transform","llm_generate","screenshot","audio_transcribe","pii_detect","code_execute","web_intel","label_image","label_text","rate_quality","verify_fact","moderate_content","compare_rank","answer_question","transcription_review"].map(t => (
-          <option value={t} selected={type === t}>{t}</option>
-        ))}
+        <optgroup label="Human">
+          {["label_image","label_text","rate_quality","verify_fact","moderate_content","compare_rank","answer_question","transcription_review"].map(t => (
+            <option value={t} selected={type === t}>{t}</option>
+          ))}
+        </optgroup>
+        <optgroup label="Pipeline AI steps">
+          {["web_research","document_parse","data_transform","llm_generate","pii_detect","code_execute"].map(t => (
+            <option value={t} selected={type === t}>{t}</option>
+          ))}
+        </optgroup>
       </select>
       {userTags.length > 0 && (
         <select name="tag" class="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500">

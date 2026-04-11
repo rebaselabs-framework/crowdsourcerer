@@ -19,12 +19,13 @@ const total: number = templateData?.total ?? 0;
 
 // Task type icon map
 const TYPE_ICONS: Record<string, string> = {
-  web_research: "🌐", entity_lookup: "🏢", document_parse: "📄",
-  data_transform: "🔄", llm_generate: "🤖", screenshot: "📸",
-  audio_transcribe: "🎙️", pii_detect: "🔒", code_execute: "⚡",
-  web_intel: "🕵️", label_image: "🖼️", label_text: "🏷️",
+  // Human
+  label_image: "🖼️", label_text: "🏷️",
   rate_quality: "⭐", verify_fact: "✅", moderate_content: "🛡️",
   compare_rank: "📊", answer_question: "💬", transcription_review: "📝",
+  // Pipeline AI
+  web_research: "🌐", document_parse: "📄", data_transform: "🔄",
+  llm_generate: "🤖", pii_detect: "🔒", code_execute: "⚡",
 };
 
 const HUMAN_TYPES = new Set([
@@ -210,18 +211,6 @@ const HUMAN_TYPES = new Set([
               class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
               required
             >
-              <optgroup label="AI Tasks">
-                <option value="web_research">Web Research</option>
-                <option value="entity_lookup">Entity Lookup</option>
-                <option value="document_parse">Document Parse</option>
-                <option value="data_transform">Data Transform</option>
-                <option value="llm_generate">LLM Generate</option>
-                <option value="screenshot">Screenshot</option>
-                <option value="audio_transcribe">Transcribe</option>
-                <option value="pii_detect">PII Detect</option>
-                <option value="code_execute">Code Execute</option>
-                <option value="web_intel">Web Intel</option>
-              </optgroup>
               <optgroup label="Human Tasks">
                 <option value="label_image">Label Image</option>
                 <option value="label_text">Label Text</option>
@@ -231,6 +220,14 @@ const HUMAN_TYPES = new Set([
                 <option value="compare_rank">Compare &amp; Rank</option>
                 <option value="answer_question">Answer Question</option>
                 <option value="transcription_review">Review Transcript</option>
+              </optgroup>
+              <optgroup label="Pipeline AI steps">
+                <option value="web_research">Web Research</option>
+                <option value="document_parse">Document Parse</option>
+                <option value="data_transform">Data Transform</option>
+                <option value="llm_generate">LLM Generate</option>
+                <option value="pii_detect">PII Detect</option>
+                <option value="code_execute">Code Execute</option>
               </optgroup>
             </select>
           </div>

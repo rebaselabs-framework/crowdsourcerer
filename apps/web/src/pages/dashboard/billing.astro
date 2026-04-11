@@ -1,6 +1,7 @@
 ---
 import Layout from "@/layouts/Layout.astro";
 import { apiFetch, getToken } from "@/lib/api";
+import { SUPPORT_EMAIL, mailto } from "@/lib/contact";
 
 const token = getToken(Astro.cookies);
 if (!token) return Astro.redirect("/login");
@@ -248,7 +249,7 @@ const currentPlan = user?.plan ?? "free";
           )}
           {plan === "enterprise" && (
             <a
-              href="mailto:support@rebaselabs.online?subject=Enterprise Plan Inquiry"
+              href={mailto(SUPPORT_EMAIL, "Enterprise Plan Inquiry")}
               class="w-full text-center px-3 py-2 border border-amber-700 text-amber-400 text-xs font-medium rounded-lg hover:bg-amber-900/20 transition-colors"
             >
               Contact Sales
@@ -272,7 +273,7 @@ const currentPlan = user?.plan ?? "free";
           <p class="text-sm text-gray-400">Need to update payment method, view invoices, or cancel? Contact support.</p>
         </div>
         <a
-          href="mailto:support@rebaselabs.online?subject=Billing%20inquiry"
+          href={mailto(SUPPORT_EMAIL, "Billing inquiry")}
           class="px-4 py-2 border border-gray-600 text-gray-300 text-sm rounded-lg hover:border-gray-400 hover:text-white transition-colors whitespace-nowrap"
         >
           Contact Support →

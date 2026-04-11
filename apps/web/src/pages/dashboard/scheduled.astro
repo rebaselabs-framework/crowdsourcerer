@@ -29,24 +29,25 @@ const items: any[] = data?.items ?? [];
 // ── Lookup tables ─────────────────────────────────────────────────────────────
 
 const TASK_ICONS: Record<string, string> = {
-  web_research: "🌐", entity_lookup: "🏢", document_parse: "📄",
-  data_transform: "🔄", llm_generate: "🤖", screenshot: "📸",
-  audio_transcribe: "🎙️", pii_detect: "🔒", code_execute: "⚡", web_intel: "🕵️",
+  // Human
   label_image: "🖼️", label_text: "🏷️", rate_quality: "⭐",
   verify_fact: "✅", moderate_content: "🛡️", compare_rank: "📊",
   answer_question: "💬", transcription_review: "📝",
+  // Pipeline AI
+  web_research: "🌐", document_parse: "📄", data_transform: "🔄",
+  llm_generate: "🤖", pii_detect: "🔒", code_execute: "⚡",
 };
 
 const TASK_LABELS: Record<string, string> = {
-  web_research: "Web Research", entity_lookup: "Entity Lookup",
-  document_parse: "Doc Parse", data_transform: "Data Transform",
-  llm_generate: "LLM Generate", screenshot: "Screenshot",
-  audio_transcribe: "Transcribe", pii_detect: "PII Detect",
-  code_execute: "Code Execute", web_intel: "Web Intel",
+  // Human
   label_image: "Label Image", label_text: "Label Text",
   rate_quality: "Rate Quality", verify_fact: "Verify Fact",
   moderate_content: "Moderate Content", compare_rank: "Compare & Rank",
   answer_question: "Answer Question", transcription_review: "Review Transcript",
+  // Pipeline AI
+  web_research: "Web Research", document_parse: "Doc Parse",
+  data_transform: "Data Transform", llm_generate: "LLM Generate",
+  pii_detect: "PII Detect", code_execute: "Code Execute",
 };
 
 const PRIORITY_CLS: Record<string, string> = {

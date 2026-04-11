@@ -1,5 +1,6 @@
 ---
 import Layout from "@/layouts/Layout.astro";
+import { CONTACT_EMAIL, mailto } from "@/lib/contact";
 
 const HUMAN_TASK_TYPES = [
   { type: "label_image",        label: "Image Labeling",         example: "Bounding boxes, segmentation, classification" },
@@ -65,7 +66,7 @@ const PLANS = [
       "SSO / SAML",
     ],
     cta: "Contact us",
-    ctaHref: "mailto:crowdsource@rebaselabs.online?subject=Enterprise%20inquiry",
+    ctaHref: mailto(CONTACT_EMAIL, "Enterprise inquiry"),
     highlight: false,
   },
 ];
@@ -118,7 +119,7 @@ const FAQ = [
   },
   {
     q: "Do you offer a sandbox / test environment?",
-    a: "Yes — the API Sandbox at /docs/sandbox lets you submit real tasks with a real API key so you can see the full flow before building your integration.",
+    a: "Not yet — while we're in closed beta, beta accounts share the production environment. Ask us for a scoped API key if you want to test without spending production credits.",
   },
 ];
 ---
@@ -351,7 +352,7 @@ const FAQ = [
           ))}
         </ul>
         <a
-          href="mailto:crowdsource@rebaselabs.online?subject=Enterprise%20inquiry"
+          href={mailto(CONTACT_EMAIL, "Enterprise inquiry")}
           class="inline-block px-6 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-200 rounded-xl text-sm font-medium border border-gray-700 hover:border-gray-500 transition-colors"
         >
           Contact sales →
@@ -360,7 +361,7 @@ const FAQ = [
       <div class="text-center">
         <div class="text-7xl mb-4">🏢</div>
         <div class="text-gray-500 text-sm">
-          Email <a href="mailto:crowdsource@rebaselabs.online" class="text-violet-400 hover:text-violet-300">crowdsource@rebaselabs.online</a><br />
+          Email <a href={mailto(CONTACT_EMAIL)} class="text-violet-400 hover:text-violet-300">{CONTACT_EMAIL}</a><br />
           with your use case and volume estimates.<br />
           Typical response within 24 hours.
         </div>
@@ -393,7 +394,7 @@ const FAQ = [
         </div>
       </div>
       <p class="text-xs text-gray-500 mt-3">
-        After sending, email <a href="mailto:crowdsource@rebaselabs.online" class="text-violet-400">crowdsource@rebaselabs.online</a> with your transaction hash and account email.
+        After sending, email <a href={mailto(CONTACT_EMAIL)} class="text-violet-400">{CONTACT_EMAIL}</a> with your transaction hash and account email.
       </p>
     </div>
   </section>
@@ -403,7 +404,7 @@ const FAQ = [
     <h2 class="text-3xl font-bold mb-4">Ready to build?</h2>
     <p class="text-gray-400 mb-8">We're onboarding beta users one at a time. Tell us what you want to build and we'll get you a key.</p>
     <div class="flex flex-wrap justify-center gap-4">
-      <a href="mailto:crowdsource@rebaselabs.online?subject=CrowdSorcerer%20early%20access" class="px-8 py-3 bg-violet-600 hover:bg-violet-500 text-white font-semibold rounded-xl transition-colors">
+      <a href={mailto(CONTACT_EMAIL, "CrowdSorcerer early access")} class="px-8 py-3 bg-violet-600 hover:bg-violet-500 text-white font-semibold rounded-xl transition-colors">
         Request early access
       </a>
       <a href="/docs" class="px-8 py-3 border border-gray-700 hover:border-gray-500 text-gray-300 font-semibold rounded-xl transition-colors">

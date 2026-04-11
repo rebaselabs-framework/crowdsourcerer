@@ -1,6 +1,7 @@
 ---
 import Layout from "@/layouts/Layout.astro";
 import { setAuthCookies } from "@/lib/auth";
+import { CONTACT_EMAIL, mailto } from "@/lib/contact";
 
 let error = "";
 
@@ -78,14 +79,23 @@ if (Astro.request.method === "POST") {
         <div class="text-4xl mb-3">🔮</div>
         <h1 class="text-2xl font-bold">Create your account</h1>
         <p class="text-gray-400 mt-1 text-sm">
-          {refCode ? "You were invited!" : "Start with 1,000 free credits"}
+          {refCode ? "You were invited!" : "Closed beta — email us for early access"}
         </p>
       </div>
+
+      {!refCode && (
+        <div class="bg-amber-950/30 border border-amber-700/40 rounded-xl px-4 py-3 text-sm text-amber-300 mb-6 flex items-start gap-2">
+          <span class="mt-0.5">⚠️</span>
+          <div>
+            Public registration is closed while we're in beta. To request an account, email <a href={mailto(CONTACT_EMAIL, "CrowdSorcerer early access")} class="text-amber-200 underline">{CONTACT_EMAIL}</a> with your use case.
+          </div>
+        </div>
+      )}
 
       {refCode && (
         <div class="bg-emerald-900/30 border border-emerald-700/40 rounded-xl px-4 py-3 text-sm text-emerald-300 mb-6 flex items-center gap-2">
           <span>🎁</span>
-          <span>Referral bonus: sign up now to get <strong>150 credits</strong> (50 bonus) to start.</span>
+          <span>Referral signup — your invite unlocks account creation.</span>
         </div>
       )}
 

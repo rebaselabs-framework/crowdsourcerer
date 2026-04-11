@@ -37,11 +37,12 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 const ALL_TASK_TYPES = [
-  "web_research", "entity_lookup", "document_parse", "data_transform",
-  "llm_generate", "screenshot", "audio_transcribe", "pii_detect",
-  "code_execute", "web_intel",
+  // Human task types (directly submittable via POST /v1/tasks)
   "label_image", "label_text", "rate_quality", "verify_fact",
   "moderate_content", "compare_rank", "answer_question", "transcription_review",
+  // AI task types (pipeline-only primitives, appear on stored rows)
+  "web_research", "document_parse", "data_transform",
+  "llm_generate", "pii_detect", "code_execute",
 ];
 
 const ALL_STATUSES = [

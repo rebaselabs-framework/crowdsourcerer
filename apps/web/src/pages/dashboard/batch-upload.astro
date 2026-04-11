@@ -8,18 +8,14 @@ import { getToken } from "@/lib/api";
 const token = getToken(Astro.cookies);
 if (!token) return Astro.redirect("/login");
 
+// Batch upload is human-only. AI task types are pipeline-only
+// primitives and can't be submitted via POST /v1/tasks/batch.
 const TASK_TYPES = [
-  "web_research", "entity_lookup", "document_parse", "data_transform",
-  "llm_generate", "screenshot", "audio_transcribe", "pii_detect",
-  "code_execute", "web_intel",
   "label_image", "label_text", "rate_quality", "verify_fact",
   "moderate_content", "compare_rank", "answer_question", "transcription_review",
 ];
 
 const TASK_CREDITS: Record<string, number> = {
-  web_research: 10, entity_lookup: 5, document_parse: 3, data_transform: 2,
-  llm_generate: 1, screenshot: 2, audio_transcribe: 8, pii_detect: 2,
-  code_execute: 3, web_intel: 5,
   label_image: 5, label_text: 3, rate_quality: 2, verify_fact: 3,
   moderate_content: 2, compare_rank: 2, answer_question: 4, transcription_review: 6,
 };

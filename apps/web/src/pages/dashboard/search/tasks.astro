@@ -129,11 +129,12 @@ function filterQs(extra: Record<string, string> = {}): string {
         >
           <option value="">Any type</option>
           {[
-            "web_research","entity_lookup","document_parse","data_transform",
-            "llm_generate","screenshot","audio_transcribe","pii_detect",
-            "code_execute","web_intel",
+            // Human
             "label_image","label_text","rate_quality","verify_fact",
             "moderate_content","compare_rank","answer_question","transcription_review",
+            // Pipeline AI primitives
+            "web_research","document_parse","data_transform",
+            "llm_generate","pii_detect","code_execute",
           ].map((t) => (
             <option value={t} selected={taskType === t}>{t.replace(/_/g, " ")}</option>
           ))}

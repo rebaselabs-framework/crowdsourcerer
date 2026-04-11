@@ -39,18 +39,7 @@ try {
 } catch (_) {}
 
 const TASK_TYPE_LABELS: Record<string, string> = {
-  web_research: "Web Research",
-  web_intel: "Web Intel",
-  llm_generate: "LLM Generate",
-  llm_transform: "LLM Transform",
-  llm_extract: "LLM Extract",
-  llm_classify: "LLM Classify",
-  llm_score: "LLM Score",
-  llm_compare: "LLM Compare",
-  data_transform: "Data Transform",
-  entity_lookup: "Entity Lookup",
-  screenshot: "Screenshot",
-  pii_detect: "PII Detection",
+  // Human
   label_image: "Label Image",
   label_text: "Classify Text",
   rate_quality: "Rate Quality",
@@ -59,6 +48,13 @@ const TASK_TYPE_LABELS: Record<string, string> = {
   compare_rank: "A/B Compare",
   answer_question: "Answer Question",
   transcription_review: "Transcription Review",
+  // Pipeline AI primitives
+  web_research: "Web Research",
+  document_parse: "Doc Parse",
+  data_transform: "Data Transform",
+  llm_generate: "LLM Generate",
+  pii_detect: "PII Detection",
+  code_execute: "Code Execute",
 };
 
 // Show onboarding banner if not yet complete and not skipped
@@ -89,9 +85,9 @@ const showOnboardingBanner = Boolean(
               <h2 class="font-semibold text-violet-200 text-base">Welcome to CrowdSorcerer!</h2>
             </div>
             <p class="text-sm text-gray-400 mb-3">
-              You have <strong class="text-violet-300">{(credits?.available ?? 100).toLocaleString()} free credits</strong> — enough for
-              {(credits?.available ?? 100) >= 10 ? ` ${Math.floor((credits?.available ?? 100) / 10).toLocaleString()} web research tasks` : " several quick tasks"}.
-              Complete the quick-start guide to earn <strong class="text-amber-300">+200 bonus credits</strong>.
+              You have <strong class="text-violet-300">{(credits?.available ?? 0).toLocaleString()} credits</strong> — enough for
+              {(credits?.available ?? 0) >= 5 ? ` ~${Math.floor((credits?.available ?? 0) / 3).toLocaleString()} labeling assignments` : " a few quick tasks"}.
+              Complete the quick-start guide to learn how pipelines and consensus checks work.
             </p>
             <div class="flex flex-wrap gap-3">
               <a href="/dashboard/requester-onboarding"
@@ -174,21 +170,21 @@ const showOnboardingBanner = Boolean(
           <div class="text-center mb-6">
             <div class="text-3xl mb-2">🔮</div>
             <h3 class="font-semibold text-gray-200 mb-1">Submit your first task</h3>
-            <p class="text-sm text-gray-500">Choose a task type below to get started — each one runs in seconds.</p>
+            <p class="text-sm text-gray-500">Pick a task type below. Workers in the marketplace claim and complete it within the SLA you set.</p>
           </div>
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
             {[
-              { type: "web_research",  icon: "🌐", label: "Web Research",  desc: "Scrape any URL + extract key points",   credits: 10, hoverBorder: "hover:border-violet-700/60", textClass: "text-violet-400", hoverText: "group-hover:text-violet-300" },
-              { type: "llm_generate",  icon: "🤖", label: "LLM Generate",  desc: "Generate text with Claude or GPT-4",   credits: 1,  hoverBorder: "hover:border-indigo-700/60",  textClass: "text-indigo-400",  hoverText: "group-hover:text-indigo-300"  },
-              { type: "entity_lookup", icon: "🏢", label: "Entity Lookup", desc: "Enrich a company or person's profile", credits: 5,  hoverBorder: "hover:border-sky-700/60",    textClass: "text-sky-400",     hoverText: "group-hover:text-sky-300"     },
-            ].map(({ type, icon, label, desc, credits, hoverBorder, textClass, hoverText }) => (
+              { type: "label_text",       icon: "🏷️", label: "Label Text",       desc: "Classify a piece of text with your own categories", hoverBorder: "hover:border-violet-700/60", textClass: "text-violet-400", hoverText: "group-hover:text-violet-300" },
+              { type: "rate_quality",     icon: "⭐", label: "Rate Quality",     desc: "Score content on a 1–5 scale with critique",         hoverBorder: "hover:border-indigo-700/60", textClass: "text-indigo-400", hoverText: "group-hover:text-indigo-300" },
+              { type: "moderate_content", icon: "🛡️", label: "Moderate",         desc: "Approve, reject, or escalate user-submitted content", hoverBorder: "hover:border-sky-700/60",    textClass: "text-sky-400",    hoverText: "group-hover:text-sky-300"    },
+            ].map(({ type, icon, label, desc, hoverBorder, textClass, hoverText }) => (
               <a href={`/dashboard/new-task?preset=${type}`}
                 class={`group bg-gray-800/60 hover:bg-gray-800 border border-gray-700 ${hoverBorder} rounded-xl p-4 transition-all`}>
                 <div class="text-2xl mb-2">{icon}</div>
                 <div class="text-sm font-semibold text-gray-200 group-hover:text-white mb-1">{label}</div>
                 <div class="text-xs text-gray-500 mb-3">{desc}</div>
                 <div class="flex items-center justify-between">
-                  <span class="text-xs text-gray-500">{credits} credit{credits !== 1 ? "s" : ""}</span>
+                  <span class="text-xs text-gray-500">Human</span>
                   <span class={`text-xs ${textClass} ${hoverText} font-medium`}>Try it →</span>
                 </div>
               </a>
@@ -196,7 +192,7 @@ const showOnboardingBanner = Boolean(
           </div>
           <div class="text-center">
             <a href="/dashboard/new-task" class="text-sm text-gray-400 hover:text-gray-200 transition-colors">
-              See all 18 task types →
+              See all 8 task types →
             </a>
           </div>
         </div>

@@ -1,5 +1,6 @@
 ---
 import Layout from "@/layouts/Layout.astro";
+import { CONTACT_EMAIL, mailto } from "@/lib/contact";
 
 const HUMAN_TASKS = [
   { type: "label_text",          icon: "🏷️", label: "Label Text",        desc: "Sentiment, categories, spam detection" },
@@ -280,7 +281,7 @@ console.<span class="text-yellow-400">log</span>(task.output.summary);
       </p>
       <div class="flex flex-wrap justify-center gap-4">
         <a
-          href="mailto:hello@rebaselabs.online?subject=CrowdSorcerer early access"
+          href={mailto(CONTACT_EMAIL, "CrowdSorcerer early access")}
           class="px-8 py-3 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-semibold transition-colors"
         >
           Request early access
