@@ -229,14 +229,10 @@ const justLaunched = Astro.url.searchParams.get("launched") === "1";
 // ── Rich output helpers ───────────────────────────────────────────────────────
 type RichOutput =
   | { kind: "web_research"; summary: string; sources?: string[]; key_facts?: string[] }
-  | { kind: "web_intel"; report: string; entities?: string[]; sources?: string[] }
-  | { kind: "entity_lookup"; fields: Record<string, any> }
   | { kind: "document_parse"; sections?: Array<{ title?: string; content: string }>; tables?: any[][]; raw_text?: string }
   | { kind: "llm_generate"; text: string; model?: string; tokens?: number }
-  | { kind: "audio_transcribe"; transcript: string; language?: string; confidence?: number }
   | { kind: "pii_detect"; findings: Array<{ type: string; value: string; redacted: string; start: number; end: number }>; redacted_text?: string }
   | { kind: "code_execute"; stdout?: string; stderr?: string; exit_code?: number; output?: any }
-  | { kind: "screenshot"; url?: string; image_url?: string; image_base64?: string }
   | { kind: "data_transform"; result: any; rows_processed?: number; rows_output?: number }
   | { kind: "moderate_content"; verdict: string; confidence?: number; violations?: Array<{ policy: string; confidence: number; excerpt?: string }>; recommended_action?: string }
   | { kind: "raw"; data: any };
@@ -252,18 +248,6 @@ function parseRichOutput(type: string, output: any): RichOutput {
       sources: Array.isArray(o.sources) ? o.sources : (o.source ? [o.source] : undefined),
       key_facts: Array.isArray(o.key_facts) ? o.key_facts : undefined,
     };
-  }
-  if (type === "web_intel") {
-    return {
-      kind: "web_intel",
-      report: o.report ?? o.summary ?? o.content ?? JSON.stringify(o),
-      entities: Array.isArray(o.entities) ? o.entities : undefined,
-      sources: Array.isArray(o.sources) ? o.sources : undefined,
-    };
-  }
-  if (type === "entity_lookup") {
-    const { type: _t, ...fields } = o;
-    return { kind: "entity_lookup", fields };
   }
   if (type === "document_parse") {
     return {
@@ -281,14 +265,6 @@ function parseRichOutput(type: string, output: any): RichOutput {
       tokens: o.tokens ?? o.usage?.total_tokens,
     };
   }
-  if (type === "audio_transcribe") {
-    return {
-      kind: "audio_transcribe",
-      transcript: o.transcript ?? o.text ?? o.result ?? JSON.stringify(o),
-      language: o.language ?? o.detected_language,
-      confidence: o.confidence,
-    };
-  }
   if (type === "pii_detect") {
     return {
       kind: "pii_detect",
@@ -303,14 +279,6 @@ function parseRichOutput(type: string, output: any): RichOutput {
       stderr: o.stderr,
       exit_code: o.exit_code ?? o.returncode,
       output: o.output ?? o.result,
-    };
-  }
-  if (type === "screenshot") {
-    return {
-      kind: "screenshot",
-      url: o.url,
-      image_url: o.image_url ?? o.screenshot_url,
-      image_base64: o.image_base64,
     };
   }
   if (type === "data_transform") {
@@ -714,53 +682,6 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
               </div>
             )}
 
-            {richOutput?.kind === "web_intel" && (
-              <div id="rich-view" class="px-5 py-5 space-y-5">
-                <div>
-                  <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Intelligence Report</h3>
-                  <div id="web-intel-report" class="llm-prose">
-                    <p class="text-gray-200 text-sm leading-relaxed whitespace-pre-wrap">{richOutput.report}</p>
-                  </div>
-                </div>
-                {richOutput.entities && richOutput.entities.length > 0 && (
-                  <div>
-                    <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Entities Identified</h3>
-                    <div class="flex flex-wrap gap-2">
-                      {richOutput.entities.map((e: string) => (
-                        <span class="px-2 py-1 bg-blue-950/50 border border-blue-800 rounded text-blue-300 text-xs">{e}</span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {richOutput.sources && richOutput.sources.length > 0 && (
-                  <div>
-                    <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Sources</h3>
-                    <ul class="space-y-1">
-                      {richOutput.sources.map((s: string) => (
-                        <li><a href={s} target="_blank" rel="noopener noreferrer" class="text-violet-400 hover:text-violet-300 text-sm break-all">{s}</a></li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {richOutput?.kind === "entity_lookup" && (
-              <div id="rich-view" class="px-5 py-5">
-                <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Entity Data</h3>
-                <dl class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {Object.entries(richOutput.fields).map(([k, v]: [string, any]) => (
-                    <div class="bg-gray-950/50 rounded-lg p-3">
-                      <dt class="text-xs text-gray-500 mb-1 capitalize">{k.replace(/_/g, " ")}</dt>
-                      <dd class="text-sm text-gray-200 break-words">
-                        {Array.isArray(v) ? v.join(", ") : (v === null || v === undefined ? "—" : String(v))}
-                      </dd>
-                    </div>
-                  ))}
-                </dl>
-              </div>
-            )}
-
             {richOutput?.kind === "document_parse" && (
               <div id="rich-view" class="px-5 py-5 space-y-5">
                 {richOutput.sections && richOutput.sections.length > 0 ? (
@@ -860,26 +781,6 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
               </div>
             )}
 
-            {richOutput?.kind === "audio_transcribe" && (
-              <div id="rich-view" class="px-5 py-5">
-                <div class="flex items-center gap-3 mb-3">
-                  {richOutput.language && (
-                    <span class="text-xs px-2 py-0.5 rounded bg-blue-950/50 border border-blue-800 text-blue-300">
-                      🌍 {richOutput.language}
-                    </span>
-                  )}
-                  {richOutput.confidence != null && (
-                    <span class="text-xs text-gray-500">
-                      {Math.round(richOutput.confidence * 100)}% confidence
-                    </span>
-                  )}
-                </div>
-                <div class="bg-gray-950/50 border border-gray-800 rounded-lg p-4">
-                  <p class="text-sm text-gray-200 leading-relaxed whitespace-pre-wrap font-mono">{richOutput.transcript}</p>
-                </div>
-              </div>
-            )}
-
             {richOutput?.kind === "pii_detect" && (
               <div id="rich-view" class="px-5 py-5 space-y-5">
                 <div class="flex items-center gap-3">
@@ -961,26 +862,6 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
                     <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Return value</h3>
                     <pre class="bg-gray-950 border border-gray-800 rounded-lg p-4 text-sm font-mono text-gray-300 overflow-x-auto whitespace-pre-wrap">{JSON.stringify(richOutput.output, null, 2)}</pre>
                   </div>
-                )}
-              </div>
-            )}
-
-            {richOutput?.kind === "screenshot" && (
-              <div id="rich-view" class="px-5 py-5">
-                {richOutput.url && (
-                  <div class="text-xs text-gray-500 mb-3">
-                    URL: <a href={richOutput.url} target="_blank" rel="noopener noreferrer" class="text-violet-400 hover:text-violet-300">{richOutput.url}</a>
-                  </div>
-                )}
-                {(richOutput.image_url || richOutput.image_base64) ? (
-                  <img
-                    src={richOutput.image_url ?? `data:image/png;base64,${richOutput.image_base64}`}
-                    alt="Screenshot"
-                    class="rounded-lg border border-gray-800 max-w-full shadow-lg"
-                    loading="lazy"
-                  />
-                ) : (
-                  <p class="text-gray-500 text-sm">No image available in output.</p>
                 )}
               </div>
             )}
@@ -2861,20 +2742,6 @@ const richOutput: RichOutput | null = task?.output ? parseRichOutput(task.type, 
         window.__loadMarked(function() {
           try {
             container.innerHTML = marked.parse(webResearchSummary, { breaks: true, gfm: true });
-          } catch (_) { /* keep plain text fallback */ }
-        });
-      }
-    </script>
-  )}
-
-  <!-- web_intel: Markdown rendering for report -->
-  {richOutput?.kind === "web_intel" && (
-    <script is:inline define:vars={{ webIntelReport: richOutput.report }}>
-      var container = document.getElementById("web-intel-report");
-      if (container && webIntelReport) {
-        window.__loadMarked(function() {
-          try {
-            container.innerHTML = marked.parse(webIntelReport, { breaks: true, gfm: true });
           } catch (_) { /* keep plain text fallback */ }
         });
       }
