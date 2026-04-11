@@ -6,6 +6,7 @@ from uuid import UUID
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func, and_, desc, case
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth import get_current_user_id
@@ -244,6 +245,8 @@ async def log_api_key_usage(
             key.last_used_at = datetime.now(timezone.utc)
 
         await db.commit()
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
+        # Logging is best-effort and runs inside middleware — never let a
+        # stats-write failure interrupt the actual API response.
         logger.warning("api_key_usage_log_failed", error=str(exc))
         await db.rollback()

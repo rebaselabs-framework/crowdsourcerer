@@ -13,6 +13,7 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 
 from core.auth import create_access_token, get_current_user_id
 from core.background import safe_create_task
@@ -118,7 +119,7 @@ async def register(
         raw_refresh, refresh_expires = await create_refresh_token(str(user.id), db)
         await db.commit()  # persist the refresh token (flush alone is rolled back)
         refresh_expires_in = int((refresh_expires - datetime.now(timezone.utc)).total_seconds())
-    except Exception:
+    except Exception:  # noqa: BLE001 — refresh token is best-effort
         pass  # access token alone is enough to proceed
 
     return TokenResponse(
@@ -171,7 +172,7 @@ async def login(
         raw_refresh, refresh_expires = await create_refresh_token(str(user.id), db)
         await db.commit()  # persist the refresh token (flush alone is rolled back)
         refresh_expires_in = int((refresh_expires - datetime.now(timezone.utc)).total_seconds())
-    except Exception:
+    except Exception:  # noqa: BLE001 — refresh token is best-effort
         pass  # access token alone is enough to proceed
 
     return TokenResponse(

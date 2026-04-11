@@ -8,6 +8,7 @@ import structlog
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
+from sqlalchemy.exc import SQLAlchemyError
 
 from core.auth import get_current_user_id
 from core.database import get_db
@@ -199,7 +200,7 @@ async def get_my_skills(
         from routers.onboarding import mark_onboarding_step
         await mark_onboarding_step(uid, "skills", db)
         await db.commit()  # flush → commit so the step is actually persisted
-    except Exception:
+    except SQLAlchemyError:
         logger.warning(
             "skills.onboarding_step_failed",
             user_id=str(uid),

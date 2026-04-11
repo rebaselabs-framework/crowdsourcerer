@@ -12,6 +12,7 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 from jose import JWTError, jwt
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth import get_current_user_id, create_access_token
@@ -274,7 +275,7 @@ async def verify_2fa(
         raw_refresh, refresh_expires = await create_refresh_token(str(user.id), db)
         await db.commit()  # persist the refresh token
         refresh_expires_in = int((refresh_expires - datetime.now(timezone.utc)).total_seconds())
-    except Exception:
+    except Exception:  # noqa: BLE001 — refresh token is best-effort
         logger.exception("2fa_refresh_token_error", user_id=str(user.id))
 
     return TokenResponse(

@@ -35,6 +35,7 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth import create_access_token
@@ -184,7 +185,7 @@ async def google_callback(
                 return RedirectResponse(url="/login?oauth_error=userinfo_failed")
 
             user_info = info_res.json()
-    except Exception:
+    except (httpx.HTTPError, OSError, ValueError):
         return RedirectResponse(url="/login?oauth_error=network_error")
 
     google_id = user_info.get("sub")
@@ -243,7 +244,7 @@ async def google_callback(
         from core.refresh_tokens import create_refresh_token
         raw_refresh, _refresh_expires = await create_refresh_token(str(user.id), db)
         await db.commit()  # persist the refresh token
-    except Exception:
+    except Exception:  # noqa: BLE001 — refresh token is best-effort
         logger.exception("oauth_refresh_token_error", user_id=str(user.id))
 
     next_path = state_payload.get("next", "/dashboard")
