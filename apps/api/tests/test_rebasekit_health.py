@@ -220,6 +220,101 @@ class TestHealthCacheTTL:
         assert all(v is False for v in status.values())
 
 
+# ─── Gateway-catalog aware behaviour ────────────────────────────────────
+
+
+def _catalog_response(active: list[str]) -> httpx.Response:
+    """Build a fake RebaseKit gateway catalog response."""
+    payload = {
+        "api": "RebaseKit",
+        "version": "1.10.0",
+        "active_services": {svc: {"base": f"/{svc}/"} for svc in active},
+        "disabled_services": [],
+    }
+    return httpx.Response(
+        status_code=200,
+        json=payload,
+        request=httpx.Request("GET", "http://test/"),
+    )
+
+
+class TestCatalogAwareRefresh:
+    """_refresh() uses gateway active_services to short-circuit stale probes."""
+
+    @pytest.mark.asyncio
+    async def test_services_missing_from_catalog_are_down_without_probe(self):
+        """A service not listed in active_services is down — no probe emitted."""
+        cache = RebaseKitHealthCache()
+        probed: list[str] = []
+
+        async def mock_get(url, **kwargs):
+            if url.endswith("/"):
+                # Gateway catalog — only pii is live.
+                return _catalog_response(["pii"])
+            probed.append(url)
+            return _make_response(200)
+
+        with patch("core.rebasekit_health.get_settings", return_value=_mock_settings()):
+            with patch("httpx.AsyncClient") as MockClient:
+                mock_ctx = AsyncMock()
+                mock_ctx.get = mock_get
+                MockClient.return_value.__aenter__ = AsyncMock(return_value=mock_ctx)
+                MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
+
+                status = await cache.force_refresh()
+
+        # Only pii is up; everyone else skipped the probe entirely.
+        assert status["pii"] is True
+        assert all(status[svc] is False for svc in ALL_SERVICES if svc != "pii")
+        assert probed == [f"http://rebasekit:8000/pii/health"]
+
+    @pytest.mark.asyncio
+    async def test_catalog_unreachable_falls_back_to_probing_every_service(self):
+        """If the catalog endpoint is broken, we still probe each service."""
+        cache = RebaseKitHealthCache()
+
+        async def mock_get(url, **kwargs):
+            if url.endswith("/"):
+                return _make_response(503)  # catalog unreachable
+            return _make_response(200)
+
+        with patch("core.rebasekit_health.get_settings", return_value=_mock_settings()):
+            with patch("httpx.AsyncClient") as MockClient:
+                mock_ctx = AsyncMock()
+                mock_ctx.get = mock_get
+                MockClient.return_value.__aenter__ = AsyncMock(return_value=mock_ctx)
+                MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
+
+                status = await cache.force_refresh()
+
+        assert all(status[svc] is True for svc in ALL_SERVICES)
+
+    @pytest.mark.asyncio
+    async def test_probe_hits_service_slash_health_path(self):
+        """New RebaseKit convention is /<service>/health, not /api/health."""
+        cache = RebaseKitHealthCache()
+        probed_urls: list[str] = []
+
+        async def mock_get(url, **kwargs):
+            probed_urls.append(url)
+            if url.endswith("/"):
+                return _make_response(503)  # skip catalog
+            return _make_response(200)
+
+        with patch("core.rebasekit_health.get_settings", return_value=_mock_settings()):
+            with patch("httpx.AsyncClient") as MockClient:
+                mock_ctx = AsyncMock()
+                mock_ctx.get = mock_get
+                MockClient.return_value.__aenter__ = AsyncMock(return_value=mock_ctx)
+                MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
+
+                await cache.force_refresh()
+
+        probe_urls = [u for u in probed_urls if not u.endswith("/")]
+        assert all("/health" in u for u in probe_urls)
+        assert all("/api/health" not in u for u in probe_urls)
+
+
 # ─── Module-level function tests ────────────────────────────────────────
 
 
@@ -501,3 +596,92 @@ class TestConfigEndpoint:
         finally:
             cache._status = old_status
             cache._last_check = old_last
+
+
+# ─── /v1/health endpoint integration ────────────────────────────────────
+
+
+class TestV1HealthEndpoint:
+    """The /v1/health endpoint is the canonical liveness probe for
+    external monitors. It must return 503 when the platform is
+    fundamentally broken so pagers fire on real outages.
+
+    FastAPI's startup lifespan calls ``warmup_health()`` which runs a
+    real HTTP probe against the upstream RebaseKit gateway — so each
+    test patches ``_cache._refresh`` to a no-op and seeds the cache
+    state manually. Otherwise warmup would clobber the fixture.
+    """
+
+    async def _hit_health(self, seeded_status: dict[str, bool]) -> "httpx.Response":
+        from main import app
+        from httpx import AsyncClient, ASGITransport
+
+        # Stand-in async context manager that acts like AsyncSessionLocal()
+        # but never actually touches Postgres. /v1/health's SELECT 1 probe
+        # is satisfied by returning a session whose execute() is a no-op.
+        class _FakeSession:
+            async def __aenter__(self):
+                return self
+            async def __aexit__(self, *a):
+                return False
+            async def execute(self, *a, **kw):
+                return None
+
+        cache = get_cache()
+        noop_refresh = AsyncMock()
+        with patch.object(cache, "_refresh", noop_refresh), \
+             patch("main.AsyncSessionLocal", _FakeSession), \
+             patch(
+                 "core.rebasekit_health.get_settings",
+                 return_value=_mock_settings(),
+             ):
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                # Seed AFTER lifespan has run so warmup's (no-op) refresh
+                # can't race with our assignment.
+                cache._status = dict(seeded_status)
+                cache._last_check = time.monotonic()
+                return await client.get("/v1/health")
+
+    @pytest.mark.asyncio
+    async def test_returns_503_when_ai_fleet_unavailable(self):
+        """All workers down ⇒ HTTP 503 with ai_status='unavailable'."""
+        cache = get_cache()
+        old_status, old_last = cache._status, cache._last_check
+        try:
+            r = await self._hit_health({s: False for s in ALL_SERVICES})
+            assert r.status_code == 503
+            data = r.json()
+            assert data["ai_status"] == "unavailable"
+            assert data["ai_available"] is False
+            assert data["status"] == "degraded"
+        finally:
+            cache._status, cache._last_check = old_status, old_last
+
+    @pytest.mark.asyncio
+    async def test_returns_200_when_degraded(self):
+        """Some workers up ⇒ HTTP 200 (degraded fleet still serves traffic)."""
+        cache = get_cache()
+        old_status, old_last = cache._status, cache._last_check
+        try:
+            r = await self._hit_health({s: (s == "pii") for s in ALL_SERVICES})
+            assert r.status_code == 200
+            data = r.json()
+            assert data["ai_status"] == "degraded"
+            assert data["ai_available"] is True
+        finally:
+            cache._status, cache._last_check = old_status, old_last
+
+    @pytest.mark.asyncio
+    async def test_returns_200_when_healthy(self):
+        """Every worker up ⇒ HTTP 200 + status 'ok'."""
+        cache = get_cache()
+        old_status, old_last = cache._status, cache._last_check
+        try:
+            r = await self._hit_health({s: True for s in ALL_SERVICES})
+            assert r.status_code == 200
+            data = r.json()
+            assert data["ai_status"] == "healthy"
+            assert data["status"] == "ok"
+        finally:
+            cache._status, cache._last_check = old_status, old_last

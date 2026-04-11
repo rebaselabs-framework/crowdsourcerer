@@ -109,7 +109,20 @@ class RebaseKitHealthCache:
         return dict(self._status)
 
     async def _refresh(self):
-        """Ping all RebaseKit service health endpoints concurrently."""
+        """Gateway-catalog + liveness probe for every RebaseKit service.
+
+        Two-step check, both sources are authoritative:
+
+        1. GET / on the gateway → read ``active_services`` /
+           ``disabled_services``. If a service we care about is not in
+           ``active_services`` we mark it down immediately (no wasted
+           probe). This cleanly distinguishes "service was never / is
+           no longer provisioned" from "probe failed".
+        2. For every service still candidate-up, GET ``/{service}/health``
+           (the current RebaseKit convention — not ``/api/health``,
+           which is the old layout). 200 or 401 means the service is
+           live; anything else marks it down.
+        """
         settings = get_settings()
 
         if not settings.rebasekit_api_key:
@@ -119,32 +132,30 @@ class RebaseKitHealthCache:
 
         base_url = settings.rebasekit_base_url.rstrip("/")
 
-        async def _check_one(service: str) -> tuple[str, bool]:
-            url = f"{base_url}/{service}/api/health"
-            try:
-                async with httpx.AsyncClient(timeout=CHECK_TIMEOUT) as client:
-                    r = await client.get(url)
-                    # 200 = healthy; 401 = service is up but needs auth (still "up")
+        async with httpx.AsyncClient(timeout=CHECK_TIMEOUT) as client:
+            active_in_catalog = await _fetch_catalog(client, base_url)
+
+            async def _check_one(service: str) -> tuple[str, bool]:
+                # Services not in the gateway catalog are down by definition.
+                if active_in_catalog is not None and service not in active_in_catalog:
+                    return service, False
+                try:
+                    r = await client.get(f"{base_url}/{service}/health")
                     return service, r.status_code in (200, 401)
-            except (httpx.HTTPError, OSError):
-                return service, False
+                except (httpx.HTTPError, OSError):
+                    return service, False
 
-        results = await asyncio.gather(
-            *[_check_one(svc) for svc in ALL_SERVICES],
-            return_exceptions=True,
-        )
+            results = await asyncio.gather(
+                *[_check_one(svc) for svc in ALL_SERVICES],
+                return_exceptions=True,
+            )
 
-        new_status: dict[str, bool] = {}
+        new_status: dict[str, bool] = {svc: False for svc in ALL_SERVICES}
         for result in results:
             if isinstance(result, BaseException):
                 continue
             svc, up = result
             new_status[svc] = up
-
-        # Fill in any missing services as down
-        for svc in ALL_SERVICES:
-            if svc not in new_status:
-                new_status[svc] = False
 
         self._status = new_status
         self._last_check = time.monotonic()
@@ -155,7 +166,44 @@ class RebaseKitHealthCache:
             up=up_count,
             total=len(ALL_SERVICES),
             services=new_status,
+            catalog_available=active_in_catalog is not None,
         )
+        if up_count == 0:
+            logger.warning(
+                "rebasekit_fleet_offline",
+                message="No RebaseKit services reachable — AI task submissions will fail",
+                checked=list(ALL_SERVICES),
+            )
+        elif up_count < len(ALL_SERVICES) // 2:
+            logger.warning(
+                "rebasekit_fleet_degraded",
+                up=up_count,
+                total=len(ALL_SERVICES),
+                down=[svc for svc, up in new_status.items() if not up],
+            )
+
+
+async def _fetch_catalog(
+    client: httpx.AsyncClient,
+    base_url: str,
+) -> frozenset[str] | None:
+    """Return the set of services listed in the gateway's ``active_services``.
+
+    ``None`` means the catalog could not be read — callers should fall
+    back to per-service probing. An empty frozenset means the gateway
+    responded successfully but has no active services.
+    """
+    try:
+        r = await client.get(f"{base_url}/")
+        if r.status_code != 200:
+            return None
+        data = r.json()
+    except (httpx.HTTPError, OSError, ValueError):
+        return None
+    active = data.get("active_services")
+    if not isinstance(active, dict):
+        return None
+    return frozenset(active.keys())
 
 
 # ── Module-level singleton ───────────────────────────────────────────────

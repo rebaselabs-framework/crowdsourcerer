@@ -325,17 +325,32 @@ async def health_ready():
 
 @app.get("/v1/health", tags=["health"])
 async def health_v1():
-    """Public health + config diagnostic — no auth required."""
+    """Public health + config diagnostic — no auth required.
+
+    Returns HTTP 503 when the platform is fundamentally broken:
+      - Postgres is unreachable (no request can be served), or
+      - every AI worker is down (``ai_status == "unavailable"``)
+        so every task submission will fail.
+
+    A ``degraded`` AI fleet (some task types up, some down) still
+    returns 200 — check ``task_availability`` in /v1/config to know
+    which task types are currently safe to submit.
+    """
     from sqlalchemy import text
+    from sqlalchemy.exc import SQLAlchemyError
+
     db_ok = False
     try:
         async with AsyncSessionLocal() as session:
             await session.execute(text("SELECT 1"))
         db_ok = True
-    except Exception:
+    except (SQLAlchemyError, OSError):
         pass
-    body: dict = {
-        "status": "ok",
+
+    ai_summary = await get_ai_health_summary()
+    overall_ok = db_ok and ai_summary.is_available
+    body: dict[str, Any] = {
+        "status": "ok" if overall_ok else "degraded",
         "version": settings.app_version,
         "database": db_ok,
     }
@@ -356,15 +371,11 @@ async def health_v1():
             "google_oauth": bool(settings.google_client_id),
             "payments_enabled": bool(settings.stripe_secret_key),
         }
-    # Live AI service availability (actually pings RebaseKit, cached 60s).
-    # Expose both the legacy `ai_available` bool and the three-tier status
-    # so dashboards can distinguish healthy from degraded fleets.
-    ai_summary = await get_ai_health_summary()
     body["ai_available"] = ai_summary.is_available
     body["ai_status"] = ai_summary.status
     body["ai_services_up"] = ai_summary.services_up
     body["ai_services_total"] = ai_summary.services_total
-    return body
+    return JSONResponse(content=body, status_code=200 if overall_ok else 503)
 
 
 @app.get("/v1/config", tags=["health"])
