@@ -47,7 +47,15 @@ class Settings(BaseSettings):
     refresh_token_expire_days: int = 30  # refresh tokens last 30 days
     api_key_salt: str = "change-me-in-production"
 
-    # RebaseKit (worker APIs)
+    # Anthropic API — direct client for llm_generate / data_transform /
+    # web_research task types. Empty key disables the LLM-backed
+    # task types and they raise a clear 503.
+    anthropic_api_key: str = ""
+    anthropic_base_url: str = "https://api.anthropic.com"
+    anthropic_default_model: str = "claude-haiku-4-5-20251001"
+    anthropic_timeout_seconds: float = 60.0
+
+    # RebaseKit (legacy — retained for pii fallback only; now unused)
     rebasekit_api_key: str = ""
     rebasekit_base_url: str = "https://api.rebaselabs.online"
 

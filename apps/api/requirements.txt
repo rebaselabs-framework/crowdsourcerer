@@ -23,4 +23,7 @@ email-validator==2.2.0
 croniter==3.0.3
 pyotp==2.9.0
 openpyxl==3.1.5
+pypdf==5.1.0
+python-docx==1.1.2
+beautifulsoup4==4.12.3
 sentry-sdk[fastapi]==2.20.0

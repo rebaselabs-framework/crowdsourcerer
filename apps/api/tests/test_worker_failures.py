@@ -466,12 +466,12 @@ class TestRunTaskWorkerError:
 
     @pytest.mark.asyncio
     async def test_timeout_error_refunds_correct_amount(self):
-        """Timeout on audio_transcribe refunds 8 credits."""
+        """Timeout on web_research refunds the full 10-credit cost."""
         task_id = str(uuid4())
         user_id = str(uuid4())
-        task = _make_mock_task(task_id=task_id, user_id=user_id, task_type="audio_transcribe")
-        user = _make_mock_user(user_id=user_id, credits=92)
-        error = WorkerError("RebaseKit API timed out", status_code=504)
+        task = _make_mock_task(task_id=task_id, user_id=user_id, task_type="web_research")
+        user = _make_mock_user(user_id=user_id, credits=90)
+        error = WorkerError("LLM request timed out", status_code=504)
 
         _, patches, _ = _make_run_task_mocks(task, user, error)
 
@@ -479,7 +479,7 @@ class TestRunTaskWorkerError:
             from routers.tasks import _run_task
             await _run_task(task_id, user_id)
 
-        assert user.credits == 100  # 92 + 8 refund
+        assert user.credits == 100  # 90 + 10 refund
 
     @pytest.mark.asyncio
     async def test_connect_error_refunds_correct_amount(self):
@@ -666,7 +666,7 @@ class TestWorkerErrorCreditRouting:
         user_id = str(uuid4())
         org_id = str(uuid4())
         task = _make_mock_task(
-            task_id=task_id, user_id=user_id, org_id=org_id, task_type="screenshot",
+            task_id=task_id, user_id=user_id, org_id=org_id, task_type="data_transform",
         )
         org = MagicMock()
         org.id = org_id
@@ -709,7 +709,7 @@ class TestWorkerErrorCreditRouting:
             from routers.tasks import _run_task
             await _run_task(task_id, user_id)
 
-        # screenshot costs 2 credits — org should get refund
+        # data_transform costs 2 credits — org should get refund
         assert org.credits == 492  # 490 + 2
 
 
@@ -753,15 +753,11 @@ class TestFailureRefundAmounts:
 
     @pytest.mark.parametrize("task_type,expected_cost", [
         ("web_research", 10),
-        ("entity_lookup", 5),
         ("document_parse", 3),
         ("data_transform", 2),
         ("llm_generate", 1),
-        ("screenshot", 2),
-        ("audio_transcribe", 8),
         ("pii_detect", 2),
         ("code_execute", 3),
-        ("web_intel", 5),
     ])
     def test_refund_matches_task_cost(self, task_type, expected_cost):
         """Each task type's refund amount matches its credit cost."""
@@ -775,130 +771,69 @@ class TestFailureRefundAmounts:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
-class TestExecuteTaskFailurePropagation:
-    """Test that WorkerErrors from RebaseKitClient propagate through execute_task."""
+class TestExecuteTaskDispatcherErrors:
+    """Error paths through the in-process ``execute_task`` dispatcher.
+
+    Handlers are all local now (or talk directly to Anthropic), so the
+    surface tested here is: unknown task type → 422, input validation →
+    422, missing ANTHROPIC_API_KEY on an LLM-backed type → 503."""
 
     @pytest.mark.asyncio
-    async def test_web_research_propagates_worker_error(self):
+    async def test_unknown_task_type_raises_422(self):
         from workers.router import execute_task
-        client = MagicMock()
-        client.post = AsyncMock(side_effect=WorkerError("RebaseKit API error: 503", status_code=502))
         with pytest.raises(WorkerError) as exc_info:
-            await execute_task("web_research", {"url": "https://example.com"}, client)
-        assert exc_info.value.status_code == 502
+            await execute_task("definitely_not_a_type", {})
+        assert exc_info.value.status_code == 422
 
     @pytest.mark.asyncio
-    async def test_llm_generate_propagates_worker_error(self):
+    async def test_web_research_missing_url_raises_422(self):
         from workers.router import execute_task
-        client = MagicMock()
-        client.post = AsyncMock(side_effect=WorkerError("RebaseKit API timed out", status_code=504))
         with pytest.raises(WorkerError) as exc_info:
-            await execute_task("llm_generate", {"messages": [{"role": "user", "content": "hi"}]}, client)
-        assert exc_info.value.status_code == 504
-
-    @pytest.mark.asyncio
-    async def test_pii_detect_propagates_worker_error(self):
-        from workers.router import execute_task
-        client = MagicMock()
-        client.post = AsyncMock(side_effect=WorkerError("ConnectError", status_code=502))
-        with pytest.raises(WorkerError) as exc_info:
-            await execute_task("pii_detect", {"text": "My SSN is 123-45-6789"}, client)
-        assert exc_info.value.status_code == 502
-
-    @pytest.mark.asyncio
-    async def test_screenshot_propagates_worker_error(self):
-        from workers.router import execute_task
-        client = MagicMock()
-        client.post = AsyncMock(side_effect=WorkerError("500", status_code=502))
-        with pytest.raises(WorkerError) as exc_info:
-            await execute_task("screenshot", {"url": "https://example.com"}, client)
-        assert exc_info.value.status_code == 502
-
-    @pytest.mark.asyncio
-    async def test_entity_lookup_propagates_worker_error(self):
-        from workers.router import execute_task
-        client = MagicMock()
-        client.post = AsyncMock(side_effect=WorkerError("503", status_code=502))
-        with pytest.raises(WorkerError) as exc_info:
-            await execute_task("entity_lookup", {"name": "Acme Inc"}, client)
-        assert exc_info.value.status_code == 502
-
-    @pytest.mark.asyncio
-    async def test_audio_transcribe_propagates_worker_error(self):
-        from workers.router import execute_task
-        client = MagicMock()
-        client.post = AsyncMock(side_effect=WorkerError("timed out", status_code=504))
-        with pytest.raises(WorkerError) as exc_info:
-            await execute_task("audio_transcribe", {"url": "https://audio.example.com/file.mp3"}, client)
-        assert exc_info.value.status_code == 504
-
-    @pytest.mark.asyncio
-    async def test_code_execute_propagates_worker_error(self):
-        from workers.router import execute_task
-        client = MagicMock()
-        client.post = AsyncMock(side_effect=WorkerError("ConnectError", status_code=502))
-        with pytest.raises(WorkerError) as exc_info:
-            await execute_task("code_execute", {"code": "print('hello')"}, client)
-        assert exc_info.value.status_code == 502
-
-    @pytest.mark.asyncio
-    async def test_data_transform_propagates_worker_error(self):
-        from workers.router import execute_task
-        client = MagicMock()
-        client.post = AsyncMock(side_effect=WorkerError("503", status_code=502))
-        with pytest.raises(WorkerError) as exc_info:
-            await execute_task("data_transform", {"data": '{"key": "value"}'}, client)
-        assert exc_info.value.status_code == 502
-
-    @pytest.mark.asyncio
-    async def test_document_parse_propagates_worker_error(self):
-        from workers.router import execute_task
-        client = MagicMock()
-        client.post = AsyncMock(side_effect=WorkerError("502", status_code=502))
-        with pytest.raises(WorkerError) as exc_info:
-            await execute_task("document_parse", {"url": "https://example.com/doc.pdf"}, client)
-        assert exc_info.value.status_code == 502
-
-    @pytest.mark.asyncio
-    async def test_web_intel_propagates_worker_error(self):
-        from workers.router import execute_task
-        client = MagicMock()
-        client.post = AsyncMock(side_effect=WorkerError("timed out", status_code=504))
-        with pytest.raises(WorkerError) as exc_info:
-            await execute_task("web_intel", {"query": "latest AI news"}, client)
-        assert exc_info.value.status_code == 504
-
-    @pytest.mark.asyncio
-    async def test_missing_required_field_raises_422(self):
-        """Missing required fields raise WorkerError(422) before network call."""
-        from workers.router import execute_task
-        client = MagicMock()
-        client.post = AsyncMock()
-        with pytest.raises(WorkerError) as exc_info:
-            await execute_task("web_research", {}, client)
+            await execute_task("web_research", {})
         assert exc_info.value.status_code == 422
         assert "url" in str(exc_info.value).lower()
-        client.post.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_pii_detect_missing_text_raises_422(self):
         from workers.router import execute_task
-        client = MagicMock()
-        client.post = AsyncMock()
         with pytest.raises(WorkerError) as exc_info:
-            await execute_task("pii_detect", {}, client)
+            await execute_task("pii_detect", {})
         assert exc_info.value.status_code == 422
         assert "text" in str(exc_info.value).lower()
 
     @pytest.mark.asyncio
     async def test_code_execute_missing_code_raises_422(self):
         from workers.router import execute_task
-        client = MagicMock()
-        client.post = AsyncMock()
         with pytest.raises(WorkerError) as exc_info:
-            await execute_task("code_execute", {}, client)
+            await execute_task("code_execute", {})
         assert exc_info.value.status_code == 422
         assert "code" in str(exc_info.value).lower()
+
+    @pytest.mark.asyncio
+    async def test_llm_generate_without_api_key_raises_503(self):
+        """LLM-backed task types refuse to run without ANTHROPIC_API_KEY."""
+        from workers.router import execute_task
+        from core.config import get_settings
+        from core import llm_client
+
+        # Reset the cached client so it rebuilds with the patched settings.
+        llm_client._client = None
+        llm_client._client_key = None
+
+        settings = get_settings()
+        orig_key = settings.anthropic_api_key
+        try:
+            object.__setattr__(settings, "anthropic_api_key", "")
+            with pytest.raises(WorkerError) as exc_info:
+                await execute_task(
+                    "llm_generate",
+                    {"messages": [{"role": "user", "content": "hi"}]},
+                )
+            assert exc_info.value.status_code == 503
+        finally:
+            object.__setattr__(settings, "anthropic_api_key", orig_key)
+            llm_client._client = None
+            llm_client._client_key = None
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

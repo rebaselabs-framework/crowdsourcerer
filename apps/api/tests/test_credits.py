@@ -138,15 +138,21 @@ def test_credit_bonus_larger_bundle_gets_more():
 # ── Task credit cost table ─────────────────────────────────────────────────────
 
 def test_task_credit_costs_defined():
-    """All known task types must have a credit cost defined."""
+    """Every supported AI task type must have a positive credit cost."""
     from workers.router import TASK_CREDITS
     EXPECTED_TYPES = [
-        "web_research", "entity_lookup", "document_parse", "data_transform",
-        "llm_generate", "screenshot", "audio_transcribe", "pii_detect",
-        "code_execute", "web_intel",
+        "web_research",
+        "document_parse",
+        "data_transform",
+        "llm_generate",
+        "pii_detect",
+        "code_execute",
     ]
+    assert set(TASK_CREDITS.keys()) == set(EXPECTED_TYPES), (
+        "TASK_CREDITS drifted — the set of supported task types changed "
+        "without updating this test."
+    )
     for t in EXPECTED_TYPES:
-        assert t in TASK_CREDITS, f"Missing credit cost for task type: {t}"
         assert TASK_CREDITS[t] > 0, f"Credit cost for {t} must be positive"
 
 

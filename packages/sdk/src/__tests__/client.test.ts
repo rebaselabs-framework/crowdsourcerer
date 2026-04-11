@@ -483,14 +483,6 @@ describe("typed task helpers", () => {
       ["url", "instruction"]
     ));
 
-  it("entityLookup", () =>
-    testHelper(
-      "entityLookup",
-      [{ entity_type: "company", name: "Acme" }],
-      "entity_lookup",
-      ["entity_type", "name"]
-    ));
-
   it("documentParse", () =>
     testHelper(
       "documentParse",
@@ -515,22 +507,6 @@ describe("typed task helpers", () => {
       ["messages"]
     ));
 
-  it("screenshot", () =>
-    testHelper(
-      "screenshot",
-      [{ url: "https://example.com" }],
-      "screenshot",
-      ["url"]
-    ));
-
-  it("audioTranscribe", () =>
-    testHelper(
-      "audioTranscribe",
-      [{ url: "https://example.com/audio.mp3" }],
-      "audio_transcribe",
-      ["url"]
-    ));
-
   it("piiDetect", () =>
     testHelper(
       "piiDetect",
@@ -544,15 +520,7 @@ describe("typed task helpers", () => {
       "codeExecute",
       [{ code: "print('hello')", language: "python" }],
       "code_execute",
-      ["code", "language"]
-    ));
-
-  it("webIntel", () =>
-    testHelper(
-      "webIntel",
-      [{ query: "latest AI news" }],
-      "web_intel",
-      ["query"]
+      ["code"]
     ));
 });
 

@@ -20,54 +20,52 @@ def make_mock_client(**kwargs):
 
 @pytest.mark.asyncio
 async def test_task_credits_coverage():
-    """All task types should have credit costs defined."""
+    """Every AI task type the dispatcher supports must have a credit cost."""
     task_types = [
-        "web_research", "entity_lookup", "document_parse", "data_transform",
-        "llm_generate", "screenshot", "audio_transcribe", "pii_detect",
-        "code_execute", "web_intel",
+        "web_research",
+        "document_parse",
+        "data_transform",
+        "llm_generate",
+        "pii_detect",
+        "code_execute",
     ]
     for t in task_types:
         assert t in TASK_CREDITS, f"Missing credits for {t}"
         assert TASK_CREDITS[t] > 0
+    assert len(TASK_CREDITS) == len(task_types), (
+        "TASK_CREDITS drifted — a task type was added or removed without "
+        "updating the coverage test"
+    )
 
 
 @pytest.mark.asyncio
 async def test_unknown_task_raises():
-    client = make_mock_client()
     with pytest.raises(WorkerError) as exc_info:
-        await execute_task("definitely_not_a_type", {}, client)
+        await execute_task("definitely_not_a_type", {})
     assert exc_info.value.status_code == 422
 
 
 @pytest.mark.asyncio
-async def test_llm_generate_routing():
-    client = make_mock_client(return_value={
-        "choices": [{"message": {"role": "assistant", "content": "Hello!"}}]
-    })
-    result = await execute_task("llm_generate", {
-        "messages": [{"role": "user", "content": "Say hello"}]
-    }, client)
-    client.post.assert_called_once()
-    assert result["summary"] == "Hello!"
-
-
-@pytest.mark.asyncio
-async def test_pii_detect_routing():
-    client = make_mock_client(return_value={"entities": [
-        {"type": "EMAIL", "value": "test@example.com"}
-    ]})
-    result = await execute_task("pii_detect", {"text": "My email is test@example.com"}, client)
+async def test_pii_detect_routes_to_local_handler():
+    """PII detection runs locally — no external client needed."""
+    result = await execute_task(
+        "pii_detect", {"text": "Contact me at test@example.com"}
+    )
     assert "1 PII" in result["summary"]
+    assert result["raw"]["count"] == 1
+    assert result["raw"]["entities"][0]["type"] == "EMAIL"
 
 
 @pytest.mark.asyncio
-async def test_web_research_routing():
-    client = make_mock_client(return_value={
-        "summary": "Page content here",
-        "content": "Full page content",
-    })
-    result = await execute_task("web_research", {"url": "https://example.com"}, client)
-    assert result["summary"] == "Page content here"
+async def test_code_execute_routes_to_local_sandbox():
+    """Code execution runs in a subprocess sandbox — no external client."""
+    result = await execute_task(
+        "code_execute",
+        {"code": "print('hello')", "timeout_seconds": 5},
+    )
+    assert "hello" in result["raw"]["stdout"]
+    assert result["raw"]["exit_code"] == 0
+    assert result["raw"]["timed_out"] is False
 
 
 # ── compute_level() ───────────────────────────────────────────────────────────

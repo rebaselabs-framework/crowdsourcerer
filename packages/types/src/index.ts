@@ -1,17 +1,23 @@
 // ─── Task Types ────────────────────────────────────────────────────────────
 
-/** AI-powered task types (executed automatically by RebaseKit APIs) */
+/**
+ * AI-powered task types. All handlers run in-process or call Anthropic
+ * directly — no RebaseKit gateway dependency.
+ *
+ * - `web_research`   httpx fetch → BeautifulSoup extract → llm_generate
+ * - `document_parse` pypdf / python-docx / openpyxl local extraction
+ * - `data_transform` llm_generate with a structured transform prompt
+ * - `llm_generate`   direct POST to api.anthropic.com/v1/messages
+ * - `pii_detect`     local regex detector (email / phone / SSN / etc.)
+ * - `code_execute`   Python subprocess sandbox (temp dir + rlimits)
+ */
 export type AITaskType =
   | "web_research"
-  | "entity_lookup"
   | "document_parse"
   | "data_transform"
   | "llm_generate"
-  | "screenshot"
-  | "audio_transcribe"
   | "pii_detect"
-  | "code_execute"
-  | "web_intel";
+  | "code_execute";
 
 /** Human task types (completed by human workers in the marketplace) */
 export type HumanTaskType =
@@ -67,32 +73,27 @@ export type UserRole = "requester" | "worker" | "both";
 // ─── AI Task Inputs ────────────────────────────────────────────────────────
 
 export interface WebResearchInput {
+  /** URL to fetch and summarise. */
   url: string;
+  /** Optional free-text instruction that shapes the summary. */
   instruction?: string;
-  extract_tables?: boolean;
-  extract_links?: boolean;
-  wait_for_selector?: string;
-}
-
-export interface EntityLookupInput {
-  entity_type: "company" | "person";
-  name: string;
-  domain?: string;
-  linkedin_url?: string;
-  enrich_fields?: string[];
 }
 
 export interface DocumentParseInput {
+  /** URL of the document to fetch. Mutually exclusive with `content_base64`. */
   url?: string;
-  base64_content?: string;
-  mime_type?: string;
-  extract_tables?: boolean;
-  extract_images?: boolean;
+  /** Base64-encoded document content. */
+  content_base64?: string;
+  /** Pull tables out as structured rows. */
+  include_tables?: boolean;
 }
 
 export interface DataTransformInput {
+  /** The input data — arbitrary JSON-serialisable shape. */
   data: unknown;
+  /** Free-text instruction describing the desired transformation. */
   transform: string;
+  /** Preferred output format. */
   output_format?: "json" | "csv" | "markdown" | "text";
 }
 
@@ -104,40 +105,22 @@ export interface LLMGenerateInput {
   system_prompt?: string;
 }
 
-export interface ScreenshotInput {
-  url: string;
-  width?: number;
-  height?: number;
-  full_page?: boolean;
-  wait_for_selector?: string;
-  format?: "png" | "jpeg" | "webp";
-}
-
-export interface AudioTranscribeInput {
-  url?: string;
-  base64_audio?: string;
-  language?: string;
-  diarize?: boolean;
-}
-
 export interface PiiDetectInput {
   text: string;
+  /** Optional subset of entity types to detect (default: all). */
   entities?: string[];
+  /** When true, include a redacted copy of the input in the output. */
   mask?: boolean;
-  vault?: boolean;
 }
 
 export interface CodeExecuteInput {
   code: string;
-  language: "python" | "javascript" | "bash";
+  /** Only Python is supported by the in-process sandbox. */
+  language?: "python";
+  /** Wall-clock timeout in seconds (default 10, max 30). */
   timeout_seconds?: number;
+  /** Optional input passed to the script on stdin. */
   stdin?: string;
-}
-
-export interface WebIntelInput {
-  query: string;
-  sources?: string[];
-  max_results?: number;
 }
 
 // ─── Human Task Inputs ────────────────────────────────────────────────────
@@ -196,15 +179,11 @@ export interface TranscriptionReviewInput {
 
 export type TaskInput =
   | WebResearchInput
-  | EntityLookupInput
   | DocumentParseInput
   | DataTransformInput
   | LLMGenerateInput
-  | ScreenshotInput
-  | AudioTranscribeInput
   | PiiDetectInput
   | CodeExecuteInput
-  | WebIntelInput
   | LabelImageInput
   | LabelTextInput
   | RateQualityInput
@@ -453,18 +432,15 @@ export interface WebhookEvent {
 
 // ─── Pricing ───────────────────────────────────────────────────────────────
 
-/** AI task costs (credits charged to requester) */
+/** AI task costs (credits charged to requester). Keep in sync with
+ *  apps/api/workers/router.py::TASK_CREDITS. */
 export const TASK_CREDITS: Record<AITaskType, number> = {
   web_research: 10,
-  entity_lookup: 5,
   document_parse: 3,
   data_transform: 2,
   llm_generate: 1,
-  screenshot: 2,
-  audio_transcribe: 8,
   pii_detect: 2,
   code_execute: 3,
-  web_intel: 5,
 };
 
 /** Default worker reward credits for human tasks (per assignment) */

@@ -149,9 +149,9 @@ class TestOrgDeletionCredits:
         user = _make_user(credits=50, user_id=user_id)
         member = _make_member(user_id, org_id, role="owner")
 
-        # Two active AI tasks: web_research (10cr) + entity_lookup (5cr)
+        # Two active AI tasks: web_research (10cr) + document_parse (3cr)
         task1 = _make_task("web_research", "pending", org_id, user_id)
-        task2 = _make_task("entity_lookup", "queued", org_id, user_id)
+        task2 = _make_task("document_parse", "queued", org_id, user_id)
 
         call_idx = 0
 
@@ -182,9 +182,9 @@ class TestOrgDeletionCredits:
         assert task1.status == "cancelled"
         assert task2.status == "cancelled"
 
-        # Org credits: started at 200, refunded 10+5=15, total 215, then zeroed
-        # User credits: started at 50, received 215 from org = 265
-        assert user.credits == 265
+        # Org credits: started at 200, refunded 10+3=13, total 213, then zeroed.
+        # User credits: started at 50, received 213 from org = 263.
+        assert user.credits == 263
         assert org.credits == 0
 
     @pytest.mark.asyncio
@@ -291,7 +291,7 @@ class TestOrgDeletionCredits:
         member = _make_member(user_id, org_id, role="owner")
 
         # Only pending task is returned — completed ones are filtered by the query
-        pending_task = _make_task("screenshot", "pending", org_id, user_id)
+        pending_task = _make_task("data_transform", "pending", org_id, user_id)
 
         call_idx = 0
 
@@ -319,7 +319,7 @@ class TestOrgDeletionCredits:
 
         await delete_org(org_id, db=db, user_id=str(user_id))
 
-        # screenshot task cost is 2 credits
+        # data_transform costs 2 credits
         # Org: 300 + 2 = 302, transferred to user
         # User: 10 + 302 = 312
         assert pending_task.status == "cancelled"

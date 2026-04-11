@@ -13,15 +13,11 @@ import type {
   User,
   PaginatedResponse,
   WebResearchInput,
-  EntityLookupInput,
   DocumentParseInput,
   DataTransformInput,
   LLMGenerateInput,
-  ScreenshotInput,
-  AudioTranscribeInput,
   PiiDetectInput,
   CodeExecuteInput,
-  WebIntelInput,
   Template,
   TemplateCreateRequest,
   TemplateUseResponse,
@@ -246,13 +242,6 @@ export class CrowdSorcerer {
     return this.runTask({ type: "web_research", input, ...opts });
   }
 
-  async entityLookup(
-    input: EntityLookupInput,
-    opts?: { priority?: TaskPriority; webhook_url?: string }
-  ) {
-    return this.runTask({ type: "entity_lookup", input, ...opts });
-  }
-
   async documentParse(
     input: DocumentParseInput,
     opts?: { priority?: TaskPriority; webhook_url?: string }
@@ -274,20 +263,6 @@ export class CrowdSorcerer {
     return this.runTask({ type: "llm_generate", input, ...opts });
   }
 
-  async screenshot(
-    input: ScreenshotInput,
-    opts?: { priority?: TaskPriority; webhook_url?: string }
-  ) {
-    return this.runTask({ type: "screenshot", input, ...opts });
-  }
-
-  async audioTranscribe(
-    input: AudioTranscribeInput,
-    opts?: { priority?: TaskPriority; webhook_url?: string }
-  ) {
-    return this.runTask({ type: "audio_transcribe", input, ...opts });
-  }
-
   async piiDetect(
     input: PiiDetectInput,
     opts?: { priority?: TaskPriority; webhook_url?: string }
@@ -300,13 +275,6 @@ export class CrowdSorcerer {
     opts?: { priority?: TaskPriority; webhook_url?: string }
   ) {
     return this.runTask({ type: "code_execute", input, ...opts });
-  }
-
-  async webIntel(
-    input: WebIntelInput,
-    opts?: { priority?: TaskPriority; webhook_url?: string }
-  ) {
-    return this.runTask({ type: "web_intel", input, ...opts });
   }
 
   // ─── Credits ─────────────────────────────────────────────────────────────

@@ -147,37 +147,6 @@ class TestTaskCreateStrictValidation:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# REGRESSION: AI worker input validation — cryptic KeyError
-# Bug: Workers used inp["key"] which threw KeyError with no context
-# Fix: Added _require() helper that raises WorkerError(422) with clear message
-# ══════════════════════════════════════════════════════════════════════════════
-
-class TestWorkerInputValidation:
-    """Verify that missing required fields in worker input give clear errors."""
-
-    def test_require_raises_on_missing_field(self):
-        from workers.router import _require
-        from workers.base import WorkerError
-        with pytest.raises(WorkerError) as exc_info:
-            _require({}, "url", "web_research")
-        assert "url" in str(exc_info.value)
-        assert "web_research" in str(exc_info.value)
-        assert exc_info.value.status_code == 422
-
-    def test_require_returns_value_when_present(self):
-        from workers.router import _require
-        val = _require({"url": "https://example.com"}, "url", "web_research")
-        assert val == "https://example.com"
-
-    def test_require_works_with_falsy_values(self):
-        """0, empty string, False are valid values — should not raise."""
-        from workers.router import _require
-        assert _require({"count": 0}, "count", "test") == 0
-        assert _require({"text": ""}, "text", "test") == ""
-        assert _require({"flag": False}, "flag", "test") is False
-
-
-# ══════════════════════════════════════════════════════════════════════════════
 # REGRESSION: Stripe webhook bypass when secret is empty
 # Bug: Webhook handler accepted unverified payloads if stripe_webhook_secret=""
 # Fix: Reject all webhooks with 503 when secret is not configured

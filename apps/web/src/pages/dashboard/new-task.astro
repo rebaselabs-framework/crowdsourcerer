@@ -28,9 +28,12 @@ const aiAvailable = aiStatus !== "unavailable";
 const partiallyAvailable = aiStatus === "degraded";
 
 const aiTaskTypeNames: AITaskType[] = [
-  "web_research", "entity_lookup", "document_parse", "data_transform",
-  "llm_generate", "screenshot", "audio_transcribe", "pii_detect",
-  "code_execute", "web_intel",
+  "web_research",
+  "document_parse",
+  "data_transform",
+  "llm_generate",
+  "pii_detect",
+  "code_execute",
 ];
 const availableCount = aiTaskTypeNames.filter(t => taskAvailability[t] !== false).length;
 
@@ -91,15 +94,11 @@ interface TaskTypeOption {
 
 const AI_TASK_TYPES: TaskTypeOption[] = [
   { type: "web_research", label: "Web Research", icon: "🌐", placeholder: '{\n  "url": "https://example.com/article",\n  "instruction": "Extract the main content and key points"\n}' },
-  { type: "entity_lookup", label: "Entity Lookup", icon: "🏢", placeholder: '{\n  "entity_type": "company",\n  "name": "OpenAI",\n  "domain": "openai.com"\n}' },
-  { type: "document_parse", label: "Doc Parse", icon: "📄", placeholder: '{\n  "url": "https://example.com/doc.pdf",\n  "extract_tables": true\n}' },
+  { type: "document_parse", label: "Doc Parse", icon: "📄", placeholder: '{\n  "url": "https://example.com/doc.pdf"\n}' },
   { type: "data_transform", label: "Data Transform", icon: "🔄", placeholder: '{\n  "data": {"name": "Alice", "age": 30},\n  "transform": "Convert to CSV format",\n  "output_format": "csv"\n}' },
-  { type: "llm_generate", label: "LLM Generate", icon: "🤖", placeholder: '{\n  "messages": [{"role": "user", "content": "Write a haiku about AI"}],\n  "model": "claude-3-5-haiku-20241022"\n}' },
-  { type: "screenshot", label: "Screenshot", icon: "📸", placeholder: '{\n  "url": "https://example.com",\n  "full_page": true,\n  "format": "png"\n}' },
-  { type: "audio_transcribe", label: "Transcribe", icon: "🎙️", placeholder: '{\n  "url": "https://example.com/audio.mp3",\n  "language": "en",\n  "diarize": false\n}' },
+  { type: "llm_generate", label: "LLM Generate", icon: "🤖", placeholder: '{\n  "messages": [{"role": "user", "content": "Write a haiku about AI"}]\n}' },
   { type: "pii_detect", label: "PII Detect", icon: "🔒", placeholder: '{\n  "text": "My name is John Doe, email: john@example.com",\n  "mask": true\n}' },
   { type: "code_execute", label: "Code Execute", icon: "⚡", placeholder: '{\n  "language": "python",\n  "code": "print(sum(range(100)))"\n}' },
-  { type: "web_intel", label: "Web Intel", icon: "🕵️", placeholder: '{\n  "query": "OpenAI funding history",\n  "max_results": 10\n}' },
 ];
 
 const HUMAN_TASK_TYPE_LIST = [
@@ -702,14 +701,8 @@ const FORM_FIELDS: Record<string, FieldDef[]> = {
     { name: "url", label: "URL to research", type: "url", required: true, placeholder: "https://example.com/article" },
     { name: "instruction", label: "What to find or extract", type: "textarea", rows: 2, placeholder: "Summarise the key points and identify the main argument" },
   ],
-  entity_lookup: [
-    { name: "entity_type", label: "Entity type", type: "select", options: ["company", "person", "location", "product", "domain"], default: "company" },
-    { name: "name", label: "Name", type: "text", required: true, placeholder: "OpenAI" },
-    { name: "domain", label: "Domain (optional)", type: "text", placeholder: "openai.com" },
-  ],
   document_parse: [
-    { name: "url", label: "Document URL (PDF, DOCX, HTML…)", type: "url", required: true, placeholder: "https://example.com/report.pdf" },
-    { name: "extract_tables", label: "Extract tables", type: "checkbox", default: true },
+    { name: "url", label: "Document URL (PDF, DOCX, XLSX, TXT)", type: "url", required: true, placeholder: "https://example.com/report.pdf" },
   ],
   data_transform: [
     { name: "data", label: "Input data (JSON or plain text)", type: "textarea", rows: 3, placeholder: '{"name": "Alice", "age": 30}' },
@@ -718,29 +711,14 @@ const FORM_FIELDS: Record<string, FieldDef[]> = {
   ],
   llm_generate: [
     { name: "__prompt", label: "User message / prompt", type: "textarea", rows: 5, required: true, placeholder: "Write a haiku about the ocean." },
-    { name: "model", label: "Model", type: "select", options: ["claude-3-5-haiku-20241022", "claude-3-5-sonnet-20241022", "gpt-4o-mini", "gpt-4o"], default: "claude-3-5-haiku-20241022" },
-  ],
-  screenshot: [
-    { name: "url", label: "URL to screenshot", type: "url", required: true, placeholder: "https://example.com" },
-    { name: "full_page", label: "Full page", type: "checkbox", default: true },
-    { name: "format", label: "Image format", type: "select", options: ["png", "jpeg", "webp"], default: "png" },
-  ],
-  audio_transcribe: [
-    { name: "url", label: "Audio URL (mp3, wav, m4a…)", type: "url", required: true, placeholder: "https://example.com/recording.mp3" },
-    { name: "language", label: "Language code", type: "text", placeholder: "en", default: "en" },
-    { name: "diarize", label: "Speaker diarization", type: "checkbox", default: false },
   ],
   pii_detect: [
     { name: "text", label: "Text to scan for PII", type: "textarea", rows: 4, required: true, placeholder: "My name is Jane Doe, email: jane@example.com, SSN: 123-45-6789" },
     { name: "mask", label: "Redact PII in output", type: "checkbox", default: true },
   ],
   code_execute: [
-    { name: "language", label: "Language", type: "select", options: ["python", "javascript", "bash", "ruby", "go"], default: "python" },
-    { name: "code", label: "Code", type: "textarea", rows: 7, required: true, monospace: true, placeholder: "print(sum(range(100)))" },
-  ],
-  web_intel: [
-    { name: "query", label: "Intelligence query", type: "text", required: true, placeholder: "OpenAI recent funding rounds" },
-    { name: "max_results", label: "Max results", type: "number", default: 10, min: 1, max: 50 },
+    { name: "code", label: "Python code", type: "textarea", rows: 7, required: true, monospace: true, placeholder: "print(sum(range(100)))" },
+    { name: "timeout_seconds", label: "Timeout (seconds, max 30)", type: "number", default: 10, min: 1, max: 30 },
   ],
   // Human task types
   label_image: [
