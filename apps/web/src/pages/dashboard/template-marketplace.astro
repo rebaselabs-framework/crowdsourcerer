@@ -1,6 +1,7 @@
 ---
 import Layout from "@/layouts/Layout.astro";
 import { apiFetch, getToken } from "@/lib/api";
+import { HUMAN_TASK_TYPE_IDS } from "@crowdsourcerer/types";
 
 const token = getToken(Astro.cookies);
 if (!token) return Astro.redirect("/login");
@@ -14,12 +15,10 @@ let marketplaceData: any = { templates: [], total: 0, has_next: false };
 let myTemplates: any[] = [];
 let error: string | null = null;
 
-const TASK_TYPES = [
-  "label_image","label_text","rate_quality","verify_fact","moderate_content",
-  "compare_rank","answer_question","transcription_review",
-  "web_research","document_parse","data_transform","llm_generate",
-  "pii_detect","code_execute",
-];
+// Human task types only — AI templates would pre-fill a submission
+// that the server now rejects with a 422, so filter them out of both
+// the type dropdown and the template list.
+const TASK_TYPES = [...HUMAN_TASK_TYPE_IDS];
 
 try {
   const qs = new URLSearchParams({ sort, page: String(page), page_size: "20" });
@@ -37,7 +36,12 @@ try {
   error = "Failed to load marketplace";
 }
 
-const templates: any[] = marketplaceData.templates ?? [];
+// Filter to human-only templates. Pipeline step templates using AI
+// primitives still exist in the DB but aren't directly usable via
+// /v1/tasks, so we hide them here until there's a pipeline builder UI.
+const templates: any[] = (marketplaceData.templates ?? []).filter(
+  (t: any) => t?.execution_mode !== "ai" && t?.category !== "ai",
+);
 const myIds = new Set<string>(myTemplates.map((t: any) => String(t.id)));
 // Collect templates I published (to know which to show Unpublish for)
 const myPublishedIds = new Set<string>(
