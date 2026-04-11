@@ -28,7 +28,7 @@ test.describe("Task creation flow", () => {
 
     // Should show AI and human task types
     const body = await page.textContent("body");
-    expect(body?.toLowerCase()).toMatch(/web.research|llm.generate|screenshot/);
+    expect(body?.toLowerCase()).toMatch(/web.research|llm.generate|doc.parse|pii.detect|code.execute/);
   });
 
   test("can fill and submit a web_research task", async ({ page }) => {

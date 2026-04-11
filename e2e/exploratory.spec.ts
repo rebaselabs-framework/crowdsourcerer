@@ -38,7 +38,14 @@ test.describe("Deep: Requester dashboard", () => {
     const lower = body?.toLowerCase() ?? "";
 
     // AI task types should be listed
-    const aiTypes = ["web research", "llm generate", "screenshot", "code execute"];
+    const aiTypes = [
+      "web research",
+      "doc parse",
+      "data transform",
+      "llm generate",
+      "pii detect",
+      "code execute",
+    ];
     for (const t of aiTypes) {
       expect(lower, `Missing AI task type: ${t}`).toContain(t);
     }
