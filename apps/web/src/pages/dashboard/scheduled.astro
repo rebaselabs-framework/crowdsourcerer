@@ -8,6 +8,7 @@
  */
 import Layout from "@/layouts/Layout.astro";
 import { apiFetch, getToken } from "@/lib/api";
+import { TASK_METADATA } from "@crowdsourcerer/types";
 
 const token = getToken(Astro.cookies);
 if (!token) return Astro.redirect("/login?next=/dashboard/scheduled");
@@ -28,27 +29,10 @@ const items: any[] = data?.items ?? [];
 
 // ── Lookup tables ─────────────────────────────────────────────────────────────
 
-const TASK_ICONS: Record<string, string> = {
-  // Human
-  label_image: "🖼️", label_text: "🏷️", rate_quality: "⭐",
-  verify_fact: "✅", moderate_content: "🛡️", compare_rank: "📊",
-  answer_question: "💬", transcription_review: "📝",
-  // Pipeline AI
-  web_research: "🌐", document_parse: "📄", data_transform: "🔄",
-  llm_generate: "🤖", pii_detect: "🔒", code_execute: "⚡",
-};
-
-const TASK_LABELS: Record<string, string> = {
-  // Human
-  label_image: "Label Image", label_text: "Label Text",
-  rate_quality: "Rate Quality", verify_fact: "Verify Fact",
-  moderate_content: "Moderate Content", compare_rank: "Compare & Rank",
-  answer_question: "Answer Question", transcription_review: "Review Transcript",
-  // Pipeline AI
-  web_research: "Web Research", document_parse: "Doc Parse",
-  data_transform: "Data Transform", llm_generate: "LLM Generate",
-  pii_detect: "PII Detect", code_execute: "Code Execute",
-};
+const taskIcon = (type: string): string =>
+  TASK_METADATA[type as keyof typeof TASK_METADATA]?.icon ?? "📋";
+const taskLabel = (type: string): string =>
+  TASK_METADATA[type as keyof typeof TASK_METADATA]?.label ?? type;
 
 const PRIORITY_CLS: Record<string, string> = {
   critical: "bg-red-900/50 border-red-700 text-red-300",
@@ -151,10 +135,10 @@ const nextTask   = items[0] ?? null; // already sorted asc by API
     {/* Next task countdown banner */}
     {nextTask && (
       <div class="mb-6 bg-violet-950/30 border border-violet-800/50 rounded-xl px-5 py-4 flex items-center gap-4">
-        <div class="text-2xl">{TASK_ICONS[nextTask.type] ?? "📋"}</div>
+        <div class="text-2xl">{taskIcon(nextTask.type)}</div>
         <div class="flex-1 min-w-0">
           <div class="text-sm font-medium text-violet-200">
-            Next: {TASK_LABELS[nextTask.type] ?? nextTask.type.replace(/_/g, " ")}
+            Next: {taskLabel(nextTask.type)}
           </div>
           <div class="text-xs text-violet-400 mt-0.5">
             {fmtDate(nextTask.scheduled_at)} at {fmtTime(nextTask.scheduled_at)}
@@ -210,7 +194,7 @@ const nextTask   = items[0] ?? null; // already sorted asc by API
 
                   {/* Icon */}
                   <div class="shrink-0 text-xl hidden sm:block">
-                    {TASK_ICONS[t.type] ?? "📋"}
+                    {taskIcon(t.type)}
                   </div>
 
                   {/* Main info */}
@@ -220,7 +204,7 @@ const nextTask   = items[0] ?? null; // already sorted asc by API
                         href={`/dashboard/tasks/${t.id}`}
                         class="font-medium text-gray-200 hover:text-violet-300 transition-colors text-sm"
                       >
-                        {TASK_LABELS[t.type] ?? t.type.replace(/_/g, " ")}
+                        {taskLabel(t.type)}
                       </a>
                       <span class={`text-xs px-1.5 py-0.5 rounded border ${t.execution_mode === "ai" ? "bg-violet-900/40 border-violet-700/50 text-violet-300" : "bg-amber-900/40 border-amber-700/50 text-amber-300"}`}>
                         {t.execution_mode === "ai" ? "AI" : "Human"}
@@ -264,7 +248,7 @@ const nextTask   = items[0] ?? null; // already sorted asc by API
                     <button
                       class="cancel-btn px-2.5 py-1 text-xs font-medium border border-red-900/60 rounded-lg text-red-400 hover:text-red-300 hover:border-red-700 transition-colors"
                       data-id={t.id}
-                      data-label={TASK_LABELS[t.type] ?? t.type.replace(/_/g, " ")}
+                      data-label={taskLabel(t.type)}
                     >
                       Cancel
                     </button>

@@ -5,6 +5,7 @@
  */
 import Layout from "@/layouts/Layout.astro";
 import { apiFetch, getToken } from "@/lib/api";
+import { TASK_METADATA } from "@crowdsourcerer/types";
 
 const token = getToken(Astro.cookies);
 if (!token) return Astro.redirect("/login?next=/worker/recommendations");
@@ -31,14 +32,8 @@ const improvementPct = currentWeeklyRate > 0 && weeklyPotential > currentWeeklyR
   ? Math.round(((weeklyPotential - currentWeeklyRate) / currentWeeklyRate) * 100)
   : null;
 
-const TASK_ICONS: Record<string, string> = {
-  label_image: "🖼️", label_text: "📝", rate_quality: "⭐",
-  verify_fact: "✅", moderate_content: "🛡️", compare_rank: "📊",
-  answer_question: "💬", transcription_review: "🎙️",
-  web_research: "🔍", entity_lookup: "🏢", document_parse: "📄",
-  data_transform: "⚙️", llm_generate: "🤖", screenshot: "📸",
-  audio_transcribe: "🎤", pii_detect: "🔒", code_execute: "💻", web_intel: "🌐",
-};
+const taskIcon = (type: string): string =>
+  TASK_METADATA[type as keyof typeof TASK_METADATA]?.icon ?? "📋";
 
 const PROFICIENCY_LABELS: Record<number, string> = {
   0: "Not tried", 1: "Beginner", 2: "Developing", 3: "Competent", 4: "Advanced", 5: "Expert",
@@ -155,7 +150,7 @@ const PROFICIENCY_COLORS: Record<number, string> = {
                 <!-- Task icon + name -->
                 <div class="flex-1 min-w-0">
                   <div class="flex items-center gap-2 mb-1">
-                    <span class="text-xl">{TASK_ICONS[rec.task_type] ?? "📋"}</span>
+                    <span class="text-xl">{taskIcon(rec.task_type)}</span>
                     <span class="font-semibold text-gray-100">{rec.label}</span>
                     <span class={`text-xs px-2 py-0.5 rounded-full border ${
                       rec.category === "ai"
@@ -247,7 +242,7 @@ const PROFICIENCY_COLORS: Record<number, string> = {
           {tryNext.map((rec: any) => (
             <div class="bg-gray-900 border border-gray-800 hover:border-violet-700 rounded-xl p-5 transition-colors group">
               <div class="flex items-center gap-2 mb-3">
-                <span class="text-2xl">{TASK_ICONS[rec.task_type] ?? "📋"}</span>
+                <span class="text-2xl">{taskIcon(rec.task_type)}</span>
                 <div>
                   <div class="font-semibold text-gray-100 text-sm group-hover:text-violet-300 transition-colors">
                     {rec.label}

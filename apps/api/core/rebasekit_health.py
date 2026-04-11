@@ -40,26 +40,14 @@ AIHealthStatus = Literal["healthy", "degraded", "unavailable"]
 
 # ── Capability model ─────────────────────────────────────────────────
 
-# Task types backed by a local handler — always available.
-LOCAL_TASK_TYPES: frozenset[str] = frozenset(
-    {
-        "document_parse",
-        "pii_detect",
-        "code_execute",
-    }
+# Re-exported from :mod:`core.task_types` so existing callers and tests
+# that import these names from here keep working. The canonical lists
+# live in core.task_types and are derived from the TASK_METADATA table.
+from core.task_types import (
+    LOCAL_TASK_TYPES,
+    LLM_TASK_TYPES,
+    AI_TASK_TYPES as ALL_TASK_TYPES,
 )
-
-# Task types backed by direct Anthropic calls — available iff
-# ``ANTHROPIC_API_KEY`` is configured.
-LLM_TASK_TYPES: frozenset[str] = frozenset(
-    {
-        "llm_generate",
-        "data_transform",
-        "web_research",
-    }
-)
-
-ALL_TASK_TYPES: frozenset[str] = LOCAL_TASK_TYPES | LLM_TASK_TYPES
 
 # Legacy names kept so older imports don't break. The previous
 # implementation had a per-service mapping; the new layout uses

@@ -1,6 +1,7 @@
 ---
 import Layout from "@/layouts/Layout.astro";
 import { apiFetch, getToken } from "@/lib/api";
+import { HUMAN_TASK_TYPES } from "@crowdsourcerer/types";
 
 const token = getToken(Astro.cookies);
 if (!token) return Astro.redirect("/login");
@@ -71,11 +72,6 @@ const HUMAN_TASK_TYPE_LIST = [
   { type: "transcription_review","label": "Review Transcript", icon: "📝", placeholder: '{\n  "audio_url": "https://example.com/audio.mp3",\n  "draft_transcript": "Auto-generated transcript to review and correct"\n}' },
 ];
 
-const HUMAN_TASK_TYPES = new Set([
-  "label_image","label_text","rate_quality","verify_fact",
-  "moderate_content","compare_rank","answer_question","transcription_review"
-]);
-
 if (Astro.request.method === "POST") {
   const form = await Astro.request.formData();
   const type = form.get("type") as string;
@@ -104,7 +100,7 @@ if (Astro.request.method === "POST") {
       body.scheduled_at = new Date(scheduledAt).toISOString();
     }
 
-    if (HUMAN_TASK_TYPES.has(type)) {
+    if ((HUMAN_TASK_TYPES as ReadonlySet<string>).has(type)) {
       const workerReward = Number(form.get("worker_reward_credits") || 0);
       const assignmentsRequired = Number(form.get("assignments_required") || 1);
       const claimTimeout = Number(form.get("claim_timeout_minutes") || 30);
@@ -1006,11 +1002,11 @@ document.getElementById("webhook-url-input")?.addEventListener("input", () => {
 </script>
 
 <script>
-  // Human task options toggle
-  const HUMAN_TYPES = new Set([
-    "label_image","label_text","rate_quality","verify_fact",
-    "moderate_content","compare_rank","answer_question","transcription_review"
-  ]);
+  // Human task options toggle — HUMAN_TASK_TYPES pulled from the shared
+  // types package so the client-side bundle never drifts from the
+  // single source of truth in packages/types.
+  import { HUMAN_TASK_TYPES } from "@crowdsourcerer/types";
+
   const humanOptions = document.getElementById("human-task-options");
   const assignmentsInput = document.querySelector<HTMLInputElement>('[name="assignments_required"]');
   const consensusSection = document.getElementById("consensus-section");
@@ -1018,7 +1014,7 @@ document.getElementById("webhook-url-input")?.addEventListener("input", () => {
   function updateHumanOptions() {
     const checked = document.querySelector<HTMLInputElement>('input[name="type"]:checked');
     if (!checked) return;
-    const isHuman = HUMAN_TYPES.has(checked.value);
+    const isHuman = (HUMAN_TASK_TYPES as ReadonlySet<string>).has(checked.value);
     humanOptions?.classList.toggle("hidden", !isHuman);
   }
 

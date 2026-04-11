@@ -5,6 +5,7 @@
  */
 import Layout from "@/layouts/Layout.astro";
 import { apiFetch, getToken } from "@/lib/api";
+import { TASK_METADATA } from "@crowdsourcerer/types";
 
 const token = getToken(Astro.cookies);
 if (!token) return Astro.redirect("/login?next=/worker/performance");
@@ -42,14 +43,8 @@ function rateBg(pct: number | null | undefined): string {
   return "bg-red-500";
 }
 
-const TASK_ICONS: Record<string, string> = {
-  label_image: "🖼️", label_text: "📝", rate_quality: "⭐",
-  verify_fact: "✅", moderate_content: "🛡️", compare_rank: "📊",
-  answer_question: "💬", transcription_review: "🎙️",
-  web_research: "🔍", entity_lookup: "🏢", document_parse: "📄",
-  data_transform: "⚙️", llm_generate: "🤖", screenshot: "📸",
-  audio_transcribe: "🎤", pii_detect: "🔒", code_execute: "💻", web_intel: "🌐",
-};
+const taskIcon = (type: string): string =>
+  TASK_METADATA[type as keyof typeof TASK_METADATA]?.icon ?? "🔧";
 
 const weeklyMax = Math.max(...weekly.map((w: any) => w.total || 0), 1);
 ---
@@ -176,7 +171,7 @@ const weeklyMax = Math.max(...weekly.map((w: any) => w.total || 0), 1);
             <div class="divide-y divide-gray-800">
               {byType.map((t: any) => (
                 <div class="px-5 py-3 flex items-center gap-4">
-                  <div class="w-6 text-base shrink-0">{TASK_ICONS[t.type] ?? "🔧"}</div>
+                  <div class="w-6 text-base shrink-0">{taskIcon(t.type)}</div>
                   <div class="flex-1 min-w-0">
                     <div class="text-sm text-gray-200 font-medium">{t.type.replace(/_/g, " ")}</div>
                     <div class="text-xs text-gray-500 mt-0.5">{t.total} reviewed · {t.approved} approved</div>

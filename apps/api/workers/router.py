@@ -17,20 +17,15 @@ import structlog
 from workers.base import RebaseKitClient, WorkerError
 from workers.local import code_exec, doc_parse, llm_tasks, pii
 from core.llm_client import LLMError, LLMUnavailableError
+from core.task_types import AI_TASK_CREDITS
 
 logger = structlog.get_logger()
 
 
-# Credits cost per task type. Mirrors ``TASK_CREDITS`` in
-# ``packages/types/src/index.ts``.
-TASK_CREDITS: dict[str, int] = {
-    "web_research": 10,
-    "document_parse": 3,
-    "data_transform": 2,
-    "llm_generate": 1,
-    "pii_detect": 2,
-    "code_execute": 3,
-}
+# Re-export so existing callers (``routers/tasks.py``, pipeline dispatcher,
+# tests) can keep importing ``TASK_CREDITS`` from here without caring that
+# the canonical source is now :mod:`core.task_types`.
+TASK_CREDITS = AI_TASK_CREDITS
 
 
 async def execute_task(

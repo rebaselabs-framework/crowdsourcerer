@@ -1,6 +1,7 @@
 ---
 import Layout from "@/layouts/Layout.astro";
 import { apiFetch, getToken } from "@/lib/api";
+import { TASK_METADATA } from "@crowdsourcerer/types";
 
 const token = getToken(Astro.cookies);
 
@@ -38,24 +39,8 @@ try {
   pendingReviewCount = reviewSummary?.pending_count ?? 0;
 } catch (_) {}
 
-const TASK_TYPE_LABELS: Record<string, string> = {
-  // Human
-  label_image: "Label Image",
-  label_text: "Classify Text",
-  rate_quality: "Rate Quality",
-  verify_fact: "Verify Fact",
-  moderate_content: "Moderate Content",
-  compare_rank: "A/B Compare",
-  answer_question: "Answer Question",
-  transcription_review: "Transcription Review",
-  // Pipeline AI primitives
-  web_research: "Web Research",
-  document_parse: "Doc Parse",
-  data_transform: "Data Transform",
-  llm_generate: "LLM Generate",
-  pii_detect: "PII Detection",
-  code_execute: "Code Execute",
-};
+const taskTypeLabel = (type: string): string =>
+  TASK_METADATA[type as keyof typeof TASK_METADATA]?.label ?? type;
 
 // Show onboarding banner if not yet complete and not skipped
 const showOnboardingBanner = Boolean(
@@ -201,7 +186,7 @@ const showOnboardingBanner = Boolean(
           {tasks?.items?.map((t: any) => (
             <a href={`/dashboard/tasks/${t.id}`} class="flex items-center justify-between px-6 py-4 hover:bg-gray-800/50 transition-colors">
               <div class="flex items-center gap-3">
-                <span class="text-sm text-gray-200 font-medium">{TASK_TYPE_LABELS[t.type] ?? t.type}</span>
+                <span class="text-sm text-gray-200 font-medium">{taskTypeLabel(t.type)}</span>
                 <span class:list={[
                   "text-xs px-2 py-0.5 rounded-full",
                   t.status === "completed" ? "bg-green-950 text-green-400" :

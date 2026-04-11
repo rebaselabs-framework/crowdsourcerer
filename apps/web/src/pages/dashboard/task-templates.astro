@@ -1,6 +1,7 @@
 ---
 import Layout from "@/layouts/Layout.astro";
 import { apiFetch, getToken } from "@/lib/api";
+import { TASK_METADATA, HUMAN_TASK_TYPES } from "@crowdsourcerer/types";
 
 const token = getToken(Astro.cookies);
 if (!token) return Astro.redirect("/login");
@@ -17,21 +18,9 @@ try {
 const templates: any[] = templateData?.templates ?? [];
 const total: number = templateData?.total ?? 0;
 
-// Task type icon map
-const TYPE_ICONS: Record<string, string> = {
-  // Human
-  label_image: "🖼️", label_text: "🏷️",
-  rate_quality: "⭐", verify_fact: "✅", moderate_content: "🛡️",
-  compare_rank: "📊", answer_question: "💬", transcription_review: "📝",
-  // Pipeline AI
-  web_research: "🌐", document_parse: "📄", data_transform: "🔄",
-  llm_generate: "🤖", pii_detect: "🔒", code_execute: "⚡",
-};
-
-const HUMAN_TYPES = new Set([
-  "label_image","label_text","rate_quality","verify_fact",
-  "moderate_content","compare_rank","answer_question","transcription_review"
-]);
+const typeIcon = (type: string): string =>
+  TASK_METADATA[type as keyof typeof TASK_METADATA]?.icon ?? "📋";
+const HUMAN_TYPES = HUMAN_TASK_TYPES;
 ---
 <Layout title="My Task Templates — CrowdSorcerer">
   <div class="max-w-5xl mx-auto px-4 py-8">
@@ -134,7 +123,7 @@ const HUMAN_TYPES = new Set([
 
             <!-- Icon + type -->
             <div class="flex items-start gap-3 mb-3">
-              <span class="text-2xl">{tpl.icon || TYPE_ICONS[tpl.task_type] || "📋"}</span>
+              <span class="text-2xl">{tpl.icon || typeIcon(tpl.task_type)}</span>
               <div class="flex-1 min-w-0">
                 <div class="font-semibold text-gray-100 truncate">{tpl.name}</div>
                 <div class="flex items-center gap-1.5 mt-0.5">

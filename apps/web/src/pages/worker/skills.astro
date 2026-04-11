@@ -4,6 +4,7 @@
  */
 import Layout from "@/layouts/Layout.astro";
 import { apiFetch, getToken } from "@/lib/api";
+import { TASK_METADATA } from "@crowdsourcerer/types";
 
 const token = getToken(Astro.cookies);
 if (!token) return Astro.redirect("/login?next=/worker/skills");
@@ -62,14 +63,8 @@ const BADGE_STYLE: Record<number, string> = {
   5: "bg-amber-900/40 text-amber-300 border-amber-700",
 };
 
-const TASK_ICONS: Record<string, string> = {
-  label_image: "🖼️", label_text: "📝", rate_quality: "⭐",
-  verify_fact: "✅", moderate_content: "🛡️", compare_rank: "📊",
-  answer_question: "💬", transcription_review: "🎙️",
-  web_research: "🔍", entity_lookup: "🏢", document_parse: "📄",
-  data_transform: "⚙️", llm_generate: "🤖", screenshot: "📸",
-  audio_transcribe: "🎤", pii_detect: "🔒", code_execute: "💻", web_intel: "🌐",
-};
+const taskIcon = (type: string): string =>
+  TASK_METADATA[type as keyof typeof TASK_METADATA]?.icon ?? "🔧";
 ---
 
 <Layout title="My Skills — CrowdSorcerer">
@@ -197,7 +192,7 @@ const TASK_ICONS: Record<string, string> = {
             <div class="bg-gray-900 border border-gray-800 hover:border-violet-700 rounded-xl p-5 transition-colors">
               <div class="flex items-center justify-between mb-3">
                 <div class="flex items-center gap-2">
-                  <span class="text-2xl">{TASK_ICONS[skill.task_type] ?? "🔧"}</span>
+                  <span class="text-2xl">{taskIcon(skill.task_type)}</span>
                   <div class="text-sm font-semibold capitalize">
                     {skill.task_type.replace(/_/g, " ")}
                     {skill.verified && (
@@ -269,7 +264,7 @@ const TASK_ICONS: Record<string, string> = {
                 <div class="bg-gray-900 border border-violet-800/40 hover:border-violet-600 rounded-xl p-4 transition-colors">
                   <div class="flex items-center justify-between mb-2">
                     <div class="flex items-center gap-1.5">
-                      <span class="text-lg">{TASK_ICONS[task.type] ?? "🔧"}</span>
+                      <span class="text-lg">{taskIcon(task.type)}</span>
                       <span class="text-xs font-medium text-violet-400 uppercase tracking-wide">
                         {task.type.replace(/_/g, " ")}
                       </span>

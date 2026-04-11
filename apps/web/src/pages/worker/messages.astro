@@ -6,6 +6,7 @@
  */
 import Layout from "@/layouts/Layout.astro";
 import { apiFetch, getToken } from "@/lib/api";
+import { TASK_METADATA } from "@crowdsourcerer/types";
 
 const token = getToken(Astro.cookies);
 if (!token) return Astro.redirect("/login?next=/worker/messages");
@@ -32,20 +33,9 @@ try {
   error = "Failed to load messages";
 }
 
-const TASK_TYPE_LABELS: Record<string, string> = {
-  label_image: "Label Image", label_text: "Classify Text",
-  rate_quality: "Rate Quality", verify_fact: "Verify Fact",
-  moderate_content: "Moderate Content", compare_rank: "A/B Compare",
-  answer_question: "Answer Question", transcription_review: "Review Transcript",
-  llm_generate: "LLM Generate", web_research: "Web Research",
-  entity_lookup: "Entity Lookup", document_parse: "Document Parse",
-  data_transform: "Data Transform", screenshot: "Screenshot",
-  audio_transcribe: "Audio Transcribe", pii_detect: "PII Detect",
-  code_execute: "Code Execute", web_intel: "Web Intel",
-};
-
-function taskLabel(type: string) {
-  return TASK_TYPE_LABELS[type] ?? type.replace(/_/g, " ");
+function taskLabel(type: string): string {
+  return TASK_METADATA[type as keyof typeof TASK_METADATA]?.label
+    ?? type.replace(/_/g, " ");
 }
 
 function timeAgo(iso: string): string {

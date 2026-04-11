@@ -5,6 +5,7 @@
  */
 import Layout from "@/layouts/Layout.astro";
 import { apiFetch } from "@/lib/api";
+import { TASK_METADATA } from "@crowdsourcerer/types";
 
 const { id } = Astro.params as { id: string };
 // Check auth server-side — cs_token is httpOnly and cannot be read from client JS
@@ -105,18 +106,7 @@ function profLabel(level: number): string {
 }
 
 function taskTypeIcon(type: string): string {
-  const icons: Record<string, string> = {
-    // Human task types
-    label_image: "🖼️", label_text: "📝", rate_quality: "⭐",
-    verify_fact: "✅", moderate_content: "🛡️", compare_rank: "🏆",
-    answer_question: "💬", transcription_review: "🎧",
-    // AI task types
-    web_research: "🌐", entity_lookup: "🏢", document_parse: "📄",
-    data_transform: "🔄", llm_generate: "🤖", screenshot: "📸",
-    audio_transcribe: "🎙️", pii_detect: "🔒", code_execute: "⚡",
-    web_intel: "🕵️",
-  };
-  return icons[type] ?? "📋";
+  return TASK_METADATA[type as keyof typeof TASK_METADATA]?.icon ?? "📋";
 }
 
 // Compute max tasks_completed across all task types for bar scaling

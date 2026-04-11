@@ -29,17 +29,11 @@ _VERIFY_MIN_COMPLETED = 15
 logger = structlog.get_logger()
 router = APIRouter(prefix="/v1/workers", tags=["skills"])
 
-# ─── Human task types only (for marketplace) ──────────────────────────────
-HUMAN_TASK_TYPES = {
-    "label_image", "label_text", "rate_quality", "verify_fact",
-    "moderate_content", "compare_rank", "answer_question", "transcription_review",
-}
-
-AI_TASK_TYPES = {
-    "web_research", "entity_lookup", "document_parse", "data_transform",
-    "llm_generate", "screenshot", "audio_transcribe", "pii_detect",
-    "code_execute", "web_intel",
-}
+# Re-exported from :mod:`core.task_types`. The local copies used to
+# drift — the AI set still listed entity_lookup / screenshot /
+# audio_transcribe / web_intel long after those were pruned — so the
+# canonical definitions live in one place now.
+from core.task_types import AI_TASK_TYPES, HUMAN_TASK_TYPES
 
 
 def _proficiency_for_completed(tasks_completed: int, accuracy: Optional[float]) -> int:

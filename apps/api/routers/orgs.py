@@ -223,14 +223,9 @@ async def delete_org(
     )
     active_tasks = active_result.scalars().all()
     refunded_from_tasks = 0
+    from core.task_types import HUMAN_TASK_TYPES
     for task in active_tasks:
         # Compute task cost the same way creation does
-        from core.config import get_settings as _gs
-        HUMAN_TASK_TYPES = {
-            "label_image", "label_text", "rate_quality", "verify_fact",
-            "moderate_content", "compare_rank", "answer_question",
-            "transcription_review",
-        }
         if task.type in HUMAN_TASK_TYPES:
             reward = task.worker_reward_credits or 2
             assignments = task.assignments_required or 1

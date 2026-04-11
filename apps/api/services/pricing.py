@@ -6,32 +6,13 @@ instance to override pricing per deployment, or use
 """
 
 from dataclasses import dataclass, field
-from types import MappingProxyType
 from typing import Mapping, Protocol
 
-from workers.router import TASK_CREDITS as _AI_TASK_CREDITS
-
-
-# ── Default tables ────────────────────────────────────────────────────────
-
-# Read-only view over workers.router.TASK_CREDITS so pricing consumers
-# can't mutate the worker routing table.
-AI_TASK_CREDITS: Mapping[str, int] = MappingProxyType(_AI_TASK_CREDITS)
-
-# Keep in sync with the frontend task-type picker in
-# apps/web/src/pages/dashboard/new-task.astro.
-HUMAN_TASK_BASE_CREDITS: Mapping[str, int] = MappingProxyType({
-    "label_image": 3,
-    "label_text": 2,
-    "rate_quality": 2,
-    "verify_fact": 3,
-    "moderate_content": 2,
-    "compare_rank": 2,
-    "answer_question": 4,
-    "transcription_review": 5,
-})
-
-HUMAN_TASK_TYPES: frozenset[str] = frozenset(HUMAN_TASK_BASE_CREDITS)
+from core.task_types import (
+    AI_TASK_CREDITS,
+    HUMAN_TASK_BASE_CREDITS,
+    HUMAN_TASK_TYPES,
+)
 
 _AI_FALLBACK_CREDITS = 5
 

@@ -83,11 +83,10 @@ class WorkerProfileOut(BaseModel):
         return super().model_validate(obj, **kwargs)
 
 
-# Valid human task types for interest declarations
-HUMAN_TASK_TYPES_SET = {
-    "label_image", "label_text", "rate_quality", "verify_fact",
-    "moderate_content", "compare_rank", "answer_question", "transcription_review",
-}
+# Re-exported from :mod:`core.task_types` so existing callers that
+# imported ``HUMAN_TASK_TYPES_SET`` from this module don't break; the
+# canonical definition lives there.
+from core.task_types import HUMAN_TASK_TYPES as HUMAN_TASK_TYPES_SET
 
 
 class BecomeWorkerRequest(BaseModel):
@@ -120,24 +119,25 @@ class WorkerSkillInterestsUpdate(BaseModel):
 # pii_detect, document_parse, code_execute) still exist as *internal*
 # primitives that pipelines can chain with human steps, but they are
 # not first-class products on their own — see routers/pipelines.py.
+#
+# ``ALL_TASK_TYPES`` has to stay a hand-written Literal because Pydantic
+# evaluates it at class-definition time and can't consume a runtime
+# frozenset. A module-level assertion below guards against drift from
+# the canonical list in :mod:`core.task_types`.
 ALL_TASK_TYPES = Literal[
     "label_image", "label_text", "rate_quality",
     "verify_fact", "moderate_content", "compare_rank",
     "answer_question", "transcription_review",
 ]
 
-HUMAN_TASK_TYPES = {
-    "label_image", "label_text", "rate_quality",
-    "verify_fact", "moderate_content", "compare_rank",
-    "answer_question", "transcription_review",
-}
+# Re-exported from :mod:`core.task_types` — canonical definitions.
+from core.task_types import AI_TASK_TYPES, HUMAN_TASK_TYPES
 
-# AI task types — intentionally not in ALL_TASK_TYPES. Kept here as a
-# single source of truth for validators and pipeline step gating.
-AI_TASK_TYPES = frozenset({
-    "llm_generate", "data_transform", "web_research",
-    "pii_detect", "document_parse", "code_execute",
-})
+# Guard against the Literal above drifting from the canonical set.
+assert set(ALL_TASK_TYPES.__args__) == HUMAN_TASK_TYPES, (
+    "models.schemas.ALL_TASK_TYPES Literal drifted from "
+    "core.task_types.HUMAN_TASK_TYPES — update the Literal in sync."
+)
 
 
 CONSENSUS_STRATEGIES = Literal["any_first", "majority_vote", "unanimous", "requester_review"]

@@ -418,37 +418,169 @@ export interface WebhookEvent {
   created_at: string;
 }
 
-// ─── Pricing ───────────────────────────────────────────────────────────────
+// ─── Task type metadata ────────────────────────────────────────────────────
+//
+// Single source of truth for every task type: id, human-readable label,
+// icon, execution mode, base credit cost, and description. Every frontend
+// page that wants to render task-type pickers, filter dropdowns, or icon
+// maps should pull from here instead of keeping a private copy. The
+// Python mirror lives at apps/api/core/task_types.py — keep them in sync.
 
-/** AI task costs (credits charged to requester). Keep in sync with
- *  apps/api/workers/router.py::TASK_CREDITS. */
-export const TASK_CREDITS: Record<AITaskType, number> = {
-  web_research: 10,
-  document_parse: 3,
-  data_transform: 2,
-  llm_generate: 1,
-  pii_detect: 2,
-  code_execute: 3,
+export interface TaskTypeMeta {
+  id: PipelineStepTaskType;
+  label: string;
+  icon: string;
+  executionMode: ExecutionMode;
+  /** Base credit cost. For human tasks this is the minimum reward per
+   *  worker assignment; the requester can set a higher reward. For AI
+   *  tasks it's the actual cost per submission. */
+  baseCredits: number;
+  description: string;
+  /** ``null`` for human tasks. For AI tasks, ``"local"`` means the
+   *  handler runs in-process and is always available; ``"llm"`` means
+   *  it needs a configured LLM provider key. */
+  aiSubkind: "local" | "llm" | null;
+}
+
+export const TASK_METADATA: Readonly<Record<PipelineStepTaskType, TaskTypeMeta>> = {
+  // Human-submittable task types
+  label_image: {
+    id: "label_image", label: "Label Image", icon: "🖼️",
+    executionMode: "human", baseCredits: 3,
+    description: "Bounding boxes, segmentation, or classification on an image.",
+    aiSubkind: null,
+  },
+  label_text: {
+    id: "label_text", label: "Label Text", icon: "🏷️",
+    executionMode: "human", baseCredits: 2,
+    description: "Sentiment, intent, categories, or spam detection on text.",
+    aiSubkind: null,
+  },
+  rate_quality: {
+    id: "rate_quality", label: "Rate Quality", icon: "⭐",
+    executionMode: "human", baseCredits: 2,
+    description: "Score content on a 1–5 (or custom) scale with a written critique.",
+    aiSubkind: null,
+  },
+  verify_fact: {
+    id: "verify_fact", label: "Verify Fact", icon: "✅",
+    executionMode: "human", baseCredits: 3,
+    description: "Check a claim against sources — true / false / unverifiable.",
+    aiSubkind: null,
+  },
+  moderate_content: {
+    id: "moderate_content", label: "Moderate Content", icon: "🛡️",
+    executionMode: "human", baseCredits: 2,
+    description: "Approve, reject, or escalate user-submitted content.",
+    aiSubkind: null,
+  },
+  compare_rank: {
+    id: "compare_rank", label: "Compare & Rank", icon: "📊",
+    executionMode: "human", baseCredits: 2,
+    description: "Pick A vs B (or rank N) on any criterion.",
+    aiSubkind: null,
+  },
+  answer_question: {
+    id: "answer_question", label: "Answer Question", icon: "💬",
+    executionMode: "human", baseCredits: 4,
+    description: "Open-ended Q&A with optional context.",
+    aiSubkind: null,
+  },
+  transcription_review: {
+    id: "transcription_review", label: "Review Transcript", icon: "📝",
+    executionMode: "human", baseCredits: 5,
+    description: "Correct an AI-generated transcript.",
+    aiSubkind: null,
+  },
+
+  // Pipeline-internal AI primitives
+  llm_generate: {
+    id: "llm_generate", label: "LLM Generate", icon: "🤖",
+    executionMode: "ai", baseCredits: 1,
+    description: "Direct LLM completion via the configured provider.",
+    aiSubkind: "llm",
+  },
+  data_transform: {
+    id: "data_transform", label: "Data Transform", icon: "🔄",
+    executionMode: "ai", baseCredits: 2,
+    description: "LLM-backed structured data transformation.",
+    aiSubkind: "llm",
+  },
+  pii_detect: {
+    id: "pii_detect", label: "PII Detect", icon: "🔒",
+    executionMode: "ai", baseCredits: 2,
+    description: "Regex detector for email, phone, SSN, credit card, and more.",
+    aiSubkind: "local",
+  },
+  document_parse: {
+    id: "document_parse", label: "Document Parse", icon: "📄",
+    executionMode: "ai", baseCredits: 3,
+    description: "Extract text from PDF / DOCX / XLSX.",
+    aiSubkind: "local",
+  },
+  code_execute: {
+    id: "code_execute", label: "Code Execute", icon: "⚡",
+    executionMode: "ai", baseCredits: 3,
+    description: "Sandboxed Python subprocess.",
+    aiSubkind: "local",
+  },
+  web_research: {
+    id: "web_research", label: "Web Research", icon: "🌐",
+    executionMode: "ai", baseCredits: 10,
+    description: "Fetch a URL, extract text, and summarise with the LLM.",
+    aiSubkind: "llm",
+  },
 };
 
-/** Default worker reward credits for human tasks (per assignment) */
-export const HUMAN_TASK_DEFAULT_REWARDS: Record<HumanTaskType, number> = {
-  label_image: 3,
-  label_text: 2,
-  rate_quality: 2,
-  verify_fact: 3,
-  moderate_content: 2,
-  compare_rank: 2,
-  answer_question: 4,
-  transcription_review: 5,
-};
+/** Stable display order for human task types. */
+export const HUMAN_TASK_TYPE_IDS = [
+  "label_image", "label_text", "rate_quality", "verify_fact",
+  "moderate_content", "compare_rank", "answer_question", "transcription_review",
+] as const satisfies readonly HumanTaskType[];
 
-/** Human task types set (for runtime checks) */
-export const HUMAN_TASK_TYPES = new Set<HumanTaskType>([
-  "label_image", "label_text", "rate_quality",
-  "verify_fact", "moderate_content", "compare_rank",
-  "answer_question", "transcription_review",
-]);
+/** Stable display order for AI (pipeline-internal) task types. */
+export const AI_TASK_TYPE_IDS = [
+  "llm_generate", "data_transform", "pii_detect",
+  "document_parse", "code_execute", "web_research",
+] as const satisfies readonly AITaskType[];
+
+/** All task-type metadata records, in stable display order. */
+export const ALL_TASK_METADATA: readonly TaskTypeMeta[] = [
+  ...HUMAN_TASK_TYPE_IDS.map((id) => TASK_METADATA[id]),
+  ...AI_TASK_TYPE_IDS.map((id) => TASK_METADATA[id]),
+];
+
+/** Only the human-submittable task types. */
+export const HUMAN_TASK_METADATA: readonly TaskTypeMeta[] =
+  HUMAN_TASK_TYPE_IDS.map((id) => TASK_METADATA[id]);
+
+/** Only the pipeline-internal AI primitives. */
+export const AI_TASK_METADATA: readonly TaskTypeMeta[] =
+  AI_TASK_TYPE_IDS.map((id) => TASK_METADATA[id]);
+
+// ─── Backwards-compat exports derived from TASK_METADATA ──────────────────
+// Kept so callers that still want a raw credits map or a membership Set
+// don't have to reach into the metadata record themselves.
+
+/** AI task costs (credits per submission) — derived from TASK_METADATA. */
+export const TASK_CREDITS: Readonly<Record<AITaskType, number>> = Object.freeze(
+  Object.fromEntries(
+    AI_TASK_TYPE_IDS.map((id) => [id, TASK_METADATA[id].baseCredits]),
+  ) as Record<AITaskType, number>,
+);
+
+/** Default worker reward credits per human task assignment. */
+export const HUMAN_TASK_DEFAULT_REWARDS: Readonly<Record<HumanTaskType, number>> = Object.freeze(
+  Object.fromEntries(
+    HUMAN_TASK_TYPE_IDS.map((id) => [id, TASK_METADATA[id].baseCredits]),
+  ) as Record<HumanTaskType, number>,
+);
+
+/** Runtime membership set for human task types. */
+export const HUMAN_TASK_TYPES: ReadonlySet<HumanTaskType> = new Set(HUMAN_TASK_TYPE_IDS);
+
+/** Runtime membership set for AI (pipeline-internal) task types. */
+export const AI_TASK_TYPES: ReadonlySet<AITaskType> = new Set(AI_TASK_TYPE_IDS);
 
 export const CREDITS_PER_USD = 100; // 1 USD = 100 credits ($0.01/credit)
 
